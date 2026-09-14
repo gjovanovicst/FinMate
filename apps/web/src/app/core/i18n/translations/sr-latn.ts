@@ -117,6 +117,64 @@ export const srLatn: Record<keyof typeof en, string> = {
   'transactions.noAccountsBody':
     'Transakcija pripada računu, pa napravi račun pre nego što zabeležiš trošak.',
 
+  // ---- transaction list: filters, grouping, pagination ----
+  'transactions.search': 'Pretraga',
+  'transactions.searchPlaceholder': 'Opis sadrži…',
+  'transactions.filters': 'Filteri',
+  'transactions.allKinds': 'Svi tipovi',
+  'transactions.allCategories': 'Sve kategorije',
+  'transactions.allAccounts': 'Svi računi',
+  'transactions.from': 'Od',
+  'transactions.to': 'Do',
+  'transactions.onlyNeedsReview': 'Samo oni koji čekaju proveru',
+  'transactions.clearFilters': 'Očisti filtere',
+  'transactions.loadMore': 'Prikaži još',
+  'transactions.loadingMore': 'Učitavanje…',
+  'transactions.daySpent': 'Potrošeno {amount}',
+  'transactions.dayReceived': 'Primljeno {amount}',
+  'transactions.dayPartial': 'još stavki tog dana nije učitano',
+  'transactions.edit': 'Izmeni',
+  'transactions.emptyFilteredTitle': 'Ništa ne odgovara tim filterima',
+  'transactions.emptyFilteredBody': 'Probaj drugu pretragu ili očisti filtere.',
+
+  // ---- transaction detail / edit ----
+  'transactions.editTitle': 'Izmena transakcije',
+  'transactions.close': 'Zatvori',
+  'transactions.save': 'Sačuvaj izmene',
+  'transactions.saving': 'Čuvanje…',
+  'transactions.delete': 'Obriši',
+  'transactions.deleting': 'Brisanje…',
+  'transactions.deleteConfirm': 'Obrisati ovu transakciju? Ovo se ovde ne može poništiti.',
+  'transactions.note': 'Napomena',
+  'transactions.status': 'Status',
+  'transactions.amountPositive': 'Unesi iznos veći od nule.',
+  'transactions.kindImmutable':
+    'Smer se ne može menjati — transakcija je ili priliv ili odliv. Obriši je i ponovo unesi ako je pogrešna.',
+  'transactions.splitAmountLocked':
+    'Ova transakcija je podeljena po kategorijama, pa je njen ukupan iznos određen tim delovima. Menjaj delove, ne ukupan iznos.',
+  'transactions.splitsTitle': 'Podeljeno po kategorijama',
+  'transactions.splitsReadOnly':
+    'Izmena podele još nije dostupna; delovi su prikazani da ukupan iznos ne bi bio nejasan.',
+  'transactions.conflictReload': 'Učitaj ponovo',
+
+  // ---- transaction status ----
+  'transactionStatus.CONFIRMED': 'Potvrđena',
+  'transactionStatus.PENDING': 'Na čekanju',
+  'transactionStatus.VOID': 'Stornirana',
+
+  // ---- split editor ----
+  'transactions.singleCategory': 'Jedna kategorija',
+  'transactions.splitAcross': 'Podeli po kategorijama',
+  'transactions.splitHint':
+    'Kada jedna kategorija ne odgovara — korpa iz supermarketa nije samo hrana. Delovi moraju tačno da se saberu u ukupan iznos.',
+  'transactions.addSplit': 'Dodaj kategoriju',
+  'transactions.splitEvenly': 'Podeli na jednake delove',
+  'transactions.removeSplit': 'Ukloni ovaj deo',
+  'transactions.splitMismatch': 'Delovi se sabiraju u {sum}, a ukupan iznos je {total}.',
+  'transactions.splitBalanced': 'Delovi se sabiraju tačno.',
+  'transactions.splitNeedsTwo': 'Izaberi najmanje dve kategorije za podelu.',
+  'transactions.splitNoAmount': 'Prvo unesi ukupan iznos, pa ga podeli.',
+
   // ---- transaction kinds ----
   'transactionKind.EXPENSE': 'Trošak',
   'transactionKind.INCOME': 'Prihod',

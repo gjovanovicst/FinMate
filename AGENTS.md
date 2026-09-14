@@ -11,17 +11,20 @@ AI-first household budgeting app for **mobile and desktop**. The product promise
 **Machine state:** Node 24.20.0, pnpm 11.7.0, Go 1.27.0, **Docker 29.7.2 + Compose v5.5.0 (Linux
 containers)** on Ubuntu 20.04 LTS / WSL2.
 
-**Build state — Phase 0 COMPLETE. Phase 1 (manual core) is nearly done: backend and the four core screens are in.**
+**Build state — Phase 0 COMPLETE. Phase 1 (manual core): all screens are working; the remaining gaps are listed below.**
 
 | Phase 1 slice | State |
 |---|---|
-| Domain: dates, money allocation, Serbian amount parsing, tree, budget calculators | **Done** — 85 tests, calculators asserted against hand-computed figures |
+| Domain: dates (incl. `instantForLocalNoon`), money allocation, Serbian amount parsing, tree, budget calculators | **Done** — 97 tests, calculators asserted against hand-computed figures |
 | Categories tree CRUD + keywords (I-1, I-11, I-12) | **Done** — verified live, including cycle refusal and reassignment |
 | Transactions CRUD + splits (I-1, I-3, I-7, I-10, optimistic concurrency) | **Done** — verified live |
+| Transaction list: filters, search, day grouping, cursor paging (1.2.5) | **Done** — UI only; the API already had every filter |
+| Transaction detail/edit sheet (1.2.6) | **Done** — edit + delete, optimistic concurrency; **splits are create-only** (`updateTransaction` accepts no splits) |
 | Budgets CRUD (1.3.1) | **Done** — `upsertBudget` / `deleteBudget` / `budgets` with period consumption and pace |
 | Merchants/counterparties/tags (1.2.1–1.2.3), CSV export (1.3.4) | **Not started** |
-| **Phase 1 UI** | **Done** — transactions entry + list, budgets, dashboard tiles; Accounts from Phase 0 |
-| Category management UI | **Not started** — the API is done, but the tree is editable only through GraphQL |
+| **Phase 1 UI** | **Done** — transaction entry, filtered/paginated list, edit sheet, budgets, dashboard tiles; Accounts from Phase 0 |
+| Category management UI + keyword editor (1.2.4) | **Not started** — the API is done (tree CRUD, keywords), the UI is not |
+| Responsive/keyboard pass (1.3.5) | **Not started** — needs a human at 320/768/1280 px; no automated check exists |
 
 | What | State |
 |---|---|
@@ -38,9 +41,9 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 | CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → lint → typecheck → test → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
 | Web (0.8) | Angular 22, **zoneless** + signals, ADR-006. Responsive shell (bottom nav → sidebar at 1024px), design tokens (`apps/web/src/styles.css`), `fm-money` as the only Money renderer, auth pages, Accounts consuming GraphQL |
 | i18n | `core/i18n/`: **English primary**, Serbian latin + cyrillic. Runtime catalogue (no rebuild), `TranslationKey` derived from `en`, `sr-Cyrl` generated at runtime. Language switcher in the shell |
-| Tests | **304 pass** — 181 API + 85 domain + 38 web |
+| Tests | **344 pass** — 191 API + 97 domain + 56 web |
 | Not yet built | worker jobs; production build for apps/api (its own decision); PWA service worker (Phase 4) |
-| Web screens | `/` dashboard, `/transactions`, `/budgets`, `/accounts`, sign-in/up — all four nav destinations are working screens |
+| Web screens | `/` dashboard, `/transactions` (filter + edit), `/budgets`, `/accounts`, sign-in/up |
 
 ```bash
 pnpm dev:infra            # start Postgres/Redis/MinIO/Mailhog
@@ -55,7 +58,7 @@ nx run web:build          # production bundle
 **The browser talks to `/api/*`; the dev proxy strips the prefix** before forwarding, because the
 API serves `/auth/*` and `/graphql` without one (docs/06). Changing the prefix on one side only
 produces a 404 that looks like an auth failure.
-Verified working: lint 9/9, typecheck 9/9, 304 tests, `web:build`, GraphQL over HTTP through the
+Verified working: lint 9/9, typecheck 9/9, 344 tests, `web:build`, GraphQL over HTTP through the
 browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, and `prisma migrate diff`
 reporting no drift.
 
@@ -223,6 +226,18 @@ A change is not done until (doc 09 §8):
   dependency output, so linting it reports hundreds of errors in `@angular/forms`' own bundle.
 - **Angular targets run with `cwd: {projectRoot}` and project-relative binaries.** Mixing a
   workspace-relative binary path with `cwd: {projectRoot}` yields `ng: not found`.
+- **`nx run web:typecheck` does NOT check templates; `nx run web:build` does.** `tsc --noEmit` skips
+  Angular's template type-checker, so a dynamic `i18n.t('x.' + value)` (not assignable to
+  `TranslationKey`), a required `input()` read in a constructor (NG8118), or a backtick inside a
+  template literal — which terminates the string and produces nonsense errors hundreds of lines away
+  — all pass `typecheck` and fail `build`. Run `web:build` before believing a UI change is green.
+- **A date-only write must send `occurredLocalDate`, never an invented instant.** The server derives
+  `occurred_local_date` from the instant in the *Household's* timezone, so `T12:00:00Z` is the 15th
+  for a Household in `Pacific/Auckland` (UTC+13) — and the wrong *month* at a boundary, silently
+  corrupting every budget total for that period. `occurredLocalDate` wins when both are sent (I-2).
+- **`updateTransaction` cannot change `kind` or `splits`.** Direction is not a flippable property,
+  and the parts of a divided Transaction must be edited as parts. `update()` refuses an amount change
+  on a split Transaction with `VALIDATION_FAILED` rather than deleting the splits to satisfy I-1.
 - **Never trust a `RETURNING` capture from `psql`** without a CTE. `psql -tAc "INSERT ... RETURNING id"`
   also prints the `INSERT 0 1` command tag, which silently corrupts a captured id. Wrap it:
   `WITH ins AS (INSERT ... RETURNING id) SELECT id FROM ins;`.

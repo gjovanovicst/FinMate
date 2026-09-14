@@ -2,10 +2,14 @@ import { Injectable } from '@nestjs/common';
 
 import {
   allocate,
+  DateError,
+  instantForLocalNoon,
+  localDate,
   money,
   toLocalDate,
   uuidv7,
   DEFAULT_TIME_ZONE,
+  type LocalDate,
   type Money,
 } from '@finmate/domain';
 
@@ -31,7 +35,8 @@ export interface CreateTransactionInput {
   readonly kind: TransactionKind;
   readonly amountMinor: bigint;
   readonly description: string;
-  readonly occurredAt: Date;
+  readonly occurredAt?: Date | null;
+  readonly occurredLocalDate?: string | null;
   readonly categoryId?: string | null;
   readonly merchantId?: string | null;
   readonly counterpartyId?: string | null;
@@ -49,6 +54,7 @@ export interface UpdateTransactionInput {
   readonly amountMinor?: bigint;
   readonly description?: string;
   readonly occurredAt?: Date;
+  readonly occurredLocalDate?: string | null;
   readonly categoryId?: string | null;
   readonly merchantId?: string | null;
   readonly counterpartyId?: string | null;
@@ -175,6 +181,7 @@ export class TransactionsService {
     if (input.splits?.length) this.assertSplitsBalance(amount, input.splits);
 
     const timeZone = household.iana_timezone || DEFAULT_TIME_ZONE;
+    const occurrence = this.resolveOccurrence(input.occurredAt, input.occurredLocalDate, timeZone);
 
     const result = await this.prisma.client.$transaction(async (tx) => {
       const created = await tx.transactions.create({
@@ -192,8 +199,8 @@ export class TransactionsService {
           description,
           note: input.note ?? null,
           raw_input: input.rawInput ?? null,
-          occurred_at: input.occurredAt,
-          occurred_local_date: this.localDateFor(input.occurredAt, timeZone),
+          occurred_at: occurrence.occurredAt,
+          occurred_local_date: occurrence.occurredLocalDate,
           status: input.status ?? TransactionStatus.CONFIRMED,
           source: input.source ?? TransactionSource.MANUAL,
           category_source: input.splits?.length ? null : (input.categorySource ?? null),
@@ -235,6 +242,7 @@ export class TransactionsService {
   ): Promise<TransactionModel> {
     const existing = await this.prisma.client.transactions.findFirst({
       where: { id, household_id: householdId, deleted_at: null },
+      include: { transaction_splits: true },
     });
     if (!existing) throw new ApiError('NOT_FOUND', 'Transaction not found.');
 
@@ -249,12 +257,38 @@ export class TransactionsService {
       throw new ApiError('VALIDATION_FAILED', 'Amount must be greater than zero.');
     }
 
+    // I-1 spans two tables, so PostgreSQL cannot enforce it as a CHECK — a CHECK sees only its own
+    // row and cannot sum a sibling table. `create` calls `assertSplitsBalance`; without the same
+    // guard here an amount edit would leave the splits summing to a total that no longer exists.
+    // The splits are refused rather than deleted: discarding the user's categorisation to satisfy
+    // the invariant would be data loss.
+    if (
+      input.amountMinor !== undefined &&
+      input.amountMinor !== existing.amount_minor &&
+      existing.transaction_splits.length > 0
+    ) {
+      throw new ApiError(
+        'VALIDATION_FAILED',
+        `This transaction is divided into ${existing.transaction_splits.length} split(s), so its ` +
+          `amount is the sum of those splits (invariant I-1). Change the splits rather than the ` +
+          `amount, or delete this transaction and record it again.`,
+      );
+    }
+
     if (input.categoryId !== undefined) {
       await this.validateClassification(householdId, existing.kind as TransactionKind, input.categoryId, undefined);
     }
 
     const household = await this.prisma.client.households.findFirst({ where: { id: householdId } });
     const timeZone = household?.iana_timezone || DEFAULT_TIME_ZONE;
+
+    // `resolveOccurrence` prefers `occurredLocalDate` when both are sent. Two sources of truth for
+    // the day would otherwise disagree silently, and the client-asserted calendar day is the one
+    // the user actually picked.
+    const occurrence =
+      input.occurredLocalDate != null || input.occurredAt !== undefined
+        ? this.resolveOccurrence(input.occurredAt, input.occurredLocalDate, timeZone)
+        : null;
 
     const updated = await this.prisma.client.transactions.updateMany({
       where: { id, household_id: householdId, version: input.version },
@@ -266,10 +300,10 @@ export class TransactionsService {
         ...(input.counterpartyId !== undefined ? { counterparty_id: input.counterpartyId } : {}),
         ...(input.note !== undefined ? { note: input.note } : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
-        ...(input.occurredAt !== undefined
+        ...(occurrence
           ? {
-              occurred_at: input.occurredAt,
-              occurred_local_date: this.localDateFor(input.occurredAt, timeZone),
+              occurred_at: occurrence.occurredAt,
+              occurred_local_date: occurrence.occurredLocalDate,
             }
           : {}),
         version: existing.version + 1,
@@ -388,10 +422,55 @@ export class TransactionsService {
   // Helpers
   // -------------------------------------------------------------------------------------------
 
+  /**
+   * Resolve both date columns from whichever source the caller supplied.
+   *
+   * `occurredLocalDate` is the preferred direction — the user asserts the calendar day and the
+   * server chooses the instant — so a client that only knows the day the user picked never has to
+   * know the Household timezone. Deriving the day from a client-invented instant instead can only be
+   * right by accident, which is how a transaction lands a day late across a positive offset
+   * (invariant I-2).
+   */
+  private resolveOccurrence(
+    occurredAt: Date | null | undefined,
+    occurredLocalDate: string | null | undefined,
+    timeZone: string,
+  ): { occurredAt: Date; occurredLocalDate: Date } {
+    if (occurredLocalDate) {
+      try {
+        const day = localDate(occurredLocalDate);
+        return {
+          occurredAt: instantForLocalNoon(day, timeZone),
+          occurredLocalDate: this.dateColumn(day),
+        };
+      } catch (error) {
+        // The GraphQL LocalDate scalar already rejects a malformed string, so this is the belt to
+        // its braces: a bad day (or a Household carrying a broken timezone) becomes a typed client
+        // error instead of an INTERNAL_SERVER_ERROR escaping from `Intl`.
+        if (error instanceof DateError) throw new ApiError('VALIDATION_FAILED', error.message);
+        throw error;
+      }
+    }
+
+    if (occurredAt) {
+      return { occurredAt, occurredLocalDate: this.localDateFor(occurredAt, timeZone) };
+    }
+
+    throw new ApiError(
+      'VALIDATION_FAILED',
+      'Either occurredAt or occurredLocalDate is required to place the transaction in time.',
+    );
+  }
+
   private localDateFor(instant: Date, timeZone: string): Date {
     // Stored as a `date` column, so Prisma wants a Date at UTC midnight of the intended day —
     // which is exactly what the domain helper returns as a string.
-    return new Date(`${toLocalDate(instant, timeZone)}T00:00:00.000Z`);
+    return this.dateColumn(toLocalDate(instant, timeZone));
+  }
+
+  /** A calendar day as the `date` column's UTC-midnight `Date`. */
+  private dateColumn(day: LocalDate): Date {
+    return new Date(`${day}T00:00:00.000Z`);
   }
 
   /** The filter subset used for the total count, so a page and its total agree. */

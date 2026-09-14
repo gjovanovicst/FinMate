@@ -115,6 +115,64 @@ export const en = {
   'transactions.noAccountsBody':
     'A transaction belongs to an account, so create one before recording any spending.',
 
+  // ---- transaction list: filters, grouping, pagination ----
+  'transactions.search': 'Search',
+  'transactions.searchPlaceholder': 'Description contains…',
+  'transactions.filters': 'Filters',
+  'transactions.allKinds': 'All types',
+  'transactions.allCategories': 'All categories',
+  'transactions.allAccounts': 'All accounts',
+  'transactions.from': 'From',
+  'transactions.to': 'To',
+  'transactions.onlyNeedsReview': 'Only those needing review',
+  'transactions.clearFilters': 'Clear filters',
+  'transactions.loadMore': 'Load more',
+  'transactions.loadingMore': 'Loading…',
+  'transactions.daySpent': 'Spent {amount}',
+  'transactions.dayReceived': 'Received {amount}',
+  'transactions.dayPartial': 'more on this day not loaded',
+  'transactions.edit': 'Edit',
+  'transactions.emptyFilteredTitle': 'Nothing matches those filters',
+  'transactions.emptyFilteredBody': 'Try a different search, or clear the filters.',
+
+  // ---- transaction detail / edit ----
+  'transactions.editTitle': 'Edit transaction',
+  'transactions.close': 'Close',
+  'transactions.save': 'Save changes',
+  'transactions.saving': 'Saving…',
+  'transactions.delete': 'Delete',
+  'transactions.deleting': 'Deleting…',
+  'transactions.deleteConfirm': 'Delete this transaction? This cannot be undone here.',
+  'transactions.note': 'Note',
+  'transactions.status': 'Status',
+  'transactions.amountPositive': 'Enter an amount greater than zero.',
+  'transactions.kindImmutable':
+    'The direction cannot be changed — a transaction is either money in or money out. Delete it and re-record if it was wrong.',
+  'transactions.splitAmountLocked':
+    'This transaction is divided across categories, so its total is fixed by those parts. Change the parts instead of the total.',
+  'transactions.splitsTitle': 'Divided across categories',
+  'transactions.splitsReadOnly':
+    'Editing the division is not available yet; the parts are shown so the total is not a mystery.',
+  'transactions.conflictReload': 'Reload',
+
+  // ---- transaction status ----
+  'transactionStatus.CONFIRMED': 'Confirmed',
+  'transactionStatus.PENDING': 'Pending',
+  'transactionStatus.VOID': 'Void',
+
+  // ---- split editor ----
+  'transactions.singleCategory': 'One category',
+  'transactions.splitAcross': 'Split across categories',
+  'transactions.splitHint':
+    'When no single category fits — a supermarket basket is not all groceries. The parts must add up to the total exactly.',
+  'transactions.addSplit': 'Add a category',
+  'transactions.splitEvenly': 'Split evenly',
+  'transactions.removeSplit': 'Remove this part',
+  'transactions.splitMismatch': 'The parts add up to {sum} but the total is {total}.',
+  'transactions.splitBalanced': 'The parts add up exactly.',
+  'transactions.splitNeedsTwo': 'Choose at least two categories to split across.',
+  'transactions.splitNoAmount': 'Enter the total first, then split it.',
+
   // ---- transaction kinds ----
   'transactionKind.EXPENSE': 'Expense',
   'transactionKind.INCOME': 'Income',

@@ -1,4 +1,4 @@
-import { toMajorString as domainMajorString } from '@finmate/domain';
+import { toMajorString as domainMajorString, type Money } from '@finmate/domain';
 
 import type { MoneyWire } from './ui/money/money.component';
 
@@ -14,8 +14,13 @@ import type { MoneyWire } from './ui/money/money.component';
  * `slice(-2)` is wrong the moment a second currency exists.
  */
 
-/** The wire representation of Money (docs/06 §1) as a domain `Money` value. */
-function fromWire(value: MoneyWire) {
+/**
+ * The wire representation of Money (docs/06 §1) as a domain `Money` value.
+ *
+ * `amountMinor` crosses the wire as a STRING so a large value cannot be rounded by `JSON.parse`;
+ * converting to `bigint` here is what keeps every later sum exact (ADR-003).
+ */
+export function moneyFromWire(value: MoneyWire): Money {
   return { amountMinor: BigInt(value.amountMinor), currency: value.currency };
 }
 
@@ -26,7 +31,7 @@ export function toMajorString(minor: bigint, currency = 'RSD'): string {
 
 /** A Money value as `"300000.00 RSD"`, or `''` when absent. Never a sign — see `overrunText`. */
 export function moneyText(value: MoneyWire | null | undefined): string {
-  return value ? `${domainMajorString(fromWire(value))} ${value.currency}` : '';
+  return value ? `${domainMajorString(moneyFromWire(value))} ${value.currency}` : '';
 }
 
 /**
@@ -41,5 +46,5 @@ export function overrunText(value: MoneyWire | null | undefined): string | null 
   if (!value) return null;
   const minor = BigInt(value.amountMinor);
   if (minor <= 0n) return null;
-  return `${domainMajorString(fromWire(value))} ${value.currency}`;
+  return `${domainMajorString(moneyFromWire(value))} ${value.currency}`;
 }

@@ -270,7 +270,12 @@ type Mutation {
     kind: TransactionKind!
     merchantId: ID
     note: String
-    occurredAt: DateTime!
+    occurredAt: DateTime
+
+    """
+    The calendar day the user picked. Preferred over occurredAt for date-only entry: the server derives a stable instant, so a client never has to know the Household timezone (I-2).
+    """
+    occurredLocalDate: LocalDate
 
     """
     Divide the amount across categories. Must sum EXACTLY to `amount` (invariant I-1); use `proposeSplits` to allocate without losing a para.
@@ -311,6 +316,11 @@ type Mutation {
     merchantId: ID
     note: String
     occurredAt: DateTime
+
+    """
+    The calendar day the user picked. Preferred over occurredAt for date-only entry: the server derives a stable instant, so a client never has to know the Household timezone (I-2).
+    """
+    occurredLocalDate: LocalDate
     status: TransactionStatus
 
     """

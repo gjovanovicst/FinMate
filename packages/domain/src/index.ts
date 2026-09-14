@@ -31,6 +31,7 @@ export {
   daysRemainingInMonth,
   DEFAULT_TIME_ZONE,
   DateError,
+  instantForLocalNoon,
   isWithin,
   localDate,
   monthPeriod,

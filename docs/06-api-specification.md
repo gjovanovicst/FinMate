@@ -88,9 +88,14 @@ scalar JSON       # escape hatch: rule conditions/actions, insight payloads, fac
 
 **`Date` vs `DateTime` is not a style choice.** [03 §3.2](03-domain-model.md) requires both
 `occurred_at` and `occurred_local_date`: *"which day was this?"* is a local-calendar question and
-*"when?"* is an instant question. `Transaction.occurredOn` is a `Date`; `Transaction.occurredAt` is a
-`DateTime`; `createdAt`/`updatedAt` are `DateTime`. Period boundaries (`periodStart`, `periodEnd`) are
-`Date`. Conflating them breaks month boundaries across timezones and DST.
+*"when?"* is an instant question. `Transaction.occurredLocalDate` is a `Date`; `Transaction.occurredAt`
+is a `DateTime`; `createdAt`/`updatedAt` are `DateTime`. Period boundaries (`periodStart`, `periodEnd`)
+are `Date`. Conflating them breaks month boundaries across timezones and DST.
+
+On writes, `createTransaction` and `updateTransaction` accept `occurredLocalDate` — the calendar day
+the user picked. The server derives `occurredAt` as local noon on that day **in the Household
+timezone**, so a client never has to know that timezone. When both are sent, `occurredLocalDate` wins;
+one of the two is required on create.
 
 ### 1.4 Pagination
 
@@ -560,7 +565,7 @@ type Transaction {
   note: String
 
   occurredAt: DateTime!
-  occurredOn: Date!                 # the local calendar day the user means
+  occurredLocalDate: Date!          # the local calendar day the user means
 
   status: TransactionStatus!
   source: TransactionSource!
@@ -1002,7 +1007,7 @@ input TransactionCreateInput {
   description: String!
   note: String
   occurredAt: DateTime
-  occurredOn: Date                   # one of occurredAt/occurredOn required
+  occurredLocalDate: Date            # one of occurredAt/occurredLocalDate required; occurredLocalDate wins
   tagIds: [UUID!]
   splits: [TransactionSplitInput!]
   attachmentId: UUID                 # single direct FK on the transaction (F-34)
@@ -1024,7 +1029,7 @@ input TransactionUpdateInput {
   description: String
   note: String
   occurredAt: DateTime
-  occurredOn: Date
+  occurredLocalDate: Date            # preferred over occurredAt; the server derives the instant
   tagIds: [UUID!]
   splits: [TransactionSplitInput!]
   attachmentId: UUID

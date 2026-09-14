@@ -1,51 +1,90 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 
-import { parseAmount } from '@finmate/domain';
+import { equalsMoney, parseAmount, type Money } from '@finmate/domain';
 
 import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
 import { toMajorString } from '../../shared/money-text';
-import { MoneyComponent, type MoneyWire } from '../../shared/ui/money/money.component';
+import { MoneyComponent } from '../../shared/ui/money/money.component';
+import {
+  TransactionDetailComponent,
+  type CategoryOption,
+} from './transaction-detail.component';
+import {
+  PAGE_SIZE,
+  emptyFilters,
+  groupByDay,
+  hasActiveFilters,
+  localNoonInstant,
+  toQueryVariables,
+  totalOf,
+  type TransactionFilters,
+  type TransactionKind,
+  type TransactionRow,
+} from './transactions.view';
 
-interface TransactionNode {
-  readonly id: string;
-  readonly kind: 'EXPENSE' | 'INCOME';
-  readonly amount: MoneyWire;
-  readonly description: string;
-  readonly occurredLocalDate: string;
-  readonly categoryId: string | null;
-  readonly needsReview: boolean;
-}
-
-interface CategoryNode {
-  readonly id: string;
-  readonly name: string;
-  readonly kind: 'EXPENSE' | 'INCOME';
-  readonly path: string[];
-}
-
-interface AccountNode {
+interface AccountOption {
   readonly id: string;
   readonly name: string;
   readonly currency: string;
 }
 
+interface SplitDraft {
+  readonly categoryId: string;
+  readonly amountText: string;
+}
+
 const TRANSACTIONS_QUERY = /* GraphQL */ `
-  query Transactions($first: Int) {
-    transactions(first: $first) {
+  query Transactions(
+    $first: Int
+    $after: String
+    $search: String
+    $kind: TransactionKind
+    $categoryId: ID
+    $accountId: ID
+    $from: LocalDate
+    $to: LocalDate
+    $needsReview: Boolean
+  ) {
+    transactions(
+      first: $first
+      after: $after
+      search: $search
+      kind: $kind
+      categoryId: $categoryId
+      accountId: $accountId
+      from: $from
+      to: $to
+      needsReview: $needsReview
+    ) {
       totalCount
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
       edges {
         node {
           id
           kind
+          status
           amount
           description
+          note
+          occurredAt
           occurredLocalDate
           categoryId
+          accountId
           needsReview
+          version
+          splits {
+            id
+            amount
+            categoryId
+          }
         }
       }
     }
@@ -79,7 +118,9 @@ const CREATE_TRANSACTION = /* GraphQL */ `
     $amount: Money!
     $description: String!
     $occurredAt: DateTime!
+    $occurredLocalDate: LocalDate
     $categoryId: ID
+    $splits: [SplitInput!]
   ) {
     createTransaction(
       accountId: $accountId
@@ -87,31 +128,48 @@ const CREATE_TRANSACTION = /* GraphQL */ `
       amount: $amount
       description: $description
       occurredAt: $occurredAt
+      occurredLocalDate: $occurredLocalDate
       categoryId: $categoryId
+      splits: $splits
     ) {
       id
     }
   }
 `;
 
+const PROPOSE_EQUAL_SPLITS = /* GraphQL */ `
+  query ProposeEqualSplits($amount: Money!, $categoryIds: [ID!]!) {
+    proposeEqualSplits(amount: $amount, categoryIds: $categoryIds) {
+      amount
+      categoryId
+    }
+  }
+`;
+
+const SEARCH_DEBOUNCE_MS = 300;
+
 /**
- * Transactions: the screen that makes the product manually usable.
+ * Transactions: the screen the product is actually used through.
  *
- * This is the Phase 1 exit criterion in UI form — a person can record a month of spending without
- * any AI. Three things are deliberate:
+ * Three decisions here are about not lying to the user:
  *
- *  - **The amount is parsed by `@finmate/domain`, the same code the server uses.** A second parser in
- *    the client would eventually disagree with the first, and the disagreement would be about money.
- *    It also means the Serbian rules (`.` groups thousands, `,` is decimal) hold here for free.
- *  - **`amountMinor` is sent as a STRING.** The API rejects a JSON number outright (ADR-003), so the
- *    client cannot accidentally send a float even if it tried.
- *  - **The category list is filtered to the transaction's kind** before the user can pick an invalid
- *    one. The backend enforces I-3 regardless — this just avoids offering a choice that will fail.
+ *  - **Day totals are withheld for a day the page boundary cut through.** `groupByDay` returns
+ *    `null` for the truncated oldest day, so the UI shows no total rather than one that silently
+ *    grows as the user loads more. A wrong number presented as a fact about money is worse than no
+ *    number.
+ *  - **The amount is parsed by `@finmate/domain`**, the same code the server runs, and sent as a
+ *    STRING, so a float cannot reach the API (ADR-003).
+ *  - **A date-only edit sends `occurredLocalDate`, not just an instant.** The server derives the
+ *    calendar day in the *Household's* timezone; a client that invented `T12:00:00Z` would file an
+ *    evening entry on the wrong day east of UTC+11, and in the wrong *month* at a boundary (I-2).
+ *
+ * Splits are offered on create only. `updateTransaction` does not accept them, so the edit sheet
+ * shows the parts read-only rather than pretending they can be changed.
  */
 @Component({
   selector: 'fm-transactions',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MoneyComponent],
+  imports: [ReactiveFormsModule, RouterLink, MoneyComponent, TransactionDetailComponent],
   template: `
     <header class="head">
       <h1 class="head__title">{{ i18n.t('transactions.title') }}</h1>
@@ -119,7 +177,7 @@ const CREATE_TRANSACTION = /* GraphQL */ `
         @if (loading()) {
           {{ i18n.t('accounts.loading') }}
         } @else {
-          {{ i18n.t('transactions.count', { count: transactions().length }) }}
+          {{ i18n.t('transactions.count', { count: totalCount() }) }}
         }
       </p>
     </header>
@@ -132,6 +190,7 @@ const CREATE_TRANSACTION = /* GraphQL */ `
       <div class="empty">
         <p class="empty__title">{{ i18n.t('transactions.noAccountsTitle') }}</p>
         <p class="empty__body">{{ i18n.t('transactions.noAccountsBody') }}</p>
+        <p><a routerLink="/accounts">{{ i18n.t('nav.accounts') }}</a></p>
       </div>
     } @else {
       <section class="create">
@@ -149,7 +208,6 @@ const CREATE_TRANSACTION = /* GraphQL */ `
               required
             />
             @if (amountHint(); as hint) {
-              <!-- The parser reports ambiguity instead of guessing, so the hint shows what it read. -->
               <span class="field__hint">{{ hint }}</span>
             }
           </label>
@@ -167,15 +225,17 @@ const CREATE_TRANSACTION = /* GraphQL */ `
             </select>
           </label>
 
-          <label class="field">
-            <span class="field__label">{{ i18n.t('transactions.category') }}</span>
-            <select class="field__input" formControlName="categoryId">
-              <option value="">{{ i18n.t('transactions.noCategory') }}</option>
-              @for (category of matchingCategories(); track category.id) {
-                <option [value]="category.id">{{ categoryLabel(category) }}</option>
-              }
-            </select>
-          </label>
+          @if (!splitMode()) {
+            <label class="field">
+              <span class="field__label">{{ i18n.t('transactions.category') }}</span>
+              <select class="field__input" formControlName="categoryId">
+                <option value="">{{ i18n.t('transactions.noCategory') }}</option>
+                @for (category of matchingCategories(); track category.id) {
+                  <option [value]="category.id">{{ categoryLabel(category) }}</option>
+                }
+              </select>
+            </label>
+          }
 
           <label class="field">
             <span class="field__label">{{ i18n.t('transactions.account') }}</span>
@@ -191,39 +251,263 @@ const CREATE_TRANSACTION = /* GraphQL */ `
             <input class="field__input" type="date" formControlName="occurredOn" required />
           </label>
 
+          <!-- Splits are a create-time concept: the API cannot divide an existing Transaction,
+               which the edit sheet states outright rather than hiding. -->
+          <div class="mode">
+              <label class="mode__option">
+                <input
+                  type="radio"
+                  name="mode"
+                  [checked]="!splitMode()"
+                  (change)="setSplitMode(false)"
+                />
+                <span>{{ i18n.t('transactions.singleCategory') }}</span>
+              </label>
+              <label class="mode__option">
+                <input
+                  type="radio"
+                  name="mode"
+                  [checked]="splitMode()"
+                  (change)="setSplitMode(true)"
+                />
+                <span>{{ i18n.t('transactions.splitAcross') }}</span>
+            </label>
+          </div>
+
+          @if (splitMode()) {
+            <div class="splits">
+              <p class="hint">{{ i18n.t('transactions.splitHint') }}</p>
+
+              @for (draft of splitDrafts(); track $index; let index = $index) {
+                <div class="splits__row">
+                  <select
+                    class="field__input"
+                    [value]="draft.categoryId"
+                    (change)="setSplitCategory(index, $any($event.target).value)"
+                    [attr.aria-label]="i18n.t('transactions.category') + ' ' + (index + 1)"
+                  >
+                    <option value="">{{ i18n.t('transactions.noCategory') }}</option>
+                    @for (category of matchingCategories(); track category.id) {
+                      <option [value]="category.id">{{ categoryLabel(category) }}</option>
+                    }
+                  </select>
+                  <input
+                    class="field__input splits__amount"
+                    type="text"
+                    inputmode="decimal"
+                    [value]="draft.amountText"
+                    (input)="setSplitAmount(index, $any($event.target).value)"
+                    [attr.aria-label]="i18n.t('transactions.amount') + ' ' + (index + 1)"
+                  />
+                  <button
+                    class="splits__remove"
+                    type="button"
+                    (click)="removeSplitRow(index)"
+                    [attr.aria-label]="i18n.t('transactions.removeSplit')"
+                  >
+                    ×
+                  </button>
+                </div>
+              }
+
+              <div class="splits__actions">
+                <button class="link" type="button" (click)="addSplitRow()">
+                  {{ i18n.t('transactions.addSplit') }}
+                </button>
+                <button class="link" type="button" (click)="splitEvenly()">
+                  {{ i18n.t('transactions.splitEvenly') }}
+                </button>
+              </div>
+
+              @if (splitMessage(); as message) {
+                <p class="hint" [class.hint--warn]="!splitsBalanced()">{{ message }}</p>
+              }
+            </div>
+          }
+
           <button class="create__submit" type="submit" [disabled]="creating()">
             {{ creating() ? i18n.t('transactions.submitting') : i18n.t('transactions.submit') }}
           </button>
         </form>
       </section>
 
-      @if (transactions().length === 0 && !loading()) {
-        <div class="empty">
-          <p class="empty__title">{{ i18n.t('transactions.emptyTitle') }}</p>
-          <p class="empty__body">{{ i18n.t('transactions.emptyBody') }}</p>
-        </div>
+      <section class="toolbar">
+        <label class="field field--search">
+          <span class="field__label">{{ i18n.t('transactions.search') }}</span>
+          <input
+            class="field__input"
+            type="search"
+            [value]="filters().search"
+            [placeholder]="i18n.t('transactions.searchPlaceholder')"
+            (input)="onSearch($any($event.target).value)"
+          />
+        </label>
+
+        <button class="link" type="button" (click)="filtersOpen.set(!filtersOpen())">
+          {{ i18n.t('transactions.filters') }}
+          @if (hasFilters()) {
+            <span class="dot" aria-hidden="true"></span>
+          }
+        </button>
+
+        @if (hasFilters()) {
+          <button class="link" type="button" (click)="clearFilters()">
+            {{ i18n.t('transactions.clearFilters') }}
+          </button>
+        }
+      </section>
+
+      @if (filtersOpen()) {
+        <section class="filters">
+          <label class="field">
+            <span class="field__label">{{ i18n.t('transactions.kind') }}</span>
+            <select
+              class="field__input"
+              [value]="filters().kind"
+              (change)="setFilter('kind', $any($event.target).value)"
+            >
+              <option value="">{{ i18n.t('transactions.allKinds') }}</option>
+              <option value="EXPENSE">{{ i18n.t('transactionKind.EXPENSE') }}</option>
+              <option value="INCOME">{{ i18n.t('transactionKind.INCOME') }}</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field__label">{{ i18n.t('transactions.category') }}</span>
+            <select
+              class="field__input"
+              [value]="filters().categoryId"
+              (change)="setFilter('categoryId', $any($event.target).value)"
+            >
+              <option value="">{{ i18n.t('transactions.allCategories') }}</option>
+              @for (category of categories(); track category.id) {
+                <option [value]="category.id">{{ categoryLabel(category) }}</option>
+              }
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field__label">{{ i18n.t('transactions.account') }}</span>
+            <select
+              class="field__input"
+              [value]="filters().accountId"
+              (change)="setFilter('accountId', $any($event.target).value)"
+            >
+              <option value="">{{ i18n.t('transactions.allAccounts') }}</option>
+              @for (account of accounts(); track account.id) {
+                <option [value]="account.id">{{ account.name }}</option>
+              }
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field__label">{{ i18n.t('transactions.from') }}</span>
+            <input
+              class="field__input"
+              type="date"
+              [value]="filters().from"
+              (change)="setFilter('from', $any($event.target).value)"
+            />
+          </label>
+
+          <label class="field">
+            <span class="field__label">{{ i18n.t('transactions.to') }}</span>
+            <input
+              class="field__input"
+              type="date"
+              [value]="filters().to"
+              (change)="setFilter('to', $any($event.target).value)"
+            />
+          </label>
+
+          <label class="mode__option">
+            <input
+              type="checkbox"
+              [checked]="filters().needsReviewOnly"
+              (change)="setFilter('needsReviewOnly', $any($event.target).checked)"
+            />
+            <span>{{ i18n.t('transactions.onlyNeedsReview') }}</span>
+          </label>
+        </section>
       }
 
-      <ul class="list">
-        @for (transaction of transactions(); track transaction.id) {
-          <li class="row">
-            <div class="row__main">
-              <span class="row__desc">{{ transaction.description }}</span>
-              <span class="row__meta">
-                {{ transaction.occurredLocalDate }}
-                @if (transaction.needsReview) {
-                  <span class="row__flag">{{ i18n.t('transactions.needsReview') }}</span>
+      @if (loading()) {
+        <p class="muted">{{ i18n.t('accounts.loading') }}</p>
+      } @else if (rows().length === 0) {
+        <div class="empty">
+          @if (hasFilters()) {
+            <p class="empty__title">{{ i18n.t('transactions.emptyFilteredTitle') }}</p>
+            <p class="empty__body">{{ i18n.t('transactions.emptyFilteredBody') }}</p>
+          } @else {
+            <p class="empty__title">{{ i18n.t('transactions.emptyTitle') }}</p>
+            <p class="empty__body">{{ i18n.t('transactions.emptyBody') }}</p>
+          }
+        </div>
+      } @else {
+        @for (group of groups(); track group.date) {
+          <section class="day">
+            <header class="day__head">
+              <h2 class="day__date">{{ group.date }}</h2>
+              <p class="day__totals">
+                @if (group.expenseTotal; as spent) {
+                  <span>{{ i18n.t('transactions.daySpent', { amount: amountText(spent) }) }}</span>
                 }
-              </span>
-            </div>
-            <fm-money
-              class="row__amount"
-              [amount]="transaction.amount"
-              [direction]="transaction.kind"
-            />
-          </li>
+                @if (group.incomeTotal; as received) {
+                  <span>
+                    {{ i18n.t('transactions.dayReceived', { amount: amountText(received) }) }}
+                  </span>
+                }
+                @if (!group.expenseTotal && !group.incomeTotal) {
+                  <span class="day__partial">{{ i18n.t('transactions.dayPartial') }}</span>
+                }
+              </p>
+            </header>
+
+            <ul class="list">
+              @for (row of group.rows; track row.id) {
+                <li class="row">
+                  <button class="row__open" type="button" (click)="editing.set(row)">
+                    <span class="row__main">
+                      <span class="row__desc">{{ row.description }}</span>
+                      <span class="row__meta">
+                        {{ row.categoryId ? categoryName(row.categoryId) : categoryLabelOf(row) }}
+                        @if (row.status !== 'CONFIRMED') {
+                          · {{ statusLabel(row.status) }}
+                        }
+                        @if (row.needsReview) {
+                          <span class="row__flag">{{ i18n.t('transactions.needsReview') }}</span>
+                        }
+                      </span>
+                    </span>
+                    <fm-money
+                      class="row__amount"
+                      [amount]="row.amount"
+                      [direction]="row.kind"
+                    />
+                    <span class="row__edit">{{ i18n.t('transactions.edit') }}</span>
+                  </button>
+                </li>
+              }
+            </ul>
+          </section>
         }
-      </ul>
+
+        @if (hasMore()) {
+          <button class="more" type="button" [disabled]="loadingMore()" (click)="loadMore()">
+            {{ loadingMore() ? i18n.t('transactions.loadingMore') : i18n.t('transactions.loadMore') }}
+          </button>
+        }
+      }
+    }
+
+    @if (editing(); as row) {
+      <fm-transaction-detail
+        [transaction]="row"
+        [categories]="categories()"
+        (saved)="reload()"
+        (deleted)="reload()"
+        (closed)="editing.set(null); reload()"
+      />
     }
   `,
   styles: [
@@ -235,7 +519,8 @@ const CREATE_TRANSACTION = /* GraphQL */ `
         margin: 0;
         font-size: var(--text-2xl);
       }
-      .head__sub {
+      .head__sub,
+      .muted {
         margin: var(--space-1) 0 0;
         color: var(--color-text-muted);
         font-size: var(--text-sm);
@@ -252,7 +537,6 @@ const CREATE_TRANSACTION = /* GraphQL */ `
         border: 1px dashed var(--color-border);
         border-radius: var(--radius-lg);
         text-align: center;
-        margin-block-end: var(--space-5);
       }
       .empty__title {
         margin: 0 0 var(--space-2);
@@ -268,7 +552,7 @@ const CREATE_TRANSACTION = /* GraphQL */ `
         background: var(--color-surface);
         border: 1px solid var(--color-border);
         border-radius: var(--radius-lg);
-        margin-block-end: var(--space-6);
+        margin-block-end: var(--space-5);
       }
       .create__title {
         margin: 0 0 var(--space-4);
@@ -278,12 +562,13 @@ const CREATE_TRANSACTION = /* GraphQL */ `
         display: grid;
         gap: var(--space-3);
       }
-      /* Two columns once there is room: entry is a repeated task, so it should not scroll. */
       @media (min-width: 768px) {
         .create__form {
           grid-template-columns: 1fr 1fr;
         }
-        .create__submit {
+        .create__submit,
+        .mode,
+        .splits {
           grid-column: 1 / -1;
         }
       }
@@ -324,22 +609,149 @@ const CREATE_TRANSACTION = /* GraphQL */ `
         opacity: 0.6;
         cursor: default;
       }
-      .list {
-        display: grid;
-        gap: var(--space-2);
-        margin: 0;
-        padding: 0;
-        list-style: none;
+      .mode {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-4);
       }
-      .row {
+      .mode__option {
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        gap: var(--space-2);
+        font-size: var(--text-sm);
+      }
+      .splits {
+        display: grid;
+        gap: var(--space-2);
+        padding: var(--space-3);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+      }
+      .splits__row {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: var(--space-2);
+        align-items: center;
+      }
+      .splits__actions {
+        display: flex;
+        flex-wrap: wrap;
         gap: var(--space-4);
-        padding: var(--space-3) var(--space-4);
+      }
+      .splits__remove {
+        padding: 0 var(--space-2);
+        font: inherit;
+        font-size: var(--text-lg);
+        line-height: 1;
+        color: var(--color-text-subtle);
+        background: none;
+        border: none;
+        cursor: pointer;
+      }
+      .hint {
+        margin: 0;
+        color: var(--color-text-subtle);
+        font-size: var(--text-xs);
+      }
+      .hint--warn {
+        color: var(--color-warning);
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: end;
+        gap: var(--space-3);
+        margin-block-end: var(--space-3);
+      }
+      .field--search {
+        flex: 1 1 14rem;
+      }
+      .link {
+        padding: 0;
+        font: inherit;
+        font-size: var(--text-sm);
+        color: var(--color-primary);
+        background: none;
+        border: none;
+        cursor: pointer;
+        text-decoration: underline;
+      }
+      .dot {
+        display: inline-block;
+        inline-size: 0.45rem;
+        block-size: 0.45rem;
+        border-radius: 50%;
+        background: var(--color-primary);
+        vertical-align: middle;
+      }
+      .filters {
+        display: grid;
+        gap: var(--space-3);
+        padding: var(--space-4);
         background: var(--color-surface);
         border: 1px solid var(--color-border);
         border-radius: var(--radius-md);
+        margin-block-end: var(--space-4);
+      }
+      @media (min-width: 768px) {
+        .filters {
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          align-items: end;
+        }
+      }
+      .day {
+        margin-block-end: var(--space-4);
+      }
+      .day__head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: var(--space-2);
+        padding-block-end: var(--space-1);
+        border-block-end: 1px solid var(--color-border);
+      }
+      .day__date {
+        margin: 0;
+        font-size: var(--text-sm);
+        font-weight: 600;
+        color: var(--color-text-muted);
+      }
+      .day__totals {
+        display: flex;
+        gap: var(--space-3);
+        margin: 0;
+        font-size: var(--text-xs);
+        color: var(--color-text-subtle);
+      }
+      .day__partial {
+        font-style: italic;
+      }
+      .list {
+        display: grid;
+        gap: var(--space-2);
+        margin: var(--space-2) 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .row__open {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-3);
+        inline-size: 100%;
+        padding: var(--space-3) var(--space-4);
+        font: inherit;
+        text-align: start;
+        color: inherit;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        cursor: pointer;
+      }
+      .row__open:hover,
+      .row__open:focus-visible {
+        border-color: var(--color-primary);
       }
       .row__main {
         display: grid;
@@ -350,16 +762,42 @@ const CREATE_TRANSACTION = /* GraphQL */ `
         overflow-wrap: anywhere;
       }
       .row__meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
         font-size: var(--text-xs);
         color: var(--color-text-subtle);
-        display: flex;
-        gap: var(--space-2);
       }
       .row__flag {
         color: var(--color-warning);
       }
       .row__amount {
         font-weight: 600;
+      }
+      /* The edit affordance is visible only on hover/focus: it is a repeated action, and a column of
+         "Edit" labels competes with the amounts. The row is a real button either way. */
+      .row__edit {
+        display: none;
+        font-size: var(--text-xs);
+        color: var(--color-primary);
+      }
+      .row__open:hover .row__edit,
+      .row__open:focus-visible .row__edit {
+        display: inline;
+      }
+      .more {
+        inline-size: 100%;
+        padding: var(--space-3);
+        font: inherit;
+        color: var(--color-primary);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        cursor: pointer;
+      }
+      .more:disabled {
+        opacity: 0.6;
+        cursor: default;
       }
     `,
   ],
@@ -370,79 +808,273 @@ export class TransactionsComponent {
   private readonly errors = inject(ErrorMessageService);
   private readonly fb = inject(FormBuilder);
 
-  readonly transactions = signal<readonly TransactionNode[]>([]);
-  readonly categories = signal<readonly CategoryNode[]>([]);
-  readonly accounts = signal<readonly AccountNode[]>([]);
+  readonly rows = signal<readonly TransactionRow[]>([]);
+  readonly categories = signal<readonly CategoryOption[]>([]);
+  readonly accounts = signal<readonly AccountOption[]>([]);
+  readonly totalCount = signal(0);
+  readonly filters = signal<TransactionFilters>(emptyFilters());
+  readonly filtersOpen = signal(false);
   readonly loading = signal(true);
+  readonly loadingMore = signal(false);
   readonly creating = signal(false);
   readonly error = signal<string | null>(null);
-  readonly amountMessage = signal<string | null>(null);
+  readonly editing = signal<TransactionRow | null>(null);
+  readonly splitMode = signal(false);
+  readonly splitDrafts = signal<readonly SplitDraft[]>([]);
+
+  private cursor: string | null = null;
+  private searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /**
+   * A signal, not a field, because `groups` reads it: a plain property read inside a `computed` is
+   * not tracked, so the day totals would keep the stale "there is another page" answer whenever the
+   * two happened to change separately.
+   */
+  private readonly hasMoreRows = signal(false);
 
   readonly form = this.fb.nonNullable.group({
     amount: ['', [Validators.required]],
     description: ['', [Validators.required, Validators.maxLength(200)]],
-    kind: ['EXPENSE' as 'EXPENSE' | 'INCOME', [Validators.required]],
+    kind: ['EXPENSE' as TransactionKind, [Validators.required]],
     categoryId: [''],
     accountId: ['', [Validators.required]],
     occurredOn: [new Date().toISOString().slice(0, 10), [Validators.required]],
   });
 
   readonly noAccounts = computed(() => !this.loading() && this.accounts().length === 0);
+  readonly hasFilters = computed(() => hasActiveFilters(this.filters()));
+  readonly hasMore = computed(() => this.hasMoreRows());
+  readonly groups = computed(() => groupByDay(this.rows(), this.hasMoreRows()));
 
-  /** Only categories of the selected kind, so an I-3 violation is not offerable in the first place. */
   readonly matchingCategories = computed(() => {
     const kind = this.form.controls.kind.value;
     return this.categories().filter((category) => category.kind === kind);
   });
 
-  /**
-   * What the parser read from the amount field.
-   *
-   * Shown because the parser reports ambiguity rather than guessing: if `1.200` could be either
-   * reading, the user sees which one was understood *before* saving, not after.
-   */
+  readonly currency = computed(() => {
+    const accountId = this.form.controls.accountId.value;
+    return this.accounts().find((account) => account.id === accountId)?.currency ?? 'RSD';
+  });
+
   readonly amountHint = computed(() => {
     const raw = this.form.controls.amount.value;
     if (!raw.trim()) return null;
-    const currency = this.accounts()[0]?.currency ?? 'RSD';
-    const parsed = parseAmount(raw, currency);
+    const parsed = parseAmount(raw, this.currency());
     if (!parsed.money) return this.i18n.t('transactions.amountUnreadable');
     if (parsed.ambiguous) {
       return this.i18n.t('transactions.amountAmbiguous', {
-        reading: toMajorString(parsed.money.amountMinor, currency),
+        reading: toMajorString(parsed.money.amountMinor, this.currency()),
       });
     }
     return null;
+  });
+
+  /** The parsed total, or null while the field is unreadable — the split check needs it. */
+  private readonly total = computed<Money | null>(() => {
+    const parsed = parseAmount(this.form.controls.amount.value, this.currency());
+    return parsed.money && parsed.money.amountMinor > 0n ? parsed.money : null;
+  });
+
+  private readonly splitTotals = computed<readonly (Money | null)[]>(() =>
+    this.splitDrafts().map((draft) => parseAmount(draft.amountText, this.currency()).money),
+  );
+
+  readonly splitTotal = computed(() => totalOf(this.splitTotals().filter(isMoney)));
+
+  /**
+   * Whether the parts add up.
+   *
+   * Checked against the parsed total using integer minor units, so "adds up" means exactly that.
+   * The server re-validates (I-1) — this exists so the user is told before saving, not to replace
+   * the check that matters.
+   */
+  readonly splitsBalanced = computed(() => {
+    const total = this.total();
+    const sum = this.splitTotal();
+    if (!total || !sum) return false;
+    return equalsMoney(total, sum);
+  });
+
+  readonly splitMessage = computed(() => {
+    if (!this.splitMode()) return null;
+    if (this.splitDrafts().length < 2) return this.i18n.t('transactions.splitNeedsTwo');
+    if (!this.total()) return this.i18n.t('transactions.splitNoAmount');
+    if (!this.splitsBalanced()) {
+      const sum = this.splitTotal();
+      return this.i18n.t('transactions.splitMismatch', {
+        sum: sum ? this.amountText(sum) : '—',
+        total: this.amountText(this.total() as Money),
+      });
+    }
+    return this.i18n.t('transactions.splitBalanced');
   });
 
   constructor() {
     void this.load();
   }
 
+  // -------------------------------------------------------------------------------------------
+  // Data
+  // -------------------------------------------------------------------------------------------
+
   private async load(): Promise<void> {
     this.loading.set(true);
     this.error.set(null);
     try {
-      const [taxonomy, list] = await Promise.all([
-        this.graphql.query<{
-          accounts: { edges: { node: AccountNode }[] };
-          categories: CategoryNode[];
-        }>(TAXONOMY_QUERY),
-        this.graphql.query<{
-          transactions: { edges: { node: TransactionNode }[] };
-        }>(TRANSACTIONS_QUERY, { first: 50 }),
-      ]);
+      const taxonomy = await this.graphql.query<{
+        accounts: { edges: { node: AccountOption }[] };
+        categories: CategoryOption[];
+      }>(TAXONOMY_QUERY);
 
       this.accounts.set(taxonomy.accounts.edges.map((edge) => edge.node));
       this.categories.set(taxonomy.categories);
-      this.transactions.set(list.transactions.edges.map((edge) => edge.node));
 
       const firstAccount = this.accounts()[0];
       if (firstAccount) this.form.controls.accountId.setValue(firstAccount.id);
+
+      await this.fetchPage({ reset: true });
     } catch (error) {
       this.error.set(this.errors.for(error));
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  async reload(): Promise<void> {
+    try {
+      await this.fetchPage({ reset: true });
+    } catch (error) {
+      this.error.set(this.errors.for(error));
+    }
+  }
+
+  async loadMore(): Promise<void> {
+    if (this.loadingMore() || !this.hasMoreRows()) return;
+    this.loadingMore.set(true);
+    try {
+      await this.fetchPage({ reset: false });
+    } catch (error) {
+      this.error.set(this.errors.for(error));
+    } finally {
+      this.loadingMore.set(false);
+    }
+  }
+
+  private async fetchPage(options: { reset: boolean }): Promise<void> {
+    const variables = toQueryVariables(this.filters(), {
+      first: PAGE_SIZE,
+      after: options.reset ? null : this.cursor,
+    });
+
+    const result = await this.graphql.query<{
+      transactions: {
+        totalCount: number;
+        pageInfo: { endCursor: string | null; hasNextPage: boolean };
+        edges: { node: TransactionRow }[];
+      };
+    }>(TRANSACTIONS_QUERY, variables);
+
+    const page = result.transactions.edges.map((edge) => edge.node);
+    this.rows.set(options.reset ? page : [...this.rows(), ...page]);
+    this.cursor = result.transactions.pageInfo.endCursor;
+    this.hasMoreRows.set(result.transactions.pageInfo.hasNextPage);
+    this.totalCount.set(result.transactions.totalCount);
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Filters
+  // -------------------------------------------------------------------------------------------
+
+  onSearch(value: string): void {
+    this.filters.update((current) => ({ ...current, search: value }));
+    clearTimeout(this.searchTimer);
+    // Debounced: a keystroke per request would queue a query per character typed.
+    this.searchTimer = setTimeout(() => void this.reload(), SEARCH_DEBOUNCE_MS);
+  }
+
+  setFilter<K extends keyof TransactionFilters>(key: K, value: TransactionFilters[K]): void {
+    this.filters.update((current) => ({ ...current, [key]: value }));
+    void this.reload();
+  }
+
+  clearFilters(): void {
+    this.filters.set(emptyFilters());
+    void this.reload();
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Create
+  // -------------------------------------------------------------------------------------------
+
+  setSplitMode(enabled: boolean): void {
+    this.splitMode.set(enabled);
+    if (enabled && this.splitDrafts().length === 0) {
+      this.addSplitRow();
+      this.addSplitRow();
+    }
+  }
+
+  addSplitRow(): void {
+    this.splitDrafts.update((drafts) => [...drafts, { categoryId: '', amountText: '' }]);
+  }
+
+  removeSplitRow(index: number): void {
+    this.splitDrafts.update((drafts) => drafts.filter((_, at) => at !== index));
+  }
+
+  setSplitCategory(index: number, categoryId: string): void {
+    this.splitDrafts.update((drafts) =>
+      drafts.map((draft, at) => (at === index ? { ...draft, categoryId } : draft)),
+    );
+  }
+
+  setSplitAmount(index: number, amountText: string): void {
+    this.splitDrafts.update((drafts) =>
+      drafts.map((draft, at) => (at === index ? { ...draft, amountText } : draft)),
+    );
+  }
+
+  /**
+   * Ask the backend to divide the total evenly.
+   *
+   * Deliberately a round trip rather than a local division: the API's `proposeEqualSplits` runs the
+   * same largest-remainder allocation as `createTransaction`, so the numbers the user approves are
+   * the numbers that will be stored. Dividing in the UI would be a second implementation of the
+   * rounding rule, and the two would eventually disagree by a para (I-1).
+   */
+  async splitEvenly(): Promise<void> {
+    const total = this.total();
+    if (!total) {
+      this.error.set(this.i18n.t('transactions.splitNoAmount'));
+      return;
+    }
+
+    const categoryIds = this.splitDrafts()
+      .map((draft) => draft.categoryId)
+      .filter((id) => id !== '');
+
+    if (categoryIds.length < 2) {
+      this.error.set(this.i18n.t('transactions.splitNeedsTwo'));
+      return;
+    }
+
+    try {
+      const result = await this.graphql.query<{
+        proposeEqualSplits: { amount: { amountMinor: string; currency: string }; categoryId: string }[];
+      }>(PROPOSE_EQUAL_SPLITS, {
+        amount: { amountMinor: total.amountMinor.toString(), currency: total.currency },
+        categoryIds,
+      });
+
+      this.splitDrafts.set(
+        result.proposeEqualSplits.map((split) => ({
+          categoryId: split.categoryId,
+          amountText: toMajorString(BigInt(split.amount.amountMinor), split.amount.currency),
+        })),
+      );
+      this.error.set(null);
+    } catch (error) {
+      this.error.set(this.errors.for(error));
     }
   }
 
@@ -452,14 +1084,30 @@ export class TransactionsComponent {
       return;
     }
 
-    const { amount, description, kind, categoryId, accountId, occurredOn } = this.form.getRawValue();
-    const currency = this.accounts().find((a) => a.id === accountId)?.currency ?? 'RSD';
+    const { amount, description, kind, categoryId, accountId, occurredOn } =
+      this.form.getRawValue();
+    const currency = this.currency();
 
-    // Parse with the shared domain parser, then send the minor units as a STRING.
     const parsed = parseAmount(amount, currency);
-    if (!parsed.money) {
-      this.error.set(this.i18n.t('transactions.amountUnreadable'));
+    if (!parsed.money || parsed.money.amountMinor <= 0n) {
+      this.error.set(this.i18n.t('transactions.amountPositive'));
       return;
+    }
+
+    let splits: { categoryId: string; amount: { amountMinor: string; currency: string } }[] | null =
+      null;
+    if (this.splitMode()) {
+      if (!this.splitsBalanced()) {
+        this.error.set(this.splitMessage() ?? this.i18n.t('transactions.splitNeedsTwo'));
+        return;
+      }
+      splits = this.splitDrafts().map((draft, index) => ({
+        categoryId: draft.categoryId,
+        amount: {
+          amountMinor: (this.splitTotals()[index] as Money).amountMinor.toString(),
+          currency,
+        },
+      }));
     }
 
     this.creating.set(true);
@@ -468,18 +1116,20 @@ export class TransactionsComponent {
       await this.graphql.query(CREATE_TRANSACTION, {
         accountId,
         kind,
-        amount: {
-          amountMinor: parsed.money.amountMinor.toString(),
-          currency,
-        },
+        amount: { amountMinor: parsed.money.amountMinor.toString(), currency },
         description,
-        // Midday UTC keeps the local calendar day stable across timezones for a date-only input.
-        occurredAt: `${occurredOn}T12:00:00.000Z`,
-        categoryId: categoryId === '' ? null : categoryId,
+        // `occurredAt` is still a required argument, so a stable instant goes along with it; the
+        // server treats `occurredLocalDate` as authoritative for the calendar day (I-2).
+        occurredAt: localNoonInstant(occurredOn),
+        occurredLocalDate: occurredOn,
+        categoryId: splits ? null : categoryId === '' ? null : categoryId,
+        splits,
       });
 
       this.form.patchValue({ amount: '', description: '', categoryId: '' });
-      await this.load();
+      this.splitDrafts.set([]);
+      this.splitMode.set(false);
+      await this.fetchPage({ reset: true });
     } catch (error) {
       this.error.set(this.errors.for(error));
     } finally {
@@ -487,33 +1137,36 @@ export class TransactionsComponent {
     }
   }
 
-  categoryLabel(category: CategoryNode): string {
+  // -------------------------------------------------------------------------------------------
+  // Labels
+  // -------------------------------------------------------------------------------------------
+
+  /** `transactionStatus.VOID` and friends. Typed here because a template cannot cast a key. */
+  statusLabel(status: TransactionRow['status']): string {
+    return this.i18n.t(`transactionStatus.${status}` as TranslationKey);
+  }
+
+  categoryLabel(category: CategoryOption): string {
     return category.path.join(' › ');
+  }
+
+  categoryName(categoryId: string): string {
+    const category = this.categories().find((candidate) => candidate.id === categoryId);
+    return category ? category.path.join(' › ') : this.i18n.t('transactions.noCategory');
+  }
+
+  /** A split Transaction has no category of its own, so the row says so instead of looking bare. */
+  categoryLabelOf(row: TransactionRow): string {
+    if (row.splits.length > 0) return this.i18n.t('transactions.splitsTitle');
+    return this.i18n.t('transactions.noCategory');
+  }
+
+  /** An amount as text for a translated sentence. Magnitudes only: the sentence carries direction. */
+  amountText(value: Money): string {
+    return `${toMajorString(value.amountMinor, value.currency)} ${value.currency}`;
   }
 }
 
-/** Kept next to the component so the key list is reviewable with it. */
-export const TRANSACTION_KEYS: readonly TranslationKey[] = [
-  'transactions.title',
-  'transactions.count',
-  'transactions.addTitle',
-  'transactions.amount',
-  'transactions.amountPlaceholder',
-  'transactions.amountAmbiguous',
-  'transactions.amountUnreadable',
-  'transactions.description',
-  'transactions.kind',
-  'transactions.category',
-  'transactions.noCategory',
-  'transactions.account',
-  'transactions.date',
-  'transactions.submit',
-  'transactions.submitting',
-  'transactions.emptyTitle',
-  'transactions.emptyBody',
-  'transactions.needsReview',
-  'transactions.noAccountsTitle',
-  'transactions.noAccountsBody',
-  'transactionKind.EXPENSE',
-  'transactionKind.INCOME',
-];
+function isMoney(value: Money | null): value is Money {
+  return value !== null;
+}

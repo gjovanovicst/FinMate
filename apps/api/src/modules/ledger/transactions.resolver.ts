@@ -91,8 +91,15 @@ export class CreateTransactionArgs {
   @Field(() => String)
   description!: string;
 
-  @Field(() => Date)
-  occurredAt!: Date;
+  @Field(() => Date, { nullable: true })
+  occurredAt?: Date;
+
+  @Field(() => LocalDateScalar, {
+    nullable: true,
+    description:
+      'The calendar day the user picked. Preferred over occurredAt for date-only entry: the server derives a stable instant, so a client never has to know the Household timezone (I-2).',
+  })
+  occurredLocalDate?: string | null;
 
   @Field(() => ID, { nullable: true })
   categoryId?: string | null;
@@ -141,6 +148,13 @@ export class UpdateTransactionArgs {
 
   @Field(() => Date, { nullable: true })
   occurredAt?: Date;
+
+  @Field(() => LocalDateScalar, {
+    nullable: true,
+    description:
+      'The calendar day the user picked. Preferred over occurredAt for date-only entry: the server derives a stable instant, so a client never has to know the Household timezone (I-2).',
+  })
+  occurredLocalDate?: string | null;
 
   @Field(() => ID, { nullable: true })
   categoryId?: string | null;
@@ -204,7 +218,8 @@ export class TransactionsResolver {
       kind: args.kind,
       amountMinor: BigInt(args.amount.amountMinor),
       description: args.description,
-      occurredAt: args.occurredAt,
+      occurredAt: args.occurredAt ?? null,
+      occurredLocalDate: args.occurredLocalDate ?? null,
       categoryId: args.categoryId ?? null,
       merchantId: args.merchantId ?? null,
       counterpartyId: args.counterpartyId ?? null,
@@ -232,6 +247,7 @@ export class TransactionsResolver {
       ...(args.amount ? { amountMinor: BigInt(args.amount.amountMinor) } : {}),
       ...(args.description !== undefined ? { description: args.description } : {}),
       ...(args.occurredAt !== undefined ? { occurredAt: args.occurredAt } : {}),
+      ...(args.occurredLocalDate != null ? { occurredLocalDate: args.occurredLocalDate } : {}),
       ...(args.categoryId !== undefined ? { categoryId: args.categoryId } : {}),
       ...(args.merchantId !== undefined ? { merchantId: args.merchantId } : {}),
       ...(args.counterpartyId !== undefined ? { counterpartyId: args.counterpartyId } : {}),

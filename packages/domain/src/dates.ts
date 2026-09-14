@@ -67,6 +67,92 @@ export function todayIn(timeZone: string, now: Date = new Date()): LocalDate {
   return toLocalDate(now, timeZone);
 }
 
+/**
+ * The UTC instant of local noon on `date` in `timeZone`.
+ *
+ * This is the inverse of {@link toLocalDate}, and it is what lets a client record a day it picked
+ * without knowing the Household timezone: the client asserts the calendar day and the server picks
+ * the instant. Deriving the day *from* a client-chosen instant is the wrong direction — an instant
+ * only names a day relative to a zone the client does not have.
+ *
+ * The offset is resolved at the candidate instant rather than assumed. A fixed offset is off by an
+ * hour across a DST transition, which at a month boundary files the transaction in the wrong month.
+ * Two passes converge because an offset only changes at a transition, and the corrected instant
+ * lands on the correct side of it.
+ */
+export function instantForLocalNoon(date: LocalDate, timeZone: string): Date {
+  const day = localDate(date);
+  const [year, month, dayOfMonth] = day.split('-').map(Number) as [number, number, number];
+  // Fails fast with a clear DateError rather than a RangeError from deep inside the conversion.
+  const formatter = zoneFormatter(timeZone);
+
+  // The wall clock we want, read as if it were UTC. Subtracting the zone offset then gives the
+  // instant at which those same fields are the local time.
+  const wallClockAsUtc = Date.UTC(year, month - 1, dayOfMonth, 12, 0, 0, 0);
+
+  let candidate = new Date(wallClockAsUtc - offsetAt(formatter, new Date(wallClockAsUtc)));
+  // The first guess used the offset that applies at the wrong instant whenever a transition sits
+  // between the two, so correct once more with the offset that applies at the candidate.
+  candidate = new Date(wallClockAsUtc - offsetAt(formatter, candidate));
+
+  // The safety net that makes this honest rather than approximately right: no arithmetic above is
+  // trusted until it reproduces the day it was asked for.
+  const resolved = toLocalDate(candidate, timeZone);
+  if (resolved !== day) {
+    throw new DateError(
+      `Could not resolve a local noon on ${day} in ${timeZone}: the nearest instant falls on ` +
+        `${resolved}.`,
+    );
+  }
+  return candidate;
+}
+
+/** An `Intl` formatter for a zone, or a `DateError` naming the bad zone. */
+function zoneFormatter(timeZone: string): Intl.DateTimeFormat {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  } catch (error) {
+    // `Intl` signals an unknown zone with a RangeError; the caller gets the domain error instead so
+    // an API layer can map one error type, not two.
+    if (error instanceof RangeError) {
+      throw new DateError(`"${timeZone}" is not a valid IANA time zone.`);
+    }
+    throw error;
+  }
+}
+
+/** The zone's UTC offset in milliseconds at `instant`. */
+function offsetAt(formatter: Intl.DateTimeFormat, instant: Date): number {
+  const parts = formatter.formatToParts(instant);
+  const field = (type: Intl.DateTimeFormatPartTypes): number => {
+    const part = parts.find((candidate) => candidate.type === type);
+    return part ? Number(part.value) : 0;
+  };
+  // Some ICU versions render midnight as 24 with `hour12: false`; without this the offset gains a
+  // whole day and the result lands on the wrong date.
+  const hour = field('hour') % 24;
+  const asUtc = Date.UTC(
+    field('year'),
+    field('month') - 1,
+    field('day'),
+    hour,
+    field('minute'),
+    field('second'),
+  );
+  // Offsets are whole seconds in practice; rounding drops a sub-second remainder introduced by the
+  // instant's milliseconds rather than mistaking it for part of the offset.
+  return Math.round((asUtc - instant.getTime()) / 1000) * 1000;
+}
+
 /** First and last day of the month containing `date`, inclusive. */
 export function monthPeriod(date: LocalDate): { start: LocalDate; end: LocalDate } {
   const [year, month] = date.split('-').map(Number) as [number, number, number];
