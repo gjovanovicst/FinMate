@@ -120,10 +120,12 @@ const DASHBOARD_QUERY = /* GraphQL */ `
         </article>
 
         @if (d.needsReviewCount > 0) {
-          <article class="tile tile--warn">
-            <p class="tile__label">{{ i18n.t('transactions.needsReview') }}</p>
+          <!-- A count with nowhere to go is a dead end: the transactions screen is where the
+               blocking lane is visible, so the tile is the link to it. -->
+          <a class="tile tile--warn" routerLink="/transactions">
+            <p class="tile__label">{{ i18n.t('dashboard.reviewLabel') }}</p>
             <p class="tile__value">{{ d.needsReviewCount }}</p>
-          </article>
+          </a>
         }
       </div>
     }
@@ -199,6 +201,13 @@ const DASHBOARD_QUERY = /* GraphQL */ `
       }
       .tile--warn {
         border-color: var(--color-warning);
+      }
+      a.tile {
+        color: inherit;
+        text-decoration: none;
+      }
+      a.tile:hover {
+        border-color: var(--color-primary);
       }
       .tile__label {
         margin: 0 0 var(--space-2);

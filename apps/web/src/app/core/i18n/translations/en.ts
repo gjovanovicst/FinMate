@@ -129,7 +129,7 @@ export const en = {
   'dashboard.projectedOverrun': '{amount} over budget',
   'dashboard.overspent': 'Over budget by {amount}',
   'dashboard.notEnoughData': 'Too early in the month to predict reliably.',
-  'dashboard.needsReview': '{count} awaiting review',
+  'dashboard.reviewLabel': 'Awaiting review',
   'dashboard.of': 'of {budget}',
   'dashboard.dayOf': 'Day {day} of {total}',
 

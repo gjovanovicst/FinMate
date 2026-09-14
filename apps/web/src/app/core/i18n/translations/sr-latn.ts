@@ -131,7 +131,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'dashboard.projectedOverrun': '{amount} preko budžeta',
   'dashboard.overspent': 'Preko budžeta za {amount}',
   'dashboard.notEnoughData': 'Prerano u mesecu za pouzdanu procenu.',
-  'dashboard.needsReview': '{count} čeka proveru',
+  'dashboard.reviewLabel': 'Čeka proveru',
   'dashboard.of': 'od {budget}',
   'dashboard.dayOf': 'Dan {day} od {total}',
 
