@@ -193,6 +193,26 @@ not a rule, and the user cannot reason about it.
 5. A **specificity score** breaks remaining ties: more conditions and `eq` over `contains` wins.
    Record the losing candidates in `classification_decisions.candidates` for debuggability.
 
+**Resolved order of the tie-breaks (implementation note, task 2.1.3).** Steps 1 and 5 are in tension
+once step 4 puts keywords in the *same* sort: if `created_at` sat between `priority` and the
+specificity score, then a user rule at priority ≥ 1000 and the implicit keyword tier would be ordered
+by insertion time, and step 4's guarantee ("explicit user rules always outrank keywords") would depend
+on when something was created rather than on what it is. The implemented sort key is therefore:
+
+```text
+priority ASC, specificity DESC, created_at DESC, id ASC
+```
+
+`created_at DESC` still settles ties between otherwise-identical rules, which is what step 1 is for
+("newest user intent wins"); it no longer outranks a strictly more specific rule of equal priority.
+`id ASC` is a final total order so evaluation is deterministic for two rules created in the same
+millisecond. Priority is always compared first, so specificity can never override it.
+
+The specificity formula itself is not specified above and is defined in
+`packages/rules-engine/src/specificity.ts`; the keyword confidence mapping that §5.4 bounds at
+0.90–0.97 without giving a function is in `packages/rules-engine/src/keywords.ts`. Both are derived
+and tested rather than assumed.
+
 ### 5.4 Keyword scoring (the implicit tier)
 
 When no explicit rule matches, keywords score candidate categories:

@@ -1,8 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "dist",
+    // Mirrors packages/nlp: no rootDir/outDir, because this package now imports `@finmate/domain`
+    // as source. With `rootDir: src` tsc rejects the workspace package it pulls in (TS6059) — the
+    // same reason AGENTS.md says apps must not set outDir. There is no build target that emits,
+    // so `declaration` is off as well.
+    "declaration": false,
+    "declarationMap": false,
     "types": [
       "node"
     ]

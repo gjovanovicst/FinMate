@@ -11,7 +11,20 @@ import { parseAmount, toMajorString } from './parse';
  * drift that only appears at particular totals, which is exactly what example tests miss.
  */
 describe('allocate (invariant I-1: parts must sum exactly)', () => {
-  it('sums exactly to the total for every total up to 5000 across several ratio sets', () => {
+  /**
+   * This one is deliberately exhaustive — 5001 totals × 6 ratio sets — and it is the only test in the
+   * repo that takes seconds rather than milliseconds. It needs its own timeout because under
+   * `pnpm test` seven projects run in parallel and it was measured at 5155 ms against Vitest's 5000 ms
+   * default: it failed intermittently for no reason connected to money, which is the worst kind of
+   * flake to leave in the invariant that guards splits.
+   *
+   * Declared here rather than by raising `testTimeout` globally, so a genuinely hung test elsewhere
+   * still fails fast.
+   */
+  it(
+    'sums exactly to the total for every total up to 5000 across several ratio sets',
+    { timeout: 30_000 },
+    () => {
     const ratioSets: readonly (readonly number[])[] = [
       [1, 1],
       [1, 1, 1],
@@ -29,7 +42,8 @@ describe('allocate (invariant I-1: parts must sum exactly)', () => {
         expect(parts).toHaveLength(ratios.length);
       }
     }
-  });
+    },
+  );
 
   it('never produces a negative part', () => {
     for (let total = 1n; total <= 500n; total += 1n) {

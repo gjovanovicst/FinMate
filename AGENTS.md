@@ -43,11 +43,11 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 | CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → lint → typecheck → test → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
 | Web (0.8) | Angular 22, **zoneless** + signals, ADR-006. Responsive shell (bottom nav → sidebar at 1024px), design tokens (`apps/web/src/styles.css`), `fm-money` as the only Money renderer, auth pages, Accounts consuming GraphQL |
 | i18n | `core/i18n/`: **English primary**, Serbian latin + cyrillic. Runtime catalogue (no rebuild), `TranslationKey` derived from `en`, `sr-Cyrl` generated at runtime. Language switcher in the shell |
-| Tests | **565 pass** — 263 API + 114 domain + 105 web + 83 nlp |
+| Tests | **673 pass** — 263 API + 114 domain + 105 web + 83 nlp + 108 rules-engine |
 | Not yet built | worker jobs; production build for apps/api (its own decision); PWA service worker (Phase 4) |
 | Known gap → task 2.3.3 | **F-13's seed is short and mislocated.** docs/01 F-13 and docs/11 §2.3 specify a shipped list of **~60** local merchants; `apps/api/prisma/seed.ts` defines **38** (the DB holds 38), and docs/11 §2.3 says the content lives in `packages/domain/seed/` — that directory does not exist. Categories (38 ≈ "~40") and keywords (134) do match. Owned by 2.3.3; do not "fix" docs/11 to say 38, which would enshrine the shortfall as the spec |
 | Known gap → unscheduled | **The documented pre-commit layer does not exist.** docs/10 §1 layer 0 lists `lint-staged` + prettier + `gitleaks`; there is no `.husky`, no `lint-staged` config and no hook, and `format:check` fails on 119 files repo-wide (including `pnpm-lock.yaml`). It is not in CI, so nothing is gated on formatting |
-| Phase 2 progress | **2.1.1 `packages/nlp` done** — transliteration + `foldForMatching`, segmentation, `TransactionFragment` extraction via domain's parser. **2.1.2 golden dataset v1 done** — 300 cases under `packages/nlp/test/golden/` (amount-format 150, merchant 110, bulk 40), spec-derived expectations, run by `nlp:test` in CI; asserts parsing, not the §11.2 accuracy gates. 2.1.3 `packages/rules-engine`, 2.1.4 entity resolution: **not started** |
+| Phase 2 progress | **2.1.1 `packages/nlp` done** — transliteration + `foldForMatching`, segmentation, `TransactionFragment` extraction via domain's parser. **2.1.2 golden dataset v1 done** — 300 cases under `packages/nlp/test/golden/` (amount-format 150, merchant 110, bulk 40), spec-derived expectations, run by `nlp:test` in CI; asserts parsing, not the §11.2 accuracy gates. **2.1.3 `packages/rules-engine` done** — §5.3 conflict resolution, §5.4 keyword scoring, no I/O. 2.1.4 entity resolution: **not started** |
 | Web screens | `/` dashboard, `/transactions` (filter + edit + CSV export), `/budgets`, `/categories`, `/merchants`, `/counterparties`, `/tags`, `/accounts`, sign-in/up |
 | Navigation | 4 primary destinations in the bottom bar plus **More** (≥1024 px the sidebar lists all 8); `nav.more` is the overflow control |
 
@@ -64,7 +64,7 @@ nx run web:build          # production bundle
 **The browser talks to `/api/*`; the dev proxy strips the prefix** before forwarding, because the
 API serves `/auth/*` and `/graphql` without one (docs/06). Changing the prefix on one side only
 produces a 404 that looks like an auth failure.
-Verified working: lint 9/9, typecheck 9/9, 565 tests, `web:build`, GraphQL over HTTP through the
+Verified working: lint 9/9, typecheck 9/9, 673 tests, `web:build`, GraphQL over HTTP through the
 browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, and `prisma migrate diff`
 reporting no drift.
 
@@ -289,6 +289,23 @@ A change is not done until (doc 09 §8):
   collapse whitespace). `Đ/đ` needed an explicit rule: it has no canonical decomposition, so the
   combining-mark strip that handles `č/ć/š/ž` left it intact and `Đorđe` never matched `Djordje`.
   `packages/nlp` now owns the whole fold, including Cyrillic transliteration (docs/04 §3).
+- **`packages/rules-engine` may not import `@finmate/nlp`, so the text fold is INJECTED.** The eslint
+  boundary forbids the edge ("nlp / rules-engine / ai must NOT depend on each other") and rule
+  conditions match text, which needs the fold. The engine takes a required
+  `RuleEngineOptions.folder` (`fold` + `tokens`) supplied by the caller from `@finmate/nlp`. Do not
+  "fix" this by editing the boundary config, and do not add a local fold — a second fold is how a
+  keyword silently stops matching. The option is required so a caller cannot forget it; passing an
+  identity folder silently loses Cyrillic and diacritic matching.
+- **The rules-engine sort key is `priority ASC, specificity DESC, created_at DESC, id ASC`.**
+  docs/04 §5.3 now records why the specificity score sits before `created_at`: keywords are compiled
+  into the same sort as an implicit tier at priority 1000, so ordering on `created_at` ahead of
+  specificity would let insertion time decide whether §5.3.4's "explicit rules outrank keywords"
+  holds. Priority is always compared first, so specificity can never override it.
+- **`packages/domain/src/allocation.spec.ts` has one deliberately slow test and its own 30 s timeout.**
+  The exhaustive I-1 loop (5001 totals × 6 ratio sets) measures ~4.9–5.2 s under `pnpm test`, against
+  Vitest's 5000 ms default — so it failed intermittently for reasons unrelated to money. The budget is
+  declared on that `it` rather than by raising `testTimeout` globally, so a genuinely hung test
+  elsewhere still fails fast. Do not lower it or delete the comment.
 - **`runWithTenant` aside, never use the outer client inside an interactive `$transaction`.** Each
   inner query then waits for a second connection from the same pool and stalls until the transaction
   times out — surfacing only as an opaque INTERNAL. Always use the `tx` the callback receives.
