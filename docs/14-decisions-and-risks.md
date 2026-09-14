@@ -130,6 +130,22 @@ for the recursive category rollups, budget subtree consumption and `pg_trgm`/`pg
 **Alternatives rejected.** TypeORM (weaker typing, migration ergonomics), Drizzle (excellent, but
 slightly less mature tooling for a team optimising for speed), hand-rolled SQL (no typing, slower).
 
+**Amendment (Phase 0, task 0.3) — Prisma 7 changes the mechanics, not the decision.**
+
+Three breaking changes were encountered and are now baked into the repo:
+
+1. **The connection URL left `schema.prisma`.** It lives in `prisma.config.ts` for CLI commands, and
+   the runtime client receives it through a **driver adapter** (`@prisma/adapter-pg`). Consequence:
+   there is exactly one place the CLI learns the URL, and the client is explicitly constructed.
+2. **`prisma-client-js` is gone; the generator is `prisma-client` with a mandatory `output`.** The
+   client is imported from `apps/api/src/generated/prisma`, not from `@prisma/client`.
+3. **`prisma migrate dev` is forbidden in this repo.** Prisma's schema language cannot express what
+   doc 03 requires, so a generated migration would silently **drop 44 CHECK constraints, 18 partial
+   indexes and 3 expression indexes**. Migrations are therefore hand-authored SQL extracted from
+   doc 03, and `schema.prisma` is *derived* by `prisma db pull` with `migrate diff` as the drift
+   check. This is ADR-005's "raw SQL escape hatch" becoming the default path — which is the honest
+   outcome, given doc 03 is the canonical DDL.
+
 ---
 
 ### ADR-006 — Angular SPA + PWA-first; no SSR in v1
@@ -210,6 +226,30 @@ household-scoped model is queried without one. The Family UI ships in v2.
 
 **Alternatives rejected.** Adding tenancy later (unacceptable migration risk), or making the user the
 only tenant boundary (cannot express shared finances at all).
+
+**Amendment (Phase 0, task 0.5) — the boundary is a four-way classification, not a boolean.**
+
+Implementing the guard exposed two things the original decision did not anticipate:
+
+- **Not every table in a household's world carries `household_id`.** Six child tables
+  (`transaction_splits`, `transaction_tags`, `receipt_items`, `merchant_aliases`,
+  `counterparty_aliases`, `goal_contributions`) do not, so there is **no tenant predicate to inject**.
+  A bare `receipt_items.findMany()` would return every Household's rows. Direct access is therefore
+  **refused**, and these must be reached through their scoped parent via a relation load.
+- **`households` has no `household_id` either** — it is scoped by its own primary key. Without a
+  special case, `households.findMany()` would list every Household on the platform. The guard injects
+  `id = householdId`.
+
+The guard accordingly classifies every model into exactly one of four groups —
+`HOUSEHOLD_SCOPED_BY_COLUMN` (24), `HOUSEHOLD_SCOPED_BY_ID` (1), `PARENT_SCOPED` (6), `GLOBAL` (5) —
+and a unit test asserts this classification matches the Prisma schema exactly. That test **caught a
+real defect during implementation**: six models were originally mis-listed as household-scoped
+despite having no `household_id` column. Adding a table without classifying it now fails CI rather
+than silently leaking (risk R-10).
+
+`findUnique` is also refused on scoped models, because Prisma's `where` there accepts only unique
+fields — the scope could not be enforced in the query, and checking afterwards would push the
+obligation onto every call site. `findFirst` is the required form.
 
 ---
 
@@ -511,6 +551,51 @@ out of scope and would require its own ADR**.
 **Alternatives rejected.** Build-time per-locale bundles (no SEO benefit, requires redeployment to
 switch script), route-prefixed locales (`/sr/...`, pointless behind auth), a third-party runtime
 translation service (adds egress for user-visible copy and a network dependency on first paint).
+
+---
+
+### ADR-020 — SWC, not tsx/esbuild, as the NestJS development runtime
+**Status:** Accepted
+
+**Context.** The monorepo consumes workspace packages as TypeScript **source** via `tsconfig` paths.
+`tsx` was the obvious zero-config dev runtime — it resolved those paths correctly — but running the
+API under it failed:
+
+```text
+ERROR: Parameter decorators only work when experimental decorators are enabled
+```
+
+Enabling `experimentalDecorators` is not enough. **esbuild (and therefore tsx) cannot emit decorator
+metadata at all**, and NestJS resolves constructor dependencies from `design:paramtypes`. Under
+esbuild the app either fails to boot or — worse, if the decorator error is worked around — starts
+with dependency injection silently broken, and `ValidationPipe` unable to see DTO types. A dev
+runtime that fails *quietly* on DI is worse than one that fails loudly.
+
+**Decision.** Run the API in development with **SWC**:
+
+```bash
+node --env-file=../../.env -r @swc-node/register src/main.ts
+```
+
+configured by `apps/api/.swcrc` with `legacyDecorator: true` and `decoratorMetadata: true`, plus the
+workspace `paths` so aliases resolve. `tsx` remains in use for plain scripts (the seed) where
+decorators are irrelevant.
+
+**Consequences.**
+- ✅ Decorator metadata is emitted, so type-based DI and DTO validation behave as NestJS intends.
+- ✅ SWC is fast, so the dev loop is still sub-second on reload.
+- ✅ One `.swcrc` documents the aliases, making the alias contract visible.
+- ⚠️ Two transpilers in the repo (SWC for the API, esbuild via tsx for scripts, Vitest for packages,
+  ts-jest for API tests). Documented because it is genuinely confusing on first contact.
+- ⚠️ `apps/api/.swcrc` duplicates the `paths` from `tsconfig.base.json`. They must be kept in step;
+  a mismatch shows up as a runtime module-resolution error rather than a compile error.
+- ⚠️ SWC does not typecheck. That is what `nx run api:typecheck` (`tsc --noEmit`) is for, and it is a
+  gate.
+
+**Alternatives rejected.** `tsc` + `node --watch` on the emitted output (works, but needs
+`tsconfig-paths` at runtime and adds a build step to every reload); `nest start` with the default
+builder (same path-rewriting problem); explicit `@Inject()` tokens on every constructor parameter
+(invasive, and does not fix DTO validation, which also needs metadata).
 
 ---
 

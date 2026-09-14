@@ -1,0 +1,12 @@
+{
+  "name": "@finmate/ai",
+  "version": "0.0.0",
+  "private": true,
+  "description": "AiProvider interface, provider adapters, prompt templates, routing.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

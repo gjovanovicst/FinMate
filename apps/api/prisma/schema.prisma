@@ -1,0 +1,742 @@
+// =====================================================================================
+// DERIVED FILE — do not treat as the source of truth.
+//
+// The canonical DDL is docs/03-domain-model.md §4. Migrations are hand-authored SQL derived
+// from it (see ./migrations/). This file is produced by `prisma db pull` against the migrated
+// database so the typed client matches reality.
+//
+// To change the schema:
+//   1. edit docs/03-domain-model.md §4
+//   2. add a NEW forward migration (see the add-migration skill)
+//   3. apply it, then re-run `pnpm db:pull` and `pnpm db:generate`
+//
+// NEVER run `prisma migrate dev` here. It generates SQL from these models, and these models
+// cannot express what doc 03 requires, so it would silently DROP:
+//   * 44 CHECK constraints  (amount_minor > 0, enum domains, request invariants)
+//   * 18 partial indexes    (WHERE deleted_at IS NULL, idempotency_key, client_id)
+//   * expression indexes    (categories_unique_name, budgets_unique_scope, tags_unique_name)
+//   * the pgvector ivfflat index on entity_embeddings
+// db pull reports these as "not supported by Prisma Client" — that is expected. They are
+// enforced by PostgreSQL itself, which is the point.
+//
+// `prisma migrate diff` is the drift check between this file and the database.
+// =====================================================================================
+
+generator client {
+  provider        = "prisma-client"
+  // Prisma 7: `prisma-client` is the current generator and `output` is REQUIRED.
+  // `prisma-client-js` is gone. The client is imported from this path, not from @prisma/client.
+  output          = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model accounts {
+  id                    String            @id @db.Uuid
+  household_id          String            @db.Uuid
+  name                  String
+  kind                  String
+  opening_balance_minor BigInt            @default(0)
+  currency              String            @db.Char(3)
+  is_archived           Boolean           @default(false)
+  sort_order            Int               @default(0)
+  deleted_at            DateTime?         @db.Timestamptz(6)
+  created_at            DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime          @default(now()) @db.Timestamptz(6)
+  households            households        @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  recurring_rules       recurring_rules[]
+  saving_goals          saving_goals[]
+  transactions          transactions[]
+
+  @@index([household_id], where: raw("(deleted_at IS NULL)"))
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ai_provider_configs {
+  id           String      @id @db.Uuid
+  household_id String?     @db.Uuid
+  task         String
+  provider     String
+  model        String
+  region       String?
+  params       Json        @default("{}")
+  is_active    Boolean     @default(true)
+  created_at   DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime    @default(now()) @db.Timestamptz(6)
+  households   households? @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([household_id, task])
+}
+
+model alert_rules {
+  id           String     @id @db.Uuid
+  household_id String     @db.Uuid
+  kind         String
+  threshold    Json
+  channels     String[]   @default(["IN_APP"])
+  quiet_hours  Json?
+  is_active    Boolean    @default(true)
+  created_at   DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime   @default(now()) @db.Timestamptz(6)
+  households   households @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model attachments {
+  id           String         @id @db.Uuid
+  household_id String         @db.Uuid
+  storage_key  String
+  mime_type    String
+  byte_size    BigInt
+  sha256       String         @db.Char(64)
+  purpose      String         @default("RECEIPT")
+  scan_state   String         @default("PENDING")
+  created_at   DateTime       @default(now()) @db.Timestamptz(6)
+  households   households     @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  receipts     receipts[]
+  transactions transactions[]
+
+  @@index([household_id, created_at(sort: Desc)])
+  @@index([scan_state], where: raw("(scan_state = ANY (ARRAY['PENDING'::text, 'INFECTED'::text]))"))
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model audit_log {
+  id            String      @id @db.Uuid
+  household_id  String?     @db.Uuid
+  actor_user_id String?     @db.Uuid
+  actor_kind    String
+  entity_type   String
+  entity_id     String?     @db.Uuid
+  action        String
+  before        Json?
+  after         Json?
+  ip_hash       String?
+  prev_hash     String?     @db.Char(64)
+  row_hash      String?     @db.Char(64)
+  created_at    DateTime    @default(now()) @db.Timestamptz(6)
+  users         users?      @relation(fields: [actor_user_id], references: [id], onUpdate: NoAction)
+  households    households? @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([entity_type, entity_id])
+  @@index([household_id, created_at(sort: Desc)])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model budgets {
+  id                    String      @id @db.Uuid
+  household_id          String      @db.Uuid
+  category_id           String?     @db.Uuid
+  period                String      @default("MONTHLY")
+  period_start          DateTime    @db.Date
+  amount_minor          BigInt
+  currency              String      @db.Char(3)
+  rollover              Boolean     @default(false)
+  include_subcategories Boolean     @default(true)
+  deleted_at            DateTime?   @db.Timestamptz(6)
+  created_at            DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime    @default(now()) @db.Timestamptz(6)
+  categories            categories? @relation(fields: [category_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  households            households  @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model categories {
+  id                       String                     @id @db.Uuid
+  household_id             String                     @db.Uuid
+  parent_id                String?                    @db.Uuid
+  name                     String
+  kind                     String
+  icon                     String?
+  color                    String?
+  ai_description           String?
+  is_system                Boolean                    @default(false)
+  sort_order               Int                        @default(0)
+  deleted_at               DateTime?                  @db.Timestamptz(6)
+  created_at               DateTime                   @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime                   @default(now()) @db.Timestamptz(6)
+  budgets                  budgets[]
+  households               households                 @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  categories               categories?                @relation("categoriesTocategories", fields: [parent_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  other_categories         categories[]               @relation("categoriesTocategories")
+  category_keywords        category_keywords[]
+  classification_decisions classification_decisions[]
+  counterparties           counterparties[]
+  merchants                merchants[]
+  receipt_items            receipt_items[]
+  recurring_rules          recurring_rules[]
+  transaction_splits       transaction_splits[]
+  transactions             transactions[]
+
+  @@index([household_id, parent_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model category_keywords {
+  id           String     @id @db.Uuid
+  household_id String     @db.Uuid
+  category_id  String     @db.Uuid
+  keyword      String
+  polarity     String
+  match_mode   String     @default("WORD")
+  weight       Decimal    @default(1.0) @db.Decimal(4, 2)
+  created_at   DateTime   @default(now()) @db.Timestamptz(6)
+  categories   categories @relation(fields: [category_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  households   households @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([household_id, category_id, keyword, polarity])
+  @@index([household_id, keyword])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model classification_decisions {
+  id                 String         @id @db.Uuid
+  household_id       String         @db.Uuid
+  transaction_id     String?        @db.Uuid
+  receipt_item_id    String?        @db.Uuid
+  raw_input          String
+  normalized_input   String
+  decided_by         String
+  rule_id            String?        @db.Uuid
+  category_id        String?        @db.Uuid
+  confidence         Decimal?       @db.Decimal(4, 3)
+  candidates         Json?
+  ai_provider        String?
+  ai_model           String?
+  prompt_template_id String?        @db.Uuid
+  prompt_version     Int?
+  latency_ms         Int?
+  cost_micros        BigInt?
+  created_at         DateTime       @default(now()) @db.Timestamptz(6)
+  categories         categories?    @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+  households         households     @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  receipt_items      receipt_items? @relation(fields: [receipt_item_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rules              rules?         @relation(fields: [rule_id], references: [id], onUpdate: NoAction)
+  transactions       transactions?  @relation(fields: [transaction_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([household_id, created_at(sort: Desc)])
+  @@index([transaction_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model consents {
+  id             String      @id @db.Uuid
+  user_id        String?     @db.Uuid
+  household_id   String?     @db.Uuid
+  kind           String
+  granted        Boolean
+  policy_version String
+  recorded_at    DateTime    @default(now()) @db.Timestamptz(6)
+  withdrawn_at   DateTime?   @db.Timestamptz(6)
+  evidence       Json        @default("{}")
+  households     households? @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users          users?      @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@index([household_id, kind, recorded_at(sort: Desc)])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model corrections {
+  id                                            String        @id @db.Uuid
+  household_id                                  String        @db.Uuid
+  transaction_id                                String?       @db.Uuid
+  field                                         String
+  from_value                                    String?
+  to_value                                      String?
+  was_ai_suggested                              Boolean       @default(false)
+  rule_created_id                               String?       @db.Uuid
+  created_at                                    DateTime      @default(now()) @db.Timestamptz(6)
+  households                                    households    @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rules_corrections_rule_created_idTorules      rules?        @relation("corrections_rule_created_idTorules", fields: [rule_created_id], references: [id], onUpdate: NoAction)
+  transactions                                  transactions? @relation(fields: [transaction_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rules_rules_source_correction_idTocorrections rules[]       @relation("rules_source_correction_idTocorrections")
+
+  @@index([household_id, created_at(sort: Desc)])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model counterparties {
+  id                   String                 @id @db.Uuid
+  household_id         String                 @db.Uuid
+  name                 String
+  type                 String                 @default("PERSON")
+  default_category_id  String?                @db.Uuid
+  note                 String?
+  deleted_at           DateTime?              @db.Timestamptz(6)
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime               @default(now()) @db.Timestamptz(6)
+  categories           categories?            @relation(fields: [default_category_id], references: [id], onUpdate: NoAction)
+  households           households             @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  counterparty_aliases counterparty_aliases[]
+  transactions         transactions[]
+
+  @@index([household_id], where: raw("(deleted_at IS NULL)"))
+}
+
+model counterparty_aliases {
+  id              String         @id @db.Uuid
+  counterparty_id String         @db.Uuid
+  alias           String
+  created_at      DateTime       @default(now()) @db.Timestamptz(6)
+  counterparties  counterparties @relation(fields: [counterparty_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([counterparty_id, alias])
+  @@index([alias])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model email_tokens {
+  id          String    @id @db.Uuid
+  user_id     String    @db.Uuid
+  purpose     String
+  token_hash  String    @unique @db.Char(64)
+  expires_at  DateTime  @db.Timestamptz(6)
+  consumed_at DateTime? @db.Timestamptz(6)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  users       users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, purpose], where: raw("(consumed_at IS NULL)"))
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model entity_embeddings {
+  id           String                @id @db.Uuid
+  household_id String                @db.Uuid
+  owner_type   String
+  owner_id     String                @db.Uuid
+  model        String
+  dims         Int
+  embedding    Unsupported("vector")
+  source_text  String
+  updated_at   DateTime              @default(now()) @db.Timestamptz(6)
+  households   households            @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([owner_type, owner_id, model])
+  @@index([embedding])
+  @@index([household_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model goal_contributions {
+  id             String       @id @db.Uuid
+  goal_id        String       @db.Uuid
+  amount_minor   BigInt
+  contributed_on DateTime     @db.Date
+  note           String?
+  created_at     DateTime     @default(now()) @db.Timestamptz(6)
+  saving_goals   saving_goals @relation(fields: [goal_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([goal_id, contributed_on(sort: Desc)])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model household_members {
+  id           String     @id @db.Uuid
+  household_id String     @db.Uuid
+  user_id      String     @db.Uuid
+  role         String
+  created_at   DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime   @default(now()) @db.Timestamptz(6)
+  households   households @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users        users      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([household_id, user_id])
+}
+
+model households {
+  id                       String                     @id @db.Uuid
+  name                     String
+  ledger_currency          String                     @default("RSD") @db.Char(3)
+  iana_timezone            String                     @default("Europe/Belgrade")
+  owner_user_id            String                     @db.Uuid
+  settings                 Json                       @default("{}")
+  created_at               DateTime                   @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime                   @default(now()) @db.Timestamptz(6)
+  accounts                 accounts[]
+  ai_provider_configs      ai_provider_configs[]
+  alert_rules              alert_rules[]
+  attachments              attachments[]
+  audit_log                audit_log[]
+  budgets                  budgets[]
+  categories               categories[]
+  category_keywords        category_keywords[]
+  classification_decisions classification_decisions[]
+  consents                 consents[]
+  corrections              corrections[]
+  counterparties           counterparties[]
+  entity_embeddings        entity_embeddings[]
+  household_members        household_members[]
+  users                    users                      @relation(fields: [owner_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  insights                 insights[]
+  merchants                merchants[]
+  notifications            notifications[]
+  receipts                 receipts[]
+  recurring_rules          recurring_rules[]
+  rules                    rules[]
+  saving_goals             saving_goals[]
+  tags                     tags[]
+  transactions             transactions[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model insights {
+  id            String          @id @db.Uuid
+  household_id  String          @db.Uuid
+  kind          String
+  severity      String
+  period_start  DateTime        @db.Date
+  period_end    DateTime        @db.Date
+  payload       Json
+  narrative     String?
+  is_dismissed  Boolean         @default(false)
+  created_at    DateTime        @default(now()) @db.Timestamptz(6)
+  households    households      @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  notifications notifications[]
+
+  @@index([household_id, created_at(sort: Desc)])
+}
+
+model merchant_aliases {
+  id          String    @id @db.Uuid
+  merchant_id String    @db.Uuid
+  alias       String
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  merchants   merchants @relation(fields: [merchant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([merchant_id, alias])
+  @@index([alias])
+}
+
+model merchants {
+  id                  String             @id @db.Uuid
+  household_id        String?            @db.Uuid
+  name                String
+  default_category_id String?            @db.Uuid
+  ai_hint             String?
+  is_global           Boolean            @default(false)
+  deleted_at          DateTime?          @db.Timestamptz(6)
+  created_at          DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime           @default(now()) @db.Timestamptz(6)
+  merchant_aliases    merchant_aliases[]
+  categories          categories?        @relation(fields: [default_category_id], references: [id], onUpdate: NoAction)
+  households          households?        @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  receipts            receipts[]
+  recurring_rules     recurring_rules[]
+  transactions        transactions[]
+
+  @@index([household_id], where: raw("(deleted_at IS NULL)"))
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model notifications {
+  id           String     @id @db.Uuid
+  household_id String     @db.Uuid
+  user_id      String     @db.Uuid
+  insight_id   String?    @db.Uuid
+  channel      String
+  title        String
+  body         String
+  dedupe_key   String
+  sent_at      DateTime?  @db.Timestamptz(6)
+  read_at      DateTime?  @db.Timestamptz(6)
+  status       String     @default("QUEUED")
+  created_at   DateTime   @default(now()) @db.Timestamptz(6)
+  households   households @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  insights     insights?  @relation(fields: [insight_id], references: [id], onUpdate: NoAction)
+  users        users      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, dedupe_key])
+}
+
+model prompt_templates {
+  id         String   @id @db.Uuid
+  task       String
+  version    Int
+  body       String
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([task, version])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model purge_receipts {
+  id                  String    @id @db.Uuid
+  household_id        String    @db.Uuid
+  requested_by        String?   @db.Uuid
+  requested_at        DateTime  @default(now()) @db.Timestamptz(6)
+  completed_at        DateTime? @db.Timestamptz(6)
+  scope               Json
+  object_keys_deleted Int       @default(0)
+  status              String    @default("PENDING")
+  users               users?    @relation(fields: [requested_by], references: [id], onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model receipt_items {
+  id                       String                     @id @db.Uuid
+  receipt_id               String                     @db.Uuid
+  line_no                  Int
+  raw_text                 String
+  normalized_name          String?
+  quantity                 Decimal?                   @db.Decimal(10, 3)
+  unit_price_minor         BigInt?
+  amount_minor             BigInt
+  category_id              String?                    @db.Uuid
+  confidence               Decimal?                   @db.Decimal(4, 3)
+  needs_review             Boolean                    @default(false)
+  created_at               DateTime                   @default(now()) @db.Timestamptz(6)
+  classification_decisions classification_decisions[]
+  categories               categories?                @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+  receipts                 receipts                   @relation(fields: [receipt_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([receipt_id, line_no])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model receipts {
+  id             String          @id @db.Uuid
+  household_id   String          @db.Uuid
+  transaction_id String?         @db.Uuid
+  merchant_id    String?         @db.Uuid
+  captured_at    DateTime        @db.Timestamptz(6)
+  total_minor    BigInt?
+  currency       String?         @db.Char(3)
+  ocr_confidence Decimal?        @db.Decimal(4, 3)
+  reconciliation String          @default("PENDING")
+  attachment_id  String?         @db.Uuid
+  deleted_at     DateTime?       @db.Timestamptz(6)
+  created_at     DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime        @default(now()) @db.Timestamptz(6)
+  receipt_items  receipt_items[]
+  attachments    attachments?    @relation(fields: [attachment_id], references: [id], onUpdate: NoAction, map: "receipts_attachment_fk")
+  households     households      @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  merchants      merchants?      @relation(fields: [merchant_id], references: [id], onUpdate: NoAction)
+  transactions   transactions?   @relation(fields: [transaction_id], references: [id], onUpdate: NoAction)
+
+  @@index([household_id, captured_at(sort: Desc)])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model recurring_rules {
+  id                 String         @id @db.Uuid
+  household_id       String         @db.Uuid
+  account_id         String         @db.Uuid
+  kind               String
+  amount_minor       BigInt
+  currency           String         @db.Char(3)
+  category_id        String?        @db.Uuid
+  merchant_id        String?        @db.Uuid
+  description        String
+  rrule              String
+  next_occurrence_on DateTime       @db.Date
+  ends_on            DateTime?      @db.Date
+  auto_confirm       Boolean        @default(false)
+  is_detected        Boolean        @default(false)
+  is_active          Boolean        @default(true)
+  deleted_at         DateTime?      @db.Timestamptz(6)
+  created_at         DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime       @default(now()) @db.Timestamptz(6)
+  accounts           accounts       @relation(fields: [account_id], references: [id], onUpdate: NoAction)
+  categories         categories?    @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+  households         households     @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  merchants          merchants?     @relation(fields: [merchant_id], references: [id], onUpdate: NoAction)
+  transactions       transactions[]
+
+  @@index([household_id, next_occurrence_on], where: raw("(is_active AND (deleted_at IS NULL))"))
+}
+
+model refresh_tokens {
+  id                   String           @id @db.Uuid
+  session_id           String           @db.Uuid
+  token_hash           String           @unique @db.Char(64)
+  issued_at            DateTime         @default(now()) @db.Timestamptz(6)
+  expires_at           DateTime         @db.Timestamptz(6)
+  used_at              DateTime?        @db.Timestamptz(6)
+  rotated_to_id        String?          @db.Uuid
+  created_at           DateTime         @default(now()) @db.Timestamptz(6)
+  refresh_tokens       refresh_tokens?  @relation("refresh_tokensTorefresh_tokens", fields: [rotated_to_id], references: [id], onUpdate: NoAction)
+  other_refresh_tokens refresh_tokens[] @relation("refresh_tokensTorefresh_tokens")
+  sessions             sessions         @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([expires_at])
+  @@index([session_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model rules {
+  id                                                  String                     @id @db.Uuid
+  household_id                                        String                     @db.Uuid
+  name                                                String
+  priority                                            Int                        @default(100)
+  is_active                                           Boolean                    @default(true)
+  stop_on_match                                       Boolean                    @default(true)
+  conditions                                          Json
+  actions                                             Json
+  origin                                              String
+  source_correction_id                                String?                    @db.Uuid
+  hit_count                                           BigInt                     @default(0)
+  last_hit_at                                         DateTime?                  @db.Timestamptz(6)
+  deleted_at                                          DateTime?                  @db.Timestamptz(6)
+  created_at                                          DateTime                   @default(now()) @db.Timestamptz(6)
+  updated_at                                          DateTime                   @default(now()) @db.Timestamptz(6)
+  classification_decisions                            classification_decisions[]
+  corrections_corrections_rule_created_idTorules      corrections[]              @relation("corrections_rule_created_idTorules")
+  households                                          households                 @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  corrections_rules_source_correction_idTocorrections corrections?               @relation("rules_source_correction_idTocorrections", fields: [source_correction_id], references: [id], onUpdate: NoAction, map: "rules_source_correction_fk")
+
+  @@index([household_id, priority], where: raw("(is_active AND (deleted_at IS NULL))"))
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model saving_goals {
+  id                 String               @id @db.Uuid
+  household_id       String               @db.Uuid
+  name               String
+  target_minor       BigInt
+  currency           String               @db.Char(3)
+  target_date        DateTime?            @db.Date
+  account_id         String?              @db.Uuid
+  status             String               @default("ACTIVE")
+  deleted_at         DateTime?            @db.Timestamptz(6)
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime             @default(now()) @db.Timestamptz(6)
+  goal_contributions goal_contributions[]
+  accounts           accounts?            @relation(fields: [account_id], references: [id], onUpdate: NoAction)
+  households         households           @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model sessions {
+  id              String           @id @db.Uuid
+  user_id         String           @db.Uuid
+  user_agent_hash String?
+  ip_hash         String?
+  created_at      DateTime         @default(now()) @db.Timestamptz(6)
+  last_seen_at    DateTime         @default(now()) @db.Timestamptz(6)
+  expires_at      DateTime         @db.Timestamptz(6)
+  revoked_at      DateTime?        @db.Timestamptz(6)
+  revoked_reason  String?
+  refresh_tokens  refresh_tokens[]
+  users           users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([expires_at], where: raw("(revoked_at IS NULL)"))
+  @@index([user_id], where: raw("(revoked_at IS NULL)"))
+}
+
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model tags {
+  id               String             @id @db.Uuid
+  household_id     String             @db.Uuid
+  name             String
+  color            String?
+  deleted_at       DateTime?          @db.Timestamptz(6)
+  created_at       DateTime           @default(now()) @db.Timestamptz(6)
+  households       households         @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  transaction_tags transaction_tags[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model transaction_splits {
+  id              String       @id @db.Uuid
+  transaction_id  String       @db.Uuid
+  category_id     String       @db.Uuid
+  amount_minor    BigInt
+  note            String?
+  confidence      Decimal?     @db.Decimal(4, 3)
+  category_source String?
+  created_at      DateTime     @default(now()) @db.Timestamptz(6)
+  categories      categories   @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+  transactions    transactions @relation(fields: [transaction_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([transaction_id])
+}
+
+model transaction_tags {
+  transaction_id String       @db.Uuid
+  tag_id         String       @db.Uuid
+  tags           tags         @relation(fields: [tag_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  transactions   transactions @relation(fields: [transaction_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([transaction_id, tag_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model transactions {
+  id                       String                     @id @db.Uuid
+  household_id             String                     @db.Uuid
+  account_id               String                     @db.Uuid
+  kind                     String
+  amount_minor             BigInt
+  currency                 String                     @db.Char(3)
+  category_id              String?                    @db.Uuid
+  merchant_id              String?                    @db.Uuid
+  counterparty_id          String?                    @db.Uuid
+  description              String
+  raw_input                String?
+  note                     String?
+  occurred_at              DateTime                   @db.Timestamptz(6)
+  occurred_local_date      DateTime                   @db.Date
+  status                   String                     @default("CONFIRMED")
+  source                   String
+  category_source          String?
+  confidence               Decimal?                   @db.Decimal(4, 3)
+  needs_review             Boolean                    @default(false)
+  transfer_peer_id         String?                    @db.Uuid
+  recurring_rule_id        String?                    @db.Uuid
+  idempotency_key          String?
+  client_id                String?
+  version                  Int                        @default(1)
+  deleted_at               DateTime?                  @db.Timestamptz(6)
+  created_at               DateTime                   @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime                   @default(now()) @db.Timestamptz(6)
+  attachment_id            String?                    @db.Uuid
+  classification_decisions classification_decisions[]
+  corrections              corrections[]
+  receipts                 receipts[]
+  transaction_splits       transaction_splits[]
+  transaction_tags         transaction_tags[]
+  accounts                 accounts                   @relation(fields: [account_id], references: [id], onUpdate: NoAction)
+  attachments              attachments?               @relation(fields: [attachment_id], references: [id], onUpdate: NoAction)
+  categories               categories?                @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+  counterparties           counterparties?            @relation(fields: [counterparty_id], references: [id], onUpdate: NoAction)
+  households               households                 @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  merchants                merchants?                 @relation(fields: [merchant_id], references: [id], onUpdate: NoAction)
+  recurring_rules          recurring_rules?           @relation(fields: [recurring_rule_id], references: [id], onUpdate: NoAction, map: "transactions_recurring_rule_fk")
+  transactions             transactions?              @relation("transactionsTotransactions", fields: [transfer_peer_id], references: [id], onUpdate: NoAction)
+  other_transactions       transactions[]             @relation("transactionsTotransactions")
+
+  @@unique([household_id, client_id], map: "transactions_household_id_client_id_idx", where: raw("(client_id IS NOT NULL)"))
+  @@unique([household_id, idempotency_key], map: "transactions_household_id_idempotency_key_idx", where: raw("(idempotency_key IS NOT NULL)"))
+  @@index([household_id, category_id, occurred_local_date(sort: Desc)], where: raw("(deleted_at IS NULL)"))
+  @@index([household_id], where: raw("(needs_review AND (deleted_at IS NULL))"))
+  @@index([household_id, occurred_local_date(sort: Desc)], where: raw("(deleted_at IS NULL)"))
+  @@index([recurring_rule_id], where: raw("(recurring_rule_id IS NOT NULL)"))
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model users {
+  id                String              @id @db.Uuid
+  email             String              @unique @db.Citext
+  email_verified_at DateTime?           @db.Timestamptz(6)
+  password_hash     String?
+  display_name      String
+  locale            String              @default("sr-Latn-RS")
+  status            String              @default("ACTIVE")
+  created_at        DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime            @default(now()) @db.Timestamptz(6)
+  audit_log         audit_log[]
+  consents          consents[]
+  email_tokens      email_tokens[]
+  household_members household_members[]
+  households        households[]
+  notifications     notifications[]
+  purge_receipts    purge_receipts[]
+  sessions          sessions[]
+}

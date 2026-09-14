@@ -1,0 +1,12 @@
+{
+  "name": "@finmate/domain",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pure domain: Money, entities, invariants, calculators. Imports nothing.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

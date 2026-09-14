@@ -1,0 +1,113 @@
+# Local development stack for FinMate.
+#
+#   pnpm dev:infra          start
+#   pnpm dev:infra:down     stop (keeps data)
+#   pnpm dev:infra:reset    stop and DESTROY data volumes
+#
+# Rationale is in docs/11-devops-and-observability.md §2.
+# ADR-013: single-node Docker Compose is the deployment mechanism, deliberately — no Kubernetes.
+
+name: finmate-dev
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16 + pgvector
+  #
+  # The image ships `vector` preinstalled. `citext` and `pg_trgm` are contrib modules present in
+  # the official Postgres build. All three are required by the canonical schema (docs/03 §4):
+  #   citext   -> users.email case-insensitive uniqueness
+  #   pg_trgm  -> fuzzy merchant/counterparty resolution (docs/04 §4 stage 3)
+  #   vector   -> household-local embeddings (entity_embeddings)
+  # Installing the extension at container start is deliberately avoided: it would add a network
+  # dependency to a cold start.
+  # ---------------------------------------------------------------------------
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: finmate-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-finmate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finmate}
+      POSTGRES_DB: ${POSTGRES_DB:-finmate}
+      # Deterministic collation so ORDER BY does not differ between machines.
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Runs once, only when the data volume is empty.
+      #
+      # GOTCHA: this file must be world-readable (chmod 644). The Postgres entrypoint executes
+      # `psql -f` as the `postgres` user (uid 999), so a 0600 file owned by your host uid fails
+      # with `psql: error: ... Permission denied` — the container still reports healthy, and you
+      # only notice when a query fails on a missing extension. If the extensions are missing:
+      #   chmod 644 infra/docker/initdb/*.sql && docker compose ... down -v && ... up -d
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-finmate} -d ${POSTGRES_DB:-finmate}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Redis 7 — rule cache, idempotency keys, BullMQ job queues (docs/05 §8).
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: finmate-redis
+    command: ['redis-server', '--appendonly', 'yes', '--save', '']
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # MinIO — S3-compatible object storage for Receipt images (ADR-018).
+  # Console at http://localhost:9001
+  #
+  # NOTE: pulled from quay.io, not Docker Hub. The `minio/minio` Docker Hub repository no longer
+  # exists (MinIO moved distribution), so `minio/minio:*` fails with "pull access denied".
+  # ---------------------------------------------------------------------------
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: finmate-minio
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-finmate}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-finmate-dev-secret}
+    ports:
+      - '${MINIO_PORT:-9000}:9000'
+      - '${MINIO_CONSOLE_PORT:-9001}:9001'
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Mailhog — captures outbound email (verification, password reset, alerts).
+  # SMTP on 1025, web UI at http://localhost:8025
+  # ---------------------------------------------------------------------------
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: finmate-mailhog
+    ports:
+      - '${MAILHOG_SMTP_PORT:-1025}:1025'
+      - '${MAILHOG_UI_PORT:-8025}:8025'
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

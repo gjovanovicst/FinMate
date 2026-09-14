@@ -9,12 +9,30 @@ AI-first household budgeting app for **mobile and desktop**. The product promise
 > Type **`Lidl 2000`** and get a correctly categorised, budget-aware transaction in under five seconds.
 
 **Machine state:** Node 24.20.0, pnpm 11.7.0, Go 1.27.0, **Docker 29.7.2 + Compose v5.5.0 (Linux
-containers, daemon verified reachable)** on Ubuntu 20.04 LTS / WSL2. Phase 0 is **not** blocked —
-`postgres:16-alpine` is already pulled. The Postgres image must provide `citext`, `pg_trgm` and
-`vector`; prefer an image with `pgvector` preinstalled (see `docs/11-devops-and-observability.md` §2.0).
+containers)** on Ubuntu 20.04 LTS / WSL2.
 
-**Current state: no code yet.** Phases 0–5 are specified in `docs/09-implementation-plan.md`; nothing
-is scaffolded. Do not reference build scripts, test runners or packages that do not exist yet.
+**Build state — Phase 0 tasks 0.1–0.5 are done.** There is working code:
+
+| What | State |
+|---|---|
+| Monorepo | 9 Nx projects: `apps/{api,worker,web}`, `packages/{domain,contracts,nlp,rules-engine,ai,config}` |
+| Dependency boundaries | Enforced by `@nx/enforce-module-boundaries`; both forbidden edges verified to fail lint |
+| Dev stack | `pnpm dev:infra` → Postgres 16 + pgvector (port **5433**), Redis, MinIO (quay.io), Mailhog |
+| Schema | 36 tables + 44 CHECK constraints + 18 partial indexes applied; `_prisma_migrations` current |
+| Prisma | Client generated to `apps/api/src/generated/prisma` (gitignored) |
+| API | Boots, `/health` + `/health/ready` green, structured JSON logs, typed error filter |
+| Tenancy | `TenantContext` (AsyncLocalStorage) + Prisma guard; **108 tests pass** |
+| Seed | `pnpm db:seed` — 38 categories, 134 keywords, 38 merchants; idempotent |
+| Not yet built | Auth (0.6), GraphQL (0.7), Angular shell (0.8), CI (0.9), worker, production build |
+
+```bash
+pnpm dev:infra            # start Postgres/Redis/MinIO/Mailhog
+pnpm db:migrate           # apply migrations
+pnpm db:seed              # seed global merchants (add SEED_HOUSEHOLD_ID for a full household)
+nx run api:serve          # boot the API on :3000
+pnpm lint / typecheck / test
+```
+Verified working: `nx run-many -t lint` (9/9 clean), `nx run api:test` (108 pass), `nx run api:serve`.
 
 ---
 
@@ -78,18 +96,20 @@ These are architecture, not preference. Violating one is a bug even when tests p
 
 ## Commands
 
-Phase 0 scaffolds these (doc 09). Write to this interface so the scripts land as specified:
-
 ```bash
-pnpm dev            # boots the whole stack: Postgres, Redis, MinIO, api, web, worker
-pnpm test           # unit + integration
-pnpm test:evals     # golden-dataset AI evaluation — a CI gate (doc 10 §5.5)
-pnpm lint           # includes the dependency-boundary rules
+pnpm dev            # start infra, then apps in parallel
+pnpm dev:infra      # Postgres + Redis + MinIO + Mailhog only
+pnpm test           # unit + integration (Vitest for packages, Jest for apps/api)
+pnpm lint           # includes the dependency-boundary rule
 pnpm typecheck
-pnpm db:migrate     # forward-only, expand/contract (doc 11 §6)
+pnpm db:migrate     # forward-only, expand/contract
+pnpm db:pull        # re-derive schema.prisma after a migration
+pnpm db:seed        # starter categories, keywords and merchants
+nx run api:serve    # boot the API on :3000
 ```
 
-Until Phase 0 lands, there is nothing to run — do not invent scripts that the repo does not have.
+Not yet implemented: `pnpm test:evals` (Phase 2), the production `build` for apps/api (task 0.9).
+Do not reference build scripts the repo does not have.
 
 ---
 
@@ -122,6 +142,29 @@ A change is not done until (doc 09 §8):
 - **Offline capture is idempotent** via client-generated `client_id` + `idempotency_key`. Never
   "check then insert" — rely on the unique index. *(ADR-016)*
 - **If code and docs disagree, that is a bug in one of them.** Fix the right one and say which.
+- **`infra/docker/initdb/*.sql` must stay mode 644.** The Postgres entrypoint runs `psql` as uid 999
+  and cannot read a 0600 file, so the container comes up **healthy with the extensions missing** —
+  the failure is silent until a query needs `citext`/`vector`. Fix with
+  `chmod 644 infra/docker/initdb/*.sql` then `down -v && up -d`.
+- **MinIO is pulled from `quay.io`, not Docker Hub.** `minio/minio` no longer exists there.
+- **pnpm needs a workspace-local store** (`store-dir=.pnpm-store`) because the file sandbox denies
+  writes outside the project; the store is gitignored and must never be committed.
+- **Postgres/Prisma version pins are deliberate:** `prisma@7.10.0` because `prisma@latest` is an
+  8.x **release candidate**, and TypeScript is pinned to 5.9.3 because `ts-jest` requires `<7`.
+- **The API dev runtime is SWC, not tsx.** esbuild (and therefore `tsx`) **cannot emit decorator
+  metadata**, which is what NestJS uses for constructor injection — running the API under `tsx` fails
+  with "Parameter decorators only work when experimental decorators are enabled", and even with
+  decorators enabled, DI would silently break. Use `node -r @swc-node/register` with
+  `apps/api/.swcrc` (`legacyDecorator` + `decoratorMetadata`). `tsx` is fine for plain scripts
+  (the seed) — just not for NestJS.
+- **Prisma 7 moved things.** The connection URL is no longer in `schema.prisma`; it lives in
+  `prisma.config.ts` for the CLI and is passed to `PrismaClient` through `@prisma/adapter-pg`. The
+  generator is `prisma-client` with a mandatory `output`, not `prisma-client-js`. Never run
+  `prisma migrate dev` — it would generate SQL that drops the CHECK constraints, partial indexes and
+  expression indexes doc 03 depends on.
+- **Never trust a `RETURNING` capture from `psql`** without a CTE. `psql -tAc "INSERT ... RETURNING id"`
+  also prints the `INSERT 0 1` command tag, which silently corrupts a captured id. Wrap it:
+  `WITH ins AS (INSERT ... RETURNING id) SELECT id FROM ins;`.
 
 ---
 

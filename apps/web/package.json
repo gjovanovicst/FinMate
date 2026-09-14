@@ -1,0 +1,12 @@
+{
+  "name": "@finmate/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Angular client (PWA-first). Scaffolded in Phase 0 task 0.8.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

@@ -1,6 +1,11 @@
 # Dependencies
 node_modules/
+
+# Workspace-local pnpm store and npm cache.
+# Required in this environment: the file sandbox denies writes outside the project,
+# and pnpm's default store lives outside it. Never commit — it is a package cache.
 .pnpm-store/
+.npm-cache/
 
 # Build output
 dist/

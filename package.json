@@ -1,0 +1,46 @@
+{
+  "name": "finmate",
+  "version": "0.0.0",
+  "private": true,
+  "description": "AI-first household budgeting app. Working title — see docs/13-brand-and-naming.md (ADR-014).",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "pnpm dev:infra && nx run-many -t serve --parallel=3",
+    "dev:infra": "docker compose --env-file .env -f infra/docker/compose.dev.yml up -d",
+    "dev:infra:down": "docker compose --env-file .env -f infra/docker/compose.dev.yml down",
+    "dev:infra:reset": "docker compose --env-file .env -f infra/docker/compose.dev.yml down -v && pnpm dev:infra",
+    "dev:infra:logs": "docker compose --env-file .env -f infra/docker/compose.dev.yml logs -f",
+    "dev:infra:ps": "docker compose --env-file .env -f infra/docker/compose.dev.yml ps",
+    "build": "nx run-many -t build",
+    "lint": "nx run-many -t lint",
+    "typecheck": "nx run-many -t typecheck",
+    "test": "nx run-many -t test",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:status": "prisma migrate status",
+    "db:pull": "prisma db pull",
+    "db:generate": "prisma generate",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio",
+    "format": "prettier --write \"**/*.{ts,js,mjs,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,js,mjs,json,md,yml,yaml}\""
+  },
+  "devDependencies": {
+    "@nx/eslint": "23.2.1",
+    "@nx/eslint-plugin": "23.2.1",
+    "@nx/js": "23.2.1",
+    "@prisma/adapter-pg": "7.10.0",
+    "@types/node": "^24.13.4",
+    "dotenv": "^17.4.2",
+    "eslint": "10.10.0",
+    "nx": "23.2.1",
+    "prettier": "3.9.6",
+    "prisma": "7.10.0",
+    "tsx": "^4.23.13",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.0",
+    "vitest": "5.0.0"
+  }
+}

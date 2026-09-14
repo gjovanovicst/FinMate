@@ -1,0 +1,12 @@
+{
+  "name": "@finmate/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared DTOs, GraphQL types and schemas.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

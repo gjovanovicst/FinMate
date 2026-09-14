@@ -1,0 +1,12 @@
+{
+  "name": "@finmate/rules-engine",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Deterministic rule evaluation and keyword scoring. Pure, no I/O.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}
