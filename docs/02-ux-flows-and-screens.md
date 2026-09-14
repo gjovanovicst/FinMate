@@ -1,0 +1,1086 @@
+# 02 — UX Flows and Screens
+
+**Status:** Baseline for release 1.0 · **Scope:** every screen, flow, state and string the MVP ships.
+
+This document is the UI truth of the plan. It consumes the vocabulary of [03](03-domain-model.md)
+verbatim, the feature IDs of [01](01-product-requirements.md), the pipeline of
+[04](04-categorization-and-ai-engine.md) and the feature/module layout of [05](05-architecture.md).
+Platform mechanics — breakpoints, offline storage, keyboard plumbing, accessibility testing — belong
+to [07](07-platform-strategy-mobile-desktop.md); this document is the UX layer that sits on top and
+links to it rather than restating it.
+
+Non-negotiables inherited from the ADR log ([14](14-decisions-and-risks.md)); referenced by number only:
+
+| ADR | Consequence for this document |
+|---|---|
+| ADR-001 | Every figure on every screen is rendered from a backend-computed value. No client arithmetic, no model arithmetic. |
+| ADR-002 | The preview always states which layer decided: `RULE` / `KEYWORD` / `MERCHANT_DEFAULT` / `COUNTERPARTY_DEFAULT` / `AI` / `FALLBACK`. |
+| ADR-003 | Money crosses the wire as integer minor units; one component renders it (`ui-money`), one edits it (`ui-money-input`). |
+| ADR-004 | Screens map 1:1 onto `apps/web/src/app/features/*`. |
+| ADR-005 | Prisma owns persistence; no screen depends on ORM shape. |
+| ADR-006 | One Angular SPA, PWA-first, no SSR — every screen below is client-rendered and offline-capable. |
+| ADR-007 | AI preferences are per-task routing (`PARSE`/`CLASSIFY`/`NARRATE`/`OCR`/`EMBED`), surfaced in Settings. |
+| ADR-008 | Household is the tenancy boundary. v1 is single-household per session: no switcher, no household id in any URL or payload. |
+| ADR-009 | The three gates (≥ 0.90 auto / 0.60–0.89 verify / < 0.60 ask) drive every badge and the review-queue lanes. |
+| ADR-010 | "Zapamti za ubuduće" synthesises a **Rule**. There is no fine-tuning UI and no "teach the model" copy. |
+| ADR-011 | One ledger currency per household; currency selectors are read-only, not broken-looking. |
+| ADR-012 | No Open Banking screens, no native-app screens. "Add an account" is manual. |
+| ADR-013 | Single-node deployment: no tenant/plan administration UI. |
+| ADR-014 | The name is undecided. **No user-facing string hardcodes a brand**; the shell renders an `APP_NAME` config token. |
+
+**Vocabulary in copy.** §10 maps canonical terms to Serbian UI words (`Merchant` → **prodavac**). Those
+are translations, not aliases: the entity is still `Merchant` in prose, code and the API.
+
+---
+
+## 1. Design principles
+
+Eight principles. Every screen below is justified by one; a screen that cannot be is not shipping.
+
+| # | Principle | Concretely | Features |
+|---|---|---|---|
+| **DP-1** | **Input-first, not navigation-first** | The capture field is on the dashboard, the transactions list, the assistant and the mobile shell. A user never navigates *to* capture; it is already there. | F-05, F-06 |
+| **DP-2** | **Correction is a first-class outcome** | A wrong category is expected, not an error. Fixing it is one tap from the row and is rewarded with a durable Rule. Copy never says *greška* for an uncertain classification. | F-08, F-09 |
+| **DP-3** | **Mobile-first, desktop-complete** | 390 px is the design; 1440 px is a strict superset (same routes, actions and data, plus density, keyboard, multi-select). No required feature is desktop-only. | F-26, ADR-006 |
+| **DP-4** | **No hidden state changes** | Nothing changes a saved value without announcing it: offline re-classification shows a diff, a learned Rule is proposed, a bulk re-classify is previewed. | ADR-001, ADR-010 |
+| **DP-5** | **Uncertainty is visible and cheap to resolve** | Confidence is icon + text + number at row level, with alternatives one keystroke away. Being unsure is a normal state. | F-08, ADR-009 |
+| **DP-6** | **Progressive disclosure over forms** | The default capture row shows amount, description, category, confidence. Merchant, Counterparty, Account, date, tags and Splits are one chevron away and pre-filled. | F-05, F-15 |
+| **DP-7** | **Every empty state is a job to be done** | It names the next action and performs it in place. Decorative empty states are a defect. | §6 |
+| **DP-8** | **The manual path is never degraded** | If AI is unavailable, capture still works, still saves, and falls back to the manual form. Degradation changes convenience, never capability. | ADR-002, [04 §9](04-categorization-and-ai-engine.md) |
+
+Two cross-cutting rules: **the client never computes money** (ADR-001 — totals, remainders,
+projections and the split difference all come from the server or from `packages/domain`) and **nothing
+blocks capture** (sheets dismiss on swipe, `Esc` and scrim tap; the only non-dismissible surfaces are
+household deletion and a version conflict, both of which require a choice).
+
+---
+
+## 2. Information architecture and navigation
+
+### 2.1 Route map
+
+Household is resolved from the session, never the URL (ADR-008).
+
+| Route | Screen | F-IDs | Nav slot |
+|---|---|---|---|
+| `/auth/sign-in`, `/auth/sign-up`, `/auth/verify`, `/auth/reset` | Auth | F-28 | — |
+| `/onboarding` | Onboarding wizard | F-13 | — |
+| `/` | Dashboard | F-19, F-21 | Danas |
+| `/capture` | Capture | F-05, F-06, F-14 | ➕ centre action |
+| `/transactions` | Transactions list | F-24, F-04, F-25 | Transakcije |
+| `/transactions/:id` | Detail / edit + Splits | F-04, F-15, F-12, F-31, F-34 | drill-in |
+| `/review` | Review queue | F-08 | Provera |
+| `/categories` | Category tree + keywords | F-02, F-03, F-32 | Više › Biblioteka |
+| `/merchants`, `/merchants/:id` | Merchants | F-10 | Više › Biblioteka |
+| `/counterparties`, `/counterparties/:id` | Counterparties | F-11 | Više › Biblioteka |
+| `/rules`, `/rules/:id` | Rules manager | F-09 | Više › Biblioteka |
+| `/receipts`, `/receipts/:id` | Receipts | F-14, F-34 | Više › Biblioteka |
+| `/budgets` | Budgets | F-17 | Više › Plan |
+| `/goals` | Savings goals | F-18 | Više › Plan |
+| `/recurring` | Recurring rules | F-16 | Više › Plan |
+| `/analytics` | Analytics | F-20 | Više › Uvid |
+| `/assistant` | Assistant | F-23, F-30 | Više › Uvid |
+| `/notifications` | Notifications centre | F-22 | 🔔 header |
+| `/settings` (+ `/ai`, `/accounts`, `/data`, `/alerts`) | Settings | F-32, F-01, F-25, F-27 | Više › Nalog |
+
+### 2.2 Navigation model
+
+Size classes are [07 §3.1](07-platform-strategy-mobile-desktop.md): `compact` < 600 · `medium`
+600–1023 · `expanded` 1024–1439 · `large` ≥ 1440. Five destinations only —
+**Danas · Transakcije · ➕ Unos · Provera · Više** — and the review slot is the only badged one.
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ EXPANDED / LARGE (1440 px)                        │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌──────────┬──────────────────────────────────────┐ │
+│ │ Danas        🔔³  ◐      │ │ │ Unos     │ Danas           🔔³  ⚙   ◐ Goran    │ │
+│ │ ┌──────────────────────┐ │ │ │ ┌──────┐ ├──────────────────────────────────────┤ │
+│ │ │ Lidl 2000…        ➤  │ │ │ │Lidl…➤│ │ (content; list + detail at ≥1024,     │ │
+│ │ └──────────────────────┘ │ │ └──────┘ │  + Insight rail at ≥1440)             │ │
+│ │                          │ │ Danas    │                                      │ │
+│ │   (scrolls)              │ │ Transak. │                                      │ │
+│ │                          │ │ Provera² │                                      │ │
+│ │                          │ │ Plan   ▸ │                                      │ │
+│ ├──────────────────────────┤ │ Uvid   ▸ │                                      │ │
+│ │ Danas Trans. ➕ Prov.² Više│ │ Bibliot▸ │                                      │ │
+│ └──────────────────────────┘ │ └──────────┴──────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- Sidebar groups: **Unos** (pinned capture field) · **Danas** · **Transakcije** · **Provera** ·
+  **Plan** (Budžeti, Ciljevi, Ponavljajuće) · **Uvid** (Analitika, Asistent) · **Biblioteka**
+  (Kategorije, Prodavci, Osobe, Pravila, Prijemi) · **Nalog** (Podešavanja).
+- `medium` keeps the bottom bar to 840 px, then becomes an icon rail ([07 §3.3](07-platform-strategy-mobile-desktop.md)).
+- Header on both: offline chip (offline or stale only), 🔔 unread, ⚙, avatar menu (Profil,
+  Podešavanja, Jezik, Tema, Odjavi se).
+- The household switcher exists in the avatar menu **disabled with a tooltip** (*Dostupno uz deljenje
+  domaćinstva*) — the schema supports it and v2 enables it (F-29, ADR-008). It is never a broken control.
+
+### 2.3 The review-queue badge
+
+| Property | Behaviour |
+|---|---|
+| Source | Count of Transactions with `needs_review = true`, `deleted_at IS NULL`, via the partial index in [03 §4](03-domain-model.md). |
+| Lanes | **Lane A — "Čeka odluku"**: `needs_review = true` (confidence < 0.60 or `category_id IS NULL`, I-8). **Lane B — "Za proveru"**: `needs_review = false` and `0.60 ≤ confidence ≤ 0.89`. The **badge counts Lane A only**; Lane B is a tab inside the queue. |
+| Rendering | Hidden at 0, `1`–`9` literal, `9+` above. Never `99+` — the queue is a to-do list, not a metric. |
+| Realtime | GraphQL subscription on the count; optimistic decrement when the client resolves a row. |
+| Accessibility | Accessible name is *Provera, 3 stavke čekaju* — the count is spoken, not only drawn. |
+| Feedback | Clearing Lane A animates to zero and shows one toast, once per session. No celebration loop. |
+
+> **Two-lane model (resolved upstream — see [04 §7](04-categorization-and-ai-engine.md#7-stage-6-confidence-gates)
+> and [03 I-8](03-domain-model.md#5-invariants-enforced-in-the-service-layer--tests)).** The blocking lane
+> is exactly `needs_review = true` (`confidence < 0.60` or `category_id IS NULL`); the advisory lane is
+> derived from `category_source = 'AI'` with `confidence` in `[0.60, 0.90)`. The nav badge counts the
+> blocking lane only, because a badge that never clears is a badge users learn to ignore.
+
+---
+
+## 3. The signature interaction: the capture field
+
+One component, `CaptureField`, mounted in the dashboard hero, the transactions list header, the
+assistant composer and `/capture` (full-screen, and the only variant that carries the receipt action).
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px)                                    │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌───────────────────────────────────────────────┐ │
+│ │ Šta se danas dešavalo sa │ │ │ Šta se danas dešavalo sa novcem?              │ │
+│ │ novcem?                  │ │ │ Lidl 2000, gorivo 3500, Dejan rođa 3600▏      │ │
+│ │ Lidl 2000, gorivo…▏      │ │ └───────────────────────────────────────────────┘ │
+│ └──────────────────────────┘ │ Pregled pre potvrde         [📷 Račun]  [3 ▸]    │
+│ [📷]            [Pregled ▸]  │ 🟢 Lidl      2.000,00 RSD  Hrana      ⌄ ×        │
+│ 🟢 Lidl      2.000,00 RSD    │    Tvoje pravilo: lidl → Hrana                  │
+│    Hrana              ⌄  ×  │ 🟢 gorivo    3.500,00 RSD  Auto/Gorivo ⌄ ×       │
+│ 🔴 Dejan rođa 3.600,00       │ 🔴 Dejan rođa 3.600,00 RSD  ⚠ nisam siguran      │
+│    ⚠ [Kuća/Septička ▾]       │    [Kuća/Septička jama ▾] [Porodica/Pokloni]     │
+│ [ Potvrdi 2 · 1 na proveru ] │ [ Potvrdi 2 · 1 na proveru ]   ⌘⏎   Esc          │
+└──────────────────────────────┴───────────────────────────────────────────────────┘
+```
+
+| Aspect | Specification |
+|---|---|
+| **Local parse** | `packages/nlp` runs **in-browser, synchronously, per keystroke** (~2 ms): segmentation, normalization, amount/date/direction extraction. Structure is visible before any network call ([05 §5.3](05-architecture.md)). |
+| **Focus** | Never autofocused on route entry (it would raise the mobile keyboard). Desktop: `n` or `⌘K` ([07 §5.3](07-platform-strategy-mobile-desktop.md)). Mobile: tap the field, or the `➕` action. `Esc` blurs; a non-empty draft requires confirmation to clear. |
+| **Debounce** | Server `capture:parse` fires **250 ms after the last keystroke**, is abortable, and supersedes in-flight requests. Local parse is never debounced. |
+| **Progressive preview** | A row appears as soon as local extraction yields `amountMinor` + description, in the ⚪ *Računam…* state. The server response fills category, confidence, deciding layer and alternatives; a row never disappears on response, only its badge changes. |
+| **Confidence** | `ui-confidence-badge`, four states: 🟢 ≥ 0.90 auto · 🟡 0.60–0.89 verify · 🔴 < 0.60 ask · ⚪ awaiting server (no `ClassificationDecision` yet). Always icon + text + number, never colour alone. |
+| **Provenance** | One dim line per row from `classification_decisions.decided_by`: *Tvoje pravilo: lidl → Hrana*, *Poklapanje ključne reči: septička*, *Podrazumevano za Dejan*, *AI predlog, 61 %*. Tapping opens the audit chain (§4.5). |
+| **Inline pickers** | Category always; Account when the household has > 1. Merchant, Counterparty, date and tags sit behind the row chevron and are pre-filled. `ui-category-picker` is filtered by `kind`, so an EXPENSE can never take an INCOME category (I-3). |
+| **Ambiguity** | With two plausible amount readings (`1.200` → 1200 vs 1.2) both render as chips, higher-probability preselected, and commit is refused until one is chosen — the parser never silently picks ([04 §3.1](04-categorization-and-ai-engine.md)). |
+| **Blocked rows** | `< 0.60` is never auto-applied (ADR-009). The button reads **Potvrdi 2 · 1 na proveru**; `⌘Enter` force-confirms by persisting the blocked row as `PENDING, needs_review = true`. Blocking the whole batch is forbidden (F-06). |
+| **Bulk confirm** | One `capture:commit` mutation with all rows and **one** `idempotency_key`. Atomic. The Apollo cache normalises by id, so dashboard, list and budget tiles update with no refetch. |
+| **Undo** | Toast *Dodato 3 · Poništi* for 10 s; undo soft-deletes the created Transactions in one call with `audit_log` entries and is also reachable later as Restore. Never a hard delete ([03 §3.4](03-domain-model.md)). |
+| **Duplicates** | (a) Exact `idempotency_key` replay returns the original rows silently, creating nothing (I-10). (b) Heuristic near-duplicate — same resolved Merchant/Counterparty, identical `amountMinor`, same `occurred_local_date`, within 5 minutes — renders an amber row: *Izgleda kao duplikat · Ipak dodaj · Prikaži postojeću*. Only (a) is silent. |
+| **Draft** | Text and uncommitted rows persist to IndexedDB on every change, survive reload and navigation, and clear only on commit or explicit clear. A back gesture never loses a draft. |
+| **Offline** | Fully functional: rows classify locally as far as cached rules allow, otherwise stay ⚪ and queue with `client_id` + `idempotency_key` (F-26). |
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Typing: keystroke
+    Typing --> Typing: local extract (2 ms), rows render ⚪
+    Typing --> Parsing: 250 ms idle
+    Parsing --> Preview: server Proposal (category + confidence)
+    Parsing --> Typing: further keystroke (abort in flight)
+    Preview --> Editing: change a row's category or account
+    Editing --> Preview
+    Preview --> Ambiguous: two plausible amounts
+    Ambiguous --> Preview: user picks one
+    Preview --> Committing: Potvrdi / ⌘Enter
+    Committing --> Committed: atomic capture:commit
+    Committing --> Preview: validation or network error
+    Committed --> [*]: toast + undo window
+```
+
+| Key (capture) | Action |
+|---|---|
+| `Enter` | Confirm all confirmable rows; if any row is blocked or ambiguous, focus it instead |
+| `⌘Enter` / `Ctrl+Enter` | Confirm everything, blocked rows to `PENDING` |
+| `Shift+Enter` | Newline in the field |
+| `Tab` / `Shift+Tab` | Between rows, then between a row's inline controls |
+| `↑` / `↓` in a picker | Move the highlighted category; type to filter; `Enter` selects |
+| `⌫` on an empty row | Remove the row from the batch |
+| `Esc` | Close an open picker, then blur |
+
+---
+
+## 4. Screen specifications
+
+State behaviour lives in §6, not repeated per screen.
+
+### 4.1 Onboarding wizard — F-13
+
+Eliminates the cold-start before the first entry. Under 3 minutes, skippable at every step,
+re-enterable from Settings ([01 §5](01-product-requirements.md)). Progress is stored on the Member so
+a killed app resumes at the same step.
+
+| Step | Elements | Seeds | Skip |
+|---|---|---|---|
+| 1 | Starter tree preview (~40 Serbian nodes), inline rename/delete, *Dodaj kategoriju* | Categories (`is_system = true`) | Empty tree + a note that categorisation stays manual |
+| 2 | Currency (read-only `RSD`, ADR-011) + account multi-select with optional opening balance | Accounts (`CASH`/`BANK`/`CARD`/`OTHER`) | One `CASH` account, *Gotovina* |
+| 3 | *Kome redovno plaćaš?* free text, e.g. `Dejan rođa, septička jama` | Counterparty + alias + a **proposed** Rule | Nothing |
+| 4 | *Gde kupuješ?* multi-select from the ~60 shipped global Merchants | Merchant links + aliases | Global seeds still match at classify time |
+| 5 | Optional monthly income + savings target | Household Budget and/or SavingGoal skeleton | Dashboard shows its no-data states |
+| 6 | Guided first entry: the user types a real transaction, one row expands *Zašto ova kategorija?* | First real Transaction | Coach mark on the capture field |
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT — step 3             │ WIDE — step 1                                     │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌───────────────────────────────────────────────┐ │
+│ │ ‹ Nazad     Korak 3/6    │ │ │ Korak 1 od 6 · Izaberi početne kategorije     │ │
+│ │ Kome redovno plaćaš?     │ │ │ ┌─ Troškovi ─────────┬─ Prihodi ──────────┐   │ │
+│ │ [Dejan rođa, septička…▏] │ │ │ │ ▸ Hrana            │ ▸ Plata            │   │ │
+│ │ Predlozi:                │ │ │ │ ▸ Automobil        │ ▸ Ostali prihodi   │   │ │
+│ │ 👤 Dejan                 │ │ │ │ ▸ Kuća  ▸ Porodica │                    │   │ │
+│ │    Kuća/Septička jama    │ │ │ └────────────────────┴────────────────────┘   │ │
+│ │    [ Dodaj ]             │ │ │ 40 kategorija · menjaš ih kasnije             │ │
+│ │ [Preskoči] [Nastavi ▸]   │ │ │ [ Preskoči ]              [ Nastavi ▸ ]       │ │
+│ └──────────────────────────┘ │ └───────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Step 6 is the only place the app teaches by interruption, and it fires once per household.
+
+### 4.2 Dashboard — F-19, F-21 (+ F-22 feed, F-08 callout)
+
+Answers *can I spend today?* and *will I make it to payday?* in one glance, and is the fastest door
+into capture.
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px)                                    │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌───────────────────────────────────────────────┐ │
+│ │ Danas         🔔³  ◐     │ │ │ Unesi: Lidl 2000…                          ➤  │ │
+│ │ [Lidl 2000…           ➤] │ │ │ Možeš danas da potrošiš      2.350,00 RSD     │ │
+│ │ Možeš danas da potrošiš  │ │ │ 120.000 − 68.450 − 12.000 − 25.000 = 14.550   │ │
+│ │ 2.350,00 RSD             │ │ │ ▓▓▓▓▓▓▓░░░ 57 % budžeta potrošeno             │ │
+│ │ ▓▓▓▓▓▓▓░░░ 68.450/120.000│ │ │ Predviđanje 144.000 (+24.000) ⚠  Štednja 70 % │ │
+│ │ Predviđanje 144.000 ⚠    │ │ │ Uvidi: Hrana 82 % → Budžeti · 8.200 manje nego│ │
+│ │ ⚠ 2 za proveru        ›  │ │ │ prošli mesec · Netflix sutra 1.299            │ │
+│ │ 🟡 Hrana 82 % → Budžeti  │ │ │ Skorašnje: Lidl −2.000 Hrana · Gorivo −3.500  │ │
+│ │ Lidl −2.000 · Dejan ⚠    │ │ │ Auto · Dejan −3.600 ⚠ Čeka odluku      Sve ›  │ │
+│ └──────────────────────────┘ │ └───────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Safe-to-spend disclosure.** The hero expands into a plain-language breakdown listing every input
+  (budget, spent, reserved for remaining recurring obligations, savings target, days elapsed) and the
+  formula in words. Trust feature, not a tooltip. It carries *podaci od 14:02* when the value came
+  from cache (F-26).
+- **Pending strip.** While a `PENDING` Transaction exists, a non-blocking strip reads *2 transakcije
+  čekaju odluku · ne ulaze u obračun* → `/review`. PENDING rows contribute to no figure (I-7); the
+  strip exists so the numbers are never mysterious.
+
+### 4.3 Capture — F-05, F-06, F-14
+
+The full-screen / sheet variant of §3, with the receipt entry point.
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px) — side sheet                        │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌───────────────────────────────┬───────────────┐ │
+│ │ ✕   Novi unos            │ │ │ (preview identical to §3,     │ Lidl 2000,    │ │
+│ │ [Lidl 2000, gorivo…▏]    │ │ │  wide rows: amount left,      │ gorivo 3500…▏ │ │
+│ │ 🟢 Lidl      2.000,00 RSD│ │ │  category + badge right)      │ [📷 Račun]    │ │
+│ │    Hrana             ⌄ × │ │ │                               │ Datum [danas▾]│ │
+│ │ 🟢 gorivo    3.500,00 RSD│ │ │                               │ Račun [Kartica│ │
+│ │    Auto/Gorivo       ⌄ × │ │ │                               │        ▾]     │ │
+│ │ 🔴 Dejan 3.600,00 ⚠      │ │ │                               │ [Potvrdi 2 ▸] │ │
+│ │ [📷 Račun]               │ │ │                               │               │ │
+│ │ [Potvrdi 2 · 1 proveru]  │ │ │                               │               │ │
+│ └──────────────────────────┘ │ └───────────────────────────────┴───────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Mobile collapses Account and date into one summary chip (*Kartica · danas*); desktop shows them as an
+always-visible column. `📷` moves to overflow when the field is non-empty, so it never competes with
+commit.
+
+### 4.4 Transactions list — F-24, F-04, F-25, F-12
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px) — dense table mode                 │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌───────────────────────────────────────────────┐ │
+│ │ Transakcije        🔍 ☰  │ │ │ Lidl 2000… ➤  [Filteri] [Sačuvani prikazi ▾]  │ │
+│ │ [Kartica ▾][Oktobar ▾]   │ │ │ ☐ Datum  Opis       Kategorija Račun    Iznos │ │
+│ │ [Lidl 2000…           ➤] │ │ │ ☐ 12.10. Lidl       Hrana     Kart.   −2.000 │ │
+│ │ ⚠ 2 za proveru        ›  │ │ │ ☐ 12.10. Gorivo     Auto      Got.    −3.500 │ │
+│ │ ── 12. oktobar ────────  │ │ │ ☐ 12.10. Dejan rođa ⚠ Čeka    Kart.   −3.600 │ │
+│ │ Lidl  −2.000 Hrana       │ │ │ ☐ 11.10. Plata      Plata     Tek.  +145.000 │ │
+│ │ Gorivo −3.500 Auto       │ │ │ ▸ 11.10. (grupa)                              │ │
+│ │ Dejan  −3.600 ⚠          │ │ │ 4 od 214 · [Izvezi CSV (214)] [Uvezi CSV]     │ │
+│ └──────────────────────────┘ │ └───────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- Row tap → detail (§4.5). Long-press (mobile) or `x` (desktop) → selection, raising
+  `ui-bulk-action-bar`.
+- Filters: period presets and range, Account, Category subtree, Merchant, Counterparty, Tag, kind,
+  amount range, status, `needs_review`, source. Saved views persist per Member.
+- CSV import runs a dry-run diff (*124 redova · 3 moguća duplikata*) before writing (F-25).
+
+### 4.5 Transaction detail / edit — F-04, F-15, F-12, F-31, F-34
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px) — context pane                     │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌───────────────────────────────────────────────┐ │
+│ │ ‹ Dejan rođa        ⋯    │ │ │ Dejan rođa                     [Sačuvaj]  ⋯    │ │
+│ │ −3.600,00 RSD            │ │ │ −3.600,00 RSD · 12.10.2026 · Kartica          │ │
+│ │ Iznos [3.600,00 RSD]     │ │ │ Kategorija [Kuća / Septička jama        ▾]    │ │
+│ │ Kategorija [Kuća/Sept…▾] │ │ │ Prodavac [—]  Osoba [Dejan ▾]  Oznake [+]     │ │
+│ │ Osoba [Dejan ▾]          │ │ │ Račun [Kartica ▾]   Datum [12.10.2026]        │ │
+│ │ ▸ Podele (2)   3.600 ✓   │ │ │ Podele (2)  Zbir 3.600,00 ✓                   │ │
+│ │ ▸ Zašto ova kategorija?  │ │ │  Kuća/Septička jama 3.000,00 [−]              │ │
+│ │ ▸ Istorija izmena (3)    │ │ │  Kuća/Održavanje      600,00 [−] [+ Dodaj]    │ │
+│ │ [Poništi]  [Obriši]      │ │ │ ▾ Zašto: AI 0.61 → ti ispravio · pravilo #41  │ │
+│ └──────────────────────────┘ │ └───────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Splits (F-15).** `ui-split-editor` shows the server-computed difference and blocks saving until it
+  is exactly zero (I-1). Offered for `EXPENSE`; hidden for `INCOME` in v1. A Split's Category must
+  match the Transaction's `kind` (I-3). Splits and receipt-item categorisation together are the
+  two-level model of ADR-015 — a mixed basket is never flattened onto the Merchant.
+- **Zašto ova kategorija?** renders the `ClassificationDecision` chain (layer, Rule, keyword,
+  provider, model, calibrated confidence) and every `Correction` (F-31) in plain language, no ids.
+- **Concurrency.** Saving sends `version`; a mismatch returns the server row and opens a field-level
+  diff with *Zadrži moje* / *Prihvati novo* per field. Money fields are never silently clobbered.
+- **Delete** is a soft delete with an undo toast; Restore lives in the history panel.
+
+### 4.6 Review queue — F-08
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px)                                    │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌───────────────────────────────────────────────┐ │
+│ │ Provera                  │ │ │ Provera                                       │ │
+│ │ [Čeka odluku 2][Prov. 7] │ │ │ [Čeka odluku 2] [Za proveru 7] [Sve]          │ │
+│ │ Dejan rođa 3.600,00      │ │ │ 1 Dejan rođa 3.600,00 🔴 0.61                 │ │
+│ │ 🔴 0.61 · AI predlog     │ │ │   [1] Kuća/Septička jama [2] Porodica/Pokloni │ │
+│ │ [Kuća/Septička jama ▾]   │ │ │   ☑ Zapamti za ubuduće           [Rešeno ⏎]   │ │
+│ │ [1] Kuća/Septička jama   │ │ │ 2 Lidl 2.000,00 🟡 0.74 Hrana ▾               │ │
+│ │ [2] Porodica/Pokloni     │ │ │   ☐ Zapamti za ubuduće           [Rešeno ⏎]   │ │
+│ │ ☑ Zapamti za ubuduće     │ │ │ 3 Nepoznato 850,00 🔴 0.00 [Izaberi ▾]        │ │
+│ │ [ Rešeno ]               │ │ │ 2 čekaju odluku · rešeno 5 danas              │ │
+│ └──────────────────────────┘ │ └───────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Number keys `1`–`3` apply the listed alternatives, `Enter` resolves, `j`/`k` move — a 20-row queue is
+a sub-minute task. Accepting *Zapamti za ubuduće* runs FL-04 and then offers the bounded bulk
+re-classify (*Primeni i na 4 slične?*) with a diff preview. The queue never auto-resolves anything.
+
+### 4.7 Category tree editor with keywords — F-02, F-03, F-32
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px) — master/detail                    │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌──────────────────────┬────────────────────────┐ │
+│ │ Kategorije       + Dodaj │ │ │ Troškovi         +   │ Kuća / Septička jama   │ │
+│ │ [Troškovi][Prihodi]      │ │ │ ▾ Hrana              │ Ikonica [🏠] Boja [■]  │ │
+│ │ ▾ Hrana                  │ │ │ ▾ Automobil          │ Roditelj [Kuća ▾]      │ │
+│ │ ▾ Kuća                   │ │ │ ▾ Kuća               │ AI opis                │ │
+│ │   ▸ Septička jama   ◀    │ │ │   ▸ Septička jama ◀  │ [pražnjenje septičke…] │ │
+│ │ ▾ Porodica               │ │ │ ▾ Porodica           │ Ključne reči (+ / −)   │ │
+│ │ ── Detalji ──────────    │ │ │                      │ +septička +jama        │ │
+│ │ Ikonica · Boja · AI opis │ │ │                      │ −poklon                │ │
+│ │ Ključne reči (+ / −)     │ │ │                      │ 3 transakcije koriste  │ │
+│ └──────────────────────────┘ │ └──────────────────────┴────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Two trees selected by a segmented control (`EXPENSE` / `INCOME`); depth capped at 5 (I-11).
+Reparenting is drag-and-drop **and** keyboard (`Alt+↑/↓` reorder, `Alt+→/←` nest) with the new path
+announced; an illegal drag (cycle, depth > 5) is refused with an inline reason. Deleting a Category
+with Transactions is refused (I-12) and opens *Prebaci 14 transakcija u… [Kategorija ▾]*. Keywords are
+polarity chips (`INCLUDE` / `EXCLUDE`) with a match-mode selector; `SUBSTRING` carries a warning that
+it is deliberately weak.
+
+### 4.8 Merchants — F-10
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px)                                    │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌──────────────────────┬────────────────────────┐ │
+│ │ Prodavci         + Dodaj │ │ │ Prodavci         +   │ Lidl                   │ │
+│ │ 🔍 [lidl             ]   │ │ │ Lidl     Hrana    ›  │ Podrazumevana kat.     │ │
+│ │ Lidl      Hrana       ›  │ │ │ Maxi     Hrana    ›  │ [— nije postavljena ▾] │ │
+│ │ Maxi      Hrana       ›  │ │ │ Shell    Auto/Gor.›  │ stavke računa imaju    │ │
+│ │ Shell     Auto/Gor.   ›  │ │ │ EPS      Kuća     ›  │ prednost               │ │
+│ │ (+ 56 iz uvezenog spiska)│ │ │                      │ Aliasi: lidl srbija +  │ │
+│ │ [Spoji duplikate]        │ │ │                      │ AI nagoveštaj[...]     │ │
+│ └──────────────────────────┘ │ └──────────────────────┴────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Default Category is **optional and labelled as such**; the helper text states that ReceiptItem
+classification outranks a merchant default ([04 §6.3](04-categorization-and-ai-engine.md)). Merge
+shows the alias union and affected Transaction count before committing.
+
+### 4.9 Counterparties — F-11
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px)                                    │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌──────────────────────┬────────────────────────┐ │
+│ │ Osobe            + Dodaj │ │ │ Osobe            +   │ Dejan                  │ │
+│ │ [Sve][Osobe][Firme]      │ │ │ [Sve][Osobe][Firme]  │ Tip [Osoba ▾]          │ │
+│ │ Dejan     Osoba       ›  │ │ │ Dejan    Osoba    ›  │ Podrazumevana kat.     │ │
+│ │ EPS       Firma       ›  │ │ │ EPS      Firma    ›  │ [Kuća/Septička jama ▾] │ │
+│ │ Telekom   Firma       ›  │ │ │ Telekom  Firma    ›  │ Aliasi: dejan rođa [+] │ │
+│ │ 14 transakcija · 41.200  │ │ │                      │ Napomena [rođak, jamu] │ │
+│ │ Septička jama  −3.600    │ │ │                      │ Transakcije (14)   Sve ›│ │
+│ └──────────────────────────┘ │ └──────────────────────┴────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+`Dejan rođa` is the canonical case: aliases are free text and accepting a default Category here
+offers the same synthesised Rule a correction would (§5 FL-04) — one affordance, one code path.
+
+### 4.10 Rules manager — F-09
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px) — master/detail                    │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌──────────────────────┬────────────────────────┐ │
+│ │ Pravila          + Novo  │ │ │ Pravila          +   │ Dejan → septička jama  │ │
+│ │ [Sve][Naučena][Moja]     │ │ │ Dejan → septička ◀ ● │ Prioritet [50]         │ │
+│ │ Dejan → septička     ●   │ │ │ Lidl → Hrana     ●   │ ☑ Aktivno ☑ Zaustavi    │ │
+│ │  hit 12 · pre 3 d        │ │ │ plata → Plata    ●   │ Uslovi [svi ▾]         │ │
+│ │ Lidl → Hrana         ●   │ │ │ gorivo → Auto    ○   │  osoba je Dejan        │ │
+│ │  hit 143 · pre 1 h       │ │ │                      │  tekst ne sadrži poklon│ │
+│ │ ⚠ 1 možda mrtvo [Pregl.] │ │ │                      │ [+ Uslov] (dubina 2/3) │ │
+│ │ ⚠ 1 sudar [Reši]         │ │ │                      │ Test [Dejan 2000] ▸ ✓  │ │
+│ └──────────────────────────┘ │ └──────────────────────┴────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+`ui-rule-builder` exposes exactly the fields and operators of
+[04 §5.2](04-categorization-and-ai-engine.md), with `all`/`any`/`none` groups and a hard stop at depth
+3. The **test panel** evaluates the rule locally with the same `packages/rules-engine` the server
+runs, showing the resulting Category before saving. Row columns: origin (`USER` / `LEARNED` /
+`SYSTEM` / `IMPORT`), priority, `hit_count`, `last_hit_at`, active toggle. Rules with `hit_count = 0`
+after 90 days surface for cleanup ([04 §8.2](04-categorization-and-ai-engine.md)).
+
+### 4.11 Receipts — F-14, F-34
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px)                                    │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌───────────────────────────────────────────────┐ │
+│ │ ‹ Račun · Lidl      ⋯    │ │ │ Račun · Lidl · 12.10.2026      ⚠ Ne poklapa se│ │
+│ │ [ fotografija ]          │ │ │ Stavka        Kol.  Iznos   Kategorija        │ │
+│ │ ⚠ Zbir 2.000 vs 2.050    │ │ │ Meso           1    800,00  Hrana      🟢     │ │
+│ │ Meso    800 Hrana   🟢   │ │ │ Šampon         1    500,00  Higijena   🟡     │ │
+│ │ Šampon  500 Higijena 🟡  │ │ │ Deterdžent     1    300,00  Kuća       🟢     │ │
+│ │ Nepozn. 250 ⚠       🔴   │ │ │ Nepoznato      1    250,00  ⚠ ▾        🔴     │ │
+│ │ [Uskladi ručno]          │ │ │ Zbir 2.050,00 · račun 2.050,00 ⚠ −50         │ │
+│ │ [Napravi transakciju ▸]  │ │ │ [Uskladi ručno] [Napravi transakciju ▸]       │ │
+│ └──────────────────────────┘ │ └───────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+The banner states the exact difference in money, never a percentage (`reconciliation` ∈ `PENDING` /
+`MATCHED` / `MISMATCH` / `MANUAL`; tolerance 1 minor unit, I-6; ADR-015). *Napravi transakciju* aggregates
+ReceiptItems by Category into Splits summing to the total (I-1), creates a `CONFIRMED` Transaction
+with `source = 'RECEIPT'`, and sets `receipts.transaction_id`; it is enabled within tolerance or after
+*Uskladi ručno*. Items stream in with ⚪ badges while OCR runs, and manual itemisation is offered
+rather than a spinner page.
+
+### 4.12 Budgets — F-17
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px)                                    │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌───────────────────────────────────────────────┐ │
+│ │ Budžeti         + Novi   │ │ │ Budžeti                    + Novi budžet       │ │
+│ │ [Oktobar 2026        ▾]  │ │ │ Ukupno            120.000 / 68.450   ▓▓▓▓░░   │ │
+│ │ Ukupno 120.000 · 51.550  │ │ │ ▸ Hrana            30.000 / 24.600   ▓▓▓▓▓░82%│ │
+│ │ ▓▓▓▓▓░░░ 68.450          │ │ │ ▸ Automobil        15.000 /  6.200   ▓▓░░░░  │ │
+│ │ ▸ Hrana  82 % ⚠          │ │ │ ▸ Kuća             25.000 / 25.900   ▓▓▓▓▓▓ ⚠│ │
+│ │ ▸ Kuća  Prekoračenje ⚠   │ │ │ Prekoračenje Kuća: 900 · [Uredi]              │ │
+│ │ ▸ Pretplate 51 %         │ │ │ Rollover isključen · Podkategorije uključene  │ │
+│ │ [Uredi][Prebaci period]  │ │ │ 2 transakcije čekaju odluku · ne ulaze        │ │
+│ └──────────────────────────┘ │ └───────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Editor: scope (whole household `category_id = NULL`, or a Category), `period`
+(`WEEKLY`/`MONTHLY`/`QUARTERLY`/`YEARLY`/`CUSTOM`), `period_start`, `amount_minor` via
+`ui-money-input`, `rollover`, `include_subcategories`. Creating a second Budget for the same
+`(category, period)` hits the unique scope index and returns an inline *Budžet već postoji. Izmeniti?*
+Progress counts only `CONFIRMED`, non-deleted Transactions inside the subtree (I-5), and the screen
+states the excluded PENDING count. Over-budget is a notice, never a block — the copy is
+*Prekoračenje*, no control is disabled (01 §8).
+
+### 4.13 Savings goals — F-18
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px)                                    │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌───────────────────────────────────────────────┐ │
+│ │ Ciljevi          + Novi  │ │ │ Ciljevi                       + Novi cilj      │ │
+│ │ Letovanje                │ │ │ Letovanje          21.000 / 120.000   ▓▓░░░░  │ │
+│ │ 21.000 / 120.000 · 17 %  │ │ │ Do 01.06.2027 · potrebno mesečno 16.500       │ │
+│ │ ▓▓░░░░░░░░░░░░           │ │ │ Uplate: 10.500 (Kartica) · 7.000 (Gotovina)   │ │
+│ │ mesečno 16.500           │ │ │ [Dodaj uplatu] [Uredi] [Arhiviraj]            │ │
+│ │ [ Dodaj uplatu ]         │ │ │ Novi auto  0 / 400.000 · mesečno 22.200       │ │
+│ │ Novi auto 0 / 400.000    │ │ │ Do 01.03.2028 · bez uplata                    │ │
+│ └──────────────────────────┘ │ └───────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Required monthly** is computed by the backend from `(target_minor − contributed) / months remaining`
+and is never editable ([03 §6](03-domain-model.md), ADR-001). A goal with no `target_date` shows
+progress and no rate, plus a nudge to add a date. Contributions are `goal_contributions`, not
+Transactions — stated once inline to prevent double-counting confusion.
+
+### 4.14 Recurring rules — F-16
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px)                                    │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌───────────────────────────────────────────────┐ │
+│ │ Ponavljajuće     + Novo  │ │ │ Ponavljajuće                  + Novo pravilo   │ │
+│ │ ⚠ Predlozi (2)        ›  │ │ │ Predlozi (2) ⚠                                │ │
+│ │ 💳 Netflix  1.299        │ │ │  Netflix 1.299 mesečno, 4× → [Prihvati] [✕]   │ │
+│ │ sutra · mesečno          │ │ │  EPS 4.200 mesečno, 3×     → [Prihvati] [✕]   │ │
+│ │ ☐ Automatski potvrdi     │ │ │ Aktivna pravila                               │ │
+│ │ 🏠 EPS 4.200 · 01.11.    │ │ │  Netflix 1.299 · sutra · mesečno    ☑ auto    │ │
+│ │ ☑ Automatski potvrdi     │ │ │  EPS 4.200 · 01.11. · mesečno       ☐ auto    │ │
+│ │ Sledećih 30 dana:        │ │ │  Kirija 45.000 · 05.11. · mesečno   ☑ auto    │ │
+│ │ 15.10 Netflix · 01.11 EPS│ │ │ Sledećih 30 dana: 15.10 Netflix · 01.11 EPS   │ │
+│ └──────────────────────────┘ │ └───────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Detected subscriptions appear as **Proposals** with their evidence (*4×, isti iznos*) and require an
+explicit accept — never auto-created (`is_detected`,
+[04 §8.2](04-categorization-and-ai-engine.md)). The RRULE renders in words; the raw RFC 5545 string is
+read-only in an advanced disclosure. `auto_confirm` is explained in one line: unchecked produces a
+`PENDING` row that appears for confirmation. Deactivating keeps history.
+
+### 4.15 Analytics — F-20
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px)                                    │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌───────────────────────────────────────────────┐ │
+│ │ Analitika         ⤓ CSV  │ │ │ Analitika      [Oktobar ▾] [vs Sep ▾]   ⤓ CSV │ │
+│ │ [Oktobar ▾][vs Sep ▾]    │ │ │ Potrošnja po kategoriji                       │ │
+│ │ ▁▃▅▂▇▄ trend             │ │ │ ████████████████ Kuća     25.900  38 % ⚠      │ │
+│ │ Kuća     25.900 38 % ↑   │ │ │ ███████████████ Hrana     24.600  36 % ↑      │ │
+│ │ Hrana    24.600 36 % ↑   │ │ │ █████ Automobil            6.200   9 % ↓      │ │
+│ │ Auto      6.200  9 % ↓   │ │ │ ███ Pretplate              4.100   6 % →      │ │
+│ │ ▸ Vrh prodavaca          │ │ │ Vrh prodavaca: Lidl 8.400 · Maxi 5.100        │ │
+│ │ ▸ Odnos prema prošlom    │ │ │ [Otvori u transakcijama]  ▸ tabela sa brojevima│ │
+│ └──────────────────────────┘ │ └───────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+One query drives every chart for the selected period; `[` / `]` move periods on desktop. Every
+element drills through to `/transactions` with the exact filters applied and visible as chips. Charts
+ship an accessible table alternative ([07 §7.3](07-platform-strategy-mobile-desktop.md)) and a
+category with no prior-period data renders *nema osnova za poređenje* rather than a misleading
+infinity.
+
+### 4.16 Assistant — F-23, F-30
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px)                                    │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌───────────────────────────────────────────────┐ │
+│ │ Asistent                 │ │ │ Asistent                                      │ │
+│ │ [koliko sam potrošio na  │ │ │ Ti: koliko sam potrošio na hranu ovog meseca? │ │
+│ │  hranu ovog meseca?    ] │ │ │ Do sada si potrošio 24.600,00 RSD na hranu,   │ │
+│ │ Do sada si potrošio      │ │ │ kroz 23 transakcije.                          │ │
+│ │ 24.600,00 RSD na hranu,  │ │ │ ▸ na osnovu 23 transakcije, 1–31 okt 2026     │ │
+│ │ kroz 23 transakcije.     │ │ │   [Otvori u transakcijama]                    │ │
+│ │ ▸ na osnovu 23 trans.    │ │ │ Ti: kako da uštedim 20.000 ovog meseca?       │ │
+│ │ [Otvori u transakcijama] │ │ │ Predlog (izračunato): Hrana −7.000 · Gorivo   │ │
+│ │ Pitaj: [Koliko danas?]   │ │ │ −3.000 · Ostalo −5.000 · Pretplate −2.000 =  │ │
+│ │ [Gde odlazi najviše?]    │ │ │ 17.000 · ostaje 3.000  [Primeni] [Ne, hvala]  │ │
+│ └──────────────────────────┘ │ └───────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- Every answer carries provenance — an expandable *na osnovu N transakcija, period* linking to the
+  filtered list with chips. That is the trust mechanism, not decoration.
+- Numbers come from parameterised household-scoped queries and the LLM only narrates
+  ([04 §10](04-categorization-and-ai-engine.md); the constrained planner is ADR-017). If the numeric
+  validator rejects a narration, the template answer is shown silently — never a regenerate affordance
+  that exposes the plumbing.
+- Unanswerable questions render *Za to još nemam podatke* plus three answerable suggestions; never a
+  guess. F-30 returns a computed table labelled *Predlog (izračunato)* and offers to write the numbers
+  into Budgets; it never edits a Budget silently.
+
+### 4.17 Notifications centre — F-22
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px)                                    │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌───────────────────────────────────────────────┐ │
+│ │ Notifikacije       ⚙     │ │ │ Notifikacije                    [Sve pročitano]│ │
+│ │ [Sve][Budžet][Upoz.][+]  │ │ │ [Sve][Budžet][Upozorenja][Pozitivno]     ⚙    │ │
+│ │ ⚠ Kuća prekoračena       │ │ │ ⚠ Kuća je prekoračila budžet za 900,00 RSD    │ │
+│ │ 900,00 RSD · pre 2 h     │ │ │   pre 2 h → Budžeti                           │ │
+│ │ 🟡 Hrana je na 82 %      │ │ │ 🟡 Hrana je na 82 % budžeta                   │ │
+│ │ pre 5 h                  │ │ │   24.600,00 od 30.000,00 · pre 5 h → Budžeti  │ │
+│ │ 🟢 8.200 manje nego      │ │ │ 🟢 Potrošio si 8.200,00 manje nego prošli mes.│ │
+│ │ prošli mesec · juče      │ │ │   juče → Analitika                            │ │
+│ │ 💳 Netflix sutra 1.299   │ │ │ 💳 Sutra se naplaćuje Netflix 1.299,00        │ │
+│ └──────────────────────────┘ │ └───────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Every row deep-links to the entity that caused it. `⚙` opens `/settings/alerts`: per-kind toggles
+(`BUDGET_THRESHOLD`, `PACE_OVERRUN`, `RECURRING_DUE`, `UNUSUAL_SPEND`, `GOAL_REACHED`), thresholds,
+channels (`IN_APP` / `EMAIL` / `WEB_PUSH`) and quiet hours. `severity = POSITIVE` insights have their
+own tab and are never styled as warnings. Web-push permission is requested after the first alert the
+user opens, not on first load.
+
+### 4.18 Settings — F-32, F-01, F-25, F-27, F-28
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ COMPACT (390 px)             │ WIDE (1440 px) — section nav + pane               │
+├──────────────────────────────┼───────────────────────────────────────────────────┤
+│ ┌──────────────────────────┐ │ ┌──────────────┬────────────────────────────────┐ │
+│ │ Podešavanja              │ │ │ Profil       │ AI podešavanja                 │ │
+│ │ ▸ Profil                 │ │ │ Domaćinstvo  │ Ruting po zadatku              │ │
+│ │ ▸ Domaćinstvo            │ │ │ Računi (3)   │ Razdvajanje  [DeepSeek ▾]      │ │
+│ │ ▸ Računi (3)             │ │ │ Prikaz       │ Klasifikacija[DeepSeek ▾]      │ │
+│ │ ▸ Prikaz                 │ │ │ Jezik        │ Naracija     [Anthropic ▾]     │ │
+│ │ ▸ Jezik (sr-Latn)        │ │ │ AI        ›  │ OCR          [Gemini ▾]        │ │
+│ │ ▸ AI podešavanja      ›  │ │ │ Obaveštenja  │ Pragovi: auto [0,90] provera   │ │
+│ │ ▸ Obaveštenja            │ │ │ Podaci       │ [0,60] · ☑ Pošalji tekst AI    │ │
+│ │ ▸ Podaci · ▸ Članovi     │ │ │ Članovi (v2) │ provajderu · ○ Samo lokalno    │ │
+│ │ ▸ Odjavi se              │ │ │              │ [Izvezi CSV+JSON][Obriši sve]  │ │
+│ └──────────────────────────┘ │ └──────────────┴────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+| Section | Contents |
+|---|---|
+| Profil | Display name, email, password change, active sessions |
+| Domaćinstvo | Name, `ledger_currency` (**read-only `RSD`**, ADR-011), `iana_timezone` |
+| Računi (F-01) | Account CRUD, `kind`, opening balance, archive, sort order |
+| Prikaz | Theme, dense table mode, grouping default, number/date format |
+| Jezik (F-27) | `sr-Latn-RS` / `sr-Cyrl-RS` / `en`; parsing accepts latin **and** cyrillic regardless |
+| AI (F-32) | Per-task routing (ADR-007), confidence thresholds (0.90 / 0.60 defaults), consent toggle, local-only mode, monthly AI budget notice |
+| Obaveštenja | §4.17 preferences |
+| Podaci (F-25) | CSV import (dry run), CSV + JSON export, purge with typed confirmation |
+| Članovi (F-29) | Present, marked *uskoro*, explaining that the household model already exists |
+
+Destructive actions use a typed `OBRIŠI` confirmation stating exactly what is removed (*sve
+transakcije, pravila, računi i fajlovi; vraćanje nije moguće*); the purge is a queued job with a
+completion receipt ([08](08-security-privacy-and-compliance.md), ADR-013).
+
+---
+
+## 5. End-to-end flows
+
+### FL-01 — First-run onboarding (F-13)
+
+1. `/auth/sign-up` → email + password (argon2id) → verification → verified (F-28).
+2. Household created server-side (`ledger_currency = 'RSD'`, timezone from the browser), Member role
+   `OWNER`. No household id ever appears in the UI (ADR-008).
+3. Redirect to `/onboarding`; the step is recorded so a killed app resumes.
+4. Steps 1–5 per §4.1, each posting on *Nastavi* rather than batching, so a skip leaves a coherent
+   state. Step 3 is the only step that creates a **Rule**, and it is proposed with an explicit *Dodaj*
+   (ADR-010).
+5. Step 6 runs the real capture pipeline on a real input and expands one row's provenance once.
+6. Completion → `/` with a compact *Šta sada?* card (three actions), which disappears permanently once
+   dismissed or once three real Transactions exist.
+
+### FL-02 — Single capture (F-05)
+
+1. Focus the field, type `Lidl 2000`.
+2. Client `packages/nlp` extracts `amountMinor = 200000`, kind `EXPENSE`, description `Lidl`; a row
+   renders immediately in ⚪.
+3. After 250 ms idle the client sends `capture:parse`.
+4. Server resolves Merchant `Lidl` → keyword/rule tier → Category `Hrana`, confidence 0.96, layer
+   `KEYWORD`, and returns a `Proposal` (never persisted).
+5. Row re-renders 🟢 with *Hrana* and the provenance line *Poklapanje ključne reči: lidl*.
+6. `Enter` → `capture:commit` with one `idempotency_key` → Transaction `CONFIRMED`,
+   `category_source = 'KEYWORD'`, `ClassificationDecision` written (I-9).
+7. Optimistic cache update: dashboard tiles, recent activity and budget bars update without a refetch.
+8. Toast *Dodao si 1 transakciju · Poništi* (10 s). Median time-to-log ≤ 4 s.
+
+### FL-03 — Bulk capture with one ambiguous row (F-06, F-08)
+
+1. `Lidl 2000, gorivo 3500, Dejan rođa 3600` → three fragments.
+2. Rows 1–2 resolve deterministically (🟢). Row 3 resolves Counterparty `Dejan` by exact alias but
+   matches no Rule or keyword → AI `CLASSIFY` → `Kuća/Septička jama` 0.61 → 🔴.
+3. Primary button reads **Potvrdi 2 · 1 na proveru**; the confident rows are never held hostage.
+4. `Enter` commits two `CONFIRMED` and one `PENDING` with `needs_review = true` (I-7, I-8).
+5. Toast *Dodato 2 · 1 čeka odluku · Poništi*; the badge increments by 1 via subscription.
+6. The PENDING row is excluded from balances and budgets; the dashboard pending strip explains why.
+
+### FL-04 — Correction + "Zapamti za ubuduće" (F-09)
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant W as Web
+    participant A as API (classification)
+    participant R as Rules Engine
+    participant DB as PostgreSQL
+    U->>W: change category on a review row
+    W->>A: updateTransaction(id, categoryId, version)
+    A->>DB: UPDATE transactions (category_source='USER')
+    A->>DB: INSERT corrections (was_ai_suggested)
+    A->>A: synthesise the narrowest rule that would have prevented it
+    A-->>W: { transaction, ruleProposal }
+    W-->>U: "Zapamti za ubuduće: Dejan → Kuća/Septička jama"
+    U->>W: accept (+ optional "primeni na 4 slične")
+    W->>A: createRule(fromCorrectionId, applyToSimilar?)
+    A->>DB: INSERT rules (origin=LEARNED, source_correction_id)
+    A->>R: invalidate household rule cache (pub/sub to other nodes)
+    Note over R: next "Dejan 2000" resolves with zero AI calls
+```
+
+1. The `Correction` is recorded whether or not a Rule is created — the signal is never lost.
+2. The synthesised Rule is the narrowest that would have prevented the correction
+   ([04 §8.1](04-categorization-and-ai-engine.md)): entity trigger when an entity resolved, otherwise
+   a distinctive token plus an `INCLUDE` Keyword.
+3. Never auto-created; dismissing still leaves the correction in place (ADR-010).
+4. On accept, the bounded bulk re-classify is offered with a diff preview; each changed row writes its
+   own `Correction`, so the audit trail stays honest.
+
+### FL-05 — Rule creation conflict handling (F-09)
+
+1. A Rule is submitted from the correction card, the rule editor, or a Merchant/Counterparty default.
+2. The server simulates it against every higher-priority Rule and the keyword tier
+   ([04 §5.3](04-categorization-and-ai-engine.md)).
+3. **No conflict** → saved, household rule cache invalidated, listed with `hit_count = 0`.
+4. **Conflict** → save is refused and a comparison card shows the new rule, the conflicting rule, and
+   the inputs where they disagree.
+5. Resolution options, all explicit: **Izmeni postojeće pravilo** (preferred, and the default focus),
+   **Podigni prioritet** (with affected inputs listed), **Suzi uslove** (opens the builder), or
+   **Otkaži**.
+6. Never silently shadow: a shadowed rule leaves the higher-priority rule permanently dead and the
+   rules screen misleading, which is exactly how rule sets rot.
+
+### FL-06 — Receipt capture → reconciled transaction (F-14)
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant W as Web (camera)
+    participant A as API (receipts)
+    participant Q as BullMQ worker
+    participant O as OCR provider
+    U->>W: photograph a Lidl receipt
+    W->>A: presigned upload (attachments)
+    A->>Q: enqueue ocr.extract
+    Q->>O: extract lines
+    O-->>Q: items + total + merchant + date
+    Q-->>W: subscription: items stream in (⚪ → 🟢/🟡/🔴)
+    U->>W: fix the one 🔴 item, resolve the mismatch
+    W->>A: commitReceipt(receiptId)
+    A->>A: aggregate items by category into Splits (sum == total, I-1)
+    A->>A: receipts.reconciliation = 'MATCHED'
+```
+
+1. Items stream in as extracted; the screen stays usable and offers manual itemisation throughout.
+2. Any item below 0.60 is flagged individually and does not block the receipt.
+3. The banner shows the exact difference; `MATCHED` requires |difference| ≤ 1 minor unit (I-6),
+   otherwise the user edits items or chooses *Uskladi ručno* (`MANUAL`).
+4. Commit is refused while the difference is out of tolerance and `reconciliation != 'MANUAL'`.
+5. The Transaction carries Splits per Category plus a `ClassificationDecision` per item.
+
+### FL-07 — Budget setup (F-17)
+
+1. `/budgets` → *Novi budžet*.
+2. Scope: whole household, or a Category subtree (which exposes `include_subcategories`, default on).
+3. `period` + `period_start` + `amount_minor` via `ui-money-input` (numeric keypad on touch).
+4. `rollover` toggle with one line of explanation; nothing else.
+5. Save → conflict check against the unique `(category, period)` scope → inline *Izmeniti?* if taken.
+6. Dashboard tiles and safe-to-spend recompute server-side; PENDING rows are excluded (I-5, I-7) and
+   the tile states the exclusion count.
+
+### FL-08 — Goal creation (F-18)
+
+1. `/goals` → *Novi cilj*: name, target amount, target date, optional Account.
+2. Save; the backend computes required-monthly and returns it with the goal — the client never divides.
+3. Optional first contribution → a `goal_contributions` row.
+4. Dashboard shows progress; `GOAL_REACHED` becomes an eligible Alert kind and a positive Insight is
+   generated when a month's target is met.
+
+### FL-09 — Assistant question with provenance (F-23)
+
+1. The user asks `koliko sam potrošio na hranu ovog meseca?` or taps a suggested chip.
+2. The query planner maps it to a fixed template (`SPEND_BY_CATEGORY`) with slots: period = current
+   month, category = `Hrana` subtree. It never emits SQL ([04 §10](04-categorization-and-ai-engine.md)).
+3. The repository runs a household-scoped aggregate over `CONFIRMED`, non-deleted Transactions.
+4. Facts are formatted server-side (currency, locale, grouping) and passed to `NARRATE` as strings.
+5. The numeric validator asserts every numeral in the narration exists in the facts payload; on
+   failure, one stricter retry, then the template answer.
+6. The answer renders with expandable provenance and a drill-through link that opens `/transactions`
+   with the filter chips applied.
+7. If no template fits, the assistant says so and offers the three closest answerable questions.
+
+### FL-10 — Offline capture, then sync with a reviewable diff (F-26)
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant W as Web (IndexedDB outbox)
+    participant A as API
+    U->>W: "Lidl 2000" with no connectivity
+    W->>W: local extract + rule-only classification (cached taxonomy)
+    W->>W: outbox {client_id, idempotency_key, payload, localCategory}
+    W-->>U: "Čeka slanje (1)"; figures labelled "podaci od 14:02"
+    Note over W: further captures are never blocked
+    W->>A: reconnect → flush outbox in order
+    A->>A: upsert by (household_id, client_id) — replay-safe (I-10)
+    A->>A: server-side classification (may differ from local)
+    A-->>W: server rows + decisions
+    W->>W: diff local vs server
+    W-->>U: "Pregledaj razlike (1)" — before/after per row
+    Note over W,A: 409 + version on an edited row → money-field diff, never silent clobber
+```
+
+1. Pending rows render in a tray with a count, retry and per-row discard. The client-generated
+   `client_id` plus outbox model is ADR-016; the UI never assumes a background flush happened.
+2. Every offline figure is labelled `podaci od <time>`; an unlabelled stale "safe to spend" is a trust
+   bug ([05 §7](05-architecture.md), [07 §6.3](07-platform-strategy-mobile-desktop.md)).
+3. The diff sheet always shows the *Zašto* line for the server decision, so the change is explainable
+   rather than merely accepted.
+4. Failed flushes surface the server error with a retry; nothing is silently dropped.
+
+---
+
+## 6. State matrices
+
+Every screen implements all six states (Definition of Done item 3, [09 §8](09-implementation-plan.md)).
+`No-data-yet` means the domain has never had data; `Empty` means the current query matched nothing.
+**Permission-denied** has three causes rendered by `ui-permission-gate` with distinct copy:
+**role-gated** (`VIEWER` attempting a write), **entitlement-gated** (a Pro feature on the free plan,
+[12](12-monetization-and-pricing.md)), and **browser-permission** (camera, notifications, storage).
+None renders a generic dead end.
+
+| Screen | Loading | No-data-yet | Empty (filtered) | Error | Offline | Permission-denied |
+|---|---|---|---|---|---|---|
+| Capture (§3) | Never blocks: local rows render, server fields show ⚪ | Helper example + one-tap starter examples | n/a | Row banner *Ne mogu da proverim kategoriju* + *Ručno izaberi*; commit still works | Works fully; rows queue as *Čeka slanje (n)* | `VIEWER`: field read-only, *Nemaš pravo unosa* + role explanation |
+| Dashboard (§4.2) | Tile skeletons at final height (no layout jump) | Coach card *Unesi prvu transakciju* + capture field | n/a | Per-tile retry + `requestId`; other tiles unaffected | All figures + `podaci od <time>`; pending strip | Entitlement or role banner replaces the tiles a viewer cannot see |
+| Transactions (§4.4) | Virtual rows + group-header skeletons | *Još nema transakcija* + capture field + *Uvezi CSV* | *Nijedna ne odgovara filteru* + *Očisti filtere* + chips | List-level retry, filters preserved | Cached page + `podaci od`; new rows appear as *Čeka slanje* | Edit/bulk/delete hidden with a `VIEWER` note; export still allowed |
+| Detail (§4.5) | Pane skeleton | n/a (always has an id) | n/a | Retry; soft-deleted → *Transakcija je obrisana* + *Vrati* | Read-only from cache; edits queue; conflicts diffed | Edit disabled with reason; audit trail still visible |
+| Review (§4.6) | Row skeletons, tab counts `…` | *Ništa ne čeka proveru. Sve je sređeno.* + link | *Sve rešeno u ovom filteru* + *Prikaži sve* | Retry, filters preserved; failed resolve keeps the row | Cached rows; resolves queue to the outbox | Tab hidden for roles without write access, explained in Settings |
+| Categories (§4.7) | Tree skeleton with depth placeholders | *Napravi svoju strukturu* + *Uvezi početni set (40)* | *Nema kategorije „x“* + *Napravi je* | Stale-tree banner; save errors inline | Read-only; create/edit disabled with reason | Read-only; reassignment dialog still viewable |
+| Merchants (§4.8) | List skeleton | *Dodaj prodavce koje koristiš* + shipped list | Search miss → create from query | Per-page retry | Cached read-only | Read-only |
+| Counterparties (§4.9) | List skeleton | *Kome redovno plaćaš?* + input (as onboarding step 3) | Search miss → create from query | Per-page retry | Cached read-only | Read-only |
+| Rules (§4.10) | List + hit-count skeleton | *Još nema pravila. Naučićemo ih iz tvojih ispravki.* + *Napravi pravilo* | Filter empty | Inline save error; a conflict card is not an error state | Cached list; editing disabled | Read-only + explanation |
+| Receipts (§4.11) | Item rows stream with ⚪ | *Fotografiši račun* + camera + *Izaberi fajl* | n/a | *Račun je sačuvan, obrada nije uspela* + retry + manual itemisation | Capture queues; image uploads on reconnect | Camera denied → file-input fallback + explanation, never a dead button |
+| Budgets (§4.12) | Progress skeletons | *Postavi prvi budžet* + inline amount-only form | *Nema budžeta za ovaj period* + *Prebaci u novi period* | Tile-level retry | Cached progress + `podaci od`; editing disabled | Read-only for `VIEWER` |
+| Goals (§4.13) | Skeleton | *Postavi cilj štednje* + inline form | *Nema aktivnih ciljeva* + *Prikaži arhivu* | Retry | Cached progress; contributions queue with `client_id` | Read-only |
+| Recurring (§4.14) | Skeleton | *Dodaj pretplatu ili račun* + tips | No proposals → section hidden, not an empty box | Retry; job failure → *Predlozi trenutno nisu dostupni* | Cached list; toggles disabled | Read-only |
+| Analytics (§4.15) | Chart skeletons at final size | *Još nema podataka za analizu* + *Unesi prvu transakciju* (no charts drawn) | *Nema transakcija u ovom periodu* + *Prikaži prethodni* | Per-chart retry, partial degradation | Cached period only, labelled; *poređenje nije dostupno offline* | Read-only |
+| Assistant (§4.16) | Answer skeleton with the question pinned; never a blocking spinner | *Pitaj me nešto o svom novcu* + chips valid for an empty ledger | n/a | *Ne mogu sada da odgovorim* + retry, question preserved | *Asistent je dostupan kada si online* + local suggestions | — |
+| Notifications (§4.17) | Row skeletons | *Ovde će biti upozorenja i pozitivne vesti* + *Podesi obaveštenja* | *Nema u ovoj kategoriji* + *Prikaži sve* | Retry | Cached list; mark-read queues | Push denied → in-app only, stated once, never re-prompted |
+| Settings (§4.18) | Section skeletons | n/a | n/a | Per-section error; purge failure is a blocking modal with the job id | Sections needing the server are read-only; cached values labelled | Entitlement sections show plan copy, not a bare lock |
+
+Cross-cutting rules: **skeletons reserve final geometry** (the capture field and safe-to-spend hero
+matter most); **errors name the failed thing**, offer retry and expose a copyable `requestId`; **offline
+is a chip, never a modal interruption**; **a `PENDING` Transaction is a normal state, not an error**.
+
+---
+
+## 7. Component inventory (`shared/ui`)
+
+One component per concept; a screen needing a new one adds it here first. Props are the contract, and
+variants are the only permitted styling axis.
+
+| Component | Purpose | Props / variants |
+|---|---|---|
+| `ui-money` | **The only** money renderer (ADR-003) | `minor: bigint`, `currency`, `variant: 'hero' \| 'row' \| 'table' \| 'inline'`, `tone: 'neutral' \| 'auto-sign' \| 'danger' \| 'positive'`, `showCurrency`, `locale`; emits an `aria-label` with the expanded amount |
+| `ui-money-input` | Money entry | `minor`, `currency`, `label`, `srLabel`, `keyboard: 'numeric'`, `error`, `min`/`max`; no float ever leaves it |
+| `ui-confidence-badge` | Gate state per ADR-009 | `confidence: number \| null`, `state: 'auto' \| 'verify' \| 'ask' \| 'pending'`, `size`, `showPercent`, `srOnlyLabel` |
+| `ui-category-picker` | Category selection | `kind: 'EXPENSE' \| 'INCOME'`, `value`, `recent`, `allowCreate`, `excludeIds`, `showPath`; keyboard-first, filter-as-you-type |
+| `ui-entity-picker` | Merchant / Counterparty selection | `kind: 'merchant' \| 'counterparty'`, `value`, `allowCreate`, `aliases` |
+| `ui-sheet` | Modal surface | `variant: 'bottom' \| 'side' \| 'center'`, `size`, `dismissible`, `ariaLabel`; focus trap + restore |
+| `ui-toast` | Transient feedback with an action | `variant`, `action`, `duration`, `ariaLive` |
+| `ui-bulk-action-bar` | Multi-select actions | `count`, `actions`, `onClear`; sticky on mobile |
+| `ui-split-editor` | Splits with a live difference | `totalMinor`, `currency`, `rows`, `showDifference`; blocks save until difference = 0 |
+| `ui-tag-chip` / `ui-tag-input` | Tags (F-12) | `name`, `color`, `removable`; create-on-enter |
+| `ui-keyword-chip` | CategoryKeyword with polarity | `keyword`, `polarity: 'INCLUDE' \| 'EXCLUDE'`, `matchMode`, `removable` |
+| `ui-rule-builder` | Rule conditions and actions | `conditions`, `actions`, `maxDepth: 3`, `testInput`, `onTest`; hosts priority and stop-on-match |
+| `ui-audit-timeline` | `ClassificationDecision` + `Correction` history (F-31) | `decisions`, `corrections`, `collapsedByDefault` |
+| `ui-provenance` | *na osnovu N transakcija* with drill-through | `count`, `periodStart`, `periodEnd`, `linkFilters`, `expanded` |
+| `ui-money-diff` | Before/after for money fields | `beforeMinor`, `afterMinor`, `currency`, `label`; used by conflicts and sync |
+| `ui-period-selector` | Period navigation | `value`, `presets`, `min`, `max`, `allowCustom` |
+| `ui-progress-bar` | Budget/goal progress | `valueMinor`, `targetMinor`, `currency`, `tone`, `showPace`, `overLabel` |
+| `ui-chart` | Chart wrapper | `type: 'line' \| 'bar' \| 'donut'`, `series`, `accessibleTable` (**required**), `drillThrough` |
+| `ui-empty-state` | DP-7 enforcement | `title`, `body`, `primaryAction` (**required**), `secondaryAction`, `icon` |
+| `ui-error-state` | Failure with recovery | `message`, `onRetry`, `requestId`, `variant: 'inline' \| 'panel' \| 'page'` |
+| `ui-skeleton` | Geometry-preserving placeholder | `shape: 'row' \| 'card' \| 'chart' \| 'tree'`, `rows` |
+| `ui-offline-chip` | Staleness disclosure | `syncedAt`, `pendingCount` → *podaci od <time>* / *Čeka slanje (n)* |
+| `ui-permission-gate` | Role / entitlement / browser permission | `cause`, `featureId`, `fallback` slot |
+| `ui-nav-badge` | Count badge | `count`, `max: 9`, `srLabel` |
+| `ui-review-row` | Queue row with alternatives | `proposal`, `alternatives`, `rememberToggle`, `onResolve`; number-key accelerators |
+| `ui-amount-ambiguity` | Two-reading disambiguation | `candidates`, `onChoose`; blocks commit until resolved |
+| `ui-coach-mark` | One-time teaching (onboarding step 6) | `id`, `placement`, `dismissOnInteraction`; once per household |
+
+---
+
+## 8. Desktop power-user affordances
+
+Desktop is a superset (DP-3): nothing here gates a mobile user. Shortcuts follow
+[07 §5.3](07-platform-strategy-mobile-desktop.md); a single-letter shortcut never fires while a text
+input, textarea or contenteditable has focus.
+
+| Shortcut | Action |
+|---|---|
+| `⌘K` / `Ctrl+K` | Command palette (navigate, search, act) |
+| `n` | Focus the capture input |
+| `/` | Focus search |
+| `g` then `d` / `t` / `r` / `b` / `a` | Danas / Transakcije / Provera / Budžeti / Analitika |
+| `j` / `k`, `Shift+J` / `Shift+K` | Next / previous row; extend selection |
+| `Enter` | Open the focused row (in the capture field: confirm all confirmable rows) |
+| `⌘Enter` | Capture: confirm all, blocked rows to `PENDING`. Elsewhere: save and close |
+| `e` / `x` / `c` | Edit / toggle selection / set Category on the selection |
+| `1`–`3` | Review queue: apply the numbered alternative |
+| `⌘Z` / `⌘⇧Z` | Undo the last commit / restore |
+| `[` / `]` | Previous / next period (analytics, budgets, transactions) |
+| `Shift+D` | Toggle dense table mode |
+| `Alt+↑/↓`, `Alt+→/←` | Category tree: reorder, promote/nest |
+| `?` / `Esc` | Shortcut reference / close the topmost sheet, then clear selection |
+
+- **Multi-select bulk edit** ([07 §5.4](07-platform-strategy-mobile-desktop.md)): selection is id-based
+  and survives scroll, sort and filter; bulk actions set Category, add/remove Tag, assign Merchant or
+  Counterparty, set Account, confirm `PENDING` → `CONFIRMED`, and soft delete. A bulk Category change
+  on rows with Splits warns that it replaces the Split structure, with a count, before committing.
+- **Split panes**: list + detail at `expanded`, plus a context rail (audit or receipt items) at `large`.
+  Selection never loses filter state or scroll position. Pane floors are enforced; if they do not fit,
+  the layout falls back to a single column rather than compressing both
+  ([07 §5.1](07-platform-strategy-mobile-desktop.md)).
+- **Hover actions** on a row reveal edit, duplicate, delete and *Zašto*. Every one is duplicated in the
+  `⋯` menu, because hover-only affordances are forbidden on touch
+  ([07 §5.6](07-platform-strategy-mobile-desktop.md)).
+- **Dense table mode** applies to Transactions, Review, Merchants, Counterparties, Recurring and Rules:
+  32–36 px rows, tabular numerals so amounts align on the decimal, sticky header and group headers,
+  mandatory virtual scrolling. It is a *reading* mode — inline editing of money fields inside a
+  virtualised table is forbidden.
+- **CSV export honours the current filter** and states the count: *Izvezi CSV (214)*. Export works
+  offline (from cache) and for `VIEWER` roles.
+- **Undo is global**: the last commit is undoable from anywhere within the toast window.
+
+---
+
+## 9. Accessibility (WCAG 2.2 AA)
+
+Baseline commitments, testing checklist and platform specifics live in
+[07 §7](07-platform-strategy-mobile-desktop.md). What follows is the per-flow requirement set; it is
+part of Definition of Done ([09 §8](09-implementation-plan.md)), not a later audit.
+
+| Requirement | Implementation |
+|---|---|
+| **Focus order** | DOM order matches visual order. Sheets trap focus and restore it to the invoker. The capture preview follows the field in DOM order, so `Tab` reaches rows in reading order. |
+| **Money fields** | `ui-money-input` carries a visible label plus an `aria-describedby` hint (*Iznos u dinarima, celi brojevi i pare*). `ui-money` emits `aria-label="2.000,00 RSD"` on every figure including table cells; screen readers never hear raw minor units. |
+| **Confidence** | Never colour-only: icon + text + number (*🟢 Sigurno 96 %*). Tooltips are supplementary, never the sole carrier of meaning. |
+| **Live regions** | Capture preview is `aria-live="polite"` (*Dodao sam 3 stavke u pregled*) and never `assertive` for a successful parse. Conflict cards and destructive confirmations use `role="alert"`. |
+| **Errors** | `role="alert"`, associated via `aria-describedby`, with the `requestId` as selectable text. |
+| **Reduced motion** | `prefers-reduced-motion: reduce` disables badge animation, chart transitions, sheet easing and toast slide; every state change remains perceivable because it is also textual. |
+| **Contrast and targets** | ≥ 4.5:1 text, ≥ 3:1 UI boundaries; targets ≥ 44 × 44 px on `compact`, ≥ 32 px in dense mode with a 44 px hit area. |
+| **Zoom and reflow** | Usable at 320 px and 400 % zoom with no horizontal scroll and no loss of function. |
+| **i18n** | All strings externalised (F-27); no manual concatenation of numbers and units — ICU messages plus locale-aware formatters. |
+| **Drag-and-drop** | The Category tree, Split ordering and Rule condition ordering all have keyboard equivalents (`Alt+arrows`, plus *Premesti u…*). A pointer-only reorder is a defect. |
+
+| Flow | Focus entry | Announcements | Non-obvious requirement |
+|---|---|---|---|
+| FL-01 Onboarding | Step heading (`h1`) on change; *Preskoči* is the first tab stop in the footer | *Korak 3 od 6: Kome redovno plaćaš?* | The step-1 tree must be completable by keyboard only; drag is an enhancement |
+| FL-02 Single capture | Field is not autofocused; `n`/`⌘K` (desktop) or tap (mobile) | Row change: *Lidl, 2.000,00 RSD, Hrana, sigurno 96 odsto* | Money is spoken grouped, never as digits |
+| FL-03 Bulk capture | As FL-02 | *3 stavke: 2 spremne, 1 čeka odluku* | Blocked rows are reachable by keyboard without leaving the field |
+| FL-04 Correction | The Category picker takes focus when opened from a row | *Kategorija promenjena u Kuća, Septička jama. Zapamti za ubuduće?* | The remember offer is a labelled checkbox, not a swipe |
+| FL-05 Rule conflict | Focus lands on *Izmeni postojeće pravilo* | *Pravilo se sudara sa pravilom Lidl, Hrana* | The comparison is a real table with headers, not a visual diff |
+| FL-06 Receipt | Progress region is `aria-live="polite"`; items announce as they arrive | *Stavka 3 od 12: Šampon, 500,00 RSD, potrebna provera* | The mismatch figure is readable as money, with the direction spoken |
+| FL-07 Budget setup | First field | Conflict: *Budžet za ovu kategoriju već postoji* | Rollover and subtree toggles have explicit on/off text, not just a switch |
+| FL-08 Goal creation | First field | Required-monthly announced when computed: *Potrebno mesečno 16.500,00 RSD* | The computed figure is read-only and not an input in the tab order |
+| FL-09 Assistant | Composer takes focus on route entry (it is a chat) | Answer, then provenance: *na osnovu 23 transakcije* | A chart inside an answer still requires its accessible table alternative |
+| FL-10 Offline sync | Tray item opens the diff sheet; `Esc` returns focus to the row | *Sinhronizovano 3 stavke. 1 kategorija je promenjena.* | The diff is per-field before/after, never a colour-coded highlight |
+
+---
+
+## 10. Microcopy (Serbian latin → English)
+
+Voice: **calm, specific, never congratulatory about money and never scolding.** No exclamation marks,
+no "Oops!". Uncertainty is stated plainly. Every amount is produced by `ui-money`, never assembled in
+a string.
+
+| Key | SR (latin) | EN | Notes |
+|---|---|---|---|
+| `capture.placeholder` | Šta se danas dešavalo sa novcem? | What happened with your money today? | The signature line. Never *Dodaj transakciju*. |
+| `capture.helper` | npr. Lidl 2000, gorivo 3500, plata 150000 | e.g. Lidl 2000, gorivo 3500, plata 150000 | Examples stay Serbian even in EN — they teach the parser |
+| `capture.preview.title` | Pregled pre potvrde | Preview before saving | |
+| `capture.confirm.all` | Potvrdi {n} | Confirm {n} | ICU plural |
+| `capture.confirm.partial` | Potvrdi {ok} · {n} na proveru | Confirm {ok} · {n} to review | Never blocks the batch |
+| `capture.row.ambiguous` | Dva moguća iznosa — koji je? | Two possible amounts — which one? | The parser never guesses |
+| `capture.duplicate` | Izgleda kao duplikat · Ipak dodaj · Prikaži postojeću | Looks like a duplicate · Add anyway · Show the existing one | Heuristic warning, not an error |
+| `capture.undo` | Dodato {n} · Poništi | Added {n} · Undo | 10 s |
+| `capture.queued` | Čeka slanje ({n}) | Waiting to sync ({n}) | Offline |
+| `confidence.auto` | Sigurno | Confident | ≥ 0.90 |
+| `confidence.verify` | Proveri | Verify | 0.60–0.89 |
+| `confidence.ask` | Potrebna potvrda | Needs confirmation | < 0.60 |
+| `confidence.pending` | Računam… | Working… | Pre-server state |
+| `confidence.tooltip` | Sigurnost {p}% · odlučeno: {layer} | {p}% confident · decided by: {layer} | Layers localised: pravilo / ključna reč / AI |
+| `decision.why` | Zašto ova kategorija? | Why this category? | Opens the audit chain |
+| `decision.rule` | Tvoje pravilo: {rule} | Your rule: {rule} | |
+| `decision.keyword` | Poklapanje ključne reči: {kw} | Keyword match: {kw} | |
+| `decision.ai` | AI predlog, pouzdanost {p}% | AI suggestion, {p}% confidence | Always paired with an alternative |
+| `correction.remember` | Zapamti za ubuduće: {trigger} → {category} | Remember this: {trigger} → {category} | The learning loop's only entry point |
+| `correction.remembered` | Zapamćeno. Sledeći put ne pitam. | Remembered. I won't ask again. | Plain; no celebration |
+| `correction.appliedSimilar` | Primeni i na {n} sličnih transakcija? | Apply to {n} similar transactions too? | Diff preview required |
+| `rule.conflict.title` | Ovo pravilo se sudara sa postojećim | This rule conflicts with an existing one | |
+| `rule.conflict.action` | Izmeni postojeće pravilo | Edit the existing rule | Default focus; shadowing is never offered first |
+| `rule.dead` | Ovo pravilo nije korišćeno 90 dana | This rule hasn't been used in 90 days | Cleanup, not an error |
+| `money.safeToSpend` | Možeš danas da potrošiš | Safe to spend today | Not "budget remaining" |
+| `money.projection` | Predviđanje za kraj meseca | Projected month end | |
+| `money.asOf` | podaci od {time} | as of {time} | Mandatory for any cached figure |
+| `money.over` | Prekoračenje {amount} | Over by {amount} | A notice, never a block |
+| `pending.strip` | {n} transakcije čekaju odluku · ne ulaze u obračun | {n} transactions awaiting a decision · not counted | Explains I-7 in the UI |
+| `review.title` / `review.laneB` | Provera / Čeka odluku · Za proveru | Review / Awaiting a decision · To verify | Lane A is badged; Lane B is a tab |
+| `review.empty` | Ništa ne čeka proveru. Sve je sređeno. | Nothing waiting. You're all caught up. | |
+| `receipt.mismatch` | Zbir stavki {items} · račun {total} · razlika {diff} | Items {items} · receipt {total} · difference {diff} | Exact money, no percentages |
+| `budget.conflict` | Budžet za ovu kategoriju već postoji | A budget for this category already exists | Followed by *Izmeniti?* |
+| `goal.requiredMonthly` | Potrebno mesečno {amount} | Required monthly {amount} | Computed, read-only |
+| `assistant.noData` | Za to još nemam podatke. | I don't have data for that yet. | Followed by three answerable suggestions |
+| `assistant.provenance` | na osnovu {n} transakcija, {period} | based on {n} transactions, {period} | Expandable; links to the filtered list |
+| `assistant.proposal` | Predlog (izračunato) | Proposal (computed) | F-30; never applied silently |
+| `offline.diff.title` | Kategorija je promenjena pri sinhronizaciji | Category changed during sync | Before/after per field |
+| `error.generic` | Nešto je puklo. Pokušaj ponovo. | Something broke. Try again. | Always with a `requestId` |
+| `error.offline` | Nema veze sa serverom. | Can't reach the server. | Never blocks capture |
+| `empty.filtered` | Nijedna ne odgovara filteru. | Nothing matches the filter. | Followed by *Očisti filtere* |
+| `empty.budgets` | Još nema budžeta. | No budgets yet. | Followed by *Postavi prvi* |
+| `data.delete` | Trajno obriši domaćinstvo | Permanently delete household | Typed `OBRIŠI` confirmation |
+| `ai.consent` | Pošalji tekst transakcija AI provajderu | Send transaction text to an AI provider | Explicit, revocable, per household |
+| `ai.localOnly` | Samo lokalni model (podaci ne izlaze) | Local model only (no data leaves) | Degrades accuracy; stated honestly |
+
+**Wording rules.**
+
+1. Never *greška* for a classification the user is about to fix — that is *provera*.
+2. Never *AI je odlučio* without stating the confidence and offering the alternative.
+3. Never a bare number: every amount is produced by `ui-money` with its currency.
+4. Never promise more than the system knows: *nisam siguran* is a complete, acceptable sentence.
+5. Never a brand name in copy until ADR-014 is closed; the shell renders `APP_NAME`.

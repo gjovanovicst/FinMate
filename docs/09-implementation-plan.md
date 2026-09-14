@@ -1,0 +1,330 @@
+# 09 — Implementation Plan
+
+**Assumption:** 1–2 full-stack engineers, working with AI coding assistance. Estimates are in
+**person-days (pd)** and assume the stack in [05](05-architecture.md). With two engineers
+front/back-split, the calendar compresses by roughly 35 % (not 50 % — integration and review do not
+parallelise perfectly).
+
+**Governing sequencing rule:** *ship a correct manual app before shipping any AI.* If the AI layer
+slips, the product is still usable. This inverts the usual AI-first failure mode.
+
+---
+
+## 1. Phase overview
+
+| Phase | Weeks | Theme | Exit criterion |
+|---|---|---|---|
+| **0** | 1–2 | Foundations | A logged-in user sees an empty but real dashboard in CI-deployed staging |
+| **1** | 3–5 | Manual core | A user can record and categorise a month of spending **without any AI** |
+| **2** | 6–8 | AI input | `Lidl 2000` works end-to-end, with rules, confidence and the learning loop |
+| **3** | 9–11 | Intelligence | Safe-to-spend, predictions, alerts, goals, and the assistant are live |
+| **4** | 12–14 | Receipts & mobile | Receipt itemisation and offline mobile capture work |
+| **5** | 15–16 | Hardening & beta | Security review passed, performance targets met, public beta launched |
+| **v2** | 17+ | Family, native, bank import | — |
+
+Total to public beta: **≈ 16 weeks / ~150 person-days**.
+
+---
+
+## 2. Phase 0 — Foundations (weeks 1–2, ~14 pd)
+
+**Goal:** remove every reason to make an architectural decision later under pressure.
+
+| # | Task | pd | Notes |
+|---|---|---|---|
+| 0.1 | Nx monorepo, pnpm workspaces, TS strict, eslint boundaries, prettier | 1.5 | Enforce the dependency rule from [05 §2](05-architecture.md#2-monorepo-layout) from the first commit |
+| 0.2 | Docker Compose: Postgres 16 (+`pg_trgm`, `pgvector`), Redis, MinIO, Mailhog | 1 | Local dev in one command |
+| 0.3 | Prisma/Drizzle setup + migration workflow + seed script | 1 | |
+| 0.4 | Full schema from [03](03-domain-model.md) migrated; not all tables used yet | 1.5 | Doing the schema early prevents painful retrofits of `household_id` |
+| 0.5 | NestJS skeleton: config, health, logging, error filter, `TenantContext`, tenancy guard + Prisma extension | 2.5 | The tenancy enforcement is built **before** any feature |
+| 0.6 | Auth: signup, login, refresh rotation, verify email, reset password, argon2id | 3 | |
+| 0.7 | GraphQL wiring, Money/Date/UUID scalars, auth guard, pagination convention | 1.5 | |
+| 0.8 | Angular app: routing, layout shell (nav + content), design tokens, `ui-money`, base components | 2.5 | |
+| 0.9 | CI: lint, typecheck, unit tests, build, migrate, deploy to staging | 1.5 | Green pipeline is a gate for every later phase |
+| 0.10 | Error tracking, structured logging, uptime check | 0.5 | |
+
+**Exit criteria**
+- `pnpm dev` boots the whole stack locally with one command.
+- CI is green and deploys to staging automatically on merge to `main`.
+- A new user can sign up, verify, log in, and see an authenticated empty shell on desktop and mobile
+  widths.
+- A test asserts that a query without a tenant context **throws**.
+
+**Deliberate omission:** no CI/CD to production, no Kubernetes, no IaC. Staging on a single node is
+enough until there is a product.
+
+---
+
+## 3. Phase 1 — Manual core (weeks 3–5, ~32 pd)
+
+**Goal:** the product is genuinely usable — boring, correct, no AI. This is the insurance policy.
+
+### Sprint 1.1 (week 3) — Money core, ~11 pd
+
+| # | Task | pd | F-ID |
+|---|---|---|---|
+| 1.1.1 | `packages/domain`: Money value object, minor-unit math, currency, date/local-date helpers | 2 | — |
+| 1.1.2 | Accounts CRUD + computed balances (invariant I-4) with tests | 2.5 | F-01 |
+| 1.1.3 | Categories tree CRUD (depth cap, cycle guard, delete-reassign rule I-12) | 3 | F-02 |
+| 1.1.4 | Ledger module: transaction CRUD, validation, optimistic concurrency (`version`) | 3.5 | F-04 |
+
+### Sprint 1.2 (week 4) — Taxonomy & entry UX, ~11 pd
+
+| # | Task | pd | F-ID |
+|---|---|---|---|
+| 1.2.1 | Merchants + aliases CRUD, merge flow | 2 | F-10 |
+| 1.2.2 | Counterparties + aliases CRUD | 1.5 | F-11 |
+| 1.2.3 | Tags CRUD and assignment | 1 | F-12 |
+| 1.2.4 | Category keywords (include/exclude) management UI + validation | 2 | F-03 |
+| 1.2.5 | Transaction list: virtual scroll, filters, search, grouping by day | 2.5 | F-24 |
+| 1.2.6 | Transaction detail/edit sheet with all fields; split editor | 2 | F-04, F-15 |
+
+### Sprint 1.3 (week 5) — Budgets & dashboard, ~10 pd
+
+| # | Task | pd | F-ID |
+|---|---|---|---|
+| 1.3.1 | Budgets: CRUD, period resolution, subtree consumption (invariant I-5) | 3 | F-17 |
+| 1.3.2 | Safe-to-spend + month-end projection calculators (**pure functions, fully unit-tested**) | 2 | F-19, F-21 |
+| 1.3.3 | Dashboard tiles: spend this month, budget remaining, safe-to-spend, projection, recent activity | 3 | F-19 |
+| 1.3.4 | CSV export (and import scaffolding) | 1.5 | F-25 |
+| 1.3.5 | Responsive pass: verify every Phase-1 screen at 320 / 768 / 1280 / 1920 | 0.5 | F-26 |
+
+**Exit criteria**
+- A user can record a full month of transactions manually, with budgets, and the arithmetic is
+  provably correct (property tests + a seed script that reproduces a known month).
+- Safe-to-spend and projection match hand-computed fixtures exactly.
+- Every screen is usable at 320 px width with touch only, and at 1920 px with keyboard only.
+
+> **This is the checkpoint that de-risks the project.** If the AI work in Phase 2 collapses, shipping
+> Phase 1 + polish is still a viable product.
+
+---
+
+## 4. Phase 2 — AI input (weeks 6–8, ~34 pd)
+
+**Goal:** the wedge. Cheap-first pipeline with visible confidence and a real learning loop.
+
+### Sprint 2.1 (week 6) — Parser & rules, ~12 pd
+
+| # | Task | pd | F-ID |
+|---|---|---|---|
+| 2.1.1 | `packages/nlp`: segmentation, Serbian normalization, transliteration, amount/date/direction extraction | 4 | F-05, F-06 |
+| 2.1.2 | Golden dataset v1 (**300 cases** from the merchant / amount-format / bulk slices) + Jest harness; run in CI. Grows to the full 1 300-case composition from [04 §11.1](04-categorization-and-ai-engine.md) before the Phase 5 launch gate | 2 | — |
+| 2.1.3 | `packages/rules-engine`: condition evaluation, priority, conflict resolution, keyword scoring | 3.5 | F-07 |
+| 2.1.4 | Entity resolution: exact → normalized → prefix → trigram (embeddings deferred to 2.3) | 2.5 | F-07 |
+
+### Sprint 2.2 (week 7) — AI, capture UX, learning loop, ~12 pd
+
+| # | Task | pd | F-ID |
+|---|---|---|---|
+| 2.2.1 | `packages/ai`: `AiProvider` interface, OpenAI + DeepSeek adapters, routing, timeouts, circuit breaker | 3 | F-07 |
+| 2.2.2 | Structured-output classify with JSON-schema validation and closed category list | 2 | F-07 |
+| 2.2.3 | `classification` module: pipeline orchestration, `classification_decisions` audit, confidence gate | 2.5 | F-07, F-31 |
+| 2.2.4 | Capture UI: single + bulk input, parse preview, per-row confidence badge, one-action confirm | 3 | F-05, F-06 |
+| 2.2.5 | Idempotency + duplicate detection | 1.5 | F-06 |
+
+### Sprint 2.3 (week 8) — Corrections, review queue, seeding, ~10 pd
+
+| # | Task | pd | F-ID |
+|---|---|---|---|
+| 2.3.1 | Correction capture + "Zapamti za ubuduće" rule synthesis with conflict guardrails | 3 | F-09 |
+| 2.3.2 | Review queue UI: badge, filtered list, bulk resolve, keyboard-driven | 2.5 | F-08 |
+| 2.3.3 | Onboarding wizard (F-13) incl. seeded Serbian category tree + ~60 merchants | 3 | F-13 |
+| 2.3.4 | Embedding-based entity resolution (local model, `pgvector`) | 1.5 | F-07 |
+
+**Exit criteria**
+- `Lidl 2000, gorivo 3500, plata 150000` parses to 3 correct transactions, one confirm, ≤ 4 s median.
+- Rule-hit ratio ≥ 50 % on the golden dataset (rising with real usage toward the 70–85 % target).
+- Correcting a category and ticking "remember" makes the next identical input resolve with **zero**
+  AI calls — asserted by an integration test.
+- Overconfident-wrong rate on the golden set ≤ 1.5 %; CI blocks otherwise.
+- With the AI provider mocked to always fail, capture still succeeds and rows are marked for review.
+
+---
+
+## 5. Phase 3 — Intelligence (weeks 9–11, ~30 pd)
+
+### Sprint 3.1 (week 9) — Insights & alerts, ~10 pd
+
+| # | Task | pd | F-ID |
+|---|---|---|---|
+| 3.1.1 | Deterministic insight generators: budget pace, category spike, unusual spend, **positive trend** | 3 | F-20, F-22 |
+| 3.1.2 | Alert rules engine + `dedupe_key` + quiet hours + rate limiting | 2.5 | F-22 |
+| 3.1.3 | Notification dispatch: in-app first, then web push and email | 3 | F-22 |
+| 3.1.4 | In-app notification centre + preferences UI | 1.5 | F-22 |
+
+### Sprint 3.2 (week 10) — Assistant, ~11 pd
+
+| # | Task | pd | F-ID |
+|---|---|---|---|
+| 3.2.1 | Query planner: ~25 intent templates, slot extraction, no-SQL guarantee | 3 | F-23 |
+| 3.2.2 | Fact assembly + provenance payloads per template | 2 | F-23 |
+| 3.2.3 | Narration via `NARRATE` provider + **numeric validator** + template fallback | 2.5 | F-23 |
+| 3.2.4 | Assistant UI: chat surface, expandable "based on N transactions" + drill-through links | 2.5 | F-23 |
+| 3.2.5 | Savings-proposal path ("kako da uštedim 20.000?") computed by backend | 1 | F-30 |
+
+### Sprint 3.3 (week 11) — Analytics & goals, ~9 pd
+
+| # | Task | pd | F-ID |
+|---|---|---|---|
+| 3.3.1 | Analytics: category trends, month-over-month, top merchants, chart components | 3.5 | F-20 |
+| 3.3.2 | Saving goals + contributions + required-monthly calculator | 2.5 | F-18 |
+| 3.3.3 | Recurring rules: CRUD, RRULE expansion, materialisation job | 2 | F-16 |
+| 3.3.4 | Subscription detection (propose, never auto-create) | 1 | F-16 |
+
+**Exit criteria**
+- Safe-to-spend, projection and insight figures come exclusively from backend calculators — a test
+  asserts the assistant never introduces a numeral absent from its facts payload.
+- Notifications never fire twice for the same condition (dedupe test).
+- A user can ask five canonical questions in Serbian and get correct, cited answers.
+
+---
+
+## 6. Phase 4 — Receipts & mobile (weeks 12–14, ~28 pd)
+
+### Sprint 4.1 (week 12) — Receipts, ~11 pd
+
+| # | Task | pd | F-ID |
+|---|---|---|---|
+| 4.1.1 | `files` module: presigned upload, virus scan hook, retention | 2 | F-34 |
+| 4.1.2 | Camera capture (PWA `getUserMedia` + file input fallback) and upload UX | 2 | F-14 |
+| 4.1.3 | OCR adapter + item extraction + item-level classification | 3.5 | F-14 |
+| 4.1.4 | Reconciliation against the receipt total (I-6) + mismatch resolution UI | 2 | F-14 |
+| 4.1.5 | Itemised breakdown UI, per-item category override | 1.5 | F-14 |
+
+### Sprint 4.2 (week 13) — Offline & sync, ~10 pd
+
+| # | Task | pd | F-ID |
+|---|---|---|---|
+| 4.2.1 | Service worker, app shell caching, update flow | 2 | F-26 |
+| 4.2.2 | IndexedDB repository + outbox pattern + idempotent flush | 3 | F-26 |
+| 4.2.3 | Offline capture UX: "pending sync" tray, retry, conflict diff for money fields | 2.5 | F-26 |
+| 4.2.4 | Stale-snapshot labelling (`as of <time>`) everywhere a figure is shown offline | 1 | F-26 |
+| 4.2.5 | Web push subscription + permission flow | 1.5 | F-22 |
+
+### Sprint 4.3 (week 14) — Mobile UX polish, ~7 pd
+
+| # | Task | pd | F-ID |
+|---|---|---|---|
+| 4.3.1 | Bottom-sheet patterns, thumb-reachable primary actions, safe-area insets | 2 | F-26 |
+| 4.3.2 | Install prompt / Add-to-Home-Screen flow | 1 | F-26 |
+| 4.3.3 | Mobile keyboard handling on the money field (numeric keypad, no layout jump) | 1.5 | F-05 |
+| 4.3.4 | Performance: bundle budget, lazy routes, image sizing; Lighthouse ≥ 90 | 2.5 | F-26 |
+
+**Exit criteria**
+- A Lidl receipt totals correctly across ≥ 3 categories, with low-confidence items flagged.
+- Full capture flow works in airplane mode and syncs without duplication on reconnect.
+- Lighthouse PWA criteria pass; installable on Android and iOS Safari.
+- Median time-to-log on a real mid-range Android device ≤ 5 s (device lab, not a desktop emulator —
+  this is the number the whole thesis rests on).
+
+---
+
+## 7. Phase 5 — Hardening & beta (weeks 15–16, ~14 pd)
+
+| # | Task | pd | Notes |
+|---|---|---|---|
+| 5.1 | Security review against the threat model in [08](08-security-privacy-and-compliance.md); fix findings | 3 | Including a deliberate cross-tenant access attempt |
+| 5.2 | GDPR: export, hard delete, consent recording, retention jobs, privacy policy | 2.5 | Blocking for EU/RS launch |
+| 5.3 | Performance: query analysis, missing indexes, N+1 sweep, API p95 ≤ 300 ms | 2 | |
+| 5.4 | i18n: extract all strings, SR + EN, locale formatting, cyrillic-tolerant search | 2 | F-27 |
+| 5.5 | Onboarding funnel instrumentation + product analytics | 1.5 | Needed to read the launch metrics |
+| 5.6 | Load test at 10× expected beta volume; cost review vs. the model in [12](12-monetization-and-pricing.md) | 1 | |
+| 5.7 | Beta ops: invite flow, feedback capture, support runbook, incident checklist | 2 | |
+
+**Launch gates (all must pass — these are the same numbers as [10 §6](10-testing-and-quality.md))**
+- AI evaluation gates green on the frozen prompt/model version, against the **full 1 300-case golden
+  dataset** ([04 §11.1](04-categorization-and-ai-engine.md)).
+- Zero known P0/P1 security findings; cross-tenant tests pass.
+- p95 API latency ≤ 300 ms on the beta dataset size.
+- Crash-free sessions ≥ 99.5 % in a 1-week closed test.
+- Restore-from-backup rehearsed successfully **and timed**.
+- Cost per active household ≤ 60 RSD/month at beta usage.
+
+---
+
+## 8. Definition of Done (applies to every story)
+
+A story is not done until:
+
+1. Implementation merged with tests (unit for pure logic, integration for DB-touching paths).
+2. Money arithmetic covered by a property-based test where applicable.
+3. Error, empty, loading and offline states designed and implemented — not just the happy path.
+4. Responsive check at 320 / 768 / 1280 px, and keyboard-only operation verified.
+5. Strings externalised for i18n; no hardcoded user-facing Serbian or English in components.
+6. Telemetry added if the feature has a success metric.
+7. Docs updated if a canonical decision changed (and an ADR added if it is architectural).
+8. Deployed to staging and manually verified by someone other than the author.
+
+---
+
+## 9. Critical path and risk-ordered sequencing
+
+```text
+0.4 schema ─► 0.5 tenancy ─► 1.1.4 ledger ─► 1.3.1 budgets ─► 1.3.2 calculators
+                                                                    │
+                                        ┌───────────────────────────┘
+                                        ▼
+                              2.1.1 nlp parser ─► 2.1.3 rules ─► 2.2.3 pipeline ─► 2.2.4 capture UX
+                                                                       │
+                                                                       ▼
+                                                          2.3.1 learning loop ─► 3.2.1 planner ─► 3.2.3 narration
+```
+
+Longest chain: **schema → ledger → budgets/calculators → parser → rules → pipeline → capture UX →
+learning loop**. Three items on it deserve extra slack because they are the highest-uncertainty:
+
+| Risk item | Why uncertain | Mitigation |
+|---|---|---|
+| `2.1.1` Serbian NL parser | Real inputs are messier than any spec | Golden dataset built *before* the parser (2.1.2 pulled one slot earlier in practice if needed) |
+| `2.1.3` rules engine conflict resolution | Easy to over-engineer | Ship the simple priority model first; add specificity scoring only if observed conflicts justify it |
+| `3.2.3` narration correctness | Hallucination risk | Numeric validator + template fallback, built as part of the same story, not later |
+
+**Deliberate slack:** Phase 2 has ~20 % unallocated capacity. It *will* be consumed by parser edge
+cases; planning it as fully booked would guarantee a slip.
+
+---
+
+## 10. Staffing shapes
+
+| Team | Calendar to beta | Notes |
+|---|---|---|
+| **1 engineer** | ~18–20 weeks | Add ~15 % for context switching. Phases remain sequential; the main risk is a single point of failure on ML/parser work. |
+| **2 engineers** (recommended) | ~13–14 weeks | Split: one owns `api` + `packages/*` (parser, rules, AI), the other owns `web` + design system. Both review each other's PRs; integration work is shared. |
+| **2 + 1 designer (part-time)** | ~13 weeks, materially better retention outcomes | The correction UX and onboarding are the retention levers; a designer earns their cost here more than anywhere else. |
+| **3+ engineers** | Not recommended for v1 | Coordination cost exceeds the gain at this scope; a modular monolith with clear module ownership is faster with 2. |
+
+---
+
+## 11. What is explicitly *not* in this plan (and why)
+
+| Deferred | Reason |
+|---|---|
+| Household sharing UI (F-29) | Household model + `household_id` exist from day one, so this is additive UI, not a migration. Doing it in v1 multiplies permission-testing surface before the core loop is proven. |
+| Bank/Open Banking import (F-33) | Not practically available for Serbian retail banking; would consume the entire budget of Phase 2 for uncertain coverage. Revisit when a provider offers real RS coverage. |
+| Native iOS/Android apps | PWA covers v1. A Capacitor shell in v2 adds push + store presence without a rewrite. Reserve the decision until real PWA metrics show what is missing. |
+| Multi-currency ledger | Single `ledger_currency` per household keeps every invariant simple. The column exists so multi-currency is a feature, not a migration. |
+| Investments / net worth | Different domain, different users, dilutes the wedge. |
+| Self-hosted/open-source model fine-tuning | The learning loop works through rules and few-shot examples; fine-tuning is not needed to reach the accuracy targets and would add an MLOps burden the team cannot carry. |
+
+---
+
+## 12. First 10 working days (concrete)
+
+If work starts tomorrow, this is the order:
+
+| Day | Deliverable |
+|---|---|
+| 1 | Nx monorepo scaffolded, `pnpm dev` boots Postgres + Redis + MinIO, CI running lint+typecheck |
+| 2 | Full schema migrated; `packages/domain` Money + date helpers with tests |
+| 3 | NestJS auth module: signup/login/refresh working, integration-tested |
+| 4 | `TenantContext` + Prisma extension + the "query without tenant throws" test |
+| 5 | Angular shell, routing, design tokens, `ui-money`, login wired end-to-end to staging |
+| 6 | Accounts CRUD + computed balance (invariant I-4 test green) |
+| 7 | Categories tree CRUD with depth/cycle guards |
+| 8 | Ledger transaction CRUD with optimistic concurrency |
+| 9 | Transaction list + detail/edit sheet |
+| 10 | **Demo: sign up, create an account, add a category, record a transaction, see the balance** |
+
+Day 10's demo is intentionally unglamorous. It is the point at which the project becomes real, and
+every later phase builds on it rather than replacing it.

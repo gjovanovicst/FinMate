@@ -1,0 +1,596 @@
+# 04 — Categorization & AI Engine
+
+This is the differentiator. Everything else in the product is table stakes that a competent team can
+copy in a quarter; this pipeline and the per-household memory it produces are the moat
+([00](00-executive-summary.md)).
+
+**Governing principle:** *cheap, deterministic and explainable first; expensive, probabilistic and
+opaque last.* The pipeline is ordered by cost, so the common case costs nothing and returns in
+milliseconds.
+
+---
+
+## 1. Design principles
+
+| # | Principle | Consequence |
+|---|---|---|
+| P-1 | **Rules before models.** | ~70–85 % of real household input resolves deterministically. Deterministic resolution is free, instant, explainable and testable. |
+| P-2 | **The model interprets; it never computes or persists.** | The LLM returns a `Proposal` DTO that the backend validates and persists as a `ClassificationDecision` + `Transaction`. |
+| P-3 | **Every decision is explainable to the user.** | "Matched your rule *Lidl → Hrana*", "AI suggested, 61 % confident, you confirmed". No black boxes over money. |
+| P-4 | **Uncertainty is surfaced, never hidden.** | Confidence is a first-class, calibrated number driving three UI states (auto / verify / ask). |
+| P-5 | **Corrections are the primary training signal.** | Every correction optionally synthesises a durable rule; the system improves without retraining a model. |
+| P-6 | **Provider-agnostic.** | One interface, five providers, routable per task. A provider outage degrades to rules-only, not to an outage. |
+| P-7 | **Fail soft, never silently.** | If the AI is unavailable, the transaction is still saved with `needs_review = true` and the raw input preserved for later re-parse. |
+
+---
+
+## 2. The pipeline
+
+```mermaid
+flowchart TD
+    A[Raw input<br/>'Lidl 2000, gorivo 3500'] --> B[1. Segment & Normalize]
+    B --> C[2. Extract<br/>amount · date · direction · tokens]
+    C --> D[3. Resolve<br/>merchant · counterparty]
+    D --> E[4. Rules Engine]
+    E -->|matched| F[Decision: RULE]
+    E -->|no match| G[5. AI Classify<br/>Proposal + confidence]
+    G --> H[6. Confidence Gate]
+    F --> H
+    H -->|>= 0.90| I[Auto-confirm]
+    H -->|0.60-0.89| J[Suggest, badge 'verify']
+    H -->|< 0.60| K[Ask / review queue]
+    I --> L[(Persist<br/>Transaction + ClassificationDecision)]
+    J --> L
+    K --> M[(Persist PENDING<br/>needs_review = true)]
+    L --> N[Learning loop<br/>on correction]
+    M --> N
+```
+
+Latency and cost budget per stage (p95):
+
+| Stage | Target latency | Cost | Notes |
+|---|---|---|---|
+| 1–2 Normalize + Extract | ≤ 5 ms | 0 | Pure functions, unit-testable |
+| 3 Resolve | ≤ 15 ms | 0 | Indexed lookups + trigram/embedding cache |
+| 4 Rules | ≤ 10 ms | 0 | In-process, rules cached per household |
+| 5 AI (when needed) | ≤ 1.5 s | ~$0.0002–0.002 | Small model for parse/classify; batched for bulk input |
+| 6 Gate + persist | ≤ 20 ms | 0 | |
+
+---
+
+## 3. Stage 1–2: Segmentation, normalization and extraction
+
+Input is treated as **one or more transaction fragments** separated by comma, newline, `;`, ` i `,
+`+`, or ` pa `. Each fragment is parsed independently.
+
+### 3.1 Serbian-specific normalization
+
+These rules are why a generic English classifier performs badly on this market, and they are a real
+part of the moat.
+
+```ts
+// packages/nlp/src/normalize.ts  (illustrative)
+
+const CYRILLIC_TO_LATIN: Record<string, string> = {
+  а:'a', б:'b', в:'v', г:'g', д:'d', ђ:'dj', е:'e', ж:'z', з:'z', и:'i', ј:'j', к:'k',
+  л:'l', љ:'lj', м:'m', н:'n', њ:'nj', о:'o', п:'p', р:'r', с:'s', т:'t', ћ:'c', у:'u',
+  ф:'f', х:'h', ц:'c', ч:'c', џ:'dz', ш:'s',
+};
+```
+
+| Concern | Rule |
+|---|---|
+| **Script** | Cyrillic → latin transliteration, so `Лиди 2000` and `Lidl 2000` hit the same keyword set. |
+| **Diacritics** | Fold to ASCII for **matching only** (`septička` ≡ `septicka` ≡ `septichka`); never mutate stored display text. |
+| **Thousands separator** | `.` and space are thousands: `2.000` → `2000`, `1 200` → `1200`. |
+| **Decimals** | `,` is decimal: `2,50` → `2.50`; `1250,50` → `1250.50`. |
+| **Currency-suffix forms** | `2000din`, `2.000 rsd`, `1500 dindži`, `20€` → amount + currency hint. |
+| **Shorthand** | `2k` → `2000`, `1.5k` → `1500`. Rejected if it would be ambiguous in context. |
+| **Relative dates** | `juče`, `danas`, `prekjuče`, `prošli petak`, `1.9.`, `01.09.2026`, `1/9`. |
+| **Income markers** | `plata`, `penzija`, `uplata`, `primio`, `refundacija`, `povraćaj`, `povrat`, `honorar`, `rata kredita primljena` ⇒ bias `kind = INCOME`. |
+| **Expense markers** | default when no income marker and no counterparty-receipt semantics. |
+| **Negation/refund** | `vraćeno`, `storno`, `refund` ⇒ flag for user confirmation rather than guessing a sign. |
+
+**Ambiguity policy:** if two amount interpretations are plausible (e.g. `1.200` vs `1.2`), the parser
+returns both with the higher-probability one first and the LLM/UX resolves it. It **never** silently
+picks.
+
+### 3.2 Extraction output
+
+```ts
+export interface TransactionFragment {
+  rawText: string;
+  amountMinor: bigint | null;
+  currency: string | null;          // inherits household ledger currency if null
+  kind: 'EXPENSE' | 'INCOME' | 'UNKNOWN';
+  occurredOn: string | null;        // ISO date, local
+  description: string;              // text leftover after removing amount/date
+  tokens: string[];                 // normalized content tokens
+  candidates: { amountMinor: bigint; reason: string }[]; // ambiguity surfacing
+}
+```
+
+Amount is a `bigint` in minor units from the very first step. **No float ever touches money**, not
+even transiently in the parser.
+
+---
+
+## 4. Stage 3: Entity resolution
+
+Resolution order, cheapest first, stopping when a confident hit is found:
+
+```text
+1. Exact alias match        (merchant_aliases, counterparty_aliases)  → confidence 1.00
+2. Normalized exact match   (lowercase, unaccented, transliterated)   → confidence 0.98
+3. Prefix / token match     ("lidl prodavnica" → "lidl")              → confidence 0.90
+4. Trigram similarity       pg_trgm similarity > 0.55                 → confidence 0.55–0.85
+5. Embedding k-NN           cosine > 0.82 over household's own vectors → confidence 0.60–0.85
+6. No match                                                          → unresolved
+```
+
+Stage 5 uses embeddings of the household's **own** history, not a global model, which is what makes
+`Dejan rođa` resolvable for one household and irrelevant to another. Embeddings are cached per
+household in `pgvector` (or Redis for hot items); a free local embedding model is sufficient.
+
+**Merchant vs. counterparty disambiguation:** an entity is a **Merchant** if it appears with retail
+semantics (multiple transactions, an amount bracket typical of retail, a known chain alias);
+otherwise a **Counterparty**. When ambiguous, the LLM decides once and the answer is remembered as an
+alias — the same self-improving pattern as categories.
+
+---
+
+## 5. Stage 4: The rules engine
+
+Deterministic, in-process, no I/O. Rules are loaded per household and cached; a household rarely
+has more than a few hundred.
+
+### 5.1 Rule shape
+
+```jsonc
+{
+  "name": "Dejan → septička jama",
+  "priority": 50,                       // lower wins
+  "isActive": true,
+  "stopOnMatch": true,
+  "conditions": {
+    "all": [
+      { "field": "counterparty", "op": "eq", "value": "<uuid>" },
+      { "field": "text", "op": "not_contains", "value": "poklon" }
+    ]
+  },
+  "actions": {
+    "setCategoryId": "<uuid>",
+    "setMerchantId": null,
+    "addTagIds": ["<uuid>"],
+    "setDescription": null
+  },
+  "origin": "LEARNED"
+}
+```
+
+### 5.2 Operators
+
+| Field | Operators |
+|---|---|
+| `text` / `description` | `contains`, `not_contains`, `equals`, `starts_with`, `regex` (enterprise-only), `in` |
+| `merchant`, `counterparty`, `account` | `eq`, `in`, `is_null` |
+| `amount` | `eq`, `gt`, `gte`, `lt`, `lte`, `between` |
+| `dayOfWeek`, `dayOfMonth` | `in`, `between` |
+| `kind` | `eq` |
+| `source` | `eq` |
+
+Composite: `all` (AND), `any` (OR), `none` (NOR). Nesting depth ≤ 3 — beyond that it is a program,
+not a rule, and the user cannot reason about it.
+
+### 5.3 Conflict resolution
+
+1. Sort by `priority ASC`, then `created_at DESC` (newest user intent wins ties).
+2. Collect all matching rules with `stop_on_match = true` → the first is the decision.
+3. If only non-stopping rules match, merge their actions in priority order (later rules fill gaps,
+   they do not overwrite explicitly set fields).
+4. **Category keywords are themselves compiled into an implicit rules tier** at priority 1000, so
+   explicit user rules always outrank keywords.
+5. A **specificity score** breaks remaining ties: more conditions and `eq` over `contains` wins.
+   Record the losing candidates in `classification_decisions.candidates` for debuggability.
+
+### 5.4 Keyword scoring (the implicit tier)
+
+When no explicit rule matches, keywords score candidate categories:
+
+```ts
+score = Σ (matchedKeyword.weight × matchModeWeight × polaritySign)
+        ÷ (1 + 0.15 × (matchedTokens - 1))          // penalise over-broad matches
+```
+
+- `polarity INCLUDE` adds, `EXCLUDE` subtracts (and an EXCLUDE match hard-blocks that category).
+- `matchModeWeight`: `WORD` 1.0, `PREFIX` 0.8, `SUBSTRING` 0.5 (substring is deliberately weak —
+  `ulje` inside `ulje za motor` vs. `ulje` in `suncokretovo ulje`).
+- If the top score ≥ **2.0** and exceeds the runner-up by ≥ 1.0 → deterministic decision
+  (`decided_by = 'KEYWORD'`, confidence mapped to 0.90–0.97).
+- Otherwise fall through to AI with the scored candidates attached as context.
+
+---
+
+## 6. Stage 5: AI classification
+
+Only reached when rules and keywords are inconclusive. This keeps the model bill small and the
+system fast.
+
+### 6.1 What the model is asked to do
+
+Exactly three things, all structured:
+
+1. **Parse** — fill a `TransactionFragment` when deterministic extraction failed.
+2. **Classify** — choose a category from a **provided, closed list** (the household's own tree), with
+   a confidence and a one-line rationale.
+3. **Propose an entity** — when resolution failed, a name plus type.
+
+It is explicitly **not** asked to compute totals, dates arithmetic, balances, or to invent
+categories outside the list.
+
+### 6.2 Structured output contract
+
+Tool/JSON-schema enforced, so a malformed response is impossible rather than merely unlikely:
+
+```ts
+export interface ClassifyProposal {
+  categoryId: string | null;                 // MUST be one of the supplied ids
+  confidence: number;                        // 0..1, calibrated
+  rationale: string;                         // <= 140 chars, shown in the UI
+  alternatives: { categoryId: string; confidence: number }[];  // top 2-3
+  extracted: {
+    amountMinor?: string;                    // string: avoids float in JSON
+    currency?: string;
+    kind?: 'EXPENSE' | 'INCOME';
+    occurredOn?: string;
+    merchantName?: string;
+    counterpartyName?: string;
+    counterpartyType?: 'PERSON' | 'COMPANY' | 'GOVERNMENT' | 'OTHER';
+    description?: string;
+  };
+  needsUserInput?: { field: string; question: string }[];  // e.g. "Is this a gift?"
+}
+```
+
+Any `categoryId` not present in the supplied list is **rejected by validation** and treated as
+`null` + low confidence. This single check eliminates the most damaging hallucination class.
+
+### 6.3 Prompt shape (classify)
+
+```text
+SYSTEM
+You extract and classify household financial transactions for a Serbian household.
+Rules you must follow:
+- Choose a category ONLY from the provided list of ids. Never invent an id.
+- If you are unsure, return a low confidence and list alternatives. Do not guess confidently.
+- Never perform arithmetic. Never compute totals or balances.
+- Input may mix Serbian latin and cyrillic, abbreviations and typos.
+- "plata", "penzija", "uplata", "povraćaj" indicate INCOME unless context says otherwise.
+- Amounts: '.' and space are thousands separators, ',' is the decimal separator.
+
+USER
+Household categories (id | path | description):
+  c-01 | Hrana / Supermarket | groceries, market, pekara
+  c-02 | Kuća / Septička jama | septička, pražnjenje jame, cisterna
+  c-17 | Auto / Gorivo | gorivo, benzin, dizel, nafta (NOT ulje, filter, servis)
+  ... (top-N candidates retrieved by keyword/embedding prefilter, not the whole tree for large households)
+
+Known merchants: lidl (Hrana/Supermarket), maxi, shell, omv, eps, telekom
+Known people: Dejan (default: Kuća / Septička jama; aliases: dejan rođa, rođa dejan)
+
+Recent similar inputs for this household and what the user chose:
+  "dejan 3600" -> Kuća / Septička jama      (user-confirmed 2 days ago)
+  "lidl 1850"  -> Hrana / Supermarket       (user-confirmed 3 days ago)
+
+Input: "Dejan rođa 3600"
+```
+
+Two deliberate design choices in that prompt:
+
+- **Category pre-filtering.** For a household with 200 categories we do not send all 200; we send the
+  top ~25 by keyword/embedding retrieval. This cuts cost, raises accuracy, and bounds prompt size.
+- **Household-specific few-shot examples drawn from real corrections.** This is the cheapest form of
+  personalisation available and it is why the product gets better for *this* household without any
+  retraining.
+
+### 6.4 Confidence calibration
+
+Raw model confidence is **not** trustworthy, so we calibrate it against observed outcomes:
+
+- Log `(raw_confidence, was_accepted)` pairs per `(task, model, prompt_version)`.
+- Fit an isotonic regression per bucket; apply the mapping before the gate.
+- Re-fit weekly from `corrections` + `classification_decisions`.
+- **Gate on calibrated confidence**, never raw. If calibration data is insufficient (< 200 samples),
+  apply a conservative shrink: `calibrated = raw × 0.85`.
+
+This is a small piece of engineering that directly determines whether the review queue is a
+convenience or a nuisance — and a nuisance queue is a churn driver.
+
+---
+
+## 7. Stage 6: Confidence gates
+
+| Calibrated confidence | Decision | UI |
+|---|---|---|
+| ≥ 0.90 | Auto-apply category | Silent, with an undo affordance |
+| 0.60 – 0.89 | Apply, mark for verification | 🟡 badge; one-tap fix; appears in the review queue's **advisory lane** |
+| < 0.60 | Save as `PENDING`, `needs_review = true` | 🔴 explicit question, or the review queue's **blocking lane** |
+| `null` category (no match at all) | Save uncategorised | Prompts the "create a rule?" flow |
+
+**The two review-queue lanes (canonical).** The review queue has exactly two lanes, and they are not
+the same thing:
+
+| Lane | Membership | Meaning | Queue badge |
+|---|---|---|---|
+| **Blocking** | `needs_review = true`, i.e. `confidence < 0.60` or `category_id IS NULL` (invariant I-8) | Not usable as-is; the user must act | **Counted** |
+| **Advisory** | `category_source = 'AI'` and `confidence` in `[0.60, 0.90)` | Applied and usable, but worth a glance | **Not counted** — shown as a secondary tab |
+
+This resolves an ambiguity present in earlier drafts: [03 invariant I-8](03-domain-model.md#5-invariants-enforced-in-the-service-layer--tests)
+defines `needs_review` strictly as the blocking set, so the advisory lane is **derived from
+`confidence` and `category_source`** and requires no extra column. The nav badge counts the blocking
+lane only — a badge that never clears because of advisory rows is a badge users learn to ignore.
+
+Thresholds are per-household tunable in settings (a power user may prefer aggressive auto-apply).
+Every threshold change is recorded in `audit_log`.
+
+**Bulk-input special case:** in a batch of 3 fragments where one is < 0.60, the other two are still
+confirmable in one action. Blocking a whole batch on one ambiguous row is the single most annoying
+failure mode we can ship, and F-06's acceptance criteria forbid it.
+
+---
+
+## 8. The learning loop
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API as Backend
+    participant CE as Rules Engine
+    participant DB as PostgreSQL
+
+    U->>API: PATCH /transactions/:id { categoryId }
+    API->>DB: insert corrections (was_ai_suggested: true)
+    API->>API: synthesise candidate rule
+    API-->>U: "Zapamti za ubuduće: Dejan → Kuća/Septička jama?"
+    U->>API: POST /rules { fromCorrectionId }
+    API->>DB: insert rules (origin: LEARNED)
+    API->>CE: invalidate household rule cache
+    Note over CE: next "Dejan 2000" resolves with zero AI calls
+```
+
+### 8.1 Rule synthesis
+
+From a correction, the backend derives the **narrowest rule that would have prevented it**:
+
+| Correction context | Synthesised rule |
+|---|---|
+| Resolved counterparty `Dejan`, category changed | `counterparty eq Dejan → setCategory(X)` |
+| Resolved merchant `Lidl`, category changed | `merchant eq Lidl → setCategory(X)` |
+| No entity, distinctive token `septička` | `text contains "septička" → setCategory(X)` **plus** add `septička` as an INCLUDE keyword on X |
+| Same merchant corrected 3× to the same category | Suggest changing the merchant's default category instead of adding a 4th rule |
+| Correction contradicts an existing rule | Offer to **edit that rule** rather than shadow it — shadowing rules is how rule sets rot |
+
+### 8.2 Guardrails (the user is not always right, and neither are we)
+
+- **Never auto-create rules.** Synthesis always proposes; the user confirms. (P-2, and the source
+  transcript's explicit "backend decides when a correction is clear enough".)
+- **No rule from a single ambiguous correction** unless the trigger is a resolved entity — a typo'd
+  one-off must not become permanent policy.
+- **Conflict check** before saving: a new rule must not silently contradict a higher-priority rule;
+  surface the conflict and offer to edit.
+- **Decay and review:** rules with `hit_count = 0` after 90 days are surfaced for cleanup; a
+  "your rules" screen shows hits/misses so the user can prune.
+- **Bulk re-classify:** when a rule is created, optionally offer "apply to N existing similar
+  transactions?" — with a diff preview. This is a delight feature *and* it retroactively fixes the
+  analytics that made the user distrust the app.
+
+---
+
+## 9. AI provider abstraction
+
+```ts
+// packages/ai/src/provider.ts
+export interface AiProvider {
+  readonly name: 'OPENAI' | 'ANTHROPIC' | 'GEMINI' | 'DEEPSEEK' | 'LOCAL';
+  parse(input: ParseInput): Promise<ParseProposal>;
+  classify(input: ClassifyInput): Promise<ClassifyProposal>;
+  narrate(input: NarrateInput): Promise<string>;
+  ocr?(input: OcrInput): Promise<OcrResult>;
+  embed?(texts: string[]): Promise<number[][]>;
+}
+```
+
+Routing is declarative, per task, per household, with a platform default.
+
+**Residency rule (canonical, hard constraint).** `PARSE`, `CLASSIFY` and `NARRATE` carry the user's own
+free text; `OCR` carries an image of a receipt. Those four may only be routed to a **`LOCAL` model** or
+to a provider endpoint **inside an adequacy-covered region (EEA)**. The `_EU` suffix in the table below
+is therefore mandatory, not a preference — an endpoint outside the EEA is a GDPR Chapter V transfer and
+requires the household's explicit, recorded consent ([08 §6](08-security-privacy-and-compliance.md)).
+A provider that cannot offer an EEA endpoint cannot serve those tasks at all. `EMBED` never leaves the
+process, because the vectors are built from the household's own names.
+
+```ts
+type Endpoint = 'LOCAL' | 'DEEPSEEK_EU' | 'OPENAI_EU' | 'ANTHROPIC_EU' | 'GEMINI_EU';
+
+const routing: Record<Task, { primary: Endpoint; fallback: Endpoint | null }> = {
+  // High volume and latency-sensitive: run locally by default. This is also the cheapest
+  // and the privacy-maximising choice, which is a happy coincidence rather than a trade-off.
+  PARSE:    { primary: 'LOCAL',       fallback: 'DEEPSEEK_EU'  },
+  CLASSIFY: { primary: 'LOCAL',       fallback: 'DEEPSEEK_EU'  },
+  // Quality is user-visible and volume is low, so a stronger EEA-hosted model leads.
+  NARRATE:  { primary: 'ANTHROPIC_EU', fallback: 'LOCAL'        },
+  // The most sensitive payload in the system (an image). Local-first; cloud only on consent.
+  OCR:      { primary: 'LOCAL',       fallback: 'GEMINI_EU'    },
+  EMBED:    { primary: 'LOCAL',       fallback: null           },
+};
+```
+
+> **Why `CLASSIFY` primary is `LOCAL`, not `DEEPSEEK`.** An earlier draft of this document defaulted
+> `CLASSIFY` to a DeepSeek endpoint for cost. That sent household free text (merchant names, and
+> person names such as `Dejan rođa`) to a non-adequacy jurisdiction by default, which is a Chapter V
+> transfer and not something to be resolved by a config default. Raised as Q-3 in
+> [08](08-security-privacy-and-compliance.md); resolved here by making the local model primary and
+> requiring the EEA suffix on every fallback.
+
+Cross-cutting requirements on every adapter:
+
+- **Timeouts** (2 s parse/classify, 8 s narrate, 20 s OCR) with one retry on transient failure only.
+- **Circuit breaker** per provider; open circuit ⇒ fall through to the next provider ⇒ then to
+  rules-only degradation.
+- **Redaction** before egress: no account numbers, no full names beyond what the input contains, no
+  balances. Only the fragment plus the category list. ([08](08-security-privacy-and-compliance.md))
+- **Cost and latency recorded per call** into `classification_decisions` (`cost_micros`, `latency_ms`),
+  which makes per-household unit economics measurable rather than guessed.
+- **Prompt versioning**: every call references a `prompt_template_id` + `version` so an accuracy
+  regression can be attributed to a prompt change.
+- **Determinism knobs**: temperature 0 for parse/classify; seeded where the provider allows.
+
+### Degradation ladder
+
+```text
+Full pipeline → rules + keywords only (AI circuit open)
+             → deterministic extraction only (parser failure)
+             → manual entry form (everything else fails)
+```
+
+The user can always record a transaction. The AI never becomes a hard dependency for correctness —
+only for convenience, which is exactly the trade we want.
+
+---
+
+## 10. The assistant Q&A path (F-23)
+
+The single most dangerous surface for hallucinated numbers. The rule:
+
+> **The backend computes. The LLM narrates.**
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as Assistant Service
+    participant Q as Query Planner
+    participant DB as PostgreSQL
+    participant L as LLM (NARRATE)
+
+    U->>A: "koliko sam potrošio na hranu ovog meseca?"
+    A->>Q: plan(question, household schema)
+    Q->>Q: intent = SPEND_BY_CATEGORY, period = current month, category = Hrana (tree)
+    Q->>DB: scoped aggregate query (household-scoped, confirmed, non-deleted)
+    DB-->>Q: { total: 2745000, count: 23, currency: RSD }
+    Q->>A: facts + provenance
+    A->>L: narrate(facts, locale, tone)
+    L-->>A: "Do sada si potrošio 27.450 RSD na hranu, kroz 23 transakcije."
+    A-->>U: answer + expandable "based on 23 transactions, 1–31 Oct" + link to the filtered list
+```
+
+Implementation notes:
+
+- The **query planner is a constrained intent classifier** over a fixed set of ~30 query templates
+  (`SPEND_BY_CATEGORY`, `TOP_MERCHANTS`, `BUDGET_STATUS`, `TREND_VS_LAST_MONTH`, `SAFE_TO_SPEND`,
+  `GOAL_PROGRESS`, …). The canonical closed enum is `AssistantIntent` in
+  [06 §8](06-api-specification.md); adding a template is a schema change, not a prompt tweak. The
+  planner selects a template and slots; it never emits SQL.
+- Each template is implemented as a parameterised, household-scoped repository method — so the LLM
+  cannot reach data the user is not entitled to, and cannot write SQL.
+- Facts are passed to the narrator as **pre-formatted strings** with the currency and locale already
+  applied. The model is instructed to reproduce numbers verbatim and is *not given* raw floats to
+  reformat.
+- Every answer carries **provenance** ("based on 23 transactions, 1–31 Oct") with a link to the
+  underlying filtered list. Trust comes from being checkable.
+- If no template fits, the assistant says so and offers the closest answerable questions. It never
+  improvises a figure (enforced by an output validator that rejects any numeral not present in the
+  facts payload — a cheap, effective guard).
+
+**Output numeric validator** deserves emphasis: before returning a narrative, extract all numerals
+from the generated text and assert each appears in the facts payload (allowing for locale
+formatting). Any unaccounted numeral ⇒ regenerate once with a stricter instruction ⇒ otherwise fall
+back to a template-rendered answer with no LLM at all. This one check catches the majority of
+plausible-sounding finance hallucinations.
+
+---
+
+## 11. Evaluation harness
+
+A model change must never ship on vibes. Details of the CI wiring are in
+[10](10-testing-and-quality.md); the dataset design lives here.
+
+### 11.1 Golden dataset
+
+| Slice | Size (target) | Purpose |
+|---|---|---|
+| Serbian merchant inputs | 400 | Common-path accuracy |
+| Cyrillic-script inputs | 100 | Transliteration correctness |
+| Amount-format edge cases | 150 | `.`/`,`/space/k/currency suffix |
+| Counterparty/person inputs | 150 | `Dejan rođa`-class ambiguity |
+| Bulk multi-transaction lines | 100 | Segmentation correctness |
+| Receipt line items | 300 | Item-level categorisation |
+| Adversarial / should-ask | 100 | Must return low confidence, not a confident wrong answer |
+| Regression set from real corrections | growing | The only slice that matters long-term |
+
+Fixed slices total **1 300 cases**; the regression slice grows without bound.
+
+Ground truth comes from anonymised, consented real usage plus hand-labelling. The regression slice is
+built automatically from `corrections` — every correction is by definition a case the system got
+wrong, and it is the highest-value test data we will ever have.
+
+**Staged delivery of the dataset (canonical).** The harness ships in Phase 2 with **300 cases** drawn
+from the merchant, amount-format and bulk slices ([09 §4](09-implementation-plan.md), task 2.1.2) —
+enough to gate the pipeline from the first week it exists. It reaches the full 1 300-case composition
+**before the beta launch gate in [09 §7](09-implementation-plan.md)**, which is the point at which
+every slice above must be populated. The §11.2 gate thresholds apply unchanged at both stages; only
+the dataset size grows. The regression slice is never part of a blocking gate (see
+[10 §5.3](10-testing-and-quality.md)) because it is built from failures and therefore starts near 0 %
+accuracy by construction.
+
+### 11.2 Gates (blocking in CI)
+
+| Metric | Gate |
+|---|---|
+| Category accuracy (top-1, calibrated ≥ 0.90 bucket) | ≥ 96 % |
+| Category accuracy (top-3) | ≥ 99 % |
+| **Overconfident-wrong rate** (≥ 0.90 confidence but incorrect) | **≤ 1.5 %** |
+| Should-ask recall (adversarial slice returns < 0.60) | ≥ 90 % |
+| Semantic-preservation rate (narration keeps all facts) | 100 % |
+| Fabricated-numeral rate in narration | **0** |
+| p95 latency, parse+classify | ≤ 1.5 s |
+| Cost per classified transaction | ≤ $0.002 |
+
+The overconfident-wrong rate is the most important number in the product. A system that says "I don't
+know" is trustworthy; one that is confidently wrong about money is not — and users punish the latter
+by churning, not by complaining.
+
+---
+
+## 12. Cost model
+
+Assumes the design above, where rules and keywords absorb the majority of traffic.
+
+| Path | Share of entries (steady state) | Cost / 1k | Notes |
+|---|---|---|---|
+| Rules / keywords / merchant default | ~70 % | $0.00 | Pure compute |
+| Small-model parse+classify | ~25 % | ~$0.20–0.60 | Batched where possible |
+| Large-model classify (low-confidence re-ask) | ~4 % | ~$1.50–3.00 | Escalation only |
+| Narration (assistant) | ~50 calls/user/month | ~$0.30–1.00 | Not on the entry path |
+| Embeddings | amortised | ~$0.02 | Local model ⇒ effectively $0 |
+
+**Effect of the local-first routing in §9.** Because `PARSE`, `CLASSIFY` and `OCR` now lead with a
+`LOCAL` model ([§9](#9-ai-provider-abstraction)), most of the per-call spend above converts into
+**fixed GPU/host cost** rather than marginal API spend. Two consequences worth stating plainly:
+
+- The marginal cost per entry falls (good for the Free tier and for margin).
+- The **fixed** cost rises and must be covered before any of it is saved. Local inference is cheaper
+  only above a utilisation threshold; below it, the EEA-hosted API path is cheaper. The break-even is a
+  capacity-planning question, not a correctness one, and is tracked in
+  [11 §11](11-devops-and-observability.md) alongside the other cost controls. **The privacy constraint
+  in §9 is not negotiable for cost reasons** — if local inference is not yet economical, the answer is
+  the EEA API endpoint, never a non-EEA one.
+
+**Steady-state estimate: ≈ $0.02–0.05 per active user per month** at 60–100 entries, plus narration.
+That supports a 399–599 RSD Pro tier with healthy margin (see
+[12](12-monetization-and-pricing.md)). Early on, before memory accumulates, cost is 3–5× higher — this
+is an intentional, budgeted customer-acquisition cost, not a surprise.
+
+Cost guards: per-household daily token budget, alerting at 3× the p95 household, and automatic
+downgrade to a cheaper model per task when the budget is exceeded (with a user-visible notice on the
+settings page rather than a silent quality drop).
