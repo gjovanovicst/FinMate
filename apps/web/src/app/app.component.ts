@@ -352,6 +352,7 @@ export class AppComponent {
     { path: '/budgets', labelKey: 'nav.budgets', icon: '🎯', primary: true },
     { path: '/accounts', labelKey: 'nav.accounts', icon: '🏦', primary: true },
     { path: '/categories', labelKey: 'nav.categories', icon: '🗂️', primary: false },
+    { path: '/merchants', labelKey: 'nav.merchants', icon: '🏪', primary: false },
   ];
 
   /**

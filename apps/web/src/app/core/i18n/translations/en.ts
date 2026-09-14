@@ -20,6 +20,7 @@ export const en = {
   'nav.transactions': 'Transactions',
   'nav.budgets': 'Budgets',
   'nav.categories': 'Categories',
+  'nav.merchants': 'Merchants',
   'nav.more': 'More',
 
   // ---- session ----
@@ -291,6 +292,65 @@ export const en = {
   'categories.tooDeepBody': 'Categories nest at most 5 levels deep. Remove a level first.',
   'categories.moved': 'Moved {name} to {path}.',
   'categories.moveFailed': 'That move was refused.',
+
+  // ---- merchants ----
+  'merchants.title': 'Merchants',
+  'merchants.subtitle':
+    'Shops and services. An alias is how a written description finds the right one.',
+  'merchants.add': 'Add',
+  'merchants.addTitle': 'New merchant',
+  'merchants.name': 'Name',
+  'merchants.create': 'Create',
+  'merchants.creating': 'Creating…',
+  'merchants.cancel': 'Cancel',
+  'merchants.search': 'Search',
+  'merchants.searchPlaceholder': 'Search merchants',
+  'merchants.defaultCategory': 'Default category',
+  'merchants.noDefaultCategory': 'Not set',
+  'merchants.defaultCategoryHint':
+    'Optional. A receipt item that names its own category outranks this.',
+  'merchants.aiHint': 'Hint for the classifier',
+  'merchants.aiHintHint': 'Words you would expect on a receipt from here.',
+  'merchants.aliases': 'Aliases',
+  'merchants.aliasesHint':
+    'Other ways this merchant is written. Saved without accents or capitals, so what comes back may look different from what you typed.',
+  'merchants.aliasPlaceholder': 'e.g. lidl dorcol',
+  'merchants.addAlias': 'Add',
+  'merchants.noAliases': 'No aliases yet.',
+  'merchants.removeAlias': 'Remove alias {alias}',
+  'merchants.save': 'Save changes',
+  'merchants.saving': 'Saving…',
+  'merchants.starter': 'shipped',
+  'merchants.usage': '{count} transactions',
+  'merchants.usageNone': 'not used yet',
+  'merchants.selectPrompt': 'Choose a merchant to edit it.',
+  'merchants.empty': 'No merchants yet',
+  'merchants.emptyBody': 'Add one, or search the shipped catalogue.',
+  'merchants.emptySearch': 'Nothing matches that search',
+  'merchants.truncated': 'Showing the first 200. Search to narrow the list.',
+  'merchants.copyOnWrite':
+    'This is a shipped merchant. Saving makes your own copy of it and moves your transactions onto that copy, so the shared catalogue stays untouched.',
+  'merchants.duplicateName': 'Another merchant already has that name. Merge into it instead.',
+  'merchants.merge': 'Merge into another merchant',
+  'merchants.mergeHint':
+    'Moves everything recorded here to the merchant you choose, combines the aliases, then removes this one.',
+  'merchants.mergeTarget': 'Merge into',
+  'merchants.chooseTarget': 'Choose a merchant…',
+  'merchants.mergePreviewAliases': 'Aliases afterwards',
+  'merchants.mergePreviewCount': '{count} transactions will move',
+  'merchants.mergePreviewNone': 'No transactions to move.',
+  'merchants.mergeConfirm': 'Merge',
+  'merchants.merging': 'Merging…',
+  'merchants.delete': 'Delete merchant',
+  'merchants.deleting': 'Deleting…',
+  'merchants.deleteConfirm': 'Delete this merchant?',
+  'merchants.refusalSAME': 'A merchant cannot be merged into itself.',
+  'merchants.refusalSHIPPED_SOURCE':
+    'A shipped merchant cannot be merged away. Merge your own merchant into it instead.',
+  'merchants.deleteRefusalSHIPPED':
+    'Shipped merchants cannot be deleted. Save a change to make your own copy instead.',
+  'merchants.deleteRefusalIN_USE':
+    'Transactions still use this merchant. Merge it into another one to move them first.',
 
   // ---- API error codes (docs/06 §10) ----
   // The server returns a stable CODE and a safe English message; the client localises it. That

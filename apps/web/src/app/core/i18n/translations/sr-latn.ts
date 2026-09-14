@@ -22,6 +22,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'nav.transactions': 'Transakcije',
   'nav.budgets': 'Budžeti',
   'nav.categories': 'Kategorije',
+  'nav.merchants': 'Prodavci',
   'nav.more': 'Više',
 
   // ---- session ----
@@ -293,6 +294,65 @@ export const srLatn: Record<keyof typeof en, string> = {
   'categories.tooDeepBody': 'Kategorije se ugnježđuju najviše 5 nivoa. Uklonite prvo jedan nivo.',
   'categories.moved': 'Premešteno {name} u {path}.',
   'categories.moveFailed': 'To premeštanje je odbijeno.',
+
+  // ---- merchants ----
+  'merchants.title': 'Prodavci',
+  'merchants.subtitle':
+    'Radnje i servisi. Alijas je ono po čemu napisan opis pronalazi pravog prodavca.',
+  'merchants.add': 'Dodaj',
+  'merchants.addTitle': 'Novi prodavac',
+  'merchants.name': 'Naziv',
+  'merchants.create': 'Napravi',
+  'merchants.creating': 'Pravljenje…',
+  'merchants.cancel': 'Otkaži',
+  'merchants.search': 'Pretraga',
+  'merchants.searchPlaceholder': 'Pretraži prodavce',
+  'merchants.defaultCategory': 'Podrazumevana kategorija',
+  'merchants.noDefaultCategory': 'Nije postavljena',
+  'merchants.defaultCategoryHint':
+    'Nije obavezno. Stavka računa koja navodi svoju kategoriju ima prednost.',
+  'merchants.aiHint': 'Nagoveštaj za klasifikator',
+  'merchants.aiHintHint': 'Reči koje biste očekivali na računu odatle.',
+  'merchants.aliases': 'Alijasi',
+  'merchants.aliasesHint':
+    'Drugi načini na koje se ovaj prodavac piše. Čuva se bez kvačica i velikih slova, pa ono što se vrati može da izgleda drugačije od unetog.',
+  'merchants.aliasPlaceholder': 'npr. lidl dorcol',
+  'merchants.addAlias': 'Dodaj',
+  'merchants.noAliases': 'Još nema alijasa.',
+  'merchants.removeAlias': 'Ukloni alijas {alias}',
+  'merchants.save': 'Sačuvaj izmene',
+  'merchants.saving': 'Čuvanje…',
+  'merchants.starter': 'isporučen',
+  'merchants.usage': '{count} transakcija',
+  'merchants.usageNone': 'još se ne koristi',
+  'merchants.selectPrompt': 'Izaberite prodavca da ga izmenite.',
+  'merchants.empty': 'Još nema prodavaca',
+  'merchants.emptyBody': 'Dodajte jednog, ili pretražite isporučeni katalog.',
+  'merchants.emptySearch': 'Ništa ne odgovara toj pretrazi',
+  'merchants.truncated': 'Prikazano je prvih 200. Pretražite da suzite listu.',
+  'merchants.copyOnWrite':
+    'Ovo je isporučen prodavac. Čuvanjem pravite svoju kopiju i vaše transakcije se prebacuju na nju, pa zajednički katalog ostaje nepromenjen.',
+  'merchants.duplicateName': 'Drugi prodavac već ima taj naziv. Spojite ga sa njim.',
+  'merchants.merge': 'Spoji sa drugim prodavcem',
+  'merchants.mergeHint':
+    'Prebacuje sve zabeleženo ovde na izabranog prodavca, spaja alijase, pa uklanja ovog.',
+  'merchants.mergeTarget': 'Spoji sa',
+  'merchants.chooseTarget': 'Izaberite prodavca…',
+  'merchants.mergePreviewAliases': 'Alijasi nakon spajanja',
+  'merchants.mergePreviewCount': '{count} transakcija će se premestiti',
+  'merchants.mergePreviewNone': 'Nema transakcija za premeštanje.',
+  'merchants.mergeConfirm': 'Spoji',
+  'merchants.merging': 'Spajanje…',
+  'merchants.delete': 'Obriši prodavca',
+  'merchants.deleting': 'Brisanje…',
+  'merchants.deleteConfirm': 'Obrisati ovog prodavca?',
+  'merchants.refusalSAME': 'Prodavac ne može da se spoji sam sa sobom.',
+  'merchants.refusalSHIPPED_SOURCE':
+    'Isporučen prodavac ne može da se spoji i ukloni. Spojite svog prodavca sa njim.',
+  'merchants.deleteRefusalSHIPPED':
+    'Isporučeni prodavci ne mogu da se brišu. Sačuvajte izmenu da napravite svoju kopiju.',
+  'merchants.deleteRefusalIN_USE':
+    'Transakcije još koriste ovog prodavca. Spojite ga sa drugim da ih prvo premestite.',
 
   // ---- API error codes ----
   'error.UNAUTHENTICATED': 'Pogrešan email ili lozinka.',

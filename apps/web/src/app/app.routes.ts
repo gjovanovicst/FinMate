@@ -44,6 +44,13 @@ export const routes: Routes = [
     title: 'Transakcije',
   },
   {
+    path: 'merchants',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/merchants/merchants.component').then((m) => m.MerchantsComponent),
+    title: 'Prodavci',
+  },
+  {
     path: 'categories',
     canActivate: [authenticatedGuard],
     loadComponent: () =>
