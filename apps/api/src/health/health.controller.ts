@@ -1,5 +1,6 @@
 import { Controller, Get, HttpCode, HttpStatus, Inject } from '@nestjs/common';
 
+import { Public } from '../common/auth/guards';
 import { CONFIG, type AppConfig } from '../config/config';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -11,6 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
  * worse than useless. `/health/ready` does check the database, because that is what gates
  * traffic.
  */
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(

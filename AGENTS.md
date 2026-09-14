@@ -11,7 +11,7 @@ AI-first household budgeting app for **mobile and desktop**. The product promise
 **Machine state:** Node 24.20.0, pnpm 11.7.0, Go 1.27.0, **Docker 29.7.2 + Compose v5.5.0 (Linux
 containers)** on Ubuntu 20.04 LTS / WSL2.
 
-**Build state — Phase 0 tasks 0.1–0.5 are done.** There is working code:
+**Build state — Phase 0 tasks 0.1–0.6 are done.** There is working code:
 
 | What | State |
 |---|---|
@@ -21,9 +21,11 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 | Schema | 36 tables + 44 CHECK constraints + 18 partial indexes applied; `_prisma_migrations` current |
 | Prisma | Client generated to `apps/api/src/generated/prisma` (gitignored) |
 | API | Boots, `/health` + `/health/ready` green, structured JSON logs, typed error filter |
-| Tenancy | `TenantContext` (AsyncLocalStorage) + Prisma guard; **108 tests pass** |
+| Tenancy | `TenantContext` (AsyncLocalStorage) + Prisma guard; four-way model classification |
+| Auth (0.6) | REST `/auth/*`: signup, login, refresh **with rotation + theft detection**, logout, verify, reset; argon2id; login throttling; `TenantContext` now resolved from a real session |
 | Seed | `pnpm db:seed` — 38 categories, 134 keywords, 38 merchants; idempotent |
-| Not yet built | Auth (0.6), GraphQL (0.7), Angular shell (0.8), CI (0.9), worker, production build |
+| Tests | **160 pass** (API, Vitest + `unplugin-swc`) + 15 (domain) |
+| Not yet built | GraphQL (0.7), Angular shell (0.8), CI (0.9), worker, production build |
 
 ```bash
 pnpm dev:infra            # start Postgres/Redis/MinIO/Mailhog
@@ -99,7 +101,7 @@ These are architecture, not preference. Violating one is a bug even when tests p
 ```bash
 pnpm dev            # start infra, then apps in parallel
 pnpm dev:infra      # Postgres + Redis + MinIO + Mailhog only
-pnpm test           # unit + integration (Vitest for packages, Jest for apps/api)
+pnpm test           # unit + integration (Vitest everywhere; API needs unplugin-swc)
 pnpm lint           # includes the dependency-boundary rule
 pnpm typecheck
 pnpm db:migrate     # forward-only, expand/contract

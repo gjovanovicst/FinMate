@@ -592,6 +592,13 @@ decorators are irrelevant.
 - ⚠️ SWC does not typecheck. That is what `nx run api:typecheck` (`tsc --noEmit`) is for, and it is a
   gate.
 
+**Addendum (Phase 0 task 0.6) — the same constraint forced the test runner too.**
+
+NestJS 12 ships **ESM-only** packages, so Jest could not load them at all ("Must use import to load
+ES Module"). API tests therefore moved to **Vitest with `unplugin-swc`**, because Vitest handles ESM
+natively and `unplugin-swc` (unlike Vitest's default esbuild transform) emits decorator metadata, so
+`Test.createTestingModule` can resolve dependencies. See the updated docs/10 §2A.
+
 **Alternatives rejected.** `tsc` + `node --watch` on the emitted output (works, but needs
 `tsconfig-paths` at runtime and adds a build step to every reload); `nest start` with the default
 builder (same path-rewriting problem); explicit `@Inject()` tokens on every constructor parameter

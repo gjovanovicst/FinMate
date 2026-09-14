@@ -224,6 +224,15 @@ type ConflictError {
 
 ## 2. Authentication and session
 
+> **Implementation deviation (Phase 0 task 0.6): authentication is REST, not GraphQL.**
+> The endpoints live under `/auth/*` (`signup`, `login`, `refresh`, `logout`, `verify-email`,
+> `request-password-reset`, `reset-password`, plus a protected `GET /auth/me`). Two reasons:
+> session handling must set and clear `httpOnly` cookies, and cookie semantics sit awkwardly in a
+> GraphQL response where every operation shares one envelope; and scoping the refresh cookie to
+> `/auth` keeps it off ordinary data requests. GraphQL remains the transport for all domain
+> operations. Recorded here rather than left as a silent divergence.
+
+
 ### 2.1 Token strategy
 
 Per [05 §1](05-architecture.md): **JWT access token, 15 minutes, plus a rotating refresh token in an

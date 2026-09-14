@@ -1,3 +1,5 @@
+import { describe, expect, it } from 'vitest';
+
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -19,6 +21,7 @@ const CONTEXT: TenantContext = {
   householdId: HOUSEHOLD_A,
   userId: '22222222-2222-7222-8222-222222222222',
   role: 'OWNER',
+  sessionId: '33333333-3333-7333-8333-333333333333',
   requestId: 'req-test-1',
 };
 

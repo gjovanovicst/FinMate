@@ -134,6 +134,26 @@ coverage of a package it touches; a global drop > 0.5 pp needs a justification l
 
 ---
 
+## 2A. Runner decision (revised during Phase 0)
+
+**Vitest everywhere.** The original plan used Jest for `apps/api`; that is not viable, and the
+reason is worth recording because it will bite anyone who tries to revert it:
+
+- **NestJS 12 ships ESM-only packages.** `@nestjs/common` and `@nestjs/jwt` contain ESM syntax, and
+  Jest's CommonJS transform cannot `require()` them — the suite fails to load with *"Must use import
+  to load ES Module"*. Making Jest work means ESM mode plus a transformed-`node_modules` allowlist,
+  which is slow and fragile.
+- **Vitest needs `unplugin-swc`, not its default esbuild transform.** NestJS resolves constructor
+  dependencies from `design:paramtypes` decorator metadata, and **esbuild cannot emit it** — the
+  same limitation that rules out `tsx` as the dev runtime (ADR-020). `unplugin-swc` emits it, so
+  `Test.createTestingModule` works.
+
+One runner for the whole workspace is a simplification, not a compromise: the API suite went from
+108 to 160 tests across the same change, including a real integration test against PostgreSQL.
+
+Integration tests currently run against `DATABASE_URL` and are **not yet hermetic** — moving them to
+Testcontainers is required before CI gates are meaningful (see §4).
+
 ## 3. Money and invariant testing
 
 ### 3.1 Why property-based testing, specifically here

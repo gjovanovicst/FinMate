@@ -12,8 +12,12 @@
   "dependencies": {
     "@nestjs/common": "^12.0.1",
     "@nestjs/core": "^12.0.1",
+    "@nestjs/jwt": "^12.0.1",
     "@nestjs/platform-express": "^12.0.1",
+    "@node-rs/argon2": "^2.2.1",
     "@prisma/client": "7.10.0",
+    "ioredis": "^6.0.0",
+    "nodemailer": "^10.0.9",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "zod": "^4.6.4"
@@ -24,11 +28,11 @@
     "@swc-node/register": "^1.12.1",
     "@swc/core": "^1.16.2",
     "@types/express": "^5.0.6",
-    "@types/jest": "^30.0.0",
+    "@types/nodemailer": "^8.0.1",
     "@types/supertest": "^7.2.1",
-    "jest": "^30.5.1",
     "supertest": "^7.2.2",
-    "ts-jest": "^29.4.12",
-    "tsconfig-paths": "^4.2.0"
+    "tsconfig-paths": "^4.2.0",
+    "unplugin-swc": "^1.6.0",
+    "vitest": "5.0.0"
   }
 }

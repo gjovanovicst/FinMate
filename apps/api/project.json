@@ -22,7 +22,7 @@
     "test": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "apps/api/node_modules/.bin/jest --config apps/api/jest.config.ts --passWithNoTests",
+        "command": "apps/api/node_modules/.bin/vitest run --config apps/api/vitest.config.mts",
         "cwd": "{workspaceRoot}"
       }
     },

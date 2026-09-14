@@ -20,6 +20,14 @@ export interface TenantContext {
   readonly householdId: string;
   readonly userId: string;
   readonly role: MemberRole;
+  /**
+   * The session this request is acting under, when there is one.
+   *
+   * Optional because not every tenanted scope has a session: signup establishes a context before
+   * the first session exists, and background jobs run under a synthetic context. Request-scoped
+   * contexts always set it, and `requireSessionId` fails closed when a caller needs one.
+   */
+  readonly sessionId?: string;
   /** Correlation id so a log line, an audit row and an AI call can be tied together. */
   readonly requestId: string;
 }
@@ -60,6 +68,20 @@ export function requireTenantContext(detail = 'unspecified operation'): TenantCo
   const context = storage.getStore();
   if (!context) throw new TenantContextMissingError(detail);
   return context;
+}
+
+/**
+ * The current session id, or a throw.
+ *
+ * Used by logout: a request always has a session, so its absence means the route was reached
+ * without authentication rather than through some legitimate sessionless path.
+ */
+export function requireSessionId(detail = 'unspecified operation'): string {
+  const context = requireTenantContext(detail);
+  if (!context.sessionId) {
+    throw new TenantContextMissingError(`${detail} requires a session, but the context has none`);
+  }
+  return context.sessionId;
 }
 
 /** True when running inside a tenanted scope. For assertions and diagnostics only. */

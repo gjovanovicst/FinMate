@@ -20,6 +20,27 @@ export const envSchema = z
 
     JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
 
+    /** Access-token lifetime. Short, because revocation is checked per request from the database. */
+    ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900), // 15 min
+    /** Refresh-token lifetime. Long, because it is rotated on every use. */
+    REFRESH_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(2_592_000), // 30 days
+    /** Email verification / password reset token lifetime. */
+    EMAIL_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(3_600), // 1 hour
+
+    /** Base URL used to build links in outbound email. */
+    APP_BASE_URL: z.string().default('http://localhost:4200'),
+    SMTP_URL: z.string().optional(),
+
+    /** Login throttling (docs/08 §3 — credential stuffing is threat T-02). */
+    LOGIN_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
+    LOGIN_WINDOW_SECONDS: z.coerce.number().int().positive().default(900), // 15 min
+
+    /** Set false to require email verification before the app is usable. */
+    REQUIRE_EMAIL_VERIFICATION: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+
     // ADR-007: PARSE/CLASSIFY/NARRATE/OCR may only target a LOCAL model or an EEA endpoint.
     // Anything else is a GDPR Chapter V transfer requiring recorded Household consent.
     AI_PARSE_PRIMARY: z.string().default('LOCAL'),

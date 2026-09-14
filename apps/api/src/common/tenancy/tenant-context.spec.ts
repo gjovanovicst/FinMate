@@ -1,3 +1,5 @@
+import { describe, expect, it } from 'vitest';
+
 import {
   getTenantContext,
   hasTenantContext,
@@ -11,6 +13,7 @@ const CONTEXT: TenantContext = {
   householdId: '11111111-1111-7111-8111-111111111111',
   userId: '22222222-2222-7222-8222-222222222222',
   role: 'OWNER',
+  sessionId: '33333333-3333-7333-8333-333333333333',
   requestId: 'req-test-1',
 };
 
