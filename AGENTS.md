@@ -23,7 +23,7 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 | Budgets CRUD (1.3.1) | **Done** — `upsertBudget` / `deleteBudget` / `budgets` with period consumption and pace |
 | Merchants/counterparties/tags (1.2.1–1.2.3), CSV export (1.3.4) | **Not started** |
 | **Phase 1 UI** | **Done** — transaction entry, filtered/paginated list, edit sheet, budgets, dashboard tiles; Accounts from Phase 0 |
-| Category management UI + keyword editor (1.2.4) | **Not started** — the API is done (tree CRUD, keywords), the UI is not |
+| Category tree editor + keyword editor (1.2.4, F-02/F-03) | **Done** — rename, reparent, reorder, delete-with-reassign, include/exclude keywords. **Drag-and-drop not implemented**; the Parent select and Alt+arrows cover reparenting |
 | Responsive/keyboard pass (1.3.5) | **Not started** — needs a human at 320/768/1280 px; no automated check exists |
 
 | What | State |
@@ -41,9 +41,10 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 | CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → lint → typecheck → test → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
 | Web (0.8) | Angular 22, **zoneless** + signals, ADR-006. Responsive shell (bottom nav → sidebar at 1024px), design tokens (`apps/web/src/styles.css`), `fm-money` as the only Money renderer, auth pages, Accounts consuming GraphQL |
 | i18n | `core/i18n/`: **English primary**, Serbian latin + cyrillic. Runtime catalogue (no rebuild), `TranslationKey` derived from `en`, `sr-Cyrl` generated at runtime. Language switcher in the shell |
-| Tests | **344 pass** — 191 API + 97 domain + 56 web |
+| Tests | **362 pass** — 191 API + 97 domain + 74 web |
 | Not yet built | worker jobs; production build for apps/api (its own decision); PWA service worker (Phase 4) |
-| Web screens | `/` dashboard, `/transactions` (filter + edit), `/budgets`, `/accounts`, sign-in/up |
+| Web screens | `/` dashboard, `/transactions` (filter + edit), `/budgets`, `/categories`, `/accounts`, sign-in/up |
+| Navigation | 4 primary destinations in the bottom bar plus **More** (≥1024 px the sidebar lists all 5); `nav.more` is the overflow control |
 
 ```bash
 pnpm dev:infra            # start Postgres/Redis/MinIO/Mailhog
@@ -58,7 +59,7 @@ nx run web:build          # production bundle
 **The browser talks to `/api/*`; the dev proxy strips the prefix** before forwarding, because the
 API serves `/auth/*` and `/graphql` without one (docs/06). Changing the prefix on one side only
 produces a 404 that looks like an auth failure.
-Verified working: lint 9/9, typecheck 9/9, 344 tests, `web:build`, GraphQL over HTTP through the
+Verified working: lint 9/9, typecheck 9/9, 362 tests, `web:build`, GraphQL over HTTP through the
 browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, and `prisma migrate diff`
 reporting no drift.
 
@@ -235,6 +236,14 @@ A change is not done until (doc 09 §8):
   `occurred_local_date` from the instant in the *Household's* timezone, so `T12:00:00Z` is the 15th
   for a Household in `Pacific/Auckland` (UTC+13) — and the wrong *month* at a boundary, silently
   corrupting every budget total for that period. `occurredLocalDate` wins when both are sent (I-2).
+- **Category keywords are normalised, so what is stored differs from what was typed.** `addKeyword`
+  lower-cases and strips accents (`septička` → `septicka`), matching how the pipeline normalises
+  transaction text — which is correct, but means the chip shown back is not the input. The editor
+  says so next to the field. Do not "fix" the chip to echo the input; that would break matching.
+- **Category deletion is a refusal, not a cascade.** `deleteCategory` throws `CONFLICT` while
+  Transactions, Splits or subcategories still reference the row (I-12); the UI turns that into a
+  reassign-target picker. Passing `reassignToId` moves children, Transactions **and** Splits. The
+  CONFLICT counts are the API's, so a split-only reference reports "0 transactions, 3 splits".
 - **`updateTransaction` cannot change `kind` or `splits`.** Direction is not a flippable property,
   and the parts of a divided Transaction must be edited as parts. `update()` refuses an amount change
   on a split Transaction with `VALIDATION_FAILED` rather than deleting the splits to satisfy I-1.

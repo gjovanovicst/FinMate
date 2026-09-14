@@ -44,6 +44,13 @@ export const routes: Routes = [
     title: 'Transakcije',
   },
   {
+    path: 'categories',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/categories/categories.component').then((m) => m.CategoriesComponent),
+    title: 'Kategorije',
+  },
+  {
     path: 'budgets',
     canActivate: [authenticatedGuard],
     loadComponent: () =>

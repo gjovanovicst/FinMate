@@ -1,7 +1,6 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  OnInit,
   afterNextRender,
   computed,
   inject,
@@ -10,6 +9,7 @@ import {
   signal,
   viewChild,
   type ElementRef,
+  type OnInit,
 } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 

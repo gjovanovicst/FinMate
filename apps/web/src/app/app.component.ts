@@ -12,9 +12,9 @@ interface NavItem {
   readonly labelKey: TranslationKey;
   readonly icon: string;
   /**
-   * Whether the item is shown. Every destination is currently primary; a non-primary item is
-   * hidden, not overflowed — there is no "more" menu yet, so mark an item non-primary only when
-   * that menu exists.
+   * Whether the item sits in the bottom bar. Non-primary items live behind "More" on compact
+   * screens (docs/02 §2 puts the library there) and are listed in full in the sidebar, so the
+   * sidebar is never a reduced view of the app.
    */
   readonly primary: boolean;
 }
@@ -40,9 +40,29 @@ interface NavItem {
     <div class="shell" [class.shell--authenticated]="isAuthenticated()">
       @if (isAuthenticated()) {
         <nav class="nav" [attr.aria-label]="i18n.t('app.primaryNav')">
+          @if (moreOpen()) {
+            <!-- Compact only: on wide screens the overflow items are in the sidebar already, and
+                 CSS hides this panel so the same two lists never both render. -->
+            <ul class="nav__more-panel">
+              @for (item of overflowItems(); track item.path) {
+                <li>
+                  <a
+                    class="nav__more-link"
+                    [routerLink]="item.path"
+                    routerLinkActive="nav__link--active"
+                    (click)="moreOpen.set(false)"
+                  >
+                    <span class="nav__icon" aria-hidden="true">{{ item.icon }}</span>
+                    <span>{{ i18n.t(item.labelKey) }}</span>
+                  </a>
+                </li>
+              }
+            </ul>
+          }
+
           <ul class="nav__list">
-            @for (item of visibleItems(); track item.path) {
-              <li class="nav__item">
+            @for (item of items; track item.path) {
+              <li class="nav__item" [class.nav__item--overflow]="!item.primary">
                 <a
                   class="nav__link"
                   [routerLink]="item.path"
@@ -53,6 +73,20 @@ interface NavItem {
                   <span class="nav__icon" aria-hidden="true">{{ item.icon }}</span>
                   <span class="nav__label">{{ i18n.t(item.labelKey) }}</span>
                 </a>
+              </li>
+            }
+
+            @if (overflowItems().length > 0) {
+              <li class="nav__item nav__item--more">
+                <button
+                  class="nav__link nav__link--button"
+                  type="button"
+                  [attr.aria-expanded]="moreOpen()"
+                  (click)="moreOpen.set(!moreOpen())"
+                >
+                  <span class="nav__icon" aria-hidden="true">⋯</span>
+                  <span class="nav__label">{{ i18n.t('nav.more') }}</span>
+                </button>
               </li>
             }
           </ul>
@@ -146,6 +180,48 @@ interface NavItem {
         font-size: 1.25rem;
         line-height: 1;
       }
+      .nav__link--button {
+        font: inherit;
+        font-size: var(--text-xs);
+        background: none;
+        border: none;
+        cursor: pointer;
+      }
+      /* Overflow items are in the sidebar on wide screens and behind "More" on compact ones. */
+      .nav__item--overflow,
+      .nav__more-panel {
+        display: none;
+      }
+      .nav__more-panel {
+        position: absolute;
+        inset-block-end: 100%;
+        inset-inline-end: var(--space-2);
+        min-inline-size: 12rem;
+        margin: 0 0 var(--space-2);
+        padding: var(--space-2);
+        list-style: none;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+      }
+      .nav__more-panel {
+        display: grid;
+        gap: var(--space-1);
+      }
+      .nav__more-link {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        padding: var(--space-2);
+        color: var(--color-text);
+        font-size: var(--text-sm);
+        text-decoration: none;
+        border-radius: var(--radius-sm);
+      }
+      .nav {
+        position: relative;
+      }
 
       .session {
         order: 3;
@@ -192,6 +268,13 @@ interface NavItem {
           border-block-start: none;
           border-inline-end: 1px solid var(--color-border);
           padding-block: var(--space-5);
+        }
+        .nav__item--overflow {
+          display: block;
+        }
+        .nav__item--more,
+        .nav__more-panel {
+          display: none;
         }
         .nav__list {
           flex-direction: column;
@@ -247,14 +330,21 @@ export class AppComponent {
    * Budgets sits before Accounts because it is the screen that produces the product's headline
    * number; Accounts is setup the user visits once.
    */
-  private readonly items: readonly NavItem[] = [
+  readonly items: readonly NavItem[] = [
     { path: '/', labelKey: 'nav.dashboard', icon: '📊', primary: true },
     { path: '/transactions', labelKey: 'nav.transactions', icon: '🧾', primary: true },
     { path: '/budgets', labelKey: 'nav.budgets', icon: '🎯', primary: true },
     { path: '/accounts', labelKey: 'nav.accounts', icon: '🏦', primary: true },
+    { path: '/categories', labelKey: 'nav.categories', icon: '🗂️', primary: false },
   ];
 
-  readonly visibleItems = computed(() => this.items.filter((item) => item.primary));
+  /**
+   * Five destinations do not fit a 320 px bottom bar with readable labels, and the spec's own
+   * information architecture puts the library behind "Više" (docs/02 §2). The overflow set grows
+   * here rather than by shrinking every label into an abbreviation.
+   */
+  readonly overflowItems = computed(() => this.items.filter((item) => !item.primary));
+  readonly moreOpen = signal(false);
 
   async signOut(): Promise<void> {
     this.signingOut.set(true);
