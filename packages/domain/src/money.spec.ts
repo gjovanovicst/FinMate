@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  addBalance,
   addMoney,
+  applyMovement,
+  balance,
+  formatBalance,
+  subtractBalance,
+  toBalance,
+  zeroBalance,
   equalsMoney,
   formatMoney,
   MoneyError,
@@ -54,5 +61,57 @@ describe('Money (ADR-003: integer minor units, never float)', () => {
   it('is immutable — a Money value cannot be mutated after construction', () => {
     const m = money(100n, 'RSD');
     expect(Object.isFrozen(m)).toBe(true);
+  });
+});
+
+describe('Balance (a derived, SIGNED quantity — distinct from Money)', () => {
+  it('allows a negative balance, which Money forbids', () => {
+    // The distinction that matters: an overdrawn account is valid data, not a sign bug.
+    expect(balance(-240_000n, 'RSD').amountMinor).toBe(-240_000n);
+    // Meanwhile the amount that produced it must still be non-negative.
+    expect(() => money(-240_000n, 'RSD')).toThrow(/non-negative/);
+  });
+
+  it('subtracts into the negative rather than throwing', () => {
+    const result = subtractBalance(balance(120_000n, 'RSD'), balance(360_000n, 'RSD'));
+    expect(result.amountMinor).toBe(-240_000n);
+  });
+
+  it('still refuses to mix currencies', () => {
+    expect(() => subtractBalance(balance(1n, 'RSD'), balance(1n, 'EUR'))).toThrow(/Currency mismatch/);
+  });
+
+  it('applies income and expense with the right sign, in one place', () => {
+    const opening = balance(245_000_00n, 'RSD');
+    const afterIncome = applyMovement(opening, 'INCOME', money(145_000_00n, 'RSD'));
+    const afterExpense = applyMovement(afterIncome, 'EXPENSE', money(2_340_50n, 'RSD'));
+
+    expect(afterIncome.amountMinor).toBe(245_000_00n + 145_000_00n);
+    expect(afterExpense.amountMinor).toBe(245_000_00n + 145_000_00n - 2_340_50n);
+  });
+
+  it('lets an expense exceed the opening balance without throwing', () => {
+    const result = applyMovement(balance(0n, 'RSD'), 'EXPENSE', money(500_000n, 'RSD'));
+    expect(result.amountMinor).toBe(-500_000n);
+  });
+
+  it('rejects a non-bigint, keeping floats out of the money path', () => {
+    // @ts-expect-error — deliberately passing a number.
+    expect(() => balance(240_000, 'RSD')).toThrow(/bigint/);
+  });
+
+  it('formats a negative balance with a minus sign', () => {
+    const formatted = formatBalance(balance(-240_000n, 'RSD'), 'sr-Latn-RS').replace(/\u00a0|\u202f/g, ' ');
+    expect(formatted).toMatch(/-/);
+    expect(formatted).toMatch(/2\.400/);
+  });
+
+  it('promotes Money into a Balance without changing the value', () => {
+    expect(toBalance(money(150_000n, 'RSD')).amountMinor).toBe(150_000n);
+  });
+
+  it('has a zero identity that leaves a balance unchanged', () => {
+    const original = balance(-500n, 'RSD');
+    expect(addBalance(original, zeroBalance('RSD')).amountMinor).toBe(-500n);
   });
 });

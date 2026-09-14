@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { money, formatMoney } from '@finmate/domain';
+import { balance, formatBalance, money, formatMoney } from '@finmate/domain';
 
 /**
  * Tests for the money rendering contract used by `fm-money`.
@@ -10,10 +10,10 @@ import { money, formatMoney } from '@finmate/domain';
  * sign and aria handling on top of what is asserted below.
  */
 describe('Money rendering contract (ADR-003 in the client)', () => {
-  /** Mirrors MoneyComponent.formatted(): wire string → bigint → domain formatter. */
+  /** Mirrors MoneyComponent.formatted(): wire string → bigint → signed domain formatter. */
   function render(wire: { amountMinor: string; currency: string }, locale = 'sr-Latn-RS'): string {
     try {
-      return formatMoney(money(BigInt(wire.amountMinor), wire.currency), locale);
+      return formatBalance(balance(BigInt(wire.amountMinor), wire.currency), locale);
     } catch {
       return '—';
     }
@@ -44,6 +44,21 @@ describe('Money rendering contract (ADR-003 in the client)', () => {
   it('handles zero without sign or special-casing', () => {
     const formatted = render({ amountMinor: '0', currency: 'RSD' }).replace(/\u00a0|\u202f/g, ' ');
     expect(formatted).toMatch(/0/);
+  });
+
+  it('renders a NEGATIVE balance with a minus, not the placeholder', () => {
+    // A derived Balance may be negative (an overdraft). Rendering '—' here — which is what using
+    // the non-negative Money formatter did — hid real data behind an error glyph.
+    const formatted = render({ amountMinor: '-240000', currency: 'RSD' }).replace(/\u00a0|\u202f/g, ' ');
+    expect(formatted).not.toBe('—');
+    expect(formatted).toMatch(/-/);
+    expect(formatted).toMatch(/2\.400/);
+  });
+
+  it('keeps the Money formatter strict, so amounts still cannot be negative', () => {
+    // The distinction is deliberate: Money is a typed amount (never negative), Balance is derived.
+    expect(() => money(-1n, 'RSD')).toThrow();
+    expect(formatMoney(money(100n, 'RSD'))).toBeTruthy();
   });
 
   it('uses the requested locale for grouping', () => {

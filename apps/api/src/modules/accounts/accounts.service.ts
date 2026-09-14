@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { addMoney, money, subtractMoney, uuidv7, type Money } from '@finmate/domain';
+import { applyMovement, money, toBalance, uuidv7, type Balance } from '@finmate/domain';
 
 import { ApiError } from '../../common/filters/all-exceptions.filter';
 import { normalisePageSize, type CursorPage } from '../../graphql/pagination';
@@ -110,7 +110,7 @@ export class AccountsService {
     // made the create response disagree with the very next list query — verified end to end.
     return this.toModel(
       created,
-      new Map([[created.id, money(created.opening_balance_minor, created.currency)]]),
+      new Map([[created.id, toBalance(money(created.opening_balance_minor, created.currency))]]),
     );
   }
 
@@ -120,8 +120,8 @@ export class AccountsService {
    * Deliberately not per-account: N+1 queries on a list endpoint is the defect docs/10 §10.1 asks
    * the test suite to catch, and it is invisible in development where N is 3.
    */
-  private async balancesByAccountId(accountIds: readonly string[]): Promise<Map<string, Money>> {
-    const result = new Map<string, Money>();
+  private async balancesByAccountId(accountIds: readonly string[]): Promise<Map<string, Balance>> {
+    const result = new Map<string, Balance>();
     if (accountIds.length === 0) return result;
 
     const rows = await this.prisma.client.accounts.findMany({
@@ -145,13 +145,15 @@ export class AccountsService {
       const account = opening.get(accountId);
       if (!account) continue;
 
-      let balance = money(account.opening_balance_minor, account.currency);
+      // Signed arithmetic: `subtractMoney` would throw on the first overdrawn account and take the
+      // whole screen down, because every balance on the page is resolved in this one query.
+      let running = toBalance(money(account.opening_balance_minor, account.currency));
       for (const row of summed) {
         if (row.account_id !== accountId) continue;
         const total = money(row._sum.amount_minor ?? 0n, account.currency);
-        balance = row.kind === 'INCOME' ? addMoney(balance, total) : subtractMoney(balance, total);
+        running = applyMovement(running, row.kind === 'INCOME' ? 'INCOME' : 'EXPENSE', total);
       }
-      result.set(accountId, balance);
+      result.set(accountId, running);
     }
 
     return result;
@@ -168,7 +170,7 @@ export class AccountsService {
       created_at: Date;
       updated_at: Date;
     },
-    balances: Map<string, Money>,
+    balances: Map<string, Balance>,
   ): Account {
     return {
       id: row.id,
@@ -176,7 +178,7 @@ export class AccountsService {
       kind: row.kind as AccountKind,
       currency: row.currency,
       openingBalance: money(row.opening_balance_minor, row.currency),
-      balance: balances.get(row.id) ?? money(row.opening_balance_minor, row.currency),
+      balance: balances.get(row.id) ?? toBalance(money(row.opening_balance_minor, row.currency)),
       isArchived: row.is_archived,
       createdAt: row.created_at,
       updatedAt: row.updated_at,

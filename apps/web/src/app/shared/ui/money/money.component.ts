@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 
-import { formatMoney, money } from '@finmate/domain';
+import { balance, formatBalance } from '@finmate/domain';
 
 /**
  * The Money on the wire (docs/06 §1).
@@ -84,11 +84,17 @@ export class MoneyComponent {
    * A malformed amount renders as a visible placeholder rather than `NaN` or a silently wrong
    * number. A finance app that shows a plausible but wrong figure is worse than one that shows it
    * could not read the value.
+   *
+   * Rendering uses the **signed** formatter. For a non-negative value the output is identical, and
+   * for a negative one it shows the minus instead of the placeholder — which matters because a
+   * derived Balance (an overdraft, a credit card) is legitimately negative. The Money/Balance
+   * distinction is enforced where it belongs, on the write path and in the domain arithmetic; a
+   * view component's job is to render what the server sent, not to re-litigate it.
    */
   readonly formatted = computed(() => {
     const { amountMinor, currency } = this.amount();
     try {
-      return formatMoney(money(BigInt(amountMinor), currency), this.locale());
+      return formatBalance(balance(BigInt(amountMinor), currency), this.locale());
     } catch {
       return '—';
     }

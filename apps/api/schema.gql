@@ -7,9 +7,9 @@ An Account: a place money sits. Balance is computed, never stored — invariant 
 """
 type Account {
   """
-  Derived: openingBalance + income − expense over CONFIRMED, non-deleted Transactions. Computed by the backend and never by a language model (ADR-001, invariant I-4).
+  Derived: openingBalance + income − expense over CONFIRMED, non-deleted Transactions. Computed by the backend and never by a language model (ADR-001, invariant I-4). SIGNED — an overdrawn account is valid data, which is why this is a Balance and not a Money.
   """
-  balance: Money!
+  balance: Balance!
   createdAt: DateTime!
 
   """ISO-4217 code; the Household ledger currency (ADR-011)."""
@@ -46,6 +46,11 @@ enum AccountKind {
   CASH
   OTHER
 }
+
+"""
+A derived, SIGNED money value: { amountMinor, currency }, where amountMinor may be negative. Read-only — balances are computed by the backend and never accepted as input (ADR-003).
+"""
+scalar Balance
 
 """
 A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.

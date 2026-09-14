@@ -1,5 +1,13 @@
 export {
+  addBalance,
   addMoney,
+  applyMovement,
+  balance,
+  formatBalance,
+  subtractBalance,
+  toBalance,
+  zeroBalance,
+  type Balance,
   DEFAULT_LEDGER_CURRENCY,
   equalsMoney,
   formatMoney,

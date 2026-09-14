@@ -1,7 +1,8 @@
 import { Field, ObjectType, registerEnumType } from '@nestjs/graphql';
 
-import type { Money } from '@finmate/domain';
+import type { Balance, Money } from '@finmate/domain';
 
+import { BalanceScalar } from '../../graphql/scalars/balance.scalar';
 import { MoneyScalar } from '../../graphql/scalars/money.scalar';
 import { Paginated } from '../../graphql/pagination';
 
@@ -37,12 +38,13 @@ export class Account {
   })
   openingBalance!: Money;
 
-  @Field(() => MoneyScalar, {
+  @Field(() => BalanceScalar, {
     description:
       'Derived: openingBalance + income − expense over CONFIRMED, non-deleted Transactions. ' +
-      'Computed by the backend and never by a language model (ADR-001, invariant I-4).',
+      'Computed by the backend and never by a language model (ADR-001, invariant I-4). ' +
+      'SIGNED — an overdrawn account is valid data, which is why this is a Balance and not a Money.',
   })
-  balance!: Money;
+  balance!: Balance;
 
   @Field(() => String, { description: 'ISO-4217 code; the Household ledger currency (ADR-011).' })
   currency!: string;
