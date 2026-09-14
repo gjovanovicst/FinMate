@@ -48,9 +48,29 @@ export class TenantContextMissingError extends Error {
 
 const storage = new AsyncLocalStorage<TenantContext>();
 
-/** Run `fn` with tenancy established. Used by the request middleware and by background jobs. */
+/**
+ * Run `fn` with tenancy established. Used by the request middleware, by background jobs, and by
+ * tests.
+ *
+ * **The thenable branch is load-bearing.** A Prisma query object is *lazy*: it does not execute
+ * until it is awaited. `runWithTenant(ctx, () => prisma.merchants.findMany())` therefore returns
+ * from `storage.run` — dropping the context — while the query is still unexecuted, and the query
+ * then runs outside the scope and throws `TenantContextMissingError`. That failure is silent at the
+ * call site and confusing at a distance, so a returned thenable is chained *inside* the context
+ * instead. Production code rarely notices because service methods are `async` and await internally;
+ * one-line test helpers and background jobs are where it bites.
+ */
 export function runWithTenant<T>(context: TenantContext, fn: () => T): T {
-  return storage.run(context, fn);
+  const result = storage.run(context, fn);
+  if (isThenable(result)) {
+    return storage.run(context, () => Promise.resolve(result)) as T;
+  }
+  return result;
+}
+
+/** Prisma query objects are thenable but lazy, so `then` may never have run yet. */
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return typeof (value as { then?: unknown } | null)?.then === 'function';
 }
 
 /** The current context, or `undefined` outside a tenanted scope. */

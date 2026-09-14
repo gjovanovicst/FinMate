@@ -35,14 +35,14 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 | Schema | 36 tables + 44 CHECK constraints + 18 partial indexes applied; `_prisma_migrations` current |
 | Prisma | Client generated to `apps/api/src/generated/prisma` (gitignored) |
 | API | Boots, `/health` + `/health/ready` green, structured JSON logs, typed error filter |
-| Tenancy | `TenantContext` (AsyncLocalStorage) + Prisma guard; four-way model classification |
+| Tenancy | `TenantContext` (AsyncLocalStorage) + Prisma guard; **five-way** model classification, incl. global-readable models (`merchants`) |
 | Auth (0.6) | REST `/auth/*`: signup, login, refresh **with rotation + theft detection**, logout, verify, reset; argon2id; login throttling; `TenantContext` now resolved from a real session |
 | Seed | `pnpm db:seed` — 38 categories, 134 keywords, 38 merchants; idempotent |
 | GraphQL (0.7) | Code-first; `Money` / `UUID` / `LocalDate` scalars; keyset pagination on the UUIDv7 key; `apps/api/schema.gql` generated as a reviewable artifact. First vertical slice: Accounts, with a backend-computed balance |
 | CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → lint → typecheck → test → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
 | Web (0.8) | Angular 22, **zoneless** + signals, ADR-006. Responsive shell (bottom nav → sidebar at 1024px), design tokens (`apps/web/src/styles.css`), `fm-money` as the only Money renderer, auth pages, Accounts consuming GraphQL |
 | i18n | `core/i18n/`: **English primary**, Serbian latin + cyrillic. Runtime catalogue (no rebuild), `TranslationKey` derived from `en`, `sr-Cyrl` generated at runtime. Language switcher in the shell |
-| Tests | **381 pass** — 204 API + 97 domain + 80 web |
+| Tests | **398 pass** — 221 API + 97 domain + 80 web |
 | Not yet built | worker jobs; production build for apps/api (its own decision); PWA service worker (Phase 4) |
 | Web screens | `/` dashboard, `/transactions` (filter + edit + CSV export), `/budgets`, `/categories`, `/accounts`, sign-in/up |
 | Navigation | 4 primary destinations in the bottom bar plus **More** (≥1024 px the sidebar lists all 5); `nav.more` is the overflow control |
@@ -60,7 +60,7 @@ nx run web:build          # production bundle
 **The browser talks to `/api/*`; the dev proxy strips the prefix** before forwarding, because the
 API serves `/auth/*` and `/graphql` without one (docs/06). Changing the prefix on one side only
 produces a 404 that looks like an auth failure.
-Verified working: lint 9/9, typecheck 9/9, 381 tests, `web:build`, GraphQL over HTTP through the
+Verified working: lint 9/9, typecheck 9/9, 398 tests, `web:build`, GraphQL over HTTP through the
 browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, and `prisma migrate diff`
 reporting no drift.
 
@@ -256,6 +256,18 @@ A change is not done until (doc 09 §8):
   not a fetch. It is a *browser* URL under `/api/...`; the client fetches it through `HttpClient` so a
   failure lands in the error banner instead of downloading a file full of JSON. Distinct from the
   async whole-household `exportData` (docs/06 §5.11), which needs the worker and is not built.
+- **`merchants` and `ai_provider_configs` are `HOUSEHOLD_SCOPED_WITH_GLOBAL_READS`, not plain
+  household-scoped.** Their `household_id` is nullable, and docs/08 §"Layer 2" puts those rows on the
+  global allow-list. Reads get `AND: [{ OR: [{ household_id: ctx }, { household_id: null }] }]`;
+  **writes keep the strict predicate**, or any Household could rename or delete the seeded platform
+  catalogue. `is_global` is forced false on create and on an upsert's create branch. Adding a model to
+  this group requires a nullable `household_id` — a spec asserts it. The `AND` wrapper is deliberate:
+  Prisma's `where` holds one `OR`, so setting ours there would discard a caller's own.
+- **`runWithTenant(ctx, () => prisma.x.findMany())` works now, but used to lose the context.** A
+  Prisma query object is *lazy* and does not run until awaited, so `storage.run` exited before the
+  query executed and it threw `TenantContextMissingError` from a distance. `runWithTenant` chains a
+  returned thenable inside the context. Service methods were never affected because they `await`
+  internally; one-line test helpers are where it bites.
 - **Category deletion is a refusal, not a cascade.** `deleteCategory` throws `CONFLICT` while
   Transactions, Splits or subcategories still reference the row (I-12); the UI turns that into a
   reassign-target picker. Passing `reassignToId` moves children, Transactions **and** Splits. The

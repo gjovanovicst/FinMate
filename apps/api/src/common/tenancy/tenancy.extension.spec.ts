@@ -10,6 +10,7 @@ import {
   GLOBAL_MODELS,
   HOUSEHOLD_SCOPED_BY_COLUMN,
   HOUSEHOLD_SCOPED_BY_ID,
+  HOUSEHOLD_SCOPED_WITH_GLOBAL_READS,
   PARENT_SCOPED_MODELS,
   TenancyError,
 } from './tenancy.extension';
@@ -209,6 +210,76 @@ describe('tenancy guard (ADR-008 layer 2 — mechanical household scoping)', () 
   });
 });
 
+describe('models that also hold global rows (docs/08, layer 2)', () => {
+  // `merchants` and `ai_provider_configs` carry rows with `household_id IS NULL`. docs/08 puts those
+  // on the global allow-list: the seeded merchant catalogue is platform content every Household
+  // resolves against, so scoping reads to `household_id = ctx` alone hides the seed from the very
+  // Household that needs it. The guard previously did exactly that.
+
+  it('lets a read see the Household rows OR the global ones', () => {
+    const decision = withTenant(() =>
+      applyTenancyGuard('merchants', 'findMany', { where: { name: 'lidl' } }),
+    );
+    expect(decision.args['where']).toEqual({
+      name: 'lidl',
+      AND: [{ OR: [{ household_id: HOUSEHOLD_A }, { household_id: null }] }],
+    });
+  });
+
+  it('does NOT widen writes: an update stays scoped to the Household alone', () => {
+    // Widening this would let any Household rename or delete the platform catalogue, and would let
+    // one Household reach another's rows. The read/write asymmetry is the whole safety property.
+    const decision = withTenant(() =>
+      applyTenancyGuard('merchants', 'updateMany', { where: { id: 'm1' }, data: { name: 'x' } }),
+    );
+    expect(decision.args['where']).toEqual({ id: 'm1', household_id: HOUSEHOLD_A });
+    expect(JSON.stringify(decision.args)).not.toContain('null');
+  });
+
+  it('does NOT widen deletes either', () => {
+    const decision = withTenant(() =>
+      applyTenancyGuard('merchants', 'deleteMany', { where: { id: 'm1' } }),
+    );
+    expect(decision.args['where']).toEqual({ id: 'm1', household_id: HOUSEHOLD_A });
+  });
+
+  it('refuses to let a Household create a global row', () => {
+    const decision = withTenant(() =>
+      applyTenancyGuard('merchants', 'create', { data: { name: 'Mine', is_global: true } }),
+    );
+    expect(decision.args['data']).toEqual({
+      name: 'Mine',
+      is_global: false,
+      household_id: HOUSEHOLD_A,
+    });
+  });
+
+  it('scopes an upsert to the Household and forces the created row to be owned', () => {
+    const decision = withTenant(() =>
+      applyTenancyGuard('merchants', 'upsert', {
+        where: { id: 'm1' },
+        create: { name: 'Mine', is_global: true },
+        update: { name: 'Renamed' },
+      }),
+    );
+    expect(decision.args['where']).toEqual({ id: 'm1', household_id: HOUSEHOLD_A });
+    expect(decision.args['create']).toEqual({
+      name: 'Mine',
+      is_global: false,
+      household_id: HOUSEHOLD_A,
+    });
+  });
+
+  it('leaves a purely household-scoped model on the strict predicate', () => {
+    const decision = withTenant(() => applyTenancyGuard('transactions', 'findMany', {}));
+    expect(decision.args['where']).toEqual({ household_id: HOUSEHOLD_A });
+  });
+
+  it('still refuses to read without a context', () => {
+    expect(() => applyTenancyGuard('merchants', 'findMany', {})).toThrow(TenantContextMissingError);
+  });
+});
+
 describe('model classification — the list that must not be forgotten', () => {
   const schema = readFileSync(resolve(__dirname, '../../../prisma/schema.prisma'), 'utf8');
   const models = [...schema.matchAll(/^model\s+(\w+)\s*\{/gm)].map((match) => match[1]!);
@@ -236,13 +307,26 @@ describe('model classification — the list that must not be forgotten', () => {
     }
   });
 
-  it('lists in HOUSEHOLD_SCOPED_BY_COLUMN exactly the models that have household_id', () => {
-    expect([...HOUSEHOLD_SCOPED_BY_COLUMN].sort()).toEqual(models.filter(hasHouseholdId).sort());
+  it('covers every model that has household_id across the two column-scoped groups', () => {
+    const columnScoped = new Set([
+      ...HOUSEHOLD_SCOPED_BY_COLUMN,
+      ...HOUSEHOLD_SCOPED_WITH_GLOBAL_READS,
+    ]);
+    expect([...columnScoped].sort()).toEqual(models.filter(hasHouseholdId).sort());
   });
 
   it('claims no household_id column for models in the other three groups', () => {
     for (const group of [HOUSEHOLD_SCOPED_BY_ID, PARENT_SCOPED_MODELS, GLOBAL_MODELS]) {
       for (const model of group) expect(hasHouseholdId(model)).toBe(false);
+    }
+  });
+
+  it('puts only genuinely NULLable household_id models in the global-readable group', () => {
+    // The group exists because those rows can be global. A model whose household_id is NOT NULL has
+    // no global rows, so listing it here would widen its reads to rows that cannot exist.
+    for (const model of HOUSEHOLD_SCOPED_WITH_GLOBAL_READS) {
+      const body = new RegExp(`^model\\s+${model}\\s*\\{([\\s\\S]*?)^\\}`, 'm').exec(schema)?.[1];
+      expect(body).toMatch(/household_id\s+String\?/);
     }
   });
 });

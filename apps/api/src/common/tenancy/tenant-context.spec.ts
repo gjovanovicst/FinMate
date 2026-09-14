@@ -76,3 +76,37 @@ describe('TenantContext (ADR-008 — household scoping from the session, never f
     });
   });
 });
+
+describe('runWithTenant and lazy thenables', () => {
+  const ctx: TenantContext = {
+    householdId: '11111111-1111-7111-8111-111111111111',
+    userId: '22222222-2222-7222-8222-222222222222',
+    role: 'OWNER',
+    requestId: 'req-lazy',
+  };
+
+  it('keeps the context alive when fn returns a thenable that has not run yet', async () => {
+    // This is a Prisma query object in miniature: it only does its work when `then` is called, which
+    // happens on `await` — after `storage.run` would otherwise have exited.
+    let contextDuringWork: TenantContext | undefined;
+    const lazy = {
+      then(resolve: (value: unknown) => void) {
+        contextDuringWork = getTenantContext();
+        resolve(undefined);
+      },
+    };
+
+    await runWithTenant(ctx, () => lazy);
+
+    expect(contextDuringWork).toEqual(ctx);
+  });
+
+  it('still returns the value for a synchronous fn, and still scopes it', () => {
+    expect(runWithTenant(ctx, () => getTenantContext()?.householdId)).toBe(ctx.householdId);
+  });
+
+  it('does not leak the context past the call', () => {
+    runWithTenant(ctx, () => undefined);
+    expect(getTenantContext()).toBeUndefined();
+  });
+});

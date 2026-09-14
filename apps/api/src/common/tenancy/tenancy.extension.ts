@@ -23,7 +23,6 @@ import { requireTenantContext } from './tenant-context';
  */
 export const HOUSEHOLD_SCOPED_BY_COLUMN: ReadonlySet<string> = new Set([
   'accounts',
-  'ai_provider_configs',
   'alert_rules',
   'attachments',
   'audit_log',
@@ -37,7 +36,6 @@ export const HOUSEHOLD_SCOPED_BY_COLUMN: ReadonlySet<string> = new Set([
   'entity_embeddings',
   'household_members',
   'insights',
-  'merchants',
   'notifications',
   'purge_receipts',
   'receipts',
@@ -60,6 +58,27 @@ export const HOUSEHOLD_SCOPED_BY_COLUMN: ReadonlySet<string> = new Set([
  * platform. The guard therefore injects `id = householdId`.
  */
 export const HOUSEHOLD_SCOPED_BY_ID: ReadonlySet<string> = new Set(['households']);
+
+/**
+ * Models that hold BOTH Household rows and platform-wide reference rows.
+ *
+ * docs/08 §"Layer 2" puts `merchants.is_global` / `household_id IS NULL` on the **global allow-list**:
+ * the seeded merchant catalogue is platform content that every Household resolves against. Scoping
+ * their reads to `household_id = ctx` alone hid all 38 seeded merchants from the Households that need
+ * them, so the classifier would have been blind to its own seed data.
+ *
+ * **The scope therefore depends on the operation, and that asymmetry is the safety property:**
+ *  - **reads** see the Household's rows OR the global ones;
+ *  - **writes** see only the Household's rows. Widening a write would let any Household rename or
+ *    delete the platform catalogue, and — worse — reach another Household's rows.
+ *
+ * Only models whose `household_id` is nullable belong here; a `NOT NULL` column has no global rows to
+ * read, so listing it would widen the predicate to rows that cannot exist. A spec asserts this.
+ */
+export const HOUSEHOLD_SCOPED_WITH_GLOBAL_READS: ReadonlySet<string> = new Set([
+  'ai_provider_configs',
+  'merchants',
+]);
 
 /**
  * Child tables with no `household_id`, reachable only through a scoped parent.
@@ -100,6 +119,7 @@ export const GLOBAL_MODELS: ReadonlySet<string> = new Set([
 export const ALL_CLASSIFIED_MODELS: readonly ReadonlySet<string>[] = [
   HOUSEHOLD_SCOPED_BY_COLUMN,
   HOUSEHOLD_SCOPED_BY_ID,
+  HOUSEHOLD_SCOPED_WITH_GLOBAL_READS,
   PARENT_SCOPED_MODELS,
   GLOBAL_MODELS,
 ];
@@ -117,6 +137,21 @@ const FILTERABLE_OPERATIONS = new Set([
   'delete',
   'deleteMany',
   'upsert',
+]);
+
+/**
+ * The read subset, which is the only one that may be widened to include global rows.
+ *
+ * Kept separate from the writes on purpose: a single set is how a "reads may see global rows" rule
+ * quietly becomes "writes may too".
+ */
+const READ_OPERATIONS = new Set([
+  'findFirst',
+  'findFirstOrThrow',
+  'findMany',
+  'count',
+  'aggregate',
+  'groupBy',
 ]);
 
 /** Operations that create rows and therefore need the scope injected into `data`. */
@@ -175,12 +210,31 @@ export function applyTenancyGuard(
     );
   }
 
+  const globalReadable = HOUSEHOLD_SCOPED_WITH_GLOBAL_READS.has(model);
+
   if (CREATE_OPERATIONS.has(operation)) {
-    return { allowed: true, args: injectIntoData(model, operation, args, scopeKey, scopeValue) };
+    const scoped = injectIntoData(model, operation, args, scopeKey, scopeValue);
+    // A Household creates owned rows only. `is_global` is forced rather than validated so a caller
+    // cannot mint platform-wide content that every other Household would then see.
+    return { allowed: true, args: globalReadable ? forceOwned(scoped) : scoped };
+  }
+
+  if (READ_OPERATIONS.has(operation)) {
+    return {
+      allowed: true,
+      args: globalReadable
+        ? injectGlobalReadableWhere(operation, args, scopeValue)
+        : injectIntoWhere(operation, args, scopeKey, scopeValue),
+    };
   }
 
   if (FILTERABLE_OPERATIONS.has(operation)) {
-    return { allowed: true, args: injectIntoWhere(operation, args, scopeKey, scopeValue) };
+    const scoped = injectIntoWhere(operation, args, scopeKey, scopeValue);
+    // An upsert's `create` branch is still a create, so it gets the same ownership rule.
+    return {
+      allowed: true,
+      args: globalReadable && operation === 'upsert' ? forceOwnedCreate(scoped) : scoped,
+    };
   }
 
   throw new TenancyError(
@@ -209,6 +263,49 @@ function injectIntoWhere(
   }
 
   return next;
+}
+
+/**
+ * Add `household_id = ctx OR household_id IS NULL` to a read.
+ *
+ * Composed with `AND` rather than merged as a sibling `OR` key: Prisma's `where` holds at most one
+ * `OR`, so writing ours there would silently discard a caller's own `OR` and change their query.
+ * `AND` accumulates instead, which is what a scope injection must do to be invisible.
+ */
+function injectGlobalReadableWhere(
+  operation: string,
+  args: Record<string, unknown>,
+  scopeValue: string,
+): Record<string, unknown> {
+  const where = (args['where'] ?? {}) as Record<string, unknown>;
+  const existingAnd = where['AND'];
+  const and = Array.isArray(existingAnd) ? existingAnd : existingAnd ? [existingAnd] : [];
+
+  return {
+    ...args,
+    where: {
+      ...where,
+      AND: [...and, { OR: [{ household_id: scopeValue }, { household_id: null }] }],
+    },
+  };
+}
+
+/** Force `is_global: false` on `create`/`createMany` data. */
+function forceOwned(args: Record<string, unknown>): Record<string, unknown> {
+  const own = (row: unknown): unknown => ({ ...(row as Record<string, unknown>), is_global: false });
+  const data = args['data'];
+  if (Array.isArray(data)) return { ...args, data: data.map(own) };
+  if (data && typeof data === 'object') return { ...args, data: own(data) };
+  return args;
+}
+
+/** Force `is_global: false` on an upsert's `create` branch. */
+function forceOwnedCreate(args: Record<string, unknown>): Record<string, unknown> {
+  const create = args['create'];
+  if (create && typeof create === 'object') {
+    return { ...args, create: { ...(create as Record<string, unknown>), is_global: false } };
+  }
+  return args;
 }
 
 function injectIntoData(
