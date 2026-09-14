@@ -11,7 +11,7 @@ AI-first household budgeting app for **mobile and desktop**. The product promise
 **Machine state:** Node 24.20.0, pnpm 11.7.0, Go 1.27.0, **Docker 29.7.2 + Compose v5.5.0 (Linux
 containers)** on Ubuntu 20.04 LTS / WSL2.
 
-**Build state — Phase 0 tasks 0.1–0.6 are done.** There is working code:
+**Build state — Phase 0 tasks 0.1–0.7 and 0.9 are done. Task 0.8 (Angular shell) is NOT started.**
 
 | What | State |
 |---|---|
@@ -24,8 +24,10 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 | Tenancy | `TenantContext` (AsyncLocalStorage) + Prisma guard; four-way model classification |
 | Auth (0.6) | REST `/auth/*`: signup, login, refresh **with rotation + theft detection**, logout, verify, reset; argon2id; login throttling; `TenantContext` now resolved from a real session |
 | Seed | `pnpm db:seed` — 38 categories, 134 keywords, 38 merchants; idempotent |
-| Tests | **160 pass** (API, Vitest + `unplugin-swc`) + 15 (domain) |
-| Not yet built | GraphQL (0.7), Angular shell (0.8), CI (0.9), worker, production build |
+| GraphQL (0.7) | Code-first; `Money` / `UUID` / `LocalDate` scalars; keyset pagination on the UUIDv7 key; `apps/api/schema.gql` generated as a reviewable artifact. First vertical slice: Accounts, with a backend-computed balance |
+| CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → lint → typecheck → test → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
+| Tests | **175 pass** (API, Vitest + `unplugin-swc`) + 15 (domain) |
+| Not yet built | **Angular shell (0.8)**, worker jobs, production build for apps/api |
 
 ```bash
 pnpm dev:infra            # start Postgres/Redis/MinIO/Mailhog
@@ -34,7 +36,8 @@ pnpm db:seed              # seed global merchants (add SEED_HOUSEHOLD_ID for a f
 nx run api:serve          # boot the API on :3000
 pnpm lint / typecheck / test
 ```
-Verified working: `nx run-many -t lint` (9/9 clean), `nx run api:test` (160 pass), `nx run api:serve`.
+Verified working: `nx run-many -t lint` (9/9 clean), `nx run api:test` (175 pass), `nx run api:serve`,
+GraphQL over HTTP, and `prisma migrate diff` reporting no drift.
 
 ---
 
@@ -110,7 +113,8 @@ pnpm db:seed        # starter categories, keywords and merchants
 nx run api:serve    # boot the API on :3000
 ```
 
-Not yet implemented: `pnpm test:evals` (Phase 2), the production `build` for apps/api (task 0.9).
+Not yet implemented: `pnpm test:evals` (Phase 2) and a production `build` for apps/api (deferred
+past Phase 0: bundling source-consumed workspace packages is its own decision).
 Do not reference build scripts the repo does not have.
 
 ---

@@ -1,0 +1,136 @@
+# Continuous integration (docs/11-devops-and-observability.md §5).
+#
+# Gates, in the order a failure is cheapest to fix:
+#   install → generate → migrate → lint → typecheck → test
+#
+# Deliberately absent for now:
+#   * production build — apps/api has no build target yet; bundling source-consumed workspace
+#     packages is a decision that belongs with task 0.9's follow-up (the target currently prints
+#     a message and exits 0, so this pipeline stays honest rather than green-by-omission).
+#   * deploy to staging — Phase 0 task 0.9 in docs/09 also covers it; it needs a host decision
+#     (docs/14 Q-7), so it is not wired here.
+#   * the AI evaluation harness — Phase 2 (docs/10 §5).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '24'
+  PNPM_VERSION: '11.7.0'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    # The integration tests in apps/api talk to a real PostgreSQL (they assert database-level
+    # behaviour: CHECK constraints, citext, and FK ordering). A real database is therefore not
+    # optional — Testcontainers will replace these services once the suite is hermetic (docs/10 §4).
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: finmate
+          POSTGRES_PASSWORD: finmate
+          POSTGRES_DB: finmate
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U finmate -d finmate"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://finmate:finmate@localhost:5432/finmate?schema=public
+      REDIS_URL: redis://localhost:6379
+      # Not a secret: CI only ever runs against an ephemeral database. The config validator
+      # rejects the development placeholder in production, and NODE_ENV is not production here.
+      JWT_SECRET: ci-only-secret-that-is-at-least-32-chars-long
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Nx compares against the base branch to compute affected projects
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      # --frozen-lockfile: a lockfile that does not match package.json is a failure, not a rewrite.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # A GitHub service container cannot mount infra/docker/initdb, so the extensions the
+      # canonical schema requires are created here. All three are needed (docs/03 §4): citext for
+      # users.email, pg_trgm for fuzzy entity resolution, vector for entity_embeddings.
+      - name: Enable required PostgreSQL extensions
+        env:
+          PGPASSWORD: finmate
+        run: |
+          psql -h localhost -U finmate -d finmate -v ON_ERROR_STOP=1 -c \
+            'CREATE EXTENSION IF NOT EXISTS citext;
+             CREATE EXTENSION IF NOT EXISTS pg_trgm;
+             CREATE EXTENSION IF NOT EXISTS vector;'
+          psql -h localhost -U finmate -d finmate -tAc \
+            "SELECT extname FROM pg_extension WHERE extname IN ('citext','pg_trgm','vector') ORDER BY 1;"
+
+      # The generated client is gitignored, so it must exist before typecheck or tests.
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Apply migrations
+        run: pnpm db:migrate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      # Guardrail: the live database and schema.prisma must agree.
+      #
+      # This is the failure mode hand-authored SQL is most exposed to. Migrations are written as
+      # SQL derived from docs/03 §4 (so the CHECK constraints and partial indexes Prisma cannot
+      # express are preserved), and schema.prisma is derived from the database by `db pull`. Any
+      # divergence means someone edited one side only.
+      #
+      # Prisma 7 renamed these flags: the datasource URL lives in prisma.config.ts now, hence
+      # `--from-config-datasource` rather than the old `--from-schema-datasource`.
+      # `--exit-code`: 0 = no difference, 2 = differences found. Differences FAIL the build.
+      - name: Check for schema drift
+        run: |
+          pnpm exec prisma migrate diff \
+            --from-config-datasource \
+            --to-schema apps/api/prisma/schema.prisma \
+            --exit-code
+
+      - name: Upload the generated GraphQL schema
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphql-schema
+          path: apps/api/schema.gql
+          if-no-files-found: warn
