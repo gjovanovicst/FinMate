@@ -10,9 +10,10 @@ packages:
 #   prisma, @prisma/engines -> query/schema engine binaries
 #   esbuild                 -> platform-native binary used by tsx (test/tooling scripts)
 #   @swc/core               -> platform-native SWC binary; the NestJS dev runtime, because
-#                              esbuild cannot emit decorator metadata (see apps/api/project.json)
+#                              esbuild cannot emit decorator metadata (ADR-020)
 #   @parcel/watcher         -> native file watching for watch mode
 #   unrs-resolver           -> native module resolver used by eslint
+#   @apollo/protobufjs      -> generates Apollo Server's usage-reporting protobuf bindings
 allowBuilds:
   nx: true
   prisma: true
@@ -21,3 +22,4 @@ allowBuilds:
   '@swc/core': true
   '@parcel/watcher': true
   unrs-resolver: true
+  '@apollo/protobufjs': true

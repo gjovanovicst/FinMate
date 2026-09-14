@@ -7,6 +7,7 @@ import {
   type ExceptionFilter,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { GraphQLError } from 'graphql';
 
 import { TenantContextMissingError } from '../tenancy/tenant-context';
 import { TenancyError } from '../tenancy/tenancy.extension';
@@ -68,20 +69,35 @@ export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost): void {
+    // GraphQL errors must reach Apollo, which formats them through the driver's `formatError` and
+    // returns a normal `{ errors: [...] }` body. Handling them here produced a second, malformed
+    // response — and crashed on the missing request object, hiding the original error.
+    if (host.getType<string>() === 'graphql') {
+      // Convert here rather than letting the raw error through: NestJS does NOT populate
+      // `originalError` for GraphQL contexts (verified by inspecting the error object), so an
+      // `ApiError`'s `code` would be dropped and every failure would surface as
+      // INTERNAL_SERVER_ERROR. Clients need UNAUTHENTICATED to trigger a token refresh.
+      const code = exception instanceof ApiError ? exception.code : 'INTERNAL';
+      const message =
+        exception instanceof ApiError ? exception.message : 'An unexpected error occurred.';
+      const retryable = exception instanceof ApiError ? exception.retryable : false;
+      throw new GraphQLError(message, { extensions: { code, retryable } });
+    }
+
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest<Request>();
+    const request = ctx.getRequest<Request | undefined>();
 
     const { status, body } = this.toResponse(exception, request);
 
     // 5xx is our fault and must be investigated; 4xx is the caller's. Log accordingly.
     if (status >= 500) {
       this.logger.error(
-        `${request.method} ${request.url} -> ${status} ${body.error.code}`,
+        `${request?.method ?? '?'} ${request?.url ?? '?'} -> ${status} ${body.error.code}`,
         exception instanceof Error ? exception.stack : undefined,
       );
     } else {
-      this.logger.warn(`${request.method} ${request.url} -> ${status} ${body.error.code}`);
+      this.logger.warn(`${request?.method ?? '?'} ${request?.url ?? '?'} -> ${status} ${body.error.code}`);
     }
 
     response.status(status).json(body);
@@ -89,7 +105,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
   private toResponse(
     exception: unknown,
-    request: Request,
+    request: Request | undefined,
   ): { status: number; body: ApiErrorBody } {
     const requestId = readRequestId(request);
 
@@ -105,7 +121,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     // attacker, and the correct user-facing answer is simply that the request failed.
     if (exception instanceof TenantContextMissingError || exception instanceof TenancyError) {
       this.logger.error(
-        `TENANCY VIOLATION on ${request.method} ${request.url}: ${exception.message}`,
+        `TENANCY VIOLATION on ${request?.method ?? '?'} ${request?.url ?? '?'}: ${exception.message}`,
         exception.stack,
       );
       return {
@@ -152,8 +168,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
   }
 }
 
-function readRequestId(request: Request): string | undefined {
-  const value = (request as Request & { requestId?: unknown }).requestId;
+function readRequestId(request: Request | undefined): string | undefined {
+  const value = (request as (Request & { requestId?: unknown }) | undefined)?.requestId;
   return typeof value === 'string' ? value : undefined;
 }
 

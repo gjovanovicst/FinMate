@@ -5,7 +5,9 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { AuthenticatedGuard, RolesGuard } from './common/auth/guards';
 import { RequestContextMiddleware } from './common/tenancy/request-context.middleware';
 import { ConfigModule } from './config/config.module';
+import { GraphqlModule } from './graphql/graphql.module';
 import { HealthController } from './health/health.controller';
+import { AccountsModule } from './modules/accounts/accounts.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 
@@ -17,7 +19,7 @@ import { PrismaModule } from './prisma/prisma.module';
  * exception filter must be global so tenancy violations are logged and surfaced consistently.
  */
 @Module({
-  imports: [ConfigModule.forRoot(), PrismaModule, AuthModule],
+  imports: [ConfigModule.forRoot(), PrismaModule, AuthModule, GraphqlModule, AccountsModule],
   controllers: [HealthController],
   providers: [
     AllExceptionsFilter,

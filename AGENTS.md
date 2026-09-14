@@ -34,7 +34,7 @@ pnpm db:seed              # seed global merchants (add SEED_HOUSEHOLD_ID for a f
 nx run api:serve          # boot the API on :3000
 pnpm lint / typecheck / test
 ```
-Verified working: `nx run-many -t lint` (9/9 clean), `nx run api:test` (108 pass), `nx run api:serve`.
+Verified working: `nx run-many -t lint` (9/9 clean), `nx run api:test` (160 pass), `nx run api:serve`.
 
 ---
 
@@ -164,6 +164,17 @@ A change is not done until (doc 09 §8):
   generator is `prisma-client` with a mandatory `output`, not `prisma-client-js`. Never run
   `prisma migrate dev` — it would generate SQL that drops the CHECK constraints, partial indexes and
   expression indexes doc 03 depends on.
+- **GraphQL errors need an explicit conversion.** NestJS does **not** populate `originalError` for
+  GraphQL contexts, so an `ApiError`'s `code` is dropped and everything surfaces as
+  `INTERNAL_SERVER_ERROR`. `AllExceptionsFilter` converts `ApiError` into a `GraphQLError` with
+  `extensions.code` when `host.getType() === 'graphql'`; `formatError` then surfaces it. Do not
+  "simplify" that branch away — clients branch on `UNAUTHENTICATED` to refresh a token.
+- **A custom scalar used as INPUT must be registered without a type function.** `@Scalar('Money')`,
+  not `@Scalar('Money', () => Object)` — the latter makes Nest treat it as an object type and every
+  input field fails with `CannotDetermineInputTypeError`.
+- **Host port 3000 is held by an unattributable process in this environment.** `/proc` is restricted
+  and `lsof`/`fuser` are absent, so the dev API is verified on 3001+. Use `/tmp/run-api.sh <port>`,
+  which frees the port and waits for the readiness line rather than a fixed sleep.
 - **Never trust a `RETURNING` capture from `psql`** without a CTE. `psql -tAc "INSERT ... RETURNING id"`
   also prints the `INSERT 0 1` command tag, which silently corrupts a captured id. Wrap it:
   `WITH ins AS (INSERT ... RETURNING id) SELECT id FROM ins;`.

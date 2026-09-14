@@ -1,0 +1,111 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+"""
+An Account: a place money sits. Balance is computed, never stored — invariant I-4 requires the ledger to be reconstructible from Transactions.
+"""
+type Account {
+  """
+  Derived: openingBalance + income − expense over CONFIRMED, non-deleted Transactions. Computed by the backend and never by a language model (ADR-001, invariant I-4).
+  """
+  balance: Money!
+  createdAt: DateTime!
+
+  """ISO-4217 code; the Household ledger currency (ADR-011)."""
+  currency: String!
+  id: String!
+  isArchived: Boolean!
+  kind: AccountKind!
+  name: String!
+
+  """The balance the Account started with, before any Transaction."""
+  openingBalance: Money!
+  updatedAt: DateTime!
+}
+
+type AccountConnection {
+  edges: [AccountEdge!]!
+  pageInfo: PageInfo!
+
+  """
+  Total rows matching the filter, ignoring the page window. Useful for "23 transactions" style labels, and cheap because it is a scoped COUNT.
+  """
+  totalCount: Int!
+}
+
+type AccountEdge {
+  cursor: String!
+  node: Account!
+}
+
+"""What kind of container holds the money (docs/03 §2)."""
+enum AccountKind {
+  BANK
+  CARD
+  CASH
+  OTHER
+}
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
+"""
+A calendar day in the Household timezone, formatted YYYY-MM-DD (docs/03 §3.2).
+"""
+scalar LocalDate
+
+"""
+Money as integer minor units plus an ISO-4217 currency. amountMinor is a string to avoid losing precision beyond Number.MAX_SAFE_INTEGER (ADR-003). Always non-negative.
+"""
+scalar Money
+
+type Mutation {
+  """
+  Create an Account. The currency is the Household ledger currency (ADR-011).
+  """
+  createAccount(
+    kind: AccountKind!
+    name: String!
+
+    """
+    Optional starting balance. Defaults to 0 in the Household ledger currency.
+    """
+    openingBalance: Money
+  ): Account!
+}
+
+type PageInfo {
+  """
+  Pass as `after` to fetch the next page. Null when there is no next page.
+  """
+  endCursor: String
+
+  """True when more rows exist after `endCursor`."""
+  hasNextPage: Boolean!
+}
+
+type Query {
+  """A single Account by id, scoped to the Household."""
+  account(id: String!): Account!
+
+  """
+  Accounts in the current Household, newest first, with computed balances.
+  """
+  accounts(
+    """
+    Opaque cursor from a previous page’s endCursor. UUIDv7, so it is time-ordered.
+    """
+    after: String
+
+    """Page size, 1–200. Defaults to 50."""
+    first: Int
+  ): AccountConnection!
+}
+
+"""
+A UUID string (any version; the app generates v7 so ids sort by creation time).
+"""
+scalar UUID
