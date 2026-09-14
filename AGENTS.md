@@ -11,7 +11,15 @@ AI-first household budgeting app for **mobile and desktop**. The product promise
 **Machine state:** Node 24.20.0, pnpm 11.7.0, Go 1.27.0, **Docker 29.7.2 + Compose v5.5.0 (Linux
 containers)** on Ubuntu 20.04 LTS / WSL2.
 
-**Build state — Phase 0 is COMPLETE (tasks 0.1–0.10). Phase 1 (manual core) has not started.**
+**Build state — Phase 0 COMPLETE. Phase 1 (manual core) is PARTIAL: the backend is done, the UI is not.**
+
+| Phase 1 slice | State |
+|---|---|
+| Domain: dates, money allocation, Serbian amount parsing, tree, budget calculators | **Done** — 85 tests, calculators asserted against hand-computed figures |
+| Categories tree CRUD + keywords (I-1, I-11, I-12) | **Done** — verified live, including cycle refusal and reassignment |
+| Transactions CRUD + splits (I-1, I-3, I-7, I-10, optimistic concurrency) | **Done** — verified live |
+| Budgets CRUD (1.3.1), merchants/counterparties/tags (1.2.1–1.2.3), CSV export (1.3.4) | **Not started** |
+| **Phase 1 UI** (transaction entry, categories, budgets, dashboard tiles) | **Not started** — this is what blocks the Phase 1 exit criteria |
 
 | What | State |
 |---|---|
