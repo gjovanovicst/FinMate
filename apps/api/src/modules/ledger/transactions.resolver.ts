@@ -110,6 +110,14 @@ export class CreateTransactionArgs {
   @Field(() => ID, { nullable: true })
   counterpartyId?: string | null;
 
+  @Field(() => [ID], {
+    nullable: true,
+    description:
+      'Tags to attach (docs/01 F-12). Optional, so every existing caller keeps working. An id that ' +
+      'is not a Tag of this Household is a VALIDATION_FAILED, never a silent no-op.',
+  })
+  tagIds?: string[];
+
   @Field(() => String, { nullable: true })
   note?: string | null;
 
@@ -164,6 +172,15 @@ export class UpdateTransactionArgs {
 
   @Field(() => ID, { nullable: true })
   counterpartyId?: string | null;
+
+  @Field(() => [ID], {
+    nullable: true,
+    description:
+      'REPLACES the Tag set when provided; omitted leaves the existing assignments alone, and an ' +
+      'empty array removes them all. The unusual shape is deliberate: the same absent-vs-empty ' +
+      'distinction the rest of this update uses.',
+  })
+  tagIds?: string[];
 
   @Field(() => String, { nullable: true })
   note?: string | null;
@@ -224,6 +241,9 @@ export class TransactionsResolver {
       merchantId: args.merchantId ?? null,
       counterpartyId: args.counterpartyId ?? null,
       note: args.note ?? null,
+      // `undefined` here means "no tags", which is what a create wants: there is no existing set to
+      // leave alone.
+      tagIds: args.tagIds ?? [],
       ...(args.splits?.length
         ? {
             splits: args.splits.map((split) => ({
@@ -251,6 +271,7 @@ export class TransactionsResolver {
       ...(args.categoryId !== undefined ? { categoryId: args.categoryId } : {}),
       ...(args.merchantId !== undefined ? { merchantId: args.merchantId } : {}),
       ...(args.counterpartyId !== undefined ? { counterpartyId: args.counterpartyId } : {}),
+      ...(args.tagIds !== undefined ? { tagIds: args.tagIds } : {}),
       ...(args.note !== undefined ? { note: args.note } : {}),
       ...(args.status !== undefined ? { status: args.status } : {}),
     });

@@ -1687,6 +1687,35 @@ Transactions, Receipts or RecurringRules reference the row and names merging as 
 `mergeMerchants` is what moves them. A Merchant that is still referenced is never deleted outright,
 and a shipped Merchant is never deleted at all.
 
+### 5.0.1 Taxonomy mutations — implementation deviation (Counterparties, Tags)
+
+Counterparties and Tags are implemented with the shapes in §3 and §4 and the same Phase-1 conventions
+Merchants established in §5.0 — mutations return the entity directly, deletes return `Boolean!`, and
+there is no `version` argument, because neither `counterparties` nor `tags` has a `version` column.
+Two deviations belong to these two tables specifically:
+
+| Spec | Implemented | Why |
+|---|---|---|
+| `defaultCategory: Category` on `Counterparty` | `defaultCategoryPath: [String!]` | The same breadcrumb Merchants use and for the same reason: a full `Category` drags depth, `sortOrder`, keywords and a whole-tree path onto an optional hint. |
+| `assignTags(transactionId, tagIds): TransactionPayload!` | `tagIds: [ID!]` on `createTransaction` / `updateTransaction` | Assignment belongs to the write that owns the Transaction. A separate mutation would have to re-check the `version` and re-implement the replace-vs-omit rule the update path already carries. On `update`, `tagIds` **replaces** the whole set when provided, is left alone when omitted, and an empty array clears it. |
+
+**Tag deletion is a cascade, not a refusal — deliberately unlike a Merchant or a Category.**
+`deleteMerchant` and `deleteCategory` refuse with `CONFLICT` while anything references the row and
+name a reassignment path, because the reference is information the user cannot re-enter from memory:
+which shop the payment went to, which category the cost belongs to. A Tag is a label, so there is
+nothing to reassign `#vanredno` *to*; the analogue of reassignment here is removing the assignments.
+`deleteTag` therefore soft-deletes the Tag **and deletes its `transaction_tags` rows for this
+Household**. A dangling label is worse than a missing one: the Tag would vanish from the picker while
+every Transaction still held an assignment that renders as nothing and can never be removed. The
+Transaction itself is untouched — no amount, no category, no date.
+
+**Counterparties have no copy-on-write, and no global rows.** `counterparties.household_id` is
+`NOT NULL`, so the seeded-catalogue machinery Merchants need has nothing to protect here.
+`deleteCounterparty` refuses while Transactions reference the row and names merging;
+`mergeCounterparties` moves them, unions the folded aliases, then soft-deletes the source. There is no
+"shipped" direction to refuse — only the self-merge. Counts cover Transactions only: `receipts` has no
+`counterparty_id` column (docs/03 §4).
+
 ### 5.1 `captureParse`
 
 The preview half of the capture path. Called debounced at 250 ms while the user types

@@ -6,6 +6,7 @@ import { MoneyScalar } from '../../graphql/scalars/money.scalar';
 import { LocalDateScalar } from '../../graphql/scalars/uuid.scalar';
 import { Paginated } from '../../graphql/pagination';
 import { CategoryKind } from '../taxonomy/category.model';
+import { TagModel } from '../taxonomy/tag.model';
 
 export enum TransactionKind {
   EXPENSE = 'EXPENSE',
@@ -106,6 +107,13 @@ export class TransactionModel {
 
   @Field(() => [SplitModel])
   splits!: SplitModel[];
+
+  @Field(() => [TagModel], {
+    description:
+      'Labels attached to this Transaction, orthogonal to its Category (docs/01 F-12). Reached ' +
+      'through the parent because `transaction_tags` carries no household_id of its own.',
+  })
+  tags!: TagModel[];
 
   @Field(() => String)
   description!: string;

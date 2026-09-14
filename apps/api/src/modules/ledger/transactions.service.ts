@@ -17,6 +17,7 @@ import {
 import { ApiError } from '../../common/filters/all-exceptions.filter';
 import { normalisePageSize, type CursorPage } from '../../graphql/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TagsService } from '../taxonomy/tags.service';
 import { transactionsToCsv } from './transactions.csv';
 import {
   CategorySource,
@@ -49,6 +50,8 @@ export interface CreateTransactionInput {
   readonly categorySource?: CategorySource | null;
   readonly splits?: readonly TransactionSplitInput[];
   readonly idempotencyKey?: string | null;
+  /** The Tag set to attach. Omitted means "no tags"; see `update` for the replace-vs-omit rule. */
+  readonly tagIds?: readonly string[];
 }
 
 export interface UpdateTransactionInput {
@@ -62,6 +65,11 @@ export interface UpdateTransactionInput {
   readonly counterpartyId?: string | null;
   readonly note?: string | null;
   readonly status?: TransactionStatus;
+  /**
+   * Replaces the whole Tag set when present. Omitted leaves the existing assignments alone, and an
+   * empty array clears them — the same absent-vs-empty distinction the rest of this input uses.
+   */
+  readonly tagIds?: readonly string[];
 }
 
 export interface TransactionFilters {
@@ -100,7 +108,10 @@ export const MAX_EXPORT_ROWS = 50_000;
 
 @Injectable()
 export class TransactionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tags: TagsService,
+  ) {}
 
   async list(
     householdId: string,
@@ -124,7 +135,7 @@ export class TransactionsService {
         where,
         orderBy: [{ occurred_local_date: 'desc' }, { id: 'desc' }],
         take: take + 1,
-        include: { transaction_splits: true },
+        include: { transaction_splits: true, transaction_tags: { include: { tags: true } } },
       }),
       this.prisma.client.transactions.count({
         where: this.buildWhere(householdId, filters),
@@ -221,7 +232,7 @@ export class TransactionsService {
   async getById(householdId: string, id: string): Promise<TransactionModel> {
     const row = await this.prisma.client.transactions.findFirst({
       where: { id, household_id: householdId, deleted_at: null },
-      include: { transaction_splits: true },
+      include: { transaction_splits: true, transaction_tags: { include: { tags: true } } },
     });
     if (!row) throw new ApiError('NOT_FOUND', 'Transaction not found.');
     return this.toModel(row);
@@ -241,7 +252,7 @@ export class TransactionsService {
     if (input.idempotencyKey) {
       const existing = await this.prisma.client.transactions.findFirst({
         where: { household_id: householdId, idempotency_key: input.idempotencyKey },
-        include: { transaction_splits: true },
+        include: { transaction_splits: true, transaction_tags: { include: { tags: true } } },
       });
       if (existing) return this.toModel(existing);
     }
@@ -251,6 +262,11 @@ export class TransactionsService {
     const currency = household.ledger_currency;
 
     await this.validateClassification(householdId, input.kind, input.categoryId, input.splits);
+
+    // A Tag must be one this Household can see; an unknown or foreign id is a typed failure rather
+    // than a silently dropped assignment, which would tag the Transaction and then lose the chip.
+    const tagIds = [...new Set(input.tagIds ?? [])];
+    await this.tags.assertAssignable(tagIds);
 
     const amount = money(input.amountMinor, currency);
     // I-1, enforced here rather than trusted from the client: `proposeSplits` allocates exactly, but
@@ -283,6 +299,12 @@ export class TransactionsService {
           source: input.source ?? TransactionSource.MANUAL,
           category_source: input.splits?.length ? null : (input.categorySource ?? null),
           idempotency_key: input.idempotencyKey ?? null,
+          // Tags are written through the parent Transaction's nested write: `transaction_tags` has
+          // no `household_id`, and the tenancy guard refuses every direct operation on it because
+          // there is no tenant predicate it could add (ADR-008).
+          ...(tagIds.length > 0
+            ? { transaction_tags: { create: tagIds.map((tagId) => ({ tag_id: tagId })) } }
+            : {}),
         },
       });
 
@@ -357,6 +379,11 @@ export class TransactionsService {
       await this.validateClassification(householdId, existing.kind as TransactionKind, input.categoryId, undefined);
     }
 
+    // Validated before either write, so a bad id can never leave a half-applied update. Present is
+    // an instruction; absent is not (see `UpdateTransactionInput.tagIds`).
+    const tagIds = input.tagIds === undefined ? undefined : [...new Set(input.tagIds)];
+    if (tagIds) await this.tags.assertAssignable(tagIds);
+
     const household = await this.prisma.client.households.findFirst({ where: { id: householdId } });
     const timeZone = household?.iana_timezone || DEFAULT_TIME_ZONE;
 
@@ -368,9 +395,17 @@ export class TransactionsService {
         ? this.resolveOccurrence(input.occurredAt, input.occurredLocalDate, timeZone)
         : null;
 
-    const updated = await this.prisma.client.transactions.updateMany({
-      where: { id, household_id: householdId, version: input.version },
-      data: {
+    // The Tag set is a relation write, so it needs `update` rather than `updateMany` — Prisma
+    // refuses a nested relation write inside `updateMany`'s data. Both statements run on one
+    // interactive transaction so the field edit and the assignment cannot half-apply, and every
+    // statement inside it uses the `tx` the callback receives: the outer client would wait for a
+    // second connection from the same pool and stall until the transaction timed out, surfacing only
+    // as an opaque INTERNAL.
+    //
+    // The version predicate stays on the `updateMany`, which is the row lock as well as the check;
+    // the relation write then targets that same, now-current row without re-asserting the version.
+    await this.prisma.client.$transaction(async (tx) => {
+      const fields = {
         ...(input.amountMinor !== undefined ? { amount_minor: input.amountMinor } : {}),
         ...(input.description !== undefined ? { description: input.description.trim() } : {}),
         ...(input.categoryId !== undefined ? { category_id: input.categoryId } : {}),
@@ -386,13 +421,29 @@ export class TransactionsService {
           : {}),
         version: existing.version + 1,
         updated_at: new Date(),
-      },
-    });
+      };
 
-    // The WHERE carried the version, so zero rows means somebody else won the race.
-    if (updated.count === 0) {
-      throw new ApiError('CONFLICT', 'This transaction was changed somewhere else. Reload it.');
-    }
+      const updated = await tx.transactions.updateMany({
+        where: { id, household_id: householdId, version: input.version },
+        data: fields,
+      });
+
+      // The WHERE carried the version, so zero rows means somebody else won the race.
+      if (updated.count === 0) {
+        throw new ApiError('CONFLICT', 'This transaction was changed somewhere else. Reload it.');
+      }
+
+      // Replaced wholesale rather than added to, because that is what makes the chip editor and the
+      // stored row agree — and an empty array is a deliberate "remove them all", not an omission.
+      if (tagIds !== undefined) {
+        await tx.transactions.update({
+          where: { id },
+          data: {
+            transaction_tags: { deleteMany: {}, create: tagIds.map((tagId) => ({ tag_id: tagId })) },
+          },
+        });
+      }
+    });
 
     return this.getById(householdId, id);
   }
@@ -630,6 +681,9 @@ export class TransactionsService {
       confidence: unknown;
       category_source: string | null;
     }[];
+    transaction_tags?: {
+      tags: { id: string; name: string; color: string | null; created_at: Date };
+    }[];
   }): TransactionModel {
     return {
       id: row.id,
@@ -647,6 +701,18 @@ export class TransactionsService {
         confidence: split.confidence === null ? null : Number(split.confidence),
         categorySource: split.category_source as CategorySource | null,
       })),
+      tags: (row.transaction_tags ?? [])
+        .map((join) => ({
+          id: join.tags.id,
+          name: join.tags.name,
+          color: join.tags.color,
+          // Read here is a label, not a report: `TagModel.transactionCount` is meaningful on
+          // `tags`/`tag`, where the Tag is the subject. Counting each attached Tag per Transaction
+          // would be N grouped queries to render a chip that never shows the number.
+          transactionCount: 0,
+          createdAt: join.tags.created_at,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
       description: row.description,
       note: row.note,
       rawInput: row.raw_input,

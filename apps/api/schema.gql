@@ -162,6 +162,60 @@ enum CategorySource {
   USER
 }
 
+"""
+An alternative spelling that resolves to this Counterparty. Stored folded (lower case, no diacritics) so it matches however the user types it — "Dejan rođa" and "dejan roda" are one person (docs/01 F-11).
+"""
+type CounterpartyAliasModel {
+  alias: String!
+  counterpartyId: String!
+  id: String!
+}
+
+type CounterpartyConnection {
+  edges: [CounterpartyModelEdge!]!
+  pageInfo: PageInfo!
+
+  """
+  Total rows matching the filter, ignoring the page window. Useful for "23 transactions" style labels, and cheap because it is a scoped COUNT.
+  """
+  totalCount: Int!
+}
+
+"""
+A person or organisation in a non-merchant relationship — a relative, a landlord, an employer (docs/01 F-11, docs/03 §4). Distinct from a Merchant, which is where money was spent; a Counterparty is who it went to or came from. Always Household-owned: the table has no nullable `household_id`, so there are no global rows and no copy-on-write.
+"""
+type CounterpartyModel {
+  aliases: [CounterpartyAliasModel!]!
+  createdAt: DateTime!
+  defaultCategoryId: String
+
+  """Breadcrumb of the default Category, by name. Empty when none is set."""
+  defaultCategoryPath: [String!]
+  id: String!
+  name: String!
+  note: String
+
+  """Transactions in this Household that reference this Counterparty."""
+  transactionCount: Float!
+  type: CounterpartyType!
+  updatedAt: DateTime!
+}
+
+type CounterpartyModelEdge {
+  cursor: String!
+  node: CounterpartyModel!
+}
+
+"""
+What kind of party sits on the other side of a Transaction that is not a shop. `PERSON` is the default because the F-11 requirement is a person ("Dejan rođa"); `GOVERNMENT` exists because a payment to an institution behaves differently from one to a company in reporting and in the classifier’s hints. It is a label for the user, not a rule input — nothing in the pipeline branches on it.
+"""
+enum CounterpartyType {
+  COMPANY
+  GOVERNMENT
+  OTHER
+  PERSON
+}
+
 type DashboardModel {
   """May be negative, which is the overspend."""
   available: Balance!
@@ -307,6 +361,18 @@ type Mutation {
     name: String!
     parentId: ID
   ): CategoryModel!
+
+  """
+  A name that folds to an existing one is refused with CONFLICT: "Dejan rođa" and "dejan roda" are one person (docs/01 F-11).
+  """
+  createCounterparty(
+    defaultCategoryId: ID
+    name: String!
+    note: String
+
+    """Defaults to `PERSON`, which is what F-11 is about ("Dejan rođa")."""
+    type: CounterpartyType
+  ): CounterpartyModel!
   createMerchant(
     """
     A user-authored hint for the classifier. Receipt-item classification outranks it.
@@ -315,6 +381,15 @@ type Mutation {
     defaultCategoryId: ID
     name: String!
   ): MerchantModel!
+
+  """
+  A name that folds to an existing one is refused with CONFLICT: `#Vanredno` and `#vanredno` are one label.
+  """
+  createTag(
+    """A CSS colour for the chip."""
+    color: String
+    name: String!
+  ): TagModel!
   createTransaction(
     accountId: ID!
 
@@ -342,6 +417,11 @@ type Mutation {
     Divide the amount across categories. Must sum EXACTLY to `amount` (invariant I-1); use `proposeSplits` to allocate without losing a para.
     """
     splits: [SplitInput!]
+
+    """
+    Tags to attach (docs/01 F-12). Optional, so every existing caller keeps working. An id that is not a Tag of this Household is a VALIDATION_FAILED, never a silent no-op.
+    """
+    tagIds: [ID!]
   ): TransactionModel!
   deleteBudget(id: ID!): Boolean!
 
@@ -351,14 +431,35 @@ type Mutation {
   deleteCategory(id: ID!, reassignToId: ID): Boolean!
 
   """
+  Soft-delete, refusing with CONFLICT while Transactions still reference it. Merging is the reassignment path — there is no "no counterparty" answer for money that changed hands.
+  """
+  deleteCounterparty(id: ID!): Boolean!
+
+  """
   Soft-delete, refusing while Transactions, Receipts or RecurringRules still reference it. Merging is the reassignment path.
   """
   deleteMerchant(id: ID!): Boolean!
 
   """
+  Soft-deletes the Tag AND removes its Transaction assignments. Unlike a Merchant or a Category there is nothing to reassign a label to, so the analogue of reassignment is clearing the assignments — a dangling label is worse than a missing one.
+  """
+  deleteTag(id: ID!): Boolean!
+
+  """
   Soft-delete. Financial rows are never hard-deleted, so history stays auditable.
   """
   deleteTransaction(id: ID!): Boolean!
+
+  """
+  Move every Transaction from one counterparty to another, union their aliases, then delete the source. This is how a duplicate created before the fold rule existed is cleaned up.
+  """
+  mergeCounterparties(
+    """The counterparty to fold away."""
+    sourceId: ID!
+
+    """The counterparty to keep."""
+    targetId: ID!
+  ): CounterpartyModel!
 
   """
   Move every Transaction, Receipt and RecurringRule from one merchant to another, union their aliases, then delete the source.
@@ -371,6 +472,13 @@ type Mutation {
     targetId: ID!
   ): MerchantModel!
   removeCategoryKeyword(keywordId: ID!): Boolean!
+  setCounterpartyAliases(
+    """
+    The complete alias set, not a delta. Values are folded (lower case, no diacritics) before storage, so what is stored may differ from what was sent. This is the supported way to record a second spelling of one person ("dejan roda" for "Dejan rođa").
+    """
+    aliases: [String!]!
+    counterpartyId: ID!
+  ): CounterpartyModel!
   setMerchantAliases(
     """
     The complete alias set, not a delta. Values are folded (lower case, no diacritics) before storage, so what is stored may differ from what was sent.
@@ -391,11 +499,13 @@ type Mutation {
     parentId: ID
     sortOrder: Float
   ): CategoryModel!
+  updateCounterparty(defaultCategoryId: ID, id: ID!, name: String, note: String, type: CounterpartyType): CounterpartyModel!
 
   """
   Editing a shipped merchant creates a Household-owned copy and moves this Household’s references onto it, so the platform catalogue is never mutated (seeds are copy-on-write).
   """
   updateMerchant(aiHint: String, defaultCategoryId: ID, id: ID!, name: String): MerchantModel!
+  updateTag(color: String, id: ID!, name: String): TagModel!
   updateTransaction(
     amount: Money
     categoryId: ID
@@ -411,6 +521,11 @@ type Mutation {
     """
     occurredLocalDate: LocalDate
     status: TransactionStatus
+
+    """
+    REPLACES the Tag set when provided; omitted leaves the existing assignments alone, and an empty array removes them all. The unusual shape is deliberate: the same absent-vs-empty distinction the rest of this update uses.
+    """
+    tagIds: [ID!]
 
     """
     The version you read. A mismatch is a CONFLICT rather than a silent overwrite.
@@ -483,6 +598,18 @@ type Query {
   categories(kind: CategoryKind): [CategoryModel!]!
 
   """
+  The Household’s Counterparties, name-ordered. Keyset-paginated on the UUIDv7 id. There is no global/shareable set: every Counterparty is the Household’s own row.
+  """
+  counterparties(
+    after: String
+    first: Int
+
+    """Substring match on the name."""
+    search: String
+  ): CounterpartyConnection!
+  counterparty(id: ID!): CounterpartyModel!
+
+  """
   Every dashboard tile in one round trip. All figures are computed by the backend from the ledger and every input is returned, so the UI can show its working (ADR-001).
   """
   dashboard: DashboardModel!
@@ -503,6 +630,12 @@ type Query {
   Split an amount evenly across categories without losing a para. The backend computes it so the client never rounds money (ADR-003); the result sums exactly (invariant I-1).
   """
   proposeEqualSplits(amount: Money!, categoryIds: [ID!]!): [ProposedSplit!]!
+  tag(id: ID!): TagModel
+
+  """
+  Every Tag in the Household, name-ordered. Not paginated: the transaction editor needs the whole set to render a chip picker, and a Household has tens of Tags rather than thousands.
+  """
+  tags: [TagModel!]!
   transaction(id: ID!): TransactionModel!
 
   """Transactions, newest first, keyset-paginated on the UUIDv7 id."""
@@ -549,6 +682,24 @@ type SplitModel {
   confidence: Float
   id: ID!
   note: String
+}
+
+"""
+A free-form label orthogonal to Categories (docs/01 F-12). Never affects a budget or a balance — a Tag is a second axis for filtering, not a classification.
+"""
+type TagModel {
+  """
+  A CSS colour for the chip, chosen by the user. Never interpreted by the server.
+  """
+  color: String
+  createdAt: DateTime!
+  id: String!
+  name: String!
+
+  """
+  Non-deleted Transactions in this Household carrying this Tag. Counted through the parent Transaction, because `transaction_tags` carries no `household_id` of its own.
+  """
+  transactionCount: Float!
 }
 
 type TransactionConnection {
@@ -601,6 +752,11 @@ type TransactionModel {
   source: TransactionSource!
   splits: [SplitModel!]!
   status: TransactionStatus!
+
+  """
+  Labels attached to this Transaction, orthogonal to its Category (docs/01 F-12). Reached through the parent because `transaction_tags` carries no household_id of its own.
+  """
+  tags: [TagModel!]!
   updatedAt: DateTime!
 
   """
