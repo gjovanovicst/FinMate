@@ -458,6 +458,10 @@ CREATE INDEX ON transactions (recurring_rule_id) WHERE recurring_rule_id IS NOT 
 
 CREATE TABLE transaction_splits (
   id                 UUID PRIMARY KEY,
+  -- Denormalised from the parent Transaction. Splits are AGGREGATED (budget consumption by
+  -- category, "how much on meat"), so they need both the tenant predicate and the index —— and it
+  -- removes the need for an escape hatch when a Category is deleted and its splits are reassigned.
+  household_id       UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,
   transaction_id     UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
   category_id        UUID NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
   amount_minor       BIGINT NOT NULL CHECK (amount_minor > 0),
@@ -467,6 +471,7 @@ CREATE TABLE transaction_splits (
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX ON transaction_splits (transaction_id);
+CREATE INDEX ON transaction_splits (household_id, category_id);
 
 CREATE TABLE transaction_tags (
   transaction_id     UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
@@ -496,6 +501,9 @@ CREATE INDEX ON receipts (household_id, captured_at DESC);
 
 CREATE TABLE receipt_items (
   id                 UUID PRIMARY KEY,
+  -- Denormalised from the parent Receipt, for the same reason as transaction_splits: item-level
+  -- categorisation is queried across the whole Household ("how much this month on meat").
+  household_id       UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,
   receipt_id         UUID NOT NULL REFERENCES receipts(id) ON DELETE CASCADE,
   line_no            INTEGER NOT NULL,
   raw_text           TEXT NOT NULL,
@@ -509,6 +517,7 @@ CREATE TABLE receipt_items (
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (receipt_id, line_no)
 );
+CREATE INDEX ON receipt_items (household_id, category_id);
 
 -- ============================================================ planning
 
@@ -548,6 +557,8 @@ CREATE TABLE saving_goals (
 
 CREATE TABLE goal_contributions (
   id                 UUID PRIMARY KEY,
+  -- Denormalised from the parent SavingGoal: goal progress is a Household-wide sum.
+  household_id       UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,
   goal_id            UUID NOT NULL REFERENCES saving_goals(id) ON DELETE CASCADE,
   amount_minor       BIGINT NOT NULL CHECK (amount_minor > 0),
   contributed_on     DATE NOT NULL,
@@ -555,6 +566,7 @@ CREATE TABLE goal_contributions (
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX ON goal_contributions (goal_id, contributed_on DESC);
+CREATE INDEX ON goal_contributions (household_id);
 
 CREATE TABLE recurring_rules (
   id                 UUID PRIMARY KEY,

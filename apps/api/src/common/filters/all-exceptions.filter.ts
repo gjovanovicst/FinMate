@@ -81,6 +81,20 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const message =
         exception instanceof ApiError ? exception.message : 'An unexpected error occurred.';
       const retryable = exception instanceof ApiError ? exception.retryable : false;
+
+      // Log BEFORE throwing. This branch used to throw immediately, which meant a genuine
+      // server-side GraphQL failure produced a client-visible INTERNAL and NOTHING in the logs —
+      // an outage nobody could diagnose. Unexplained errors are the ones that need the stack most.
+      if (code === 'INTERNAL') {
+        this.logger.error(
+          `GRAPHQL ${message}`,
+          exception instanceof Error ? exception.stack : String(exception),
+        );
+      } else if (code !== 'UNAUTHENTICATED' && code !== 'FORBIDDEN') {
+        // Auth failures are routine and would otherwise flood the log.
+        this.logger.warn(`GRAPHQL ${code}: ${message}`);
+      }
+
       throw new GraphQLError(message, { extensions: { code, retryable } });
     }
 

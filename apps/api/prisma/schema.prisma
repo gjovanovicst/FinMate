@@ -13,7 +13,7 @@
 // NEVER run `prisma migrate dev` here. It generates SQL from these models, and these models
 // cannot express what doc 03 requires, so it would silently DROP:
 //   * 44 CHECK constraints  (amount_minor > 0, enum domains, request invariants)
-//   * 18 partial indexes    (WHERE deleted_at IS NULL, idempotency_key, client_id)
+//   * the partial indexes   (WHERE deleted_at IS NULL, idempotency_key, client_id)
 //   * expression indexes    (categories_unique_name, budgets_unique_scope, tags_unique_name)
 //   * the pgvector ivfflat index on entity_embeddings
 // db pull reports these as "not supported by Prisma Client" — that is expected. They are
@@ -328,9 +328,12 @@ model goal_contributions {
   contributed_on DateTime     @db.Date
   note           String?
   created_at     DateTime     @default(now()) @db.Timestamptz(6)
+  household_id   String       @db.Uuid
   saving_goals   saving_goals @relation(fields: [goal_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  households     households   @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([goal_id, contributed_on(sort: Desc)])
+  @@index([household_id], map: "goal_contributions_household_idx")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -369,16 +372,19 @@ model households {
   corrections              corrections[]
   counterparties           counterparties[]
   entity_embeddings        entity_embeddings[]
+  goal_contributions       goal_contributions[]
   household_members        household_members[]
   users                    users                      @relation(fields: [owner_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   insights                 insights[]
   merchants                merchants[]
   notifications            notifications[]
+  receipt_items            receipt_items[]
   receipts                 receipts[]
   recurring_rules          recurring_rules[]
   rules                    rules[]
   saving_goals             saving_goals[]
   tags                     tags[]
+  transaction_splits       transaction_splits[]
   transactions             transactions[]
 }
 
@@ -490,11 +496,14 @@ model receipt_items {
   confidence               Decimal?                   @db.Decimal(4, 3)
   needs_review             Boolean                    @default(false)
   created_at               DateTime                   @default(now()) @db.Timestamptz(6)
+  household_id             String                     @db.Uuid
   classification_decisions classification_decisions[]
   categories               categories?                @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+  households               households                 @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   receipts                 receipts                   @relation(fields: [receipt_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([receipt_id, line_no])
+  @@index([household_id, category_id], map: "receipt_items_household_category_idx")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -650,10 +659,13 @@ model transaction_splits {
   confidence      Decimal?     @db.Decimal(4, 3)
   category_source String?
   created_at      DateTime     @default(now()) @db.Timestamptz(6)
+  household_id    String       @db.Uuid
   categories      categories   @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+  households      households   @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   transactions    transactions @relation(fields: [transaction_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([transaction_id])
+  @@index([household_id, category_id], map: "transaction_splits_household_category_idx")
 }
 
 model transaction_tags {

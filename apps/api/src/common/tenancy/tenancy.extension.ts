@@ -46,6 +46,11 @@ export const HOUSEHOLD_SCOPED_BY_COLUMN: ReadonlySet<string> = new Set([
   'saving_goals',
   'tags',
   'transactions',
+  // Denormalised from their parent so they can be scoped and aggregated per Household
+  // (migration 20260914160000_scope_aggregated_children).
+  'transaction_splits',
+  'receipt_items',
+  'goal_contributions',
 ]);
 
 /**
@@ -72,10 +77,7 @@ export const HOUSEHOLD_SCOPED_BY_ID: ReadonlySet<string> = new Set(['households'
  */
 export const PARENT_SCOPED_MODELS: ReadonlySet<string> = new Set([
   'counterparty_aliases',
-  'goal_contributions',
   'merchant_aliases',
-  'receipt_items',
-  'transaction_splits',
   'transaction_tags',
 ]);
 

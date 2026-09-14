@@ -52,10 +52,79 @@ A derived, SIGNED money value: { amountMinor, currency }, where amountMinor may 
 """
 scalar Balance
 
+type CategoryKeywordModel {
+  id: String!
+  keyword: String!
+
+  """WORD, PREFIX or SUBSTRING (docs/04 §5.4)."""
+  matchMode: String!
+  polarity: KeywordPolarity!
+  weight: Float!
+}
+
+"""
+Whether a Category classifies money going out or coming in. A Category never classifies both (invariant I-3), which is what stops an expense landing in an income category.
+"""
+enum CategoryKind {
+  EXPENSE
+  INCOME
+}
+
+"""
+A node in the Household classification tree. Fully user-defined structure — the product does not impose a fixed taxonomy (docs/01 F-02).
+"""
+type CategoryModel {
+  """A user-authored hint fed to the classifier (docs/04 §6.3)."""
+  aiDescription: String
+  color: String
+  createdAt: DateTime!
+  depth: Float!
+  icon: String
+  id: String!
+
+  """True for a Category created by the onboarding seed."""
+  isSystem: Boolean!
+  keywords: [CategoryKeywordModel!]!
+  kind: CategoryKind!
+  name: String!
+  parentId: String
+
+  """
+  Breadcrumb from the root down to this Category, by name. Used for display.
+  """
+  path: [String!]!
+  sortOrder: Float!
+  updatedAt: DateTime!
+}
+
+type CategoryModelEdge {
+  cursor: String!
+  node: CategoryModel!
+}
+
+"""
+Which layer chose the category — the audit trail behind every classification.
+"""
+enum CategorySource {
+  AI
+  DEFAULT
+  IMPORT
+  RULE
+  USER
+}
+
 """
 A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
 """
 scalar DateTime
+
+"""
+INCLUDE routes input toward a Category; EXCLUDE hard-blocks it. Exclusions are not optional: without them "ulje" routes engine oil into Auto/Gorivo (docs/04 §5.4).
+"""
+enum KeywordPolarity {
+  EXCLUDE
+  INCLUDE
+}
 
 """
 A calendar day in the Household timezone, formatted YYYY-MM-DD (docs/03 §3.2).
@@ -69,6 +138,11 @@ scalar Money
 
 type Mutation {
   """
+  Add an INCLUDE or EXCLUDE keyword. EXCLUDE hard-blocks the category, which is what keeps "ulje" out of Auto/Gorivo (docs/04 §5.4).
+  """
+  addCategoryKeyword(categoryId: ID!, keyword: String!, matchMode: String = "WORD", polarity: KeywordPolarity!): Boolean!
+
+  """
   Create an Account. The currency is the Household ledger currency (ADR-011).
   """
   createAccount(
@@ -80,6 +154,78 @@ type Mutation {
     """
     openingBalance: Money
   ): Account!
+  createCategory(
+    """A user-authored hint passed to the classifier (docs/04 §6.3)."""
+    aiDescription: String
+    color: String
+    icon: String
+    kind: CategoryKind!
+    name: String!
+    parentId: ID
+  ): CategoryModel!
+  createTransaction(
+    accountId: ID!
+
+    """Always positive. `kind` carries the direction, never a sign (ADR-003)."""
+    amount: Money!
+    categoryId: ID
+    counterpartyId: ID
+    description: String!
+
+    """
+    Makes the write idempotent: replaying the same key returns the original row instead of creating a second one (invariant I-10).
+    """
+    idempotencyKey: String
+    kind: TransactionKind!
+    merchantId: ID
+    note: String
+    occurredAt: DateTime!
+
+    """
+    Divide the amount across categories. Must sum EXACTLY to `amount` (invariant I-1); use `proposeSplits` to allocate without losing a para.
+    """
+    splits: [SplitInput!]
+  ): TransactionModel!
+
+  """
+  Soft-delete a category. Refused while transactions, splits or subcategories still reference it unless `reassignToId` is given (invariant I-12).
+  """
+  deleteCategory(id: ID!, reassignToId: ID): Boolean!
+
+  """
+  Soft-delete. Financial rows are never hard-deleted, so history stays auditable.
+  """
+  deleteTransaction(id: ID!): Boolean!
+  removeCategoryKeyword(keywordId: ID!): Boolean!
+  updateCategory(
+    aiDescription: String
+    color: String
+    icon: String
+    id: ID!
+    name: String
+
+    """
+    Move the category. Cycles and depth-limit breaches are refused (invariant I-11).
+    """
+    parentId: ID
+    sortOrder: Float
+  ): CategoryModel!
+  updateTransaction(
+    amount: Money
+    categoryId: ID
+    counterpartyId: ID
+    description: String
+    id: ID!
+    merchantId: ID
+    note: String
+    occurredAt: DateTime
+    status: TransactionStatus
+
+    """
+    The version you read. A mismatch is a CONFLICT rather than a silent overwrite.
+    """
+    version: Int!
+  ): TransactionModel!
 }
 
 type PageInfo {
@@ -90,6 +236,14 @@ type PageInfo {
 
   """True when more rows exist after `endCursor`."""
   hasNextPage: Boolean!
+}
+
+"""
+A split the backend computed, so the client never rounds money itself (ADR-003).
+"""
+type ProposedSplit {
+  amount: Money!
+  categoryId: ID!
 }
 
 type Query {
@@ -108,6 +262,142 @@ type Query {
     """Page size, 1–200. Defaults to 50."""
     first: Int
   ): AccountConnection!
+
+  """
+  The Household category tree, flat, each node carrying its depth and breadcrumb. Ordered by sortOrder then name.
+  """
+  categories(kind: CategoryKind): [CategoryModel!]!
+
+  """
+  Split an amount evenly across categories without losing a para. The backend computes it so the client never rounds money (ADR-003); the result sums exactly (invariant I-1).
+  """
+  proposeEqualSplits(amount: Money!, categoryIds: [ID!]!): [ProposedSplit!]!
+  transaction(id: ID!): TransactionModel!
+
+  """Transactions, newest first, keyset-paginated on the UUIDv7 id."""
+  transactions(
+    accountId: ID
+
+    """Cursor from a previous page."""
+    after: String
+    categoryId: ID
+    first: Int
+
+    """Inclusive lower bound."""
+    from: LocalDate
+    kind: TransactionKind
+
+    """Filter to the BLOCKING review lane only (invariant I-8)."""
+    needsReview: Boolean
+
+    """Substring match on the description."""
+    search: String
+    status: TransactionStatus
+
+    """Inclusive upper bound."""
+    to: LocalDate
+  ): TransactionConnection!
+}
+
+"""
+One portion of a split. The amounts across all splits must sum EXACTLY to the transaction amount (invariant I-1).
+"""
+input SplitInput {
+  amount: Money!
+  categoryId: ID!
+  note: String
+}
+
+"""
+A portion of a Transaction attributed to a different Category. Splits must sum exactly to the parent amount (invariant I-1) — the allocation algorithm guarantees it.
+"""
+type SplitModel {
+  amount: Money!
+  categoryId: ID!
+  categorySource: CategorySource
+  confidence: Float
+  id: ID!
+  note: String
+}
+
+type TransactionConnection {
+  edges: [TransactionModelEdge!]!
+  pageInfo: PageInfo!
+
+  """
+  Total rows matching the filter, ignoring the page window. Useful for "23 transactions" style labels, and cheap because it is a scoped COUNT.
+  """
+  totalCount: Int!
+}
+
+"""
+Direction of money movement. `amount_minor` is ALWAYS non-negative; the direction lives here, never in a sign (ADR-003).
+"""
+enum TransactionKind {
+  EXPENSE
+  INCOME
+}
+
+type TransactionModel {
+  accountId: ID!
+  amount: Money!
+  categoryId: ID
+  categorySource: CategorySource
+
+  """Calibrated confidence, not the model’s self-reported number (ADR-009)."""
+  confidence: Float
+  counterpartyId: ID
+  createdAt: DateTime!
+  description: String!
+  id: ID!
+  kind: TransactionKind!
+  merchantId: ID
+
+  """
+  The BLOCKING review lane only: confidence < 0.60 or no category (invariant I-8). The advisory lane (0.60–0.89) is derived and does not set this.
+  """
+  needsReview: Boolean!
+  note: String
+  occurredAt: DateTime!
+
+  """
+  The calendar day in the Household timezone. Distinct from occurredAt on purpose: month boundaries are a local-calendar question (docs/03 §3.2).
+  """
+  occurredLocalDate: LocalDate!
+
+  """The verbatim natural-language input."""
+  rawInput: String
+  source: TransactionSource!
+  splits: [SplitModel!]!
+  status: TransactionStatus!
+  updatedAt: DateTime!
+
+  """
+  Optimistic concurrency. Send it back on update; a mismatch is a CONFLICT.
+  """
+  version: Int!
+}
+
+type TransactionModelEdge {
+  cursor: String!
+  node: TransactionModel!
+}
+
+enum TransactionSource {
+  IMPORT
+  MANUAL
+  NATURAL_LANGUAGE
+  RECEIPT
+  RECURRING
+}
+
+"""
+PENDING rows are invisible to every balance, budget and insight (invariant I-7), so a capture the user has not accepted can never move a number.
+"""
+enum TransactionStatus {
+  CONFIRMED
+  PENDING
+  VOID
 }
 
 """

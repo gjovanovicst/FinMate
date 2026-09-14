@@ -165,20 +165,38 @@ describe('tenancy guard (ADR-008 layer 2 — mechanical household scoping)', () 
   });
 
   describe('parent-scoped models are refused directly', () => {
-    it.each([
-      'transaction_splits',
-      'transaction_tags',
-      'receipt_items',
-      'merchant_aliases',
-      'counterparty_aliases',
-      'goal_contributions',
-    ])('refuses a direct query on %s and explains the include pattern', (model) => {
-      expect(() => withTenant(() => applyTenancyGuard(model, 'findMany', {}))).toThrow(TenancyError);
-      expect(() => withTenant(() => applyTenancyGuard(model, 'findMany', {}))).toThrow(/include/);
-    });
+    it.each(['transaction_tags', 'merchant_aliases', 'counterparty_aliases'])(
+      'refuses a direct query on %s and explains the include pattern',
+      (model) => {
+        expect(() => withTenant(() => applyTenancyGuard(model, 'findMany', {}))).toThrow(TenancyError);
+        expect(() => withTenant(() => applyTenancyGuard(model, 'findMany', {}))).toThrow(/include/);
+      },
+    );
 
     it('refuses direct access even without a tenant context, as a distinct failure', () => {
-      expect(() => applyTenancyGuard('transaction_splits', 'findMany', {})).toThrow(TenancyError);
+      expect(() => applyTenancyGuard('transaction_tags', 'findMany', {})).toThrow(TenancyError);
+    });
+  });
+
+  describe('aggregated child tables are directly scoped', () => {
+    // transaction_splits, receipt_items and goal_contributions carry their own household_id
+    // (migration 20260914160000) because they are SUMMED per Household: budget consumption by
+    // category, "how much on meat this month", goal progress. Being parent-scoped would have meant
+    // an escape hatch for every rollup and for reassignment when a Category is deleted.
+    it.each(['transaction_splits', 'receipt_items', 'goal_contributions'])(
+      'scopes %s directly instead of refusing it',
+      (model) => {
+        const { args } = withTenant(() =>
+          applyTenancyGuard(model, 'findMany', { where: { category_id: 'c-1' } }),
+        );
+        expect(args['where']).toEqual({ category_id: 'c-1', household_id: HOUSEHOLD_A });
+      },
+    );
+
+    it('still refuses access to them without a tenant context', () => {
+      for (const model of ['transaction_splits', 'receipt_items', 'goal_contributions']) {
+        expect(() => applyTenancyGuard(model, 'findMany', {})).toThrow(TenantContextMissingError);
+      }
     });
   });
 

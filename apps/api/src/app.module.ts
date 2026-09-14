@@ -8,6 +8,8 @@ import { ConfigModule } from './config/config.module';
 import { GraphqlModule } from './graphql/graphql.module';
 import { HealthController } from './health/health.controller';
 import { AccountsModule } from './modules/accounts/accounts.module';
+import { LedgerModule } from './modules/ledger/ledger.module';
+import { TaxonomyModule } from './modules/taxonomy/taxonomy.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 
@@ -19,7 +21,15 @@ import { PrismaModule } from './prisma/prisma.module';
  * exception filter must be global so tenancy violations are logged and surfaced consistently.
  */
 @Module({
-  imports: [ConfigModule.forRoot(), PrismaModule, AuthModule, GraphqlModule, AccountsModule],
+  imports: [
+    ConfigModule.forRoot(),
+    PrismaModule,
+    AuthModule,
+    GraphqlModule,
+    AccountsModule,
+    TaxonomyModule,
+    LedgerModule,
+  ],
   controllers: [HealthController],
   providers: [
     AllExceptionsFilter,

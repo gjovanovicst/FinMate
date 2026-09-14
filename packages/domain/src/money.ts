@@ -205,3 +205,81 @@ export function formatBalance(value: Balance, locale = 'sr-Latn-RS'): string {
     minimumFractionDigits: scale === 1 ? 0 : 2,
   }).format(Number(value.amountMinor) / scale);
 }
+
+/**
+ * Split an amount into parts that **sum exactly to the original**.
+ *
+ * This is the algorithm that makes invariant I-1 hold: `sum(splits) == amount`. It is not
+ * incidental — naive proportional splitting loses para to rounding, and a ledger where the splits do
+ * not add up to the payment is a ledger nobody can trust.
+ *
+ * Largest-remainder (Hamilton) apportionment:
+ *   1. give every part its floor share of the total;
+ *   2. hand the remaining minor units out one at a time, largest fractional remainder first;
+ *   3. break ties by index, so the result is deterministic and reproducible.
+ *
+ * Ratios are scaled to integers before any arithmetic, so **no float ever touches the money** even
+ * though the ratios themselves are fractional (ADR-003).
+ *
+ * @param total  the amount to divide
+ * @param ratios relative weights, e.g. `[1, 1, 2]`. Must be positive and not all zero.
+ */
+export function allocate(total: Money, ratios: readonly number[]): Money[] {
+  if (ratios.length === 0) {
+    throw new MoneyError('allocate requires at least one ratio.');
+  }
+  if (ratios.some((ratio) => !Number.isFinite(ratio) || ratio < 0)) {
+    throw new MoneyError('allocate ratios must be finite and non-negative.');
+  }
+
+  const SCALE = 1_000_000;
+  const scaled = ratios.map((ratio) => BigInt(Math.round(ratio * SCALE)));
+  const ratioTotal = scaled.reduce((sum, value) => sum + value, 0n);
+
+  if (ratioTotal === 0n) {
+    throw new MoneyError('allocate ratios sum to zero, so there is nothing to divide by.');
+  }
+
+  const shares: bigint[] = [];
+  const remainders: { index: number; remainder: bigint }[] = [];
+  let assigned = 0n;
+
+  scaled.forEach((ratio, index) => {
+    const numerator = total.amountMinor * ratio;
+    const share = numerator / ratioTotal;
+    shares.push(share);
+    remainders.push({ index, remainder: numerator % ratioTotal });
+    assigned += share;
+  });
+
+  // Distribute what rounding left behind. Never more than `ratios.length - 1` units, by construction.
+  let leftover = total.amountMinor - assigned;
+  remainders.sort((a, b) =>
+    a.remainder === b.remainder ? a.index - b.index : a.remainder > b.remainder ? -1 : 1,
+  );
+
+  for (const { index } of remainders) {
+    if (leftover <= 0n) break;
+    shares[index] = shares[index]! + 1n;
+    leftover -= 1n;
+  }
+
+  // A negative total cannot occur (Money is non-negative), but assert the invariant we promise
+  // rather than assuming it.
+  const sum = shares.reduce((acc, value) => acc + value, 0n);
+  if (sum !== total.amountMinor) {
+    throw new MoneyError(
+      `allocate produced ${sum} minor units from ${total.amountMinor}; the parts must sum exactly.`,
+    );
+  }
+
+  return shares.map((share) => money(share, total.currency));
+}
+
+/** Split into `parts` equal shares, distributing the remainder to the earliest parts. */
+export function allocateEqually(total: Money, parts: number): Money[] {
+  if (!Number.isInteger(parts) || parts < 1) {
+    throw new MoneyError(`allocateEqually needs a positive whole number of parts, received ${parts}.`);
+  }
+  return allocate(total, Array.from({ length: parts }, () => 1));
+}
