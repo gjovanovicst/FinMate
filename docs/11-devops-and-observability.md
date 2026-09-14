@@ -54,44 +54,53 @@ flowchart LR
 
 ## 2. Local development
 
-### 2.0 ⚠️ Docker is not available in the current WSL distro — blocking for Phase 0
+### 2.0 ✅ Docker — RESOLVED (was a Phase 0 blocker)
+
+**Status: cleared.** Docker Desktop WSL integration was enabled for this distro on 2026-09-14.
+Verified on the machine:
 
 ```text
-$ docker version  →  The command 'docker' could not be found in this WSL 2 distro.
-$ /etc/os-release →  Ubuntu 20.04 LTS (Focal Fossa)     $ uname -r → 6.18.33.2-microsoft-standard-WSL2
+$ docker --version          →  Docker version 29.7.2, build a7dcaa6
+$ docker compose version    →  Docker Compose version v5.5.0
+$ docker info --format ...  →  29.7.2 / Docker Desktop / linux      (daemon reachable)
+$ docker run --rm alpine:3.20 uname -s -m  →  Linux x86_64          (containers execute)
+$ docker images             →  postgres:16-alpine already pulled locally
 ```
 
-Present and confirmed: **Node v24.20.0**, **pnpm 11.7.0**, **Go 1.27.0**. Missing: **Docker Engine + Compose v2**.
+Linux containers, not Windows containers — which is what every image in this plan assumes.
 
-**Why it blocks.** [09 §2](09-implementation-plan.md) task **0.2** is "Docker Compose: Postgres 16
+**Why it mattered.** [09 §2](09-implementation-plan.md) task **0.2** is "Docker Compose: Postgres 16
 (+`pg_trgm`, `pgvector`), Redis, MinIO, Mailhog"; the Phase 0 exit criterion is *"`pnpm dev` boots the
 whole stack locally with one command"*; [ADR-013](14-decisions-and-risks.md) makes Compose the
-deployment mechanism; the integration stage (§5) uses Testcontainers. Three Phase 0 deliverables depend
-on this one thing.
+deployment mechanism; the integration stage (§5) uses Testcontainers. Three Phase 0 deliverables
+depended on this one thing, and all three are now unblocked.
 
-**Why a native install is not a clean workaround.** The canonical schema needs `citext` (`users.email`,
-[03 §4](03-domain-model.md)), `pg_trgm` and `vector` (fuzzy matching, Household embeddings —
-[04 §4](04-categorization-and-ai-engine.md)). `pgvector` is not in Ubuntu 20.04's default packages, so
-native Postgres means a source build on a past-support distro.
+**Environment baseline (confirmed):** Node **v24.20.0**, pnpm **11.7.0**, Go **1.27.0**,
+Docker **29.7.2** + Compose **v5.5.0**, Ubuntu 20.04 LTS on WSL2 (kernel 6.18.33.2).
 
-| # | Remediation | Steps | Trade-off |
-|---|---|---|---|
-| 1 **(preferred)** | Docker Desktop WSL integration | Settings → Resources → WSL Integration → enable `Ubuntu-20.04` → Apply & Restart | Lowest effort; Docker Desktop must run on Windows |
-| 2 | Native engine in the distro | `apt-get install -y docker.io docker-compose-v2`; `[boot] systemd=true` in `/etc/wsl.conf`; `wsl --shutdown`; `systemctl enable --now docker`; `usermod -aG docker $USER` | No Windows dependency; needs WSL2 systemd validation |
-| 3 | Windows host daemon via `DOCKER_HOST` | Expose the daemon on TCP | **Not recommended** — a foot-gun even on localhost |
+Two residual notes, neither blocking:
+
+- **Ubuntu 20.04 is past standard support.** It works, but `pgvector` has no distro package, so the
+  plan depends on the `pgvector/pgvector:pg16` image rather than a native install. That is already the
+  intended approach for Compose, so nothing changes — but a future move to `Ubuntu-24.04` would remove
+  a sharp edge and should be done outside a delivery phase, not during one.
+- **`citext`, `pg_trgm` and `vector` must be verified as available** in the chosen Postgres image as
+  part of task 0.2. The canonical schema requires all three ([03 §4](03-domain-model.md)). Prefer an
+  image with `pgvector` preinstalled (for example `pgvector/pgvector:pg16`) over installing the
+  extension at container start, so a cold start does not depend on a network fetch.
 
 ```bash
-# verify before calling task 0.2 done
-docker version && docker compose version && docker run --rm hello-world && docker run --rm postgres:16 psql --version
+# the task 0.2 acceptance check — run before calling it done
+docker compose up -d
+docker compose exec db psql -U postgres -c \
+  "CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS vector;"
+docker compose exec db psql -U postgres -c "SELECT extname FROM pg_extension ORDER BY 1;"
 ```
 
-**Until resolved:** tasks 0.1 and 0.5–0.8 proceed against a temporary remote dev Postgres; **0.2, 0.3 and
-0.9 cannot**, and the Phase 0 exit criterion cannot be met. This is a **Phase 0 blocker** — fix it, do
-not re-plan around it. Two related notes: Ubuntu 20.04 is past standard support, so option 2 should be
-paired with `wsl --install -d Ubuntu-24.04` (which also packages `pgvector`); and **Go 1.27 is present
-but not on the v1 critical path** — [ADR-004](14-decisions-and-risks.md) selects NestJS/GraphQL, and Go
-appears only as the alternative in [05 §1](05-architecture.md); native app shells and Open Banking are
-deferred for the same reason ([ADR-012](14-decisions-and-risks.md)), so neither adds a Phase 0 dependency.
+**Historical note (kept deliberately).** This section previously recorded Docker as absent from the
+WSL distro and listed three remediations; option 1 (Docker Desktop WSL integration) was the one taken.
+The record is retained because the *reasoning* — why a native Postgres install is not an acceptable
+workaround — still governs the image choice above.
 
 ### 2.1 The `pnpm dev` experience
 

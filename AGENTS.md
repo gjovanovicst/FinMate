@@ -8,9 +8,13 @@ AI-first household budgeting app for **mobile and desktop**. The product promise
 
 > Type **`Lidl 2000`** and get a correctly categorised, budget-aware transaction in under five seconds.
 
-**Machine state:** Node 24.20.0, pnpm 11.7.0, Go 1.27.0. **Docker is NOT available in this WSL distro**
-(Docker Desktop integration is off) — this blocks Phase 0 tasks 0.2/0.3/0.9 and the "`pnpm dev` boots
-the whole stack" exit criterion. See `docs/11-devops-and-observability.md` §2.0.
+**Machine state:** Node 24.20.0, pnpm 11.7.0, Go 1.27.0, **Docker 29.7.2 + Compose v5.5.0 (Linux
+containers, daemon verified reachable)** on Ubuntu 20.04 LTS / WSL2. Phase 0 is **not** blocked —
+`postgres:16-alpine` is already pulled. The Postgres image must provide `citext`, `pg_trgm` and
+`vector`; prefer an image with `pgvector` preinstalled (see `docs/11-devops-and-observability.md` §2.0).
+
+**Current state: no code yet.** Phases 0–5 are specified in `docs/09-implementation-plan.md`; nothing
+is scaffolded. Do not reference build scripts, test runners or packages that do not exist yet.
 
 ---
 
