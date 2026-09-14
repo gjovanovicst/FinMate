@@ -80,7 +80,7 @@ const CYRILLIC_TO_LATIN: Record<string, string> = {
 
 | Concern | Rule |
 |---|---|
-| **Script** | Cyrillic → latin transliteration, so `Лиди 2000` and `Lidl 2000` hit the same keyword set. |
+| **Script** | Cyrillic → latin transliteration, so `Лидл 2000` and `Lidl 2000` hit the same keyword set. |
 | **Diacritics** | Fold to ASCII for **matching only** (`septička` ≡ `septicka` ≡ `septichka`); never mutate stored display text. |
 | **Thousands separator** | `.` and space are thousands: `2.000` → `2000`, `1 200` → `1200`. |
 | **Decimals** | `,` is decimal: `2,50` → `2.50`; `1250,50` → `1250.50`. |

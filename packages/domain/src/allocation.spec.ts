@@ -99,6 +99,13 @@ describe('parseAmount (docs/04 §3.1 — Serbian-first, ambiguity reported)', ()
   it('expands the k shorthand', () => {
     expect(rsd('2k').money?.amountMinor).toBe(200_000n);
     expect(rsd('1,5k').money?.amountMinor).toBe(150_000n);
+    // docs/04 §3.1 documents `1.5k` → `1500` too, and for a long time the shorthand path read the
+    // `.` as a group separator and produced `15k`. A shorthand expansion must agree with the
+    // separator rules the non-shorthand path already follows.
+    expect(rsd('1.5k').money?.amountMinor).toBe(150_000n);
+    expect(rsd('1.200k').money?.amountMinor).toBe(120_000_000n);
+    // Still no float: the expansion is exact past Number.MAX_SAFE_INTEGER.
+    expect(rsd('10000000000000000k').money?.amountMinor).toBe(1_000_000_000_000_000_000_000n);
   });
 
   it('strips currency words and symbols', () => {

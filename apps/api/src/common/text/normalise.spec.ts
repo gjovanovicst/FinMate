@@ -33,10 +33,12 @@ describe('normaliseForMatching', () => {
     expect(normaliseForMatching(once)).toBe(once);
   });
 
-  it('leaves Cyrillic alone for now — transliteration is Phase 2 task 2.1.1', () => {
-    // Pinned so the gap is visible rather than assumed. When this test starts failing, the
-    // transliteration work has landed and the expectation should become 'lidi'.
-    expect(normaliseForMatching('Лиди')).toBe('лиди');
+  it('transliterates Cyrillic, the gap Phase 2 task 2.1.1 closed', () => {
+    // This assertion used to pin the gap by expecting 'лиди'. `packages/nlp` now owns the fold and
+    // transliterates Cyrillic to Latin (docs/04 §3.1), so both scripts fold to one form.
+    expect(normaliseForMatching('Лиди')).toBe('lidi');
+    expect(normaliseForMatching('Лиди 2000')).toBe('lidi 2000');
+    expect(normaliseForMatching('Лидл')).toBe(normaliseForMatching('Lidl'));
   });
 
   it('returns an empty string for blank input rather than throwing', () => {

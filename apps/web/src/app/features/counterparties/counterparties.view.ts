@@ -1,4 +1,4 @@
-import { normaliseClientSide } from '../../shared/normalise';
+import { foldForMatching } from '@finmate/nlp';
 
 export type CounterpartyType = 'PERSON' | 'COMPANY' | 'GOVERNMENT' | 'OTHER';
 
@@ -70,5 +70,5 @@ export function deleteRefusal(node: CounterpartyNode | null): 'IN_USE' | null {
  * must fold exactly as the server does or the warning and the `CONFLICT` disagree.
  */
 export function sameCounterpartyName(a: string, b: string): boolean {
-  return normaliseClientSide(a) === normaliseClientSide(b);
+  return foldForMatching(a) === foldForMatching(b);
 }

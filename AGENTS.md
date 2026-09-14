@@ -11,7 +11,7 @@ AI-first household budgeting app for **mobile and desktop**. The product promise
 **Machine state:** Node 24.20.0, pnpm 11.7.0, Go 1.27.0, **Docker 29.7.2 + Compose v5.5.0 (Linux
 containers)** on Ubuntu 20.04 LTS / WSL2.
 
-**Build state — Phase 0 COMPLETE. Phase 1 (manual core): all screens are working; the remaining gaps are listed below.**
+**Build state — Phase 0 COMPLETE. Phase 1 (manual core) complete apart from the visual pass. Phase 2 (AI input) STARTED: task 2.1.1 `packages/nlp` is done.**
 
 | Phase 1 slice | State |
 |---|---|
@@ -43,8 +43,9 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 | CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → lint → typecheck → test → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
 | Web (0.8) | Angular 22, **zoneless** + signals, ADR-006. Responsive shell (bottom nav → sidebar at 1024px), design tokens (`apps/web/src/styles.css`), `fm-money` as the only Money renderer, auth pages, Accounts consuming GraphQL |
 | i18n | `core/i18n/`: **English primary**, Serbian latin + cyrillic. Runtime catalogue (no rebuild), `TranslationKey` derived from `en`, `sr-Cyrl` generated at runtime. Language switcher in the shell |
-| Tests | **464 pass** — 263 API + 97 domain + 104 web |
+| Tests | **560 pass** — 263 API + 114 domain + 105 web + 78 nlp |
 | Not yet built | worker jobs; production build for apps/api (its own decision); PWA service worker (Phase 4) |
+| Phase 2 progress | **2.1.1 `packages/nlp` done** — transliteration + `foldForMatching`, segmentation, `TransactionFragment` extraction via domain's parser. 2.1.2 golden dataset, 2.1.3 `packages/rules-engine`, 2.1.4 entity resolution: **not started** |
 | Web screens | `/` dashboard, `/transactions` (filter + edit + CSV export), `/budgets`, `/categories`, `/merchants`, `/counterparties`, `/tags`, `/accounts`, sign-in/up |
 | Navigation | 4 primary destinations in the bottom bar plus **More** (≥1024 px the sidebar lists all 8); `nav.more` is the overflow control |
 
@@ -61,7 +62,7 @@ nx run web:build          # production bundle
 **The browser talks to `/api/*`; the dev proxy strips the prefix** before forwarding, because the
 API serves `/auth/*` and `/graphql` without one (docs/06). Changing the prefix on one side only
 produces a 404 that looks like an auth failure.
-Verified working: lint 9/9, typecheck 9/9, 464 tests, `web:build`, GraphQL over HTTP through the
+Verified working: lint 9/9, typecheck 9/9, 560 tests, `web:build`, GraphQL over HTTP through the
 browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, and `prisma migrate diff`
 reporting no drift.
 
@@ -164,6 +165,14 @@ A change is not done until (doc 09 §8):
 
 ## Gotchas specific to this project
 
+- **`packages/domain/src/parse.ts` had a shorthand bug, fixed in Phase 2** — `applyThousandsShorthand`
+  stripped *every* `.`, so `1.5k` read as `15k` (`15000`, a tenfold overstatement) while docs/04 §3.1
+  says `1500`. It now rewrites the base to a `.`-decimal string using `readAmounts`' own separator
+  rules and scales through `toMinorUnits`, so the expansion is exact bigint with no `Number` on the
+  money path. `1.200k` stays 1 200 thousand (a 3-digit group) and `1.5k` is 1.5 thousand. **There is
+  now a `packages/domain/src/parse.spec.ts`** — the parser previously had no focused spec, so its
+  coverage came indirectly through `allocation.spec.ts` and a money-path change could only be checked
+  by a test about splitting. Put money-parser tests there, and assert in **minor units as `bigint`**.
 - **Serbian input is the hard part.** Latin *and* cyrillic, `.` as thousands separator and `,` as
   decimal, `2k` shorthand, `plata`/`penzija`/`uplata` mean **income**. Normalisation lives in
   `packages/nlp` and runs on **both client and server** — never write a second parser.
@@ -266,16 +275,18 @@ A change is not done until (doc 09 §8):
   while Transactions, Receipts or RecurringRules reference the row; `mergeMerchants` moves them. A
   shipped Merchant is never deletable at all. The `merchants` table has **no `version` column**, so
   Merchant writes are last-write-wins — acceptable because the row holds no money.
-- **The web app has a deliberate SECOND copy of the fold, in `shared/normalise.ts`.** It exists so the
-  duplicate-name warning on Merchants, Counterparties and Tags agrees with the server's `CONFLICT`
-  instead of contradicting it. `packages/nlp` is still a stub (Phase 2 task 2.1.1 owns it) and is
-  where both should end up; until then the duplication is the lesser evil, and the two are tested on
-  the same cases. `shared/aliases.ts` holds the merge preview's alias union for the same reason.
+- **The fold lives once, in `packages/nlp` (`foldForMatching`), and both sides import it.** The web
+  client imports `@finmate/nlp` directly so the duplicate-name warning on Merchants, Counterparties
+  and Tags agrees with the server's `CONFLICT`, and `apps/api/src/common/text/normalise.ts` keeps its
+  exported name but delegates there. When you fold anything for comparison, go through that function —
+  a local copy will drift and a keyword will silently stop matching. `shared/aliases.ts` still holds
+  the merge preview's alias union for the same "one definition" reason.
 - **Normalise keywords and aliases through `common/text/normalise`, never a local copy.** All three
-  fold to the same form the classifier will compare against. `Đ/đ` needed an explicit rule: it has no
-  canonical decomposition, so the combining-mark strip that handles `č/ć/š/ž` left it intact and
-  `Đorđe` never matched `Djordje`. Cyrillic transliteration (docs/04 §3) is still missing and belongs
-  to Phase 2 task 2.1.1, which also moves this into `packages/nlp`.
+  fold to the same form the classifier will compare against, because they all delegate to
+  `@finmate/nlp`'s `foldForMatching` (transliterate Cyrillic → Latin, lower-case, strip diacritics,
+  collapse whitespace). `Đ/đ` needed an explicit rule: it has no canonical decomposition, so the
+  combining-mark strip that handles `č/ć/š/ž` left it intact and `Đorđe` never matched `Djordje`.
+  `packages/nlp` now owns the whole fold, including Cyrillic transliteration (docs/04 §3).
 - **`runWithTenant` aside, never use the outer client inside an interactive `$transaction`.** Each
   inner query then waits for a second connection from the same pool and stalls until the transaction
   times out — surfacing only as an opaque INTERNAL. Always use the `tx` the callback receives.

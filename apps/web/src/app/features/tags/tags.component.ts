@@ -1,10 +1,11 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
+import { foldForMatching } from '@finmate/nlp';
+
 import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
-import { normaliseClientSide } from '../../shared/normalise';
 
 interface TagNode {
   readonly id: string;
@@ -400,9 +401,9 @@ export class TagsComponent {
     const editing = this.editingId();
     const name = editing ? this.editForm.controls.name.value : this.createForm.controls.name.value;
     if (!name.trim()) return null;
-    const folded = normaliseClientSide(name);
+    const folded = foldForMatching(name);
     const clash = this.tags().some(
-      (tag) => tag.id !== editing && normaliseClientSide(tag.name) === folded,
+      (tag) => tag.id !== editing && foldForMatching(tag.name) === folded,
     );
     return clash ? this.i18n.t('tags.duplicateName') : null;
   });

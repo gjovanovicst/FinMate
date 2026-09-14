@@ -75,8 +75,51 @@ export function parseAmount(input: string, currency: CurrencyCode): AmountParseR
 function applyThousandsShorthand(input: string): string {
   const match = /^(-?[\d.,\s]+)k$/.exec(input);
   if (!match) return input;
-  const base = Number(match[1]!.replace(/[\s.]/g, '').replace(',', '.'));
-  return Number.isFinite(base) ? String(Math.round(base * 1000)) : input;
+  const base = asDecimalMajorText(match[1]!);
+  if (base === null) return input;
+  // Scaling by 1000 through `toMinorUnits` keeps the expansion exact and float-free. The previous
+  // implementation used `Number`, which read `1.5k` as `15k` (it stripped the decimal point as if it
+  // were a group separator) and lost precision on large inputs (ADR-003).
+  const expanded = toMinorUnits(base, 1_000n);
+  return expanded === null ? input : expanded.toString();
+}
+
+/**
+ * Rewrite a loosely formatted Serbian number as an unambiguous `.`-decimal major-unit string, using
+ * exactly the separator rules {@link readAmounts} applies: `.` and space group thousands, `,` is the
+ * decimal separator, and with both present the last one is the decimal point.
+ */
+function asDecimalMajorText(input: string): string | null {
+  const text = input.replace(/\s/g, '');
+  if (!/\d/.test(text)) return null;
+
+  const hasDot = text.includes('.');
+  const hasComma = text.includes(',');
+
+  if (hasDot && hasComma) {
+    const decimalAt = Math.max(text.lastIndexOf('.'), text.lastIndexOf(','));
+    const integerPart = text.slice(0, decimalAt).replace(/[.,]/g, '');
+    const fractionPart = text.slice(decimalAt + 1).replace(/[.,]/g, '');
+    return `${integerPart || '0'}.${fractionPart}`;
+  }
+
+  if (hasComma) {
+    const parts = text.split(',');
+    return parts.length === 2 ? `${parts[0] || '0'}.${parts[1]}` : text.replace(/,/g, '');
+  }
+
+  if (hasDot) {
+    const parts = text.split('.');
+    const wellFormedGroups =
+      parts.length > 1 &&
+      (parts[0] ?? '').length >= 1 &&
+      (parts[0] ?? '').length <= 3 &&
+      parts.slice(1).every((part) => part.length === 3);
+    // `1.5` is a decimal point; `1.200` groups thousands and leads with that reading.
+    return wellFormedGroups ? text.replace(/\./g, '') : text;
+  }
+
+  return text;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { normaliseClientSide } from '../../shared/normalise';
+import { foldForMatching } from '@finmate/nlp';
 
 export interface MerchantAliasNode {
   readonly id: string;
@@ -56,5 +56,5 @@ export function deleteRefusal(merchant: MerchantNode | null): 'SHIPPED' | 'IN_US
  * believe the app is broken.
  */
 export function sameMerchantName(a: string, b: string): boolean {
-  return normaliseClientSide(a) === normaliseClientSide(b);
+  return foldForMatching(a) === foldForMatching(b);
 }

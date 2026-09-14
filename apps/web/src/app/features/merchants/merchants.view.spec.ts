@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { normaliseClientSide } from '../../shared/normalise';
+import { foldForMatching } from '@finmate/nlp';
+
 import {
   aliasUnion,
   deleteRefusal,
@@ -26,18 +27,24 @@ function merchant(overrides: Partial<MerchantNode> & { id: string }): MerchantNo
 const aliases = (...values: string[]) =>
   values.map((alias, index) => ({ id: `a${index}`, alias }));
 
-describe('normaliseClientSide', () => {
+describe('foldForMatching on the client', () => {
   it('folds case, diacritics and whitespace like the server', () => {
-    expect(normaliseClientSide('  Šećer   LIDL ')).toBe('secer lidl');
+    expect(foldForMatching('  Šećer   LIDL ')).toBe('secer lidl');
   });
 
   it('folds đ, which NFD alone cannot', () => {
-    expect(normaliseClientSide('Đorđe')).toBe('dorde');
+    expect(foldForMatching('Đorđe')).toBe('dorde');
+  });
+
+  it('folds Cyrillic to Latin, the same fold the API uses', () => {
+    // This is the web half of the "one fold" guarantee: the duplicate-name warning must agree with
+    // the server's CONFLICT, and the server now transliterates too (docs/04 §3.1).
+    expect(foldForMatching('Лиди')).toBe('lidi');
   });
 
   it('is idempotent', () => {
-    const once = normaliseClientSide('Đački  Šećer');
-    expect(normaliseClientSide(once)).toBe(once);
+    const once = foldForMatching('Đački  Šećer');
+    expect(foldForMatching(once)).toBe(once);
   });
 });
 

@@ -10,6 +10,32 @@
  * Must handle: latin and cyrillic scripts, diacritic folding, `.`/space as thousands separators,
  * `,` as the decimal separator, `2k` shorthand, and income markers (plata, penzija, uplata).
  *
- * Implemented in Phase 2 task 2.1.1.
+ * `foldForMatching` is the product's single match fold: the API's `normaliseForMatching` delegates to
+ * it and the browser imports it directly, so stored keywords/aliases and compared text cannot drift.
+ *
+ * Money is delegated to `@finmate/domain`'s `parseAmount` — this package contains no second amount
+ * parser, and no float ever touches an amount (ADR-003).
  */
-export {};
+
+export {
+  CYRILLIC_TO_LATIN,
+  foldForMatching,
+  transliterateToLatin,
+} from './transliterate';
+
+export {
+  foldTokens,
+  normalizeFragment,
+  type NormalizedFragment,
+} from './normalize';
+
+export { segmentFragments } from './segment';
+
+export {
+  extractFragment,
+  extractFragments,
+  INCOME_MARKERS,
+  NEGATION_MARKERS,
+  type ExtractOptions,
+  type TransactionFragment,
+} from './extract';

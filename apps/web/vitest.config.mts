@@ -19,6 +19,9 @@ export default defineConfig({
       // scope:web may depend on scope:domain (docs/05 §2) — the money formatter is shared so the
       // client and server cannot disagree about how an amount is rendered.
       '@finmate/domain': fileURLToPath(new URL('../../packages/domain/src/index.ts', import.meta.url)),
+      // ...and on scope:nlp (docs/05 §5.3): the capture parser and the match fold run in the browser
+      // so the client and the API fold keywords, aliases and text identically.
+      '@finmate/nlp': fileURLToPath(new URL('../../packages/nlp/src/index.ts', import.meta.url)),
     },
   },
   test: {
