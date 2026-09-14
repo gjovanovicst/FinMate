@@ -17,6 +17,8 @@ export const en = {
   // ---- navigation ----
   'nav.dashboard': 'Overview',
   'nav.accounts': 'Accounts',
+  'nav.transactions': 'Transactions',
+  'nav.budgets': 'Budgets',
 
   // ---- session ----
   'session.signOut': 'Sign out',
@@ -88,6 +90,72 @@ export const en = {
   'notFound.title': 'Page not found',
   'notFound.body': 'The link may be out of date, or the page no longer exists.',
   'notFound.cta': 'Back to overview',
+
+  // ---- transactions ----
+  'transactions.title': 'Transactions',
+  'transactions.count': '{count} transactions',
+  'transactions.addTitle': 'Add a transaction',
+  'transactions.amount': 'Amount',
+  'transactions.amountPlaceholder': 'e.g. 2.000 or 1.250,50',
+  'transactions.amountAmbiguous':
+    'Read as {reading}. If you meant the other reading, separate the thousands with a space.',
+  'transactions.amountUnreadable': 'Could not read an amount from that.',
+  'transactions.description': 'Description',
+  'transactions.kind': 'Type',
+  'transactions.category': 'Category',
+  'transactions.noCategory': 'No category',
+  'transactions.account': 'Account',
+  'transactions.date': 'Date',
+  'transactions.submit': 'Add transaction',
+  'transactions.submitting': 'Adding…',
+  'transactions.emptyTitle': 'No transactions yet',
+  'transactions.emptyBody': 'Add your first one above — the amount accepts what you would type.',
+  'transactions.needsReview': 'needs review',
+  'transactions.noAccountsTitle': 'Add an account first',
+  'transactions.noAccountsBody':
+    'A transaction belongs to an account, so create one before recording any spending.',
+
+  // ---- transaction kinds ----
+  'transactionKind.EXPENSE': 'Expense',
+  'transactionKind.INCOME': 'Income',
+
+  // ---- dashboard ----
+  'dashboard.safeToSpendTitle': 'You can spend today',
+  'dashboard.noBudgetTitle': 'No monthly budget set',
+  'dashboard.noBudgetBody': 'Set one to see how much is safe to spend each day.',
+  'dashboard.spentThisMonth': 'Spent this month',
+  'dashboard.incomeThisMonth': 'Income this month',
+  'dashboard.projected': 'Projected by month end',
+  'dashboard.projectedOverrun': '{amount} over budget',
+  'dashboard.overspent': 'Over budget by {amount}',
+  'dashboard.notEnoughData': 'Too early in the month to predict reliably.',
+  'dashboard.needsReview': '{count} awaiting review',
+  'dashboard.of': 'of {budget}',
+  'dashboard.dayOf': 'Day {day} of {total}',
+
+  // ---- budgets ----
+  'budgets.title': 'Budgets',
+  'budgets.setBudget': 'Set a budget',
+  'budgets.none': 'No budgets yet',
+  'budgets.noneBody': 'A monthly budget turns the ledger into the safe-to-spend figure.',
+  'budgets.category': 'Category',
+  'budgets.wholeHousehold': 'Whole household',
+  'budgets.amount': 'Monthly amount',
+  'budgets.period': 'Period',
+  'budgets.periodMonthly': 'Monthly',
+  'budgets.periodWeekly': 'Weekly',
+  'budgets.periodYearly': 'Yearly',
+  'budgets.save': 'Save budget',
+  'budgets.saving': 'Saving…',
+  'budgets.remove': 'Remove',
+  'budgets.spent': 'Spent',
+  'budgets.remaining': 'Remaining',
+  'budgets.addTitle': 'Add or update a budget',
+  'budgets.explain':
+    'Budgeting a category covers its whole subtree. Spending counts confirmed transactions only.',
+  'budgets.amountUnreadable': 'That amount could not be read.',
+  'budgets.overBudget': 'Over by {amount}',
+  'budgets.progressLabel': '{spent} of {budget} used',
 
   // ---- API error codes (docs/06 §10) ----
   // The server returns a stable CODE and a safe English message; the client localises it. That

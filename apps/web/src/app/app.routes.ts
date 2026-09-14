@@ -37,6 +37,20 @@ export const routes: Routes = [
     title: 'Računi',
   },
   {
+    path: 'transactions',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/transactions/transactions.component').then((m) => m.TransactionsComponent),
+    title: 'Transakcije',
+  },
+  {
+    path: 'budgets',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/budgets/budgets.component').then((m) => m.BudgetsComponent),
+    title: 'Budžeti',
+  },
+  {
     path: '**',
     loadComponent: () =>
       import('./features/not-found/not-found.component').then((m) => m.NotFoundComponent),

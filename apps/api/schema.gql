@@ -52,6 +52,55 @@ A derived, SIGNED money value: { amountMinor, currency }, where amountMinor may 
 """
 scalar Balance
 
+"""
+A spending limit for a period, scoped either to the whole Household (categoryId null) or to a Category subtree.
+"""
+type BudgetModel {
+  amount: Money!
+
+  """Null means the whole Household — the budget that drives safe-to-spend."""
+  categoryId: ID
+  categoryName: String
+
+  """
+  Share of the period elapsed. Comparing it with usedRatio is the useful signal: "82 % used with 60 % of the month gone".
+  """
+  elapsedRatio: Float!
+  id: ID!
+
+  """
+  When true, a Budget counts Transactions in the whole Category subtree (I-5).
+  """
+  includeSubcategories: Boolean!
+
+  """
+  Always false before enough days have elapsed for the pace to mean anything.
+  """
+  isAheadOfPace: Boolean!
+  isOverspent: Boolean!
+  period: BudgetPeriod!
+  periodEnd: LocalDate!
+  periodStart: LocalDate!
+
+  """amount − spent. **Signed**: negative means the budget is blown."""
+  remaining: Balance!
+  rollover: Boolean!
+
+  """
+  Confirmed spend in the period, including splits and the subtree (invariants I-5, I-7).
+  """
+  spent: Balance!
+  usedRatio: Float!
+}
+
+enum BudgetPeriod {
+  CUSTOM
+  MONTHLY
+  QUARTERLY
+  WEEKLY
+  YEARLY
+}
+
 type CategoryKeywordModel {
   id: String!
   keyword: String!
@@ -111,6 +160,48 @@ enum CategorySource {
   IMPORT
   RULE
   USER
+}
+
+type DashboardModel {
+  """May be negative, which is the overspend."""
+  available: Balance!
+  dailyPace: Balance!
+  daysElapsed: Int!
+  daysInMonth: Int!
+  incomeThisMonth: Balance!
+  isOverspent: Boolean!
+
+  """Null when no Household budget is set."""
+  monthlyBudget: Money
+
+  """The BLOCKING review lane only (invariant I-8)."""
+  needsReviewCount: Int!
+
+  """
+  False early in the month: the UI should say "not enough data yet" rather than warn.
+  """
+  paceIsReliable: Boolean!
+  periodEnd: LocalDate!
+  periodStart: LocalDate!
+
+  """Projection minus budget. Null without a budget."""
+  projectedOverrun: Balance
+
+  """Projected month-end spend."""
+  projectedTotal: Balance!
+
+  """Recurring charges still due this period."""
+  reserved: Balance!
+
+  """
+  The headline figure: what can be spent today without breaching the budget.
+  """
+  safeToSpendToday: Balance!
+
+  """What the Household still wants to put aside."""
+  savingsTarget: Balance!
+  spentThisMonth: Balance!
+  today: LocalDate!
 }
 
 """
@@ -186,6 +277,7 @@ type Mutation {
     """
     splits: [SplitInput!]
   ): TransactionModel!
+  deleteBudget(id: ID!): Boolean!
 
   """
   Soft-delete a category. Refused while transactions, splits or subcategories still reference it unless `reassignToId` is given (invariant I-12).
@@ -226,6 +318,24 @@ type Mutation {
     """
     version: Int!
   ): TransactionModel!
+
+  """Create or replace the budget for a scope and period."""
+  upsertBudget(
+    amount: Money!
+
+    """
+    Omit for the whole-Household budget, which is what drives safe-to-spend.
+    """
+    categoryId: ID
+    includeSubcategories: Boolean = true
+    period: BudgetPeriod!
+
+    """
+    Defaults to the first day of the current month in the Household timezone.
+    """
+    periodStart: LocalDate
+    rollover: Boolean = false
+  ): BudgetModel!
 }
 
 type PageInfo {
@@ -264,9 +374,19 @@ type Query {
   ): AccountConnection!
 
   """
+  Budgets with consumption for their CURRENT period. Spend includes splits and the whole Category subtree, and counts only CONFIRMED transactions (invariants I-5, I-7).
+  """
+  budgets(today: LocalDate): [BudgetModel!]!
+
+  """
   The Household category tree, flat, each node carrying its depth and breadcrumb. Ordered by sortOrder then name.
   """
   categories(kind: CategoryKind): [CategoryModel!]!
+
+  """
+  Every dashboard tile in one round trip. All figures are computed by the backend from the ledger and every input is returned, so the UI can show its working (ADR-001).
+  """
+  dashboard: DashboardModel!
 
   """
   Split an amount evenly across categories without losing a para. The backend computes it so the client never rounds money (ADR-003); the result sums exactly (invariant I-1).

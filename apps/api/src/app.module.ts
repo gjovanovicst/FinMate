@@ -8,6 +8,7 @@ import { ConfigModule } from './config/config.module';
 import { GraphqlModule } from './graphql/graphql.module';
 import { HealthController } from './health/health.controller';
 import { AccountsModule } from './modules/accounts/accounts.module';
+import { BudgetingModule } from './modules/budgeting/budgeting.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { TaxonomyModule } from './modules/taxonomy/taxonomy.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -29,6 +30,7 @@ import { PrismaModule } from './prisma/prisma.module';
     AccountsModule,
     TaxonomyModule,
     LedgerModule,
+    BudgetingModule,
   ],
   controllers: [HealthController],
   providers: [

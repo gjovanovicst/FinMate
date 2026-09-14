@@ -11,7 +11,11 @@ interface NavItem {
   /** A translation key, not a label: the nav re-renders when the language changes. */
   readonly labelKey: TranslationKey;
   readonly icon: string;
-  /** Compact nav shows at most this many items before the rest move under "Više". */
+  /**
+   * Whether the item is shown. Every destination is currently primary; a non-primary item is
+   * hidden, not overflowed — there is no "more" menu yet, so mark an item non-primary only when
+   * that menu exists.
+   */
   readonly primary: boolean;
 }
 
@@ -236,12 +240,17 @@ export class AppComponent {
   readonly signingOut = signal(false);
 
   /**
-   * Phase 0 ships two destinations. The full set from docs/02 §2 (Capture, Review, Budgets…) lands
-   * with the features themselves — an empty nav item that leads to "coming soon" is worse than no
-   * item, because it teaches the user that the app is incomplete.
+   * Every destination here is a working screen. The rest of docs/02 §2 (Capture, Review, Insights)
+   * lands with the features themselves — an empty nav item that leads to "coming soon" is worse
+   * than no item, because it teaches the user that the app is incomplete.
+   *
+   * Budgets sits before Accounts because it is the screen that produces the product's headline
+   * number; Accounts is setup the user visits once.
    */
   private readonly items: readonly NavItem[] = [
     { path: '/', labelKey: 'nav.dashboard', icon: '📊', primary: true },
+    { path: '/transactions', labelKey: 'nav.transactions', icon: '🧾', primary: true },
+    { path: '/budgets', labelKey: 'nav.budgets', icon: '🎯', primary: true },
     { path: '/accounts', labelKey: 'nav.accounts', icon: '🏦', primary: true },
   ];
 

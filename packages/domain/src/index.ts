@@ -57,9 +57,14 @@ export {
 
 export {
   budgetConsumption,
+  elapsedDays,
+  periodBounds,
+  totalDays,
   projectMonthEnd,
   safeToSpend,
   sumBalances,
+  type BudgetPeriod,
+  type PeriodBounds,
   type BudgetConsumptionInput,
   type BudgetConsumptionResult,
   type MonthProjectionInput,

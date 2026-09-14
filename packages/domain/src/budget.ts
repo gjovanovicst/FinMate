@@ -1,3 +1,4 @@
+import { localDate, monthPeriod } from './dates';
 import { balance, zeroBalance, type Balance } from './money';
 
 /**
@@ -208,4 +209,73 @@ export function budgetConsumption(input: BudgetConsumptionInput): BudgetConsumpt
 /** Sum a list of same-currency balances. The zero case needs the currency supplied. */
 export function sumBalances(values: readonly Balance[], currency: string): Balance {
   return values.reduce((total, value) => balance(total.amountMinor + value.amountMinor, currency), zeroBalance(currency));
+}
+
+/** The period a Budget covers. */
+export type BudgetPeriod = 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'CUSTOM';
+
+export interface PeriodBounds {
+  /** Inclusive first day. */
+  readonly start: string;
+  /** Inclusive last day. */
+  readonly end: string;
+}
+
+/**
+ * The inclusive date range a Budget applies to, given its period and a start date.
+ *
+ * `CUSTOM` treats `periodStart` as the first day and runs to the end of that month, which is the
+ * only defensible default without a stored end date — silently inventing a range would make a
+ * budget appear to cover a period the user never chose.
+ */
+export function periodBounds(period: BudgetPeriod, periodStart: string): PeriodBounds {
+  const start = localDate(periodStart);
+  const [year, month] = start.split('-').map(Number) as [number, number, number];
+
+  switch (period) {
+    case 'WEEKLY': {
+      const from = new Date(Date.UTC(year, month - 1, Number(start.slice(8, 10))));
+      const to = new Date(from);
+      to.setUTCDate(to.getUTCDate() + 6);
+      return { start, end: to.toISOString().slice(0, 10) };
+    }
+    case 'MONTHLY':
+    case 'CUSTOM':
+      return monthPeriod(start);
+    case 'QUARTERLY': {
+      // The quarter containing the start date, so a budget created mid-quarter still lines up with
+      // the calendar rather than starting a fresh three-month window.
+      const quarterStartMonth = Math.floor((month - 1) / 3) * 3 + 1;
+      const from = localDate(`${year}-${pad2(quarterStartMonth)}-01`);
+      const lastMonth = quarterStartMonth + 2;
+      return { start: from, end: monthPeriod(localDate(`${year}-${pad2(lastMonth)}-01`)).end };
+    }
+    case 'YEARLY':
+      return { start: localDate(`${year}-01-01`), end: localDate(`${year}-12-31`) };
+    default: {
+      // Exhaustiveness: adding a period without handling it here is a compile error.
+      const never: never = period;
+      throw new Error(`Unhandled budget period: ${String(never)}`);
+    }
+  }
+}
+
+/** How many days of `bounds` have elapsed as of `today`, counting today. */
+export function elapsedDays(bounds: PeriodBounds, today: string): number {
+  if (today < bounds.start) return 0;
+  const start = Date.parse(`${bounds.start}T00:00:00Z`);
+  const end = Date.parse(`${bounds.end}T00:00:00Z`);
+  const now = Math.min(Date.parse(`${today}T00:00:00Z`), end);
+  return Math.floor((now - start) / 86_400_000) + 1;
+}
+
+/** Total days in `bounds`, inclusive. */
+export function totalDays(bounds: PeriodBounds): number {
+  const start = Date.parse(`${bounds.start}T00:00:00Z`);
+  const end = Date.parse(`${bounds.end}T00:00:00Z`);
+  return Math.floor((end - start) / 86_400_000) + 1;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
 }
