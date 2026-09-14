@@ -1,4 +1,4 @@
-import { normaliseClientSide } from './normalise';
+import { normaliseClientSide } from '../../shared/normalise';
 
 export interface MerchantAliasNode {
   readonly id: string;
@@ -19,20 +19,10 @@ export interface MerchantNode {
 }
 
 /**
- * The alias set a merge would produce.
- *
- * Mirrors the server's union exactly (fold, de-duplicate, sort), so the list shown before committing
- * is the list that lands. It is computed here only for the *preview*: the server remains the one that
- * writes, and it recomputes rather than trusting this.
+ * Re-exported from `shared/aliases` rather than defined here: Counterparties need the identical
+ * union, and two definitions of "what a merge produces" is two chances for a preview to lie.
  */
-export function aliasUnion(
-  source: MerchantNode | null,
-  target: MerchantNode | null,
-): readonly string[] {
-  if (!source || !target) return [];
-  const all = [...target.aliases, ...source.aliases].map((alias) => alias.alias);
-  return [...new Set(all)].sort((a, b) => a.localeCompare(b));
-}
+export { aliasUnion } from '../../shared/aliases';
 
 export type MergeRefusal = 'SAME' | 'SHIPPED_SOURCE';
 

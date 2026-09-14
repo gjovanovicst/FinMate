@@ -32,5 +32,6 @@
       "cache": true
     }
   },
-  "plugins": []
+  "plugins": [],
+  "analytics": false
 }

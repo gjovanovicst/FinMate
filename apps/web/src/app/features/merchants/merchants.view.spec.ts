@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { normaliseClientSide } from './normalise';
+import { normaliseClientSide } from '../../shared/normalise';
 import {
   aliasUnion,
   deleteRefusal,

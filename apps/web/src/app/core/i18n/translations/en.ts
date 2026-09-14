@@ -21,6 +21,8 @@ export const en = {
   'nav.budgets': 'Budgets',
   'nav.categories': 'Categories',
   'nav.merchants': 'Merchants',
+  'nav.counterparties': 'People',
+  'nav.tags': 'Tags',
   'nav.more': 'More',
 
   // ---- session ----
@@ -351,6 +353,92 @@ export const en = {
     'Shipped merchants cannot be deleted. Save a change to make your own copy instead.',
   'merchants.deleteRefusalIN_USE':
     'Transactions still use this merchant. Merge it into another one to move them first.',
+
+  // ---- counterparties ----
+  'counterparties.title': 'People and companies',
+  'counterparties.subtitle':
+    'Who money moved to or from. A second spelling of one person is an alias, not a second entry.',
+  'counterparties.add': 'Add',
+  'counterparties.addTitle': 'New person or company',
+  'counterparties.name': 'Name',
+  'counterparties.type': 'Type',
+  'counterparties.typeAll': 'All',
+  'counterparties.defaultCategory': 'Default category',
+  'counterparties.noDefaultCategory': 'Not set',
+  'counterparties.defaultCategoryHint':
+    'Optional. Used when a transaction names this person but no category.',
+  'counterparties.note': 'Note',
+  'counterparties.create': 'Create',
+  'counterparties.creating': 'Creating…',
+  'counterparties.cancel': 'Cancel',
+  'counterparties.search': 'Search',
+  'counterparties.searchPlaceholder': 'Search people and companies',
+  'counterparties.save': 'Save changes',
+  'counterparties.saving': 'Saving…',
+  'counterparties.delete': 'Delete',
+  'counterparties.deleting': 'Deleting…',
+  'counterparties.deleteConfirm': 'Delete this person or company?',
+  'counterparties.selectPrompt': 'Choose a person or company to edit it.',
+  'counterparties.empty': 'Nobody yet',
+  'counterparties.emptyBody': 'Add the person or company money moved to.',
+  'counterparties.emptyFiltered': 'Nothing matches',
+  'counterparties.truncated': 'Showing the first 200. Search to narrow the list.',
+  'counterparties.usage': '{count} transactions',
+  'counterparties.usageNone': 'not used yet',
+  'counterparties.duplicateName':
+    'Someone with that name already exists. Add this spelling as an alias, or merge the two.',
+  'counterparties.aliases': 'Aliases',
+  'counterparties.aliasesHint':
+    'Other ways this name is written. Saved without accents or capitals, so what comes back may look different.',
+  'counterparties.aliasPlaceholder': 'e.g. dejan roda',
+  'counterparties.addAlias': 'Add',
+  'counterparties.noAliases': 'No aliases yet.',
+  'counterparties.removeAlias': 'Remove alias {alias}',
+  'counterparties.merge': 'Merge into someone else',
+  'counterparties.mergeHint':
+    'Moves every transaction recorded here to the one you choose, combines the aliases, then removes this entry.',
+  'counterparties.mergeTarget': 'Merge into',
+  'counterparties.chooseTarget': 'Choose someone…',
+  'counterparties.mergePreviewAliases': 'Aliases afterwards',
+  'counterparties.mergePreviewCount': '{count} transactions will move',
+  'counterparties.mergePreviewNone': 'No transactions to move.',
+  'counterparties.mergeConfirm': 'Merge',
+  'counterparties.merging': 'Merging…',
+  'counterparties.refusalSAME': 'This entry cannot be merged into itself.',
+  'counterparties.deleteRefusalIN_USE':
+    'Transactions still use this entry. Merge it into another one to move them first.',
+
+  // ---- counterparty types ----
+  'counterpartyType.PERSON': 'Person',
+  'counterpartyType.COMPANY': 'Company',
+  'counterpartyType.GOVERNMENT': 'Government',
+  'counterpartyType.OTHER': 'Other',
+
+  // ---- tags ----
+  'tags.title': 'Tags',
+  'tags.subtitle':
+    'Labels across categories — #vanredno, #odrzavanje. A transaction can carry several.',
+  'tags.add': 'Add',
+  'tags.addTitle': 'New tag',
+  'tags.name': 'Name',
+  'tags.namePlaceholder': 'e.g. #vanredno',
+  'tags.color': 'Colour',
+  'tags.create': 'Create',
+  'tags.creating': 'Creating…',
+  'tags.cancel': 'Cancel',
+  'tags.save': 'Save',
+  'tags.saving': 'Saving…',
+  'tags.edit': 'Rename',
+  'tags.delete': 'Delete',
+  'tags.deleteConfirm': 'Delete this tag? Its transactions keep everything except the label.',
+  'tags.empty': 'No tags yet',
+  'tags.emptyBody': 'Tags are how you mark something across categories.',
+  'tags.usage': '{count} transactions',
+  'tags.usageNone': 'not used yet',
+  'tags.duplicateName': 'A tag with that name already exists.',
+  'tags.cascadeWarning':
+    'Deleting a tag removes it from every transaction. There is nothing to reassign a label to, so the label simply goes.',
+  'tags.count': '{count} tags',
 
   // ---- API error codes (docs/06 §10) ----
   // The server returns a stable CODE and a safe English message; the client localises it. That

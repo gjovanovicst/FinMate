@@ -23,7 +23,7 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 | Budgets CRUD (1.3.1) | **Done** — `upsertBudget` / `deleteBudget` / `budgets` with period consumption and pace |
 | CSV export (1.3.4, F-25) | **Done** — `GET /export/transactions.csv`, filtered, oldest-first. **CSV import is not started** |
 | Merchants (1.2.1, F-10) | **Done** — queries + create/update/delete/setMerchantAliases/mergeMerchants, copy-on-write seeds, merge-as-deletion, and the `/merchants` screen with a merge preview |
-| Counterparties/tags (1.2.2–1.2.3) | **Backend done, verified independently** — `counterparties`/`counterparty` + create/update/setCounterpartyAliases/mergeCounterparties/deleteCounterparty (merge-as-deletion, no copy-on-write: the table is plain household-scoped); `tags`/`tag` + createTag/updateTag/deleteTag (delete **cascades its assignments**, deliberately unlike a Merchant); `tagIds` on `createTransaction`/`updateTransaction` and `tags` on `TransactionModel`. **No UI** |
+| Counterparties/tags (1.2.2–1.2.3) | **Done** — `counterparties`/`counterparty` + create/update/setCounterpartyAliases/mergeCounterparties/deleteCounterparty (merge-as-deletion, no copy-on-write: the table is plain household-scoped); `tags`/`tag` + createTag/updateTag/deleteTag (delete **cascades its assignments**, deliberately unlike a Merchant); `tagIds` on `createTransaction`/`updateTransaction` and `tags` on `TransactionModel`; `/counterparties` and `/tags` screens |
 | **Phase 1 UI** | **Done** — transaction entry, filtered/paginated list, edit sheet, budgets, dashboard tiles; Accounts from Phase 0 |
 | Category tree editor + keyword editor (1.2.4, F-02/F-03) | **Done** — rename, reparent, reorder, delete-with-reassign, include/exclude keywords. **Drag-and-drop not implemented**; the Parent select and Alt+arrows cover reparenting |
 | Responsive pass (1.3.5) | **Partially done** — no fixed pixel widths and every multi-column grid is behind a `min-width` query; five known 320 px hazards fixed (nav overflow, hero amount, split-editor row, budget card, keyword chips). **Still needs a human at 320/768/1280 px** |
@@ -43,10 +43,10 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 | CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → lint → typecheck → test → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
 | Web (0.8) | Angular 22, **zoneless** + signals, ADR-006. Responsive shell (bottom nav → sidebar at 1024px), design tokens (`apps/web/src/styles.css`), `fm-money` as the only Money renderer, auth pages, Accounts consuming GraphQL |
 | i18n | `core/i18n/`: **English primary**, Serbian latin + cyrillic. Runtime catalogue (no rebuild), `TranslationKey` derived from `en`, `sr-Cyrl` generated at runtime. Language switcher in the shell |
-| Tests | **453 pass** — 263 API + 97 domain + 93 web |
+| Tests | **464 pass** — 263 API + 97 domain + 104 web |
 | Not yet built | worker jobs; production build for apps/api (its own decision); PWA service worker (Phase 4) |
-| Web screens | `/` dashboard, `/transactions` (filter + edit + CSV export), `/budgets`, `/categories`, `/merchants`, `/accounts`, sign-in/up |
-| Navigation | 4 primary destinations in the bottom bar plus **More** (≥1024 px the sidebar lists all 6); `nav.more` is the overflow control |
+| Web screens | `/` dashboard, `/transactions` (filter + edit + CSV export), `/budgets`, `/categories`, `/merchants`, `/counterparties`, `/tags`, `/accounts`, sign-in/up |
+| Navigation | 4 primary destinations in the bottom bar plus **More** (≥1024 px the sidebar lists all 8); `nav.more` is the overflow control |
 
 ```bash
 pnpm dev:infra            # start Postgres/Redis/MinIO/Mailhog
@@ -61,7 +61,7 @@ nx run web:build          # production bundle
 **The browser talks to `/api/*`; the dev proxy strips the prefix** before forwarding, because the
 API serves `/auth/*` and `/graphql` without one (docs/06). Changing the prefix on one side only
 produces a 404 that looks like an auth failure.
-Verified working: lint 9/9, typecheck 9/9, 453 tests, `web:build`, GraphQL over HTTP through the
+Verified working: lint 9/9, typecheck 9/9, 464 tests, `web:build`, GraphQL over HTTP through the
 browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, and `prisma migrate diff`
 reporting no drift.
 
@@ -266,10 +266,11 @@ A change is not done until (doc 09 §8):
   while Transactions, Receipts or RecurringRules reference the row; `mergeMerchants` moves them. A
   shipped Merchant is never deletable at all. The `merchants` table has **no `version` column**, so
   Merchant writes are last-write-wins — acceptable because the row holds no money.
-- **The web app has a deliberate SECOND copy of the fold, in `features/merchants/normalise.ts`.** It
-  exists so the duplicate-name warning agrees with the server's `CONFLICT` instead of contradicting
-  it. `packages/nlp` is still a stub (Phase 2 task 2.1.1 owns it) and is where both should end up;
-  until then the duplication is the lesser evil, and the two are tested on the same cases.
+- **The web app has a deliberate SECOND copy of the fold, in `shared/normalise.ts`.** It exists so the
+  duplicate-name warning on Merchants, Counterparties and Tags agrees with the server's `CONFLICT`
+  instead of contradicting it. `packages/nlp` is still a stub (Phase 2 task 2.1.1 owns it) and is
+  where both should end up; until then the duplication is the lesser evil, and the two are tested on
+  the same cases. `shared/aliases.ts` holds the merge preview's alias union for the same reason.
 - **Normalise keywords and aliases through `common/text/normalise`, never a local copy.** All three
   fold to the same form the classifier will compare against. `Đ/đ` needed an explicit rule: it has no
   canonical decomposition, so the combining-mark strip that handles `č/ć/š/ž` left it intact and

@@ -23,6 +23,8 @@ export const srLatn: Record<keyof typeof en, string> = {
   'nav.budgets': 'Budžeti',
   'nav.categories': 'Kategorije',
   'nav.merchants': 'Prodavci',
+  'nav.counterparties': 'Osobe',
+  'nav.tags': 'Oznake',
   'nav.more': 'Više',
 
   // ---- session ----
@@ -353,6 +355,92 @@ export const srLatn: Record<keyof typeof en, string> = {
     'Isporučeni prodavci ne mogu da se brišu. Sačuvajte izmenu da napravite svoju kopiju.',
   'merchants.deleteRefusalIN_USE':
     'Transakcije još koriste ovog prodavca. Spojite ga sa drugim da ih prvo premestite.',
+
+  // ---- counterparties ----
+  'counterparties.title': 'Osobe i firme',
+  'counterparties.subtitle':
+    'Kome je novac otišao ili od koga je došao. Drugi način pisanja istog imena je alijas, ne novi unos.',
+  'counterparties.add': 'Dodaj',
+  'counterparties.addTitle': 'Nova osoba ili firma',
+  'counterparties.name': 'Naziv',
+  'counterparties.type': 'Tip',
+  'counterparties.typeAll': 'Sve',
+  'counterparties.defaultCategory': 'Podrazumevana kategorija',
+  'counterparties.noDefaultCategory': 'Nije postavljena',
+  'counterparties.defaultCategoryHint':
+    'Nije obavezno. Koristi se kada transakcija navede ovu osobu bez kategorije.',
+  'counterparties.note': 'Napomena',
+  'counterparties.create': 'Napravi',
+  'counterparties.creating': 'Pravljenje…',
+  'counterparties.cancel': 'Otkaži',
+  'counterparties.search': 'Pretraga',
+  'counterparties.searchPlaceholder': 'Pretraži osobe i firme',
+  'counterparties.save': 'Sačuvaj izmene',
+  'counterparties.saving': 'Čuvanje…',
+  'counterparties.delete': 'Obriši',
+  'counterparties.deleting': 'Brisanje…',
+  'counterparties.deleteConfirm': 'Obrisati ovu osobu ili firmu?',
+  'counterparties.selectPrompt': 'Izaberite osobu ili firmu da je izmenite.',
+  'counterparties.empty': 'Još nikoga nema',
+  'counterparties.emptyBody': 'Dodajte osobu ili firmu kojoj je novac otišao.',
+  'counterparties.emptyFiltered': 'Ništa ne odgovara',
+  'counterparties.truncated': 'Prikazano je prvih 200. Pretražite da suzite listu.',
+  'counterparties.usage': '{count} transakcija',
+  'counterparties.usageNone': 'još se ne koristi',
+  'counterparties.duplicateName':
+    'Nešto sa tim imenom već postoji. Dodajte ovaj način pisanja kao alijas, ili spojite njih dvoje.',
+  'counterparties.aliases': 'Alijasi',
+  'counterparties.aliasesHint':
+    'Drugi načini na koje se ovo ime piše. Čuva se bez kvačica i velikih slova, pa ono što se vrati može da izgleda drugačije.',
+  'counterparties.aliasPlaceholder': 'npr. dejan roda',
+  'counterparties.addAlias': 'Dodaj',
+  'counterparties.noAliases': 'Još nema alijasa.',
+  'counterparties.removeAlias': 'Ukloni alijas {alias}',
+  'counterparties.merge': 'Spoji sa nekim drugim',
+  'counterparties.mergeHint':
+    'Prebacuje sve transakcije zabeležene ovde na izabrani unos, spaja alijase, pa uklanja ovaj.',
+  'counterparties.mergeTarget': 'Spoji sa',
+  'counterparties.chooseTarget': 'Izaberite nekoga…',
+  'counterparties.mergePreviewAliases': 'Alijasi nakon spajanja',
+  'counterparties.mergePreviewCount': '{count} transakcija će se premestiti',
+  'counterparties.mergePreviewNone': 'Nema transakcija za premeštanje.',
+  'counterparties.mergeConfirm': 'Spoji',
+  'counterparties.merging': 'Spajanje…',
+  'counterparties.refusalSAME': 'Ovaj unos ne može da se spoji sam sa sobom.',
+  'counterparties.deleteRefusalIN_USE':
+    'Transakcije još koriste ovaj unos. Spojite ga sa drugim da ih prvo premestite.',
+
+  // ---- counterparty types ----
+  'counterpartyType.PERSON': 'Osoba',
+  'counterpartyType.COMPANY': 'Firma',
+  'counterpartyType.GOVERNMENT': 'Država',
+  'counterpartyType.OTHER': 'Ostalo',
+
+  // ---- tags ----
+  'tags.title': 'Oznake',
+  'tags.subtitle':
+    'Oznake preko kategorija — #vanredno, #odrzavanje. Transakcija može da nosi više njih.',
+  'tags.add': 'Dodaj',
+  'tags.addTitle': 'Nova oznaka',
+  'tags.name': 'Naziv',
+  'tags.namePlaceholder': 'npr. #vanredno',
+  'tags.color': 'Boja',
+  'tags.create': 'Napravi',
+  'tags.creating': 'Pravljenje…',
+  'tags.cancel': 'Otkaži',
+  'tags.save': 'Sačuvaj',
+  'tags.saving': 'Čuvanje…',
+  'tags.edit': 'Preimenuj',
+  'tags.delete': 'Obriši',
+  'tags.deleteConfirm': 'Obrisati ovu oznaku? Transakcije zadržavaju sve osim oznake.',
+  'tags.empty': 'Još nema oznaka',
+  'tags.emptyBody': 'Oznake služe da nešto obeležite preko kategorija.',
+  'tags.usage': '{count} transakcija',
+  'tags.usageNone': 'još se ne koristi',
+  'tags.duplicateName': 'Oznaka sa tim nazivom već postoji.',
+  'tags.cascadeWarning':
+    'Brisanje oznake uklanja je sa svake transakcije. Nema na šta da se oznaka premesti, pa jednostavno nestaje.',
+  'tags.count': '{count} oznaka',
 
   // ---- API error codes ----
   'error.UNAUTHENTICATED': 'Pogrešan email ili lozinka.',

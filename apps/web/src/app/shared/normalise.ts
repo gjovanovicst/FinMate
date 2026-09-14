@@ -7,8 +7,9 @@
  * the client guess — and a client that guesses differently from the server shows a duplicate-name
  * warning that the API then contradicts.
  *
- * The browser needs it for exactly one thing: telling the user *before* they submit that a name is
- * already taken, rather than after a round trip.
+ * The browser needs it for one thing: telling the user *before* they submit that a name is already
+ * taken, rather than after a round trip. Shared rather than per-feature, because Merchants,
+ * Counterparties and Tags all refuse a folded duplicate and three copies would drift.
  *
  * `đ` needs its own rule because it has no canonical decomposition, so the combining-mark strip that
  * folds č/ć/š/ž leaves it intact.

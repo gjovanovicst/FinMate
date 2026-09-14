@@ -44,6 +44,21 @@ export const routes: Routes = [
     title: 'Transakcije',
   },
   {
+    path: 'counterparties',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/counterparties/counterparties.component').then(
+        (m) => m.CounterpartiesComponent,
+      ),
+    title: 'Osobe i firme',
+  },
+  {
+    path: 'tags',
+    canActivate: [authenticatedGuard],
+    loadComponent: () => import('./features/tags/tags.component').then((m) => m.TagsComponent),
+    title: 'Oznake',
+  },
+  {
     path: 'merchants',
     canActivate: [authenticatedGuard],
     loadComponent: () =>
