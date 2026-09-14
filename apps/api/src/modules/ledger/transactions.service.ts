@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import {
   allocate,
   DateError,
+  pathTo,
   instantForLocalNoon,
   localDate,
   money,
@@ -16,6 +17,7 @@ import {
 import { ApiError } from '../../common/filters/all-exceptions.filter';
 import { normalisePageSize, type CursorPage } from '../../graphql/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { transactionsToCsv } from './transactions.csv';
 import {
   CategorySource,
   TransactionKind,
@@ -87,6 +89,15 @@ export interface TransactionFilters {
  * Every balance, budget and insight in the product reads through here, so a bug in this file is a
  * bug in every number the user sees.
  */
+/**
+ * The most rows one CSV export will produce.
+ *
+ * docs/06 §10 rate-limits `EXPORT` at 3/day per household because it is a whole-table scan; a quota
+ * needs infrastructure that does not exist yet, so the cap is the guard. It is generous for a
+ * household ledger and small enough that generating the file in memory is safe.
+ */
+export const MAX_EXPORT_ROWS = 50_000;
+
 @Injectable()
 export class TransactionsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -100,26 +111,12 @@ export class TransactionsService {
 
     // Keyset on the UUIDv7 primary key: it is time-ordered, so `id desc` is newest-first and an
     // OFFSET page would shift under the client as rows arrive.
+    // One filter, one builder: the page and its `totalCount` used to be assembled separately, and
+    // the count quietly ignored the date range, so a date-filtered list read "8 transactions" above
+    // seven rows. Anything that filters Transactions goes through `buildWhere` now.
     const where = {
-      household_id: householdId,
-      deleted_at: null,
+      ...this.buildWhere(householdId, filters),
       ...(page.after ? { id: { lt: page.after } } : {}),
-      ...(filters.accountId ? { account_id: filters.accountId } : {}),
-      ...(filters.categoryId ? { category_id: filters.categoryId } : {}),
-      ...(filters.kind ? { kind: filters.kind } : {}),
-      ...(filters.status ? { status: filters.status } : {}),
-      ...(filters.needsReview !== undefined ? { needs_review: filters.needsReview } : {}),
-      ...(filters.from || filters.to
-        ? {
-            occurred_local_date: {
-              ...(filters.from ? { gte: new Date(filters.from) } : {}),
-              ...(filters.to ? { lte: new Date(filters.to) } : {}),
-            },
-          }
-        : {}),
-      ...(filters.search
-        ? { description: { contains: filters.search, mode: 'insensitive' as const } }
-        : {}),
     };
 
     const [rows, totalCount] = await Promise.all([
@@ -130,7 +127,7 @@ export class TransactionsService {
         include: { transaction_splits: true },
       }),
       this.prisma.client.transactions.count({
-        where: { household_id: householdId, deleted_at: null, ...this.scopeOnly(filters) },
+        where: this.buildWhere(householdId, filters),
       }),
     ]);
 
@@ -138,6 +135,87 @@ export class TransactionsService {
     const items = (hasNextPage ? rows.slice(0, take) : rows).map((row) => this.toModel(row));
 
     return { items, totalCount, hasNextPage, endCursor: items.at(-1)?.id ?? null };
+  }
+
+  /**
+   * The filtered Transactions as CSV (F-25).
+   *
+   * **Oldest first**, unlike the list: a CSV is a document to open in a spreadsheet, and reading a
+   * ledger backwards to reconcile it is work the export should not create.
+   *
+   * The row cap is a refusal rather than a truncation. A file that silently stops at 50,000 rows is
+   * indistinguishable from a complete one once it is in a spreadsheet, and every total taken from it
+   * would be quietly short. Naming the count and the cap tells the user exactly how to proceed.
+   *
+   * Not rate-limited: docs/06 §10 sets an `exports_monthly` quota, which needs the quota
+   * infrastructure that does not exist yet. The cap is what bounds the work today.
+   */
+  async exportCsv(
+    householdId: string,
+    filters: TransactionFilters,
+  ): Promise<{ csv: string; rowCount: number; totalMatching: number }> {
+    const where = this.buildWhere(householdId, filters);
+
+    const totalMatching = await this.prisma.client.transactions.count({ where });
+    if (totalMatching > MAX_EXPORT_ROWS) {
+      throw new ApiError(
+        'VALIDATION_FAILED',
+        `That filter matches ${totalMatching} transactions, which is more than the ` +
+          `${MAX_EXPORT_ROWS} an export can hold. Narrow the date range and export again.`,
+      );
+    }
+
+    const [rows, categories] = await Promise.all([
+      this.prisma.client.transactions.findMany({
+        where,
+        orderBy: [{ occurred_local_date: 'asc' }, { id: 'asc' }],
+        include: { transaction_splits: true, accounts: true, categories: true },
+      }),
+      // Few enough to hold in memory, and the only way to render a full breadcrumb: a category's
+      // path is a walk up its ancestors, which Prisma cannot include recursively.
+      this.prisma.client.categories.findMany({
+        where: { household_id: householdId, deleted_at: null },
+        select: { id: true, name: true, parent_id: true },
+      }),
+    ]);
+
+    const csv = transactionsToCsv(
+      rows.map((row) => ({
+        occurredLocalDate: row.occurred_local_date.toISOString().slice(0, 10),
+        occurredAt: row.occurred_at,
+        kind: row.kind,
+        status: row.status,
+        amount: money(row.amount_minor, row.currency),
+        description: row.description,
+        categoryPath: row.categories ? this.categoryPath(categories, row.categories.id) : null,
+        splits: row.transaction_splits.map((split) => ({
+          categoryPath: this.categoryPath(categories, split.category_id),
+          amount: money(split.amount_minor, row.currency),
+        })),
+        accountName: row.accounts.name,
+        note: row.note,
+        needsReview: row.needs_review,
+        source: row.source,
+        id: row.id,
+      })),
+    );
+
+    return { csv, rowCount: rows.length, totalMatching };
+  }
+
+  /** A Category's breadcrumb by name, from the root down. */
+  private categoryPath(
+    categories: readonly { id: string; name: string; parent_id: string | null }[],
+    id: string,
+  ): string {
+    const byId = new Map(categories.map((category) => [category.id, category]));
+    return pathTo(
+      categories.map((category) => ({ id: category.id, parentId: category.parent_id })),
+      id,
+    )
+      .map((ancestorId) => byId.get(ancestorId)?.name ?? '')
+      .filter((name) => name !== '')
+      .join(' › ');
   }
 
   async getById(householdId: string, id: string): Promise<TransactionModel> {
@@ -474,14 +552,51 @@ export class TransactionsService {
   }
 
   /** The filter subset used for the total count, so a page and its total agree. */
-  private scopeOnly(filters: TransactionFilters): Record<string, unknown> {
+  /**
+   * The single definition of "which Transactions does this filter select".
+   *
+   * `list` uses it for both the page and the `totalCount`, and the CSV export uses it too — so an
+   * export can never contain a different set from the screen that offered it. Every predicate must
+   * live here, because a predicate added to only one caller is exactly how the two drift apart.
+   */
+  /**
+   * A date filter as a `Date`, or `VALIDATION_FAILED`.
+   *
+   * The GraphQL `LocalDate` scalar guarantees a well-formed day, but the CSV export is a REST route
+   * and a query string is just text: `?from=notadate` reached Prisma as an Invalid Date and surfaced
+   * as an INTERNAL 500, which tells the caller nothing and looks like a server fault. Validating here
+   * rather than in the controller keeps the guarantee at the one place every filter passes through.
+   */
+  private calendarBound(value: string, field: string): Date {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(value))) {
+      throw new ApiError('VALIDATION_FAILED', `"${field}" must be a date as YYYY-MM-DD.`);
+    }
+    return new Date(value);
+  }
+
+  private buildWhere(
+    householdId: string,
+    filters: TransactionFilters,
+  ): Record<string, unknown> {
     return {
+      household_id: householdId,
+      deleted_at: null,
       ...(filters.accountId ? { account_id: filters.accountId } : {}),
       ...(filters.categoryId ? { category_id: filters.categoryId } : {}),
       ...(filters.kind ? { kind: filters.kind } : {}),
       ...(filters.status ? { status: filters.status } : {}),
       ...(filters.needsReview !== undefined ? { needs_review: filters.needsReview } : {}),
-      ...(filters.search ? { description: { contains: filters.search, mode: 'insensitive' as const } } : {}),
+      ...(filters.from || filters.to
+        ? {
+            occurred_local_date: {
+              ...(filters.from ? { gte: this.calendarBound(filters.from, 'from') } : {}),
+              ...(filters.to ? { lte: this.calendarBound(filters.to, 'to') } : {}),
+            },
+          }
+        : {}),
+      ...(filters.search
+        ? { description: { contains: filters.search, mode: 'insensitive' as const } }
+        : {}),
     };
   }
 

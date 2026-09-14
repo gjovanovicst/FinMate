@@ -2640,6 +2640,7 @@ REST CRUD.
 | `GET` | `/health` | **None** | Liveness: process is up |
 | `GET` | `/health/ready` | **None** (internal network only) | Readiness: Postgres, Redis, migrations current |
 | `GET` | `/metrics` | Bearer with `metrics:read` scope, or internal-only basic auth | Prometheus scrape |
+| `GET` | `/export/transactions.csv` | Session cookie, role ≥ `VIEWER` | **Implemented.** Filtered Transactions as a CSV download (F-25) |
 
 ### 9.2 `POST /v1/files/presign`
 
@@ -2740,6 +2741,51 @@ Content-Type: application/json
 | `GET /health/ready` | none, bound to the internal network | `200 {"status":"ready","checks":{"postgres":"ok","redis":"ok","migrations":"ok"}}` | `503` with the failing check named | Readiness gates traffic. Redis reported `degraded` (not failed) when unreachable, because [05 §11](05-architecture.md) specifies reads fall through to Postgres. |
 | `GET /metrics` | `metrics:read` bearer or internal basic auth | Prometheus text format | `401` | Exposes `capture_parse_duration_seconds`, `classification_layer_total`, `classification_confidence_bucket_total`, `correction_rate`, `ai_cost_micros_total`, `sync_pending_age_seconds`, `ledger_balance_drift` ([05 §10](05-architecture.md)). Never exposed publicly. |
 
+### 9.7 `GET /export/transactions.csv` — implemented
+
+The filtered Transaction list as a downloadable CSV. This is a **file download**, which the transport
+table in §1.1 already assigns to REST, not a REST mirror of a GraphQL read.
+
+```http
+GET /export/transactions.csv?from=2026-09-01&to=2026-09-30&kind=EXPENSE HTTP/1.1
+Cookie: fm_session=…
+```
+
+Query parameters are exactly the filter names the `transactions` query takes — `accountId`,
+`categoryId`, `kind`, `status`, `from`, `to`, `search`, `needsReview` — and resolve through the same
+filter builder, so the file contains precisely the rows the screen showed. Paging parameters are not
+accepted: an export is the whole filtered set, not one page of it.
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/csv; charset=utf-8
+Content-Disposition: attachment; filename="finmate-transactions-2026-09-01_2026-09-30.csv"
+x-export-rows: 214
+```
+
+- Rows are **oldest first**, the natural reading order of a ledger, unlike the list's newest-first.
+- The body is RFC 4180 CSV with a **UTF-8 BOM**, so Excel in a Serbian locale does not mangle `č`/`ć`.
+- Money appears twice per row: `amount_minor` (the exact integer, ADR-003) and `amount` (major units,
+  dot decimal). A divided Transaction's parts are in the `splits` column as `path:amountMinor` pairs,
+  because a Transaction with Splits carries no category of its own and dropping them would make the
+  export incomplete in a way the user could not detect.
+- An invalid `from`/`to` is `VALIDATION_FAILED` (400), not an `INTERNAL` 500.
+- Above **50 000** matching rows the request is refused with `VALIDATION_FAILED` naming the count.
+  Truncating would produce a file indistinguishable from a complete one, and every total taken from it
+  would be quietly short.
+
+> **Relationship to §5.11 `exportData`.** They are different operations with different jobs.
+> `exportData` is the GDPR portability surface: asynchronous, whole-household, every table, CSV **and**
+> JSON, delivered by notification and email — it needs the worker and is **not implemented**.
+> This route is the everyday "take my filtered view away" action, synchronous and bounded.
+> Nothing here should grow into §5.11; that one belongs on the job queue.
+
+> **Implementation deviation.** The route is unprefixed rather than under `/v1`, consistent with the
+> auth surface (§2, "Implementation deviation"). Versioning is added when the first third-party
+> consumer exists, not before.
+>
+> Also not yet implemented for this route: the `exports_monthly` quota (§10) and the `EXPORT`
+> rate limit. The row cap is what bounds the work today.
 ---
 
 ## 10. Error model

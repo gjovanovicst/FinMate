@@ -164,26 +164,72 @@ export function hasActiveFilters(filters: TransactionFilters): boolean {
 }
 
 /**
- * Filters to GraphQL variables.
+ * The filter as a flat set of parameters.
+ *
+ * **One definition, two transports.** The list sends these as GraphQL variables and the CSV export
+ * sends them as a query string, so that the file always contains what the screen showed. Writing the
+ * mapping twice is how an export quietly starts including rows the filter excluded.
  *
  * Absent and empty are different things to the API: an omitted `search` means "no filter", while
  * `''` would be a substring match against the empty string. So every blank field is dropped rather
- * than sent as null-ish filler, which also keeps the variables object readable in a log.
+ * than sent as null-ish filler.
  */
+export function filterParams(filters: TransactionFilters): Record<string, string | boolean> {
+  const params: Record<string, string | boolean> = {};
+  if (filters.search.trim()) params['search'] = filters.search.trim();
+  if (filters.kind) params['kind'] = filters.kind;
+  if (filters.categoryId) params['categoryId'] = filters.categoryId;
+  if (filters.accountId) params['accountId'] = filters.accountId;
+  if (filters.from) params['from'] = filters.from;
+  if (filters.to) params['to'] = filters.to;
+  if (filters.needsReviewOnly) params['needsReview'] = true;
+  return params;
+}
+
+/** The filter as GraphQL variables, plus paging. */
 export function toQueryVariables(
   filters: TransactionFilters,
   options: { readonly first?: number; readonly after?: string | null } = {},
 ): Record<string, unknown> {
-  const variables: Record<string, unknown> = { first: options.first ?? PAGE_SIZE };
-  if (options.after) variables['after'] = options.after;
-  if (filters.search.trim()) variables['search'] = filters.search.trim();
-  if (filters.kind) variables['kind'] = filters.kind;
-  if (filters.categoryId) variables['categoryId'] = filters.categoryId;
-  if (filters.accountId) variables['accountId'] = filters.accountId;
-  if (filters.from) variables['from'] = filters.from;
-  if (filters.to) variables['to'] = filters.to;
-  if (filters.needsReviewOnly) variables['needsReview'] = true;
-  return variables;
+  return {
+    first: options.first ?? PAGE_SIZE,
+    ...(options.after ? { after: options.after } : {}),
+    ...filterParams(filters),
+  };
+}
+
+/**
+ * The download URL for the current filter.
+ *
+ * `/api` is the browser-facing prefix; the dev proxy and the deployed origin strip it before the API
+ * sees it (docs/06). Building it from `filterParams` is what keeps the export equal to the view.
+ */
+export function exportUrl(filters: TransactionFilters): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(filterParams(filters))) {
+    search.set(key, String(value));
+  }
+  const query = search.toString();
+  return `/api/export/transactions.csv${query ? `?${query}` : ''}`;
+}
+
+/**
+ * The filename the API chose, from `Content-Disposition`.
+ *
+ * Returns null rather than a guess when the header is missing or unparseable, so the caller decides
+ * the fallback instead of this function inventing a name.
+ */
+export function filenameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header);
+  const name = match?.[1]?.trim();
+  if (!name) return null;
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    // A malformed percent-escape is not worth failing a download over.
+    return name;
+  }
 }
 
 /** One screenful. Small enough to keep the first paint quick, large enough to fill a phone twice. */

@@ -603,6 +603,8 @@ const CATEGORY_USAGE = /* GraphQL */ `
       .detail__title {
         margin: 0;
         font-size: var(--text-lg);
+        /* A deep breadcrumb is one long unbreakable run of text once joined with separators. */
+        overflow-wrap: anywhere;
       }
       .detail__form {
         display: grid;
@@ -699,6 +701,7 @@ const CATEGORY_USAGE = /* GraphQL */ `
         align-items: center;
         gap: var(--space-1);
         inline-size: fit-content;
+        max-inline-size: 100%;
         padding: var(--space-1) var(--space-2);
         font-size: var(--text-sm);
         border: 1px solid var(--color-border);
@@ -710,6 +713,9 @@ const CATEGORY_USAGE = /* GraphQL */ `
       }
       .chip__mark {
         font-weight: 700;
+      }
+      .chip__word {
+        overflow-wrap: anywhere;
       }
       .chip__mode {
         color: var(--color-text-subtle);

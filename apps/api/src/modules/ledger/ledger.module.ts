@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { TransactionsExportController } from './transactions-export.controller';
 import { TransactionsResolver } from './transactions.resolver';
 import { TransactionsService } from './transactions.service';
 
@@ -11,6 +12,7 @@ import { TransactionsService } from './transactions.service';
  * invariants in docs/03 §5 have exactly one place to be enforced.
  */
 @Module({
+  controllers: [TransactionsExportController],
   providers: [TransactionsResolver, TransactionsService],
   exports: [TransactionsService],
 })

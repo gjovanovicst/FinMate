@@ -1,5 +1,7 @@
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { firstValueFrom } from 'rxjs';
 import { RouterLink } from '@angular/router';
 
 import { equalsMoney, parseAmount, type Money } from '@finmate/domain';
@@ -17,6 +19,8 @@ import {
 import {
   PAGE_SIZE,
   emptyFilters,
+  exportUrl,
+  filenameFromContentDisposition,
   groupByDay,
   hasActiveFilters,
   localNoonInstant,
@@ -355,6 +359,18 @@ const SEARCH_DEBOUNCE_MS = 300;
             {{ i18n.t('transactions.clearFilters') }}
           </button>
         }
+
+        <!-- The count is the promise: the file contains exactly the rows the filter matched, not the
+             rows currently paged in. Hidden at zero, because an empty export helps nobody. -->
+        @if (totalCount() > 0) {
+          <button class="link" type="button" [disabled]="exporting()" (click)="exportCsv()">
+            {{
+              exporting()
+                ? i18n.t('transactions.exporting')
+                : i18n.t('transactions.exportCount', { count: totalCount() })
+            }}
+          </button>
+        }
       </section>
 
       @if (filtersOpen()) {
@@ -633,6 +649,16 @@ const SEARCH_DEBOUNCE_MS = 300;
         gap: var(--space-2);
         align-items: center;
       }
+      /* Below this the category select is too narrow to read ("Hrana › Namirnice" truncates to a
+         few characters), so the row becomes two: the category on its own line, then amount + remove. */
+      @media (max-width: 559px) {
+        .splits__row {
+          grid-template-columns: 1fr auto;
+        }
+        .splits__row > .field__input:first-child {
+          grid-column: 1 / -1;
+        }
+      }
       .splits__actions {
         display: flex;
         flex-wrap: wrap;
@@ -817,6 +843,7 @@ export class TransactionsComponent {
   readonly loading = signal(true);
   readonly loadingMore = signal(false);
   readonly creating = signal(false);
+  readonly exporting = signal(false);
   readonly error = signal<string | null>(null);
   readonly editing = signal<TransactionRow | null>(null);
   readonly splitMode = signal(false);
@@ -840,6 +867,8 @@ export class TransactionsComponent {
     accountId: ['', [Validators.required]],
     occurredOn: [new Date().toISOString().slice(0, 10), [Validators.required]],
   });
+
+  private readonly http = inject(HttpClient);
 
   readonly noAccounts = computed(() => !this.loading() && this.accounts().length === 0);
   readonly hasFilters = computed(() => hasActiveFilters(this.filters()));
@@ -1000,6 +1029,36 @@ export class TransactionsComponent {
   clearFilters(): void {
     this.filters.set(emptyFilters());
     void this.reload();
+  }
+
+  /**
+   * Download the filtered Transactions as CSV (F-25).
+   *
+   * Fetched through `HttpClient` rather than a plain link so failures land in the screen's error
+   * banner: a bare `href` would hand the user a downloaded file containing the API's JSON error,
+   * which looks like a corrupt export rather than a message. Going through the client also means the
+   * request carries the session cookies via the credentials interceptor, like every other call.
+   */
+  async exportCsv(): Promise<void> {
+    if (this.exporting()) return;
+    this.exporting.set(true);
+    this.error.set(null);
+    try {
+      const response = await firstValueFrom(
+        this.http.get(exportUrl(this.filters()), { observe: 'response', responseType: 'text' }),
+      );
+
+      const filename =
+        filenameFromContentDisposition(response.headers.get('content-disposition')) ??
+        'transactions.csv';
+      saveTextFile(response.body ?? '', filename);
+    } catch (error) {
+      // A blob-free `text` response means a JSON error body still arrives as readable text, so the
+      // typed code survives instead of becoming a Blob the banner cannot interpret.
+      this.error.set(this.errors.for(fromHttpError(error)));
+    } finally {
+      this.exporting.set(false);
+    }
   }
 
   // -------------------------------------------------------------------------------------------
@@ -1169,4 +1228,33 @@ export class TransactionsComponent {
 
 function isMoney(value: Money | null): value is Money {
   return value !== null;
+}
+
+/**
+ * Re-shape an `HttpErrorResponse` carrying the API's JSON error so `ErrorMessageService` can read it.
+ *
+ * The API returns `{ error: { code, message } }`, and the service already knows how to pull a code
+ * out of that nesting; it was written for responses parsed as JSON. With a `text` response type the
+ * body arrives as a string, so it is parsed here rather than teaching the service about transports.
+ */
+function fromHttpError(error: unknown): unknown {
+  if (!(error instanceof HttpErrorResponse)) return error;
+  if (typeof error.error !== 'string') return error;
+  try {
+    return { error: JSON.parse(error.error) as unknown };
+  } catch {
+    return error;
+  }
+}
+
+/** Hand the browser a file. The object URL is revoked, or the blob is never collected. */
+function saveTextFile(contents: string, filename: string): void {
+  const url = URL.createObjectURL(new Blob([contents], { type: 'text/csv;charset=utf-8' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }

@@ -21,10 +21,11 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 | Transaction list: filters, search, day grouping, cursor paging (1.2.5) | **Done** — UI only; the API already had every filter |
 | Transaction detail/edit sheet (1.2.6) | **Done** — edit + delete, optimistic concurrency; **splits are create-only** (`updateTransaction` accepts no splits) |
 | Budgets CRUD (1.3.1) | **Done** — `upsertBudget` / `deleteBudget` / `budgets` with period consumption and pace |
-| Merchants/counterparties/tags (1.2.1–1.2.3), CSV export (1.3.4) | **Not started** |
+| CSV export (1.3.4, F-25) | **Done** — `GET /export/transactions.csv`, filtered, oldest-first. **CSV import is not started** |
+| Merchants/counterparties/tags (1.2.1–1.2.3) | **Not started** |
 | **Phase 1 UI** | **Done** — transaction entry, filtered/paginated list, edit sheet, budgets, dashboard tiles; Accounts from Phase 0 |
 | Category tree editor + keyword editor (1.2.4, F-02/F-03) | **Done** — rename, reparent, reorder, delete-with-reassign, include/exclude keywords. **Drag-and-drop not implemented**; the Parent select and Alt+arrows cover reparenting |
-| Responsive/keyboard pass (1.3.5) | **Not started** — needs a human at 320/768/1280 px; no automated check exists |
+| Responsive pass (1.3.5) | **Partially done** — no fixed pixel widths and every multi-column grid is behind a `min-width` query; five known 320 px hazards fixed (nav overflow, hero amount, split-editor row, budget card, keyword chips). **Still needs a human at 320/768/1280 px** |
 
 | What | State |
 |---|---|
@@ -41,9 +42,9 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 | CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → lint → typecheck → test → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
 | Web (0.8) | Angular 22, **zoneless** + signals, ADR-006. Responsive shell (bottom nav → sidebar at 1024px), design tokens (`apps/web/src/styles.css`), `fm-money` as the only Money renderer, auth pages, Accounts consuming GraphQL |
 | i18n | `core/i18n/`: **English primary**, Serbian latin + cyrillic. Runtime catalogue (no rebuild), `TranslationKey` derived from `en`, `sr-Cyrl` generated at runtime. Language switcher in the shell |
-| Tests | **362 pass** — 191 API + 97 domain + 74 web |
+| Tests | **381 pass** — 204 API + 97 domain + 80 web |
 | Not yet built | worker jobs; production build for apps/api (its own decision); PWA service worker (Phase 4) |
-| Web screens | `/` dashboard, `/transactions` (filter + edit), `/budgets`, `/categories`, `/accounts`, sign-in/up |
+| Web screens | `/` dashboard, `/transactions` (filter + edit + CSV export), `/budgets`, `/categories`, `/accounts`, sign-in/up |
 | Navigation | 4 primary destinations in the bottom bar plus **More** (≥1024 px the sidebar lists all 5); `nav.more` is the overflow control |
 
 ```bash
@@ -59,7 +60,7 @@ nx run web:build          # production bundle
 **The browser talks to `/api/*`; the dev proxy strips the prefix** before forwarding, because the
 API serves `/auth/*` and `/graphql` without one (docs/06). Changing the prefix on one side only
 produces a 404 that looks like an auth failure.
-Verified working: lint 9/9, typecheck 9/9, 362 tests, `web:build`, GraphQL over HTTP through the
+Verified working: lint 9/9, typecheck 9/9, 381 tests, `web:build`, GraphQL over HTTP through the
 browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, and `prisma migrate diff`
 reporting no drift.
 
@@ -229,9 +230,16 @@ A change is not done until (doc 09 §8):
   workspace-relative binary path with `cwd: {projectRoot}` yields `ng: not found`.
 - **`nx run web:typecheck` does NOT check templates; `nx run web:build` does.** `tsc --noEmit` skips
   Angular's template type-checker, so a dynamic `i18n.t('x.' + value)` (not assignable to
-  `TranslationKey`), a required `input()` read in a constructor (NG8118), or a backtick inside a
-  template literal — which terminates the string and produces nonsense errors hundreds of lines away
-  — all pass `typecheck` and fail `build`. Run `web:build` before believing a UI change is green.
+  `TranslationKey`) or a required `input()` read in a constructor (NG8118) pass `typecheck` and fail
+  `build`. Run `web:build` before believing a UI change is green.
+- **Never put a backtick inside a `template:` or `styles:` literal — including inside a comment.**
+  Both are JS template literals, so a backtick *terminates the string* and the remainder is parsed as
+  code. The error names neither the file nor the real problem: `Failed to resolve styles at position
+  N to a string` / `Failed to resolve template at position N`, usually surfacing as
+  `Angular compilation initialization failed`. It has cost real time three times, twice from a
+  backtick in a CSS comment documenting a property. Write CSS/HTML comment prose without them. A scan
+  that finds them is two lines of Python: locate `styles: [\`` / `template: \``, then the next
+  closing delimiter, and look for an interior backtick.
 - **A date-only write must send `occurredLocalDate`, never an invented instant.** The server derives
   `occurred_local_date` from the instant in the *Household's* timezone, so `T12:00:00Z` is the 15th
   for a Household in `Pacific/Auckland` (UTC+13) — and the wrong *month* at a boundary, silently
@@ -240,6 +248,14 @@ A change is not done until (doc 09 §8):
   lower-cases and strips accents (`septička` → `septicka`), matching how the pipeline normalises
   transaction text — which is correct, but means the chip shown back is not the input. The editor
   says so next to the field. Do not "fix" the chip to echo the input; that would break matching.
+- **Every Transaction filter goes through one builder (`buildWhere`).** The page and its `totalCount`
+  used to be assembled separately and the count silently ignored the date range, so a date-filtered
+  list read "8 transactions" above seven rows. The CSV export uses the same builder, so the file
+  always matches the screen. Never add a predicate to only one caller.
+- **`GET /export/transactions.csv` is REST on purpose** (docs/06 §9.7): a download is a navigation,
+  not a fetch. It is a *browser* URL under `/api/...`; the client fetches it through `HttpClient` so a
+  failure lands in the error banner instead of downloading a file full of JSON. Distinct from the
+  async whole-household `exportData` (docs/06 §5.11), which needs the worker and is not built.
 - **Category deletion is a refusal, not a cascade.** `deleteCategory` throws `CONFLICT` while
   Transactions, Splits or subcategories still reference the row (I-12); the UI turns that into a
   reassign-target picker. Passing `reassignToId` moves children, Transactions **and** Splits. The

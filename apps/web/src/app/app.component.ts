@@ -163,15 +163,31 @@ interface NavItem {
         padding: 0;
         list-style: none;
       }
+      /* flex: 1 1 0 with min-inline-size: 0 is what stops five items overflowing a 320 px bar:
+         flex items refuse to shrink below their content width by default, so one long word
+         ("Transactions") would push the whole page into horizontal scroll. */
+      .nav__item {
+        flex: 1 1 0;
+        min-inline-size: 0;
+      }
       .nav__link {
         display: flex;
         flex-direction: column;
         align-items: center;
         gap: var(--space-1);
-        padding: var(--space-2) var(--space-3);
+        padding: var(--space-2) var(--space-1);
         color: var(--color-text-muted);
         font-size: var(--text-xs);
         text-decoration: none;
+        min-inline-size: 0;
+        inline-size: 100%;
+      }
+      .nav__label {
+        text-align: center;
+        /* anywhere rather than break-word: only anywhere reduces the element's min-content
+           width, which is the number the flex algorithm actually respects. */
+        overflow-wrap: anywhere;
+        line-height: 1.15;
       }
       .nav__link--active {
         color: var(--color-primary);

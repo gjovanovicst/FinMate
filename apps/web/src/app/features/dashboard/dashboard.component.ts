@@ -168,9 +168,13 @@ const DASHBOARD_QUERY = /* GraphQL */ `
         font-size: var(--text-sm);
       }
       .hero__amount {
-        font-size: var(--text-3xl);
+        /* fm-money is nowrap on purpose, so the size has to give way instead: at 2.25rem a
+           value like "300.000,00 RSD" is wider than a 320 px screen's content box. */
+        font-size: clamp(1.5rem, 7vw, var(--text-3xl));
         font-weight: 700;
         line-height: var(--leading-tight);
+        /* A last resort for a value longer than the clamp can shrink for. */
+        overflow-wrap: anywhere;
       }
       .hero__meta {
         margin: var(--space-2) 0 0;

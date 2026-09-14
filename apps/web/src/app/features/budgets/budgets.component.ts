@@ -339,9 +339,13 @@ const DELETE_BUDGET = /* GraphQL */ `
         justify-content: space-between;
         gap: var(--space-4);
       }
+      .card__top > div {
+        min-inline-size: 0;
+      }
       .card__name {
         margin: 0;
         font-weight: 600;
+        overflow-wrap: anywhere;
       }
       .card__period {
         margin: var(--space-1) 0 0;

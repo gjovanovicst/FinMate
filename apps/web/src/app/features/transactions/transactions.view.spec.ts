@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { MoneyWire } from '../../shared/ui/money/money.component';
 import {
   emptyFilters,
+  exportUrl,
+  filenameFromContentDisposition,
   groupByDay,
   hasActiveFilters,
   localNoonInstant,
@@ -206,5 +208,59 @@ describe('localNoonInstant', () => {
 
   it('rejects a non-date', () => {
     expect(() => localNoonInstant('not-a-date')).toThrow();
+  });
+});
+
+describe('exportUrl', () => {
+  it('has no query string when nothing is filtered', () => {
+    expect(exportUrl(emptyFilters())).toBe('/api/export/transactions.csv');
+  });
+
+  it('encodes the same filters the list sends, so the file matches the screen', () => {
+    const url = exportUrl({
+      ...emptyFilters(),
+      search: ' lidl ',
+      kind: 'EXPENSE',
+      from: '2026-09-01',
+      to: '2026-09-30',
+      needsReviewOnly: true,
+    });
+    const query = new URLSearchParams(url.split('?')[1]);
+    expect(query.get('search')).toBe('lidl');
+    expect(query.get('kind')).toBe('EXPENSE');
+    expect(query.get('from')).toBe('2026-09-01');
+    expect(query.get('to')).toBe('2026-09-30');
+    expect(query.get('needsReview')).toBe('true');
+    // Paging must NOT leak into an export: it would cap the file at one page.
+    expect(query.has('first')).toBe(false);
+    expect(query.has('after')).toBe(false);
+  });
+
+  it('agrees with the GraphQL variables for the same filter', () => {
+    const filters = { ...emptyFilters(), kind: 'INCOME' as const, search: 'plata' };
+    const variables = toQueryVariables(filters);
+    const query = new URLSearchParams(exportUrl(filters).split('?')[1]);
+    for (const key of ['kind', 'search'] as const) {
+      expect(query.get(key)).toBe(String(variables[key]));
+    }
+  });
+});
+
+describe('filenameFromContentDisposition', () => {
+  it('extracts a quoted filename', () => {
+    expect(
+      filenameFromContentDisposition('attachment; filename="finmate-transactions-2026-09-14.csv"'),
+    ).toBe('finmate-transactions-2026-09-14.csv');
+  });
+
+  it('extracts an unquoted filename and an RFC 5987 one', () => {
+    expect(filenameFromContentDisposition('attachment; filename=x.csv')).toBe('x.csv');
+    expect(filenameFromContentDisposition("attachment; filename*=UTF-8''a%20b.csv")).toBe('a b.csv');
+  });
+
+  it('returns null when there is nothing to read, so the caller picks the fallback', () => {
+    expect(filenameFromContentDisposition(null)).toBeNull();
+    expect(filenameFromContentDisposition('attachment')).toBeNull();
+    expect(filenameFromContentDisposition('attachment; filename=""')).toBeNull();
   });
 });
