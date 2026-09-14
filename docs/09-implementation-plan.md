@@ -19,10 +19,16 @@ slips, the product is still usable. This inverts the usual AI-first failure mode
 | **2** | 6–8 | AI input | `Lidl 2000` works end-to-end, with rules, confidence and the learning loop |
 | **3** | 9–11 | Intelligence | Safe-to-spend, predictions, alerts, goals, and the assistant are live |
 | **4** | 12–14 | Receipts & mobile | Receipt itemisation and offline mobile capture work |
-| **5** | 15–16 | Hardening & beta | Security review passed, performance targets met, public beta launched |
-| **v2** | 17+ | Family, native, bank import | — |
+| **5** | 15–16 | Hardening & beta | Security review passed, performance targets met, **public beta launched** |
+| **6** | 17–20 | Post-beta stabilisation | Retention and unit economics confirmed → **GA** |
+| **v2** | 21+ | Family, native apps, bank import, multi-currency | — |
+| **v3+** | — | Growth: investments/net worth, coach, regional expansion | — |
 
-Total to public beta: **≈ 16 weeks / ~150 person-days**.
+Total to public beta: **≈ 16 weeks / ~150 person-days**. To GA: **≈ 20 weeks**.
+
+Sections 2–7 specify **Phases 0–5 in detail**. Phases 6, v2 and v3+ are **forecasts, not plans** —
+see **[§13](#13-roadmap-to-the-final-product)**, which consolidates the whole arc from zero to the
+final product and is explicit about which parts are specified and which are not.
 
 ---
 
@@ -328,3 +334,148 @@ If work starts tomorrow, this is the order:
 
 Day 10's demo is intentionally unglamorous. It is the point at which the project becomes real, and
 every later phase builds on it rather than replacing it.
+
+---
+
+## 13. Roadmap to the final product
+
+Sections 2–7 specify Phases 0–5. This section consolidates the **entire arc**, including the parts
+that are deliberately *not* planned yet — and is explicit about which is which. Read
+[§13.7](#137-specified-vs-forecast--read-before-treating-dates-as-commitments) before quoting any date
+here as a commitment.
+
+### 13.1 Milestones
+
+| # | Milestone | Reached at | The test that says we got there |
+|---|---|---|---|
+| **M0** | Walkable skeleton | end of Phase 0 | `pnpm dev` boots the stack; a new user reaches an authenticated shell; a tenant-less query throws |
+| **M1** | **Usable without AI** | end of Phase 1 | A full month of spending recorded manually, arithmetic provably correct. *The de-risking milestone.* |
+| **M2** | The wedge works | end of Phase 2 | `Lidl 2000, gorivo 3500, plata 150000` → 3 correct transactions, one confirm, ≤ 4 s; overconfident-wrong ≤ 1.5 % |
+| **M3** | Intelligent product | end of Phase 3 | Safe-to-spend, projections, alerts and the assistant all live and all computed by the backend |
+| **M4** | Complete v1 feature set | end of Phase 4 | Receipt itemisation reconciles; offline capture syncs without duplication; ≤ 5 s to log on a mid-range Android |
+| **M5** | **Public beta (1.0)** | end of Phase 5 | Every launch gate in [§7](#7-phase-5--hardening--beta-weeks-1516--14-pd) green, including the timed restore drill |
+| **M6** | **GA** | end of Phase 6 | Retention and economics confirmed on real cohorts (see §13.3) |
+| **M7** | v2 | §13.4 | Household sharing, and whichever native/bank triggers have fired |
+| **M8** | v3+ | §13.5 | Growth surface, on validated demand |
+
+### 13.2 To public beta — specified
+
+The detailed plan lives in §2–§7. Summary:
+
+| Phase | Weeks | pd | Goal | Gate |
+|---|---|---|---|---|
+| **0** Foundations | 1–2 | ~14 | Remove every reason to decide architecture under pressure | Tenant-less query throws; CI deploys staging |
+| **1** Manual core | 3–5 | ~32 | A correct, boring, **fully usable app with no AI** | Correct arithmetic; 320 px touch + keyboard-only |
+| **2** AI input | 6–8 | ~34 | The wedge: NL capture, rules, confidence, learning loop | Overconfident-wrong ≤ 1.5 %; capture survives AI outage |
+| **3** Intelligence | 9–11 | ~30 | Insights, alerts, goals, assistant | No LLM-computed figure; notifications deduped |
+| **4** Receipts & mobile | 12–14 | ~28 | Itemised receipts + offline mobile capture | Receipt reconciles; airplane-mode capture syncs |
+| **5** Hardening & beta | 15–16 | ~14 | Ship it safely | All launch gates; timed restore rehearsal |
+
+**≈ 16 weeks / ~150 person-days to public beta.**
+
+### 13.3 Phase 6 — Post-beta stabilisation (weeks 17–20)
+
+**Deliberately unspecified.** Real users find what the plan did not. Writing detailed task lists for
+this phase now would be fiction — its content *is* whatever the beta teaches us.
+
+What is known is the **shape** of the work:
+
+| Workstream | What it is |
+|---|---|
+| Accuracy tuning on real corrections | The regression slice is built from failures and starts near 0 % accuracy by construction ([10 §5.3](10-testing-and-quality.md)). This is where the learning loop proves it compounds. |
+| Onboarding funnel fixes | The dominant risk ([R-01](14-decisions-and-risks.md)) is measured here rather than assumed away. |
+| Cost re-basing | Replace modelled unit economics with observed usage ([12 §4](12-monetization-and-pricing.md)); re-check the free-tier quotas against reality. |
+| Support & triage tooling | Runbooks get exercised for real; the first genuine incident response. |
+| Performance on real data | Query plans and indexes against real household shapes, not synthetic presets. |
+| The rename | If the name decision (ADR-014) chose something other than the placeholder, it lands here under the Phase 5 plan. |
+
+**GA is a metrics gate, not a calendar date.** All must hold
+([00](00-executive-summary.md#success-metrics)):
+
+- D7 ≥ 45 % and **D30 ≥ 25 %** retention
+- **AI-parse acceptance ≥ 85 %** by week 4 per Household
+- Categorisation correction rate **falling month over month** — the moat signal
+- Median time-to-log ≤ 4 s; natural-language share of entries ≥ 60 %
+- Crash-free sessions ≥ 99.5 %; p95 API ≤ 300 ms
+- Cost per active Household within plan margin at *observed* usage
+- No unresolved P0/P1
+
+If retention misses, **fix retention — do not start v2.** Shipping v2 features onto a leaking bucket is
+the most common way products in this category die.
+
+### 13.4 v2 — additive, needs its own planning
+
+Every item below is already deferred in [14 Part 4](14-decisions-and-risks.md) and
+[01 §3](01-product-requirements.md#3-feature-catalogue). **None is planned in detail**, and none should
+start before GA.
+
+| Item | Why it is v2, not v1 | Effort | Trigger |
+|---|---|---|---|
+| **Household sharing UI** (`F-29`) | The schema, tenancy and role model already support it ([ADR-008](14-decisions-and-risks.md)) — this is additive UI plus permission-testing surface, not a migration. Deliberately kept out of v1 so the core loop is proven first. | 2–3 wk | GA reached |
+| **Native apps via Capacitor** | The PWA covers v1. A shell adds store presence, native push and reliable camera — at the cost of store review latency and release process. | 3–5 wk | Any of the eight measurable triggers **T1–T8** firing ([07](07-platform-strategy-mobile-desktop.md)) |
+| **Bank / Open Banking import** (`F-33`) | Not practically available for Serbian retail banking. Would consume an entire phase for uncertain coverage. | 3–6 wk | A provider offering real RS coverage |
+| **Multi-currency ledger** | Forces an FX policy, historical rates and rounding rules into every balance, budget and projection ([ADR-011](14-decisions-and-risks.md)). The columns exist so it is a feature, not a migration. | 2–3 wk | Measured demand from a real cohort |
+| **Public API / integrations** | No validated demand. | 2–4 wk | On request |
+| **Passkeys / TOTP 2FA** | Password + refresh rotation is sufficient for v1; both add support burden. | 1–2 wk | Login friction in support data, or an enterprise ask |
+| **Row-Level Security as a 4th tenancy layer** | Not needed at beta scale. | 2–3 d | Before any enterprise conversation |
+
+### 13.5 v3+ — unspecified
+
+Listed for completeness, not planned: investments and net worth, an AI financial coach beyond the
+constrained assistant, regional expansion (BiH / Montenegro / Croatia — a localisation exercise, not a
+marketing decision), possibly SOC 2 if enterprise interest materialises.
+
+### 13.6 Decision gates by phase
+
+These are moments where work **stops** pending a human decision. Each is an open question in
+[14 Part 3](14-decisions-and-risks.md).
+
+| Gate | Decision | Owner | Deadline |
+|---|---|---|---|
+| Before Phase 0 | Mobile route confirmed as PWA-first (Q-2) | Product + eng | Phase 0 |
+| Phase 2.2 | Approved AI providers and regions — **EEA-only or local** (Q-4) | Eng lead | Phase 2.2 |
+| Phase 2.1 | Golden-dataset sourcing and consent rules (Q-6) | Eng + legal | Phase 2.1 |
+| **End of Phase 3** | **Product name** (ADR-014, Q-1) — so the rename lands in Phase 5 | Product owner | End of Phase 3 |
+| Phase 5 | Hosting region / data residency (Q-7) | Eng lead | Phase 5 |
+| Phase 5.6 | Free-tier quotas validated against beta usage (Q-8) | Product owner | Phase 5.6 |
+| Phase 5 | Target market: Serbia only, or regional (Q-3) | Product owner | Phase 5 |
+
+### 13.7 Specified vs forecast — read before treating dates as commitments
+
+| Range | Status | Confidence |
+|---|---|---|
+| Phases 0–5 (§2–§7) | **Specified** — per-task estimates, exit criteria, DoD | High on *scope*; ±25 % on calendar |
+| Phase 6 (§13.3) | **Shape only** — workstreams and a metrics gate | Low on detail, high on the gate |
+| v2 (§13.4) | **Deferred list** with effort ranges and triggers | Order-of-magnitude only |
+| v3+ (§13.5) | **Names only** | None |
+
+Two systemic caveats:
+
+1. **The 16-week figure assumes 1–2 engineers working steadily.** With one engineer, expect 18–20 weeks.
+   Phase 2 additionally reserves ~20 % unallocated capacity that *will* be consumed by Serbian parser
+   edge cases — planning it fully booked would guarantee a slip.
+2. **Everything after Phase 5 is a forecast, and Phase 6 cannot honestly be more than a shape.** The
+   defensible commitments are M1 (a correct manual app) and M5 (the launch gates). If a date and a gate
+   conflict, the gate wins.
+
+### 13.8 Timeline at a glance
+
+```text
+        wk 1-2     3-5        6-8        9-11       12-14      15-16      17-20        21+
+       ┌────────┬──────────┬──────────┬──────────┬──────────┬──────────┬───────────┬──────────►
+       │ Ph 0   │ Ph 1     │ Ph 2     │ Ph 3     │ Ph 4     │ Ph 5     │ Ph 6      │ v2 / v3+
+       │ setup  │ manual   │ AI input │ intel    │ receipts │ beta     │ GA        │ growth
+       └────────┴──────────┴──────────┴──────────┴──────────┴──────────┴───────────┴──────────►
+          M0         M1          M2        M3         M4        M5         M6          M7/M8
+       skeleton   usable     wedge      smart     complete   PUBLIC     GA
+                  w/o AI     works      product   v1         BETA
+                             ▲                                            ▲
+                    the moat starts compounding              retention decides whether v2 happens
+```
+
+**Critical path** ([§9](#9-critical-path-and-risk-ordered-sequencing)):
+`schema → ledger → budgets/calculators → parser → rules → pipeline → capture UX → learning loop`
+
+The three highest-uncertainty items on it — the Serbian parser, rules-engine conflict resolution, and
+narration correctness — are the reason Phase 2 carries slack and why `change-capture-pipeline` is a
+skill with its own gates.

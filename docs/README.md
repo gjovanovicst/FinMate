@@ -61,7 +61,7 @@ The core thesis, in one line:
 ### Delivery
 | # | Document | Contents |
 |---|---|---|
-| 09 | [Implementation plan](09-implementation-plan.md) | Phases, sprints, deliverables, definition of done, critical path, estimates, staffing |
+| 09 | [Implementation plan](09-implementation-plan.md) | Phases, sprints, deliverables, definition of done, critical path, estimates, staffing, and **§13 — the full roadmap from zero to the final product** |
 | 10 | [Testing & quality](10-testing-and-quality.md) | Test pyramid, AI evaluation harness, golden dataset, CI gates, release criteria |
 | 11 | [DevOps & observability](11-devops-and-observability.md) | Environments, Docker, CI/CD, migrations, monitoring, SLOs, cost controls |
 | 14 | [Decisions & risks](14-decisions-and-risks.md) | ADR log, risk register, open questions needing a human decision |

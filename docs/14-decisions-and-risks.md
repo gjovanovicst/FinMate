@@ -573,7 +573,9 @@ recommendation, an owner and a deadline; leaving them open past the deadline is 
 
 ## Part 4 — Decisions deliberately deferred
 
-Recorded so they are not silently made by accident during implementation.
+Recorded so they are not silently made by accident during implementation. **Sequencing and effort for
+each of these is consolidated in [09 §13.4](09-implementation-plan.md#134-v2--additive-needs-its-own-planning)**,
+which also records the trigger that would promote each one into a planned phase.
 
 | Deferred | Deliberately not decided because | Earliest revisit |
 |---|---|---|
