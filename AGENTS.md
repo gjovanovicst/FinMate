@@ -11,7 +11,7 @@ AI-first household budgeting app for **mobile and desktop**. The product promise
 **Machine state:** Node 24.20.0, pnpm 11.7.0, Go 1.27.0, **Docker 29.7.2 + Compose v5.5.0 (Linux
 containers)** on Ubuntu 20.04 LTS / WSL2.
 
-**Build state — Phase 0 tasks 0.1–0.7 and 0.9 are done. Task 0.8 (Angular shell) is NOT started.**
+**Build state — Phase 0 is COMPLETE (tasks 0.1–0.10). Phase 1 (manual core) has not started.**
 
 | What | State |
 |---|---|
@@ -26,18 +26,26 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 | Seed | `pnpm db:seed` — 38 categories, 134 keywords, 38 merchants; idempotent |
 | GraphQL (0.7) | Code-first; `Money` / `UUID` / `LocalDate` scalars; keyset pagination on the UUIDv7 key; `apps/api/schema.gql` generated as a reviewable artifact. First vertical slice: Accounts, with a backend-computed balance |
 | CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → lint → typecheck → test → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
-| Tests | **175 pass** (API, Vitest + `unplugin-swc`) + 15 (domain) |
-| Not yet built | **Angular shell (0.8)**, worker jobs, production build for apps/api |
+| Web (0.8) | Angular 22, **zoneless** + signals, ADR-006. Responsive shell (bottom nav → sidebar at 1024px), design tokens (`apps/web/src/styles.css`), `fm-money` as the only Money renderer, auth pages, Accounts consuming GraphQL |
+| Tests | **195 pass** — 175 API + 15 domain + 5 web |
+| Not yet built | worker jobs; production build for apps/api (its own decision); PWA service worker (Phase 4) |
 
 ```bash
 pnpm dev:infra            # start Postgres/Redis/MinIO/Mailhog
 pnpm db:migrate           # apply migrations
 pnpm db:seed              # seed global merchants (add SEED_HOUSEHOLD_ID for a full household)
-nx run api:serve          # boot the API on :3000
+nx run api:serve          # API on :3001   (see the port note below)
+nx run web:serve          # SPA on :4200, proxying /api and /graphql to the API
 pnpm lint / typecheck / test
+nx run web:build          # production bundle
 ```
-Verified working: `nx run-many -t lint` (9/9 clean), `nx run api:test` (175 pass), `nx run api:serve`,
-GraphQL over HTTP, and `prisma migrate diff` reporting no drift.
+
+**The browser talks to `/api/*`; the dev proxy strips the prefix** before forwarding, because the
+API serves `/auth/*` and `/graphql` without one (docs/06). Changing the prefix on one side only
+produces a 404 that looks like an auth failure.
+Verified working: lint 9/9, typecheck 9/9, 195 tests, `web:build`, GraphQL over HTTP through the
+browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, and `prisma migrate diff`
+reporting no drift.
 
 ---
 
@@ -110,12 +118,14 @@ pnpm typecheck
 pnpm db:migrate     # forward-only, expand/contract
 pnpm db:pull        # re-derive schema.prisma after a migration
 pnpm db:seed        # starter categories, keywords and merchants
-nx run api:serve    # boot the API on :3000
+nx run api:serve    # API on :3001 (host port 3000 is taken in this environment)
+nx run web:serve    # SPA on :4200
+nx run web:build    # production bundle
 ```
 
-Not yet implemented: `pnpm test:evals` (Phase 2) and a production `build` for apps/api (deferred
-past Phase 0: bundling source-consumed workspace packages is its own decision).
-Do not reference build scripts the repo does not have.
+Not yet implemented: `pnpm test:evals` (Phase 2) and a production `build` for **apps/api** —
+deferred past Phase 0, because bundling source-consumed workspace packages is its own decision.
+`web:build` does work. Do not reference build scripts the repo does not have.
 
 ---
 
@@ -155,8 +165,8 @@ A change is not done until (doc 09 §8):
 - **MinIO is pulled from `quay.io`, not Docker Hub.** `minio/minio` no longer exists there.
 - **pnpm needs a workspace-local store** (`store-dir=.pnpm-store`) because the file sandbox denies
   writes outside the project; the store is gitignored and must never be committed.
-- **Postgres/Prisma version pins are deliberate:** `prisma@7.10.0` because `prisma@latest` is an
-  8.x **release candidate**, and TypeScript is pinned to 5.9.3 because `ts-jest` requires `<7`.
+- **Prisma is pinned to 7.10.0 deliberately:** `prisma@latest` resolves to an 8.x **release
+  candidate**. Never let a `^` range pull it in.
 - **The API dev runtime is SWC, not tsx.** esbuild (and therefore `tsx`) **cannot emit decorator
   metadata**, which is what NestJS uses for constructor injection — running the API under `tsx` fails
   with "Parameter decorators only work when experimental decorators are enabled", and even with
@@ -179,6 +189,20 @@ A change is not done until (doc 09 §8):
 - **Host port 3000 is held by an unattributable process in this environment.** `/proc` is restricted
   and `lsof`/`fuser` are absent, so the dev API is verified on 3001+. Use `/tmp/run-api.sh <port>`,
   which frees the port and waits for the readiness line rather than a fixed sleep.
+- **TypeScript is pinned to 6.0.3, and `baseUrl` must stay.** Angular 22's compiler-cli requires
+  `>=6.0 <6.1`; TS 6 deprecates `baseUrl` and node10 resolution, with `ignoreDeprecations: "6.0"`
+  acknowledging it. Do NOT remove `baseUrl`: tsc stays happy without it, but
+  `@swc-node/register` resolves the workspace aliases through it, so the API fails at boot with
+  `Cannot find module '../../../packages/domain/src'` — a failure typecheck cannot catch. Migrating
+  to node16/bundler must move `tsconfig.base.json` and `apps/api/.swcrc` together and be verified by
+  booting the API.
+- **Apps must not set `outDir`.** With it, tsc infers a `rootDir` and then rejects the workspace
+  packages it pulls in as source (TS6059). Apps set `declaration: false` and no `outDir`; typecheck
+  is `tsc --noEmit` and SWC does the transpiling.
+- **`**/.angular/**` must stay in the eslint ignores.** The Angular build cache contains bundled
+  dependency output, so linting it reports hundreds of errors in `@angular/forms`' own bundle.
+- **Angular targets run with `cwd: {projectRoot}` and project-relative binaries.** Mixing a
+  workspace-relative binary path with `cwd: {projectRoot}` yields `ng: not found`.
 - **Never trust a `RETURNING` capture from `psql`** without a CTE. `psql -tAc "INSERT ... RETURNING id"`
   also prints the `INSERT 0 1` command tag, which silently corrupts a captured id. Wrap it:
   `WITH ins AS (INSERT ... RETURNING id) SELECT id FROM ins;`.

@@ -7,6 +7,27 @@
     "scope:web"
   ],
   "targets": {
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "./node_modules/.bin/ng serve --proxy-config proxy.conf.json --port 4200",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "./node_modules/.bin/ng build --configuration production",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "apps/web/node_modules/.bin/vitest run --config apps/web/vitest.config.mts",
+        "cwd": "{workspaceRoot}"
+      }
+    },
     "lint": {
       "executor": "nx:run-commands",
       "options": {

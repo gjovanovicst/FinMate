@@ -18,6 +18,9 @@ export default tseslint.config(
       '**/.pnpm-store/**',
       '**/coverage/**',
       '**/generated/**',
+      // Angular's build cache holds bundled dependency output, not source. Linting it produces
+      // hundreds of errors about generated code (verified: it flagged @angular/forms' own bundle).
+      '**/.angular/**',
       '**/*.d.ts',
     ],
   },

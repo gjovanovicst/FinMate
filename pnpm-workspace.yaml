@@ -2,18 +2,18 @@ packages:
   - 'apps/*'
   - 'packages/*'
 
-# pnpm 11 blocks dependency build scripts by default. Each entry here is a deliberate,
-# reviewed exception rather than a blanket "allow all" — an unreviewed install script is a
-# supply-chain risk.
+# pnpm 11 blocks dependency build scripts by default. Each entry is a deliberate, reviewed
+# exception rather than a blanket "allow all" — an unreviewed install script is a supply-chain risk.
 #
 #   nx                      -> platform-native Nx binary
 #   prisma, @prisma/engines -> query/schema engine binaries
-#   esbuild                 -> platform-native binary used by tsx (test/tooling scripts)
-#   @swc/core               -> platform-native SWC binary; the NestJS dev runtime, because
-#                              esbuild cannot emit decorator metadata (ADR-020)
+#   esbuild                 -> platform-native binary used by tsx (scripts) and Vitest
+#   @swc/core               -> platform-native SWC; the NestJS dev runtime and Vitest transform,
+#                              because esbuild cannot emit the decorator metadata DI needs (ADR-020)
 #   @parcel/watcher         -> native file watching for watch mode
 #   unrs-resolver           -> native module resolver used by eslint
 #   @apollo/protobufjs      -> generates Apollo Server's usage-reporting protobuf bindings
+#   lmdb, msgpackr-extract  -> native deps of the Angular build cache
 allowBuilds:
   nx: true
   prisma: true
@@ -23,3 +23,5 @@ allowBuilds:
   '@parcel/watcher': true
   unrs-resolver: true
   '@apollo/protobufjs': true
+  lmdb: true
+  msgpackr-extract: true

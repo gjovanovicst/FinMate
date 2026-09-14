@@ -1,0 +1,164 @@
+/* =============================================================================
+   Design tokens (docs/05 §5.4, docs/07 §3)
+
+   Rules this file exists to enforce:
+    1. **Tokens, not magic values.** One spacing scale, one type scale, semantic
+       colour roles. Components reference roles, never raw palette entries, so
+       dark mode is a token swap rather than a component rewrite.
+    2. **Semantic status colours are reserved.** `--color-danger`, `--color-warning`
+       and `--color-success` belong to validation and to the ADR-009 confidence
+       bands. The brand palette deliberately avoids red/amber/green so it cannot
+       collide with them (docs/13 §9).
+    3. **Money is ink, not colour.** Expense is NOT red and income is NOT green —
+       that would collide with the status colours above and imply judgement the
+       product has no business making. Direction is a sign and a label.
+    4. **Logical properties only** (`margin-inline-start`, not `margin-left`) so a
+       future RTL locale is not a rewrite (ADR-019).
+    5. **Dark-first.** This is a money app used in the evening; the dark theme is
+       the default and light is the override.
+   ============================================================================= */
+
+:root {
+  /* ---- spacing: a single 4px-based scale ---- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+
+  /* ---- type scale ---- */
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  /* Tabular figures keep money columns aligned; the fallbacks matter because a proportional
+     digit reflows every amount as the numbers change. */
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --text-3xl: 2.25rem;
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+
+  /* ---- radius, elevation, motion ---- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 24%);
+  --shadow-2: 0 4px 12px rgb(0 0 0 / 32%);
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+
+  /* ---- dark theme (default) ---- */
+  --color-bg: #101014;
+  --color-surface: #17171d;
+  --color-surface-raised: #1e1e26;
+  --color-border: #2b2b36;
+  --color-text: #ececf1;
+  --color-text-muted: #a0a0b0;
+  --color-text-subtle: #6e6e80;
+
+  /* Brand: indigo-violet, chosen to stay clear of the reserved status hues. */
+  --color-primary: #7c6cf5;
+  --color-primary-hover: #8f81f7;
+  --color-primary-contrast: #0d0d12;
+
+  /* ---- reserved semantic status ---- */
+  --color-danger: #f2555a;
+  --color-warning: #f0a02e;
+  --color-success: #3fbf7f;
+  --color-info: #4aa8f0;
+
+  /* ---- focus ---- */
+  --focus-ring: 0 0 0 3px rgb(124 108 245 / 55%);
+}
+
+/* Light theme: a token swap only — no component knows which theme is active. */
+:root[data-theme='light'] {
+  --color-bg: #f6f6f9;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-border: #dcdce5;
+  --color-text: #16161c;
+  --color-text-muted: #5a5a6b;
+  --color-text-subtle: #85859a;
+  --color-primary: #5b48e0;
+  --color-primary-hover: #4b39cf;
+  --color-primary-contrast: #ffffff;
+  --shadow-1: 0 1px 2px rgb(16 16 20 / 8%);
+  --shadow-2: 0 4px 12px rgb(16 16 20 / 12%);
+}
+
+/* =============================================================================
+   Baseline
+   ============================================================================= */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-block-size: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  /* The app is a tool, not a document: text selection on chrome is noise, but it must stay
+     available inside inputs and on data (amounts, ids) that users may want to copy. */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Visible focus everywhere. `:focus-visible` so a mouse click does not leave a ring, but a
+   keyboard user always sees where they are (WCAG 2.2 AA, docs/07 §7). */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+/* Respect the OS setting. Motion here is decorative, so removing it costs nothing. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Touch targets: 44px minimum on any pointer-coarse device (docs/07 §3). */
+@media (pointer: coarse) {
+  button,
+  a[role='button'],
+  [data-touch-target] {
+    min-block-size: 44px;
+    min-inline-size: 44px;
+  }
+}
+
+/* Screen-reader-only utility, used for labels and live regions. */
+.fm-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

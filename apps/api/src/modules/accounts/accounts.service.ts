@@ -106,7 +106,12 @@ export class AccountsService {
       },
     });
 
-    return this.toModel(created, new Map([[created.id, money(0n, created.currency)]]));
+    // The balance immediately after creation is the opening balance, not zero. Returning 0 here
+    // made the create response disagree with the very next list query — verified end to end.
+    return this.toModel(
+      created,
+      new Map([[created.id, money(created.opening_balance_minor, created.currency)]]),
+    );
   }
 
   /**

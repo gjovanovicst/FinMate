@@ -1,0 +1,45 @@
+import type { Routes } from '@angular/router';
+
+import { anonymousGuard, authenticatedGuard } from './core/auth/auth.guard';
+
+/**
+ * Routes.
+ *
+ * Every protected route is lazy: the capture screen and the analytics charts are large and a
+ * sign-in page has no business downloading either (docs/07 §11 bundle budgets). `loadComponent`
+ * keeps the initial bundle to the shell plus the landing route.
+ */
+export const routes: Routes = [
+  {
+    path: 'sign-in',
+    canActivate: [anonymousGuard],
+    loadComponent: () => import('./features/auth/sign-in.component').then((m) => m.SignInComponent),
+    title: 'Prijava',
+  },
+  {
+    path: 'sign-up',
+    canActivate: [anonymousGuard],
+    loadComponent: () => import('./features/auth/sign-up.component').then((m) => m.SignUpComponent),
+    title: 'Registracija',
+  },
+  {
+    path: '',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent),
+    title: 'Pregled',
+  },
+  {
+    path: 'accounts',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/accounts/accounts.component').then((m) => m.AccountsComponent),
+    title: 'Računi',
+  },
+  {
+    path: '**',
+    loadComponent: () =>
+      import('./features/not-found/not-found.component').then((m) => m.NotFoundComponent),
+    title: 'Nije pronađeno',
+  },
+];

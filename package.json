@@ -2,7 +2,7 @@
   "name": "finmate",
   "version": "0.0.0",
   "private": true,
-  "description": "AI-first household budgeting app. Working title — see docs/13-brand-and-naming.md (ADR-014).",
+  "description": "AI-first household budgeting app. Working title \u2014 see docs/13-brand-and-naming.md (ADR-014).",
   "packageManager": "pnpm@11.7.0",
   "engines": {
     "node": ">=24"
@@ -39,7 +39,7 @@
     "prettier": "3.9.6",
     "prisma": "7.10.0",
     "tsx": "^4.23.13",
-    "typescript": "5.9.3",
+    "typescript": "6.0.3",
     "typescript-eslint": "8.70.0",
     "vitest": "5.0.0"
   }

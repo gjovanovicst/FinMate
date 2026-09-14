@@ -14,9 +14,10 @@ out-tsc/
 tmp/
 *.tsbuildinfo
 
-# Nx / caching
+# Nx / Angular / caching
 .nx/
 .cache/
+.angular/
 
 # Test & coverage
 coverage/
