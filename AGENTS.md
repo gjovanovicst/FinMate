@@ -11,7 +11,7 @@ AI-first household budgeting app for **mobile and desktop**. The product promise
 **Machine state:** Node 24.20.0, pnpm 11.7.0, Go 1.27.0, **Docker 29.7.2 + Compose v5.5.0 (Linux
 containers)** on Ubuntu 20.04 LTS / WSL2.
 
-**Build state — Phase 0 COMPLETE. Phase 1 (manual core) complete apart from the visual pass. Phase 2 (AI input) STARTED: tasks 2.1.1 `packages/nlp` and 2.1.2 golden dataset v1 are done.**
+**Build state — Phase 0 COMPLETE. Phase 1 (manual core) complete apart from the visual pass. Phase 2 (AI input) STARTED: tasks 2.1.1 `packages/nlp`, 2.1.2 golden dataset v1 and 2.1.3 `packages/rules-engine` are done; 2.1.4 entity resolution remains in Sprint 2.1.**
 
 | Phase 1 slice | State |
 |---|---|
