@@ -1,0 +1,2321 @@
+[
+  {
+    "id": "merchant-0001",
+    "slice": "MERCHANT",
+    "input": "Lidl 199",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "19900",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0002",
+    "slice": "MERCHANT",
+    "input": "Lidl 250 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "25000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0003",
+    "slice": "MERCHANT",
+    "input": "Maxi 349",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "34900",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Maxi",
+      "tokens": [
+        "maxi"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0004",
+    "slice": "MERCHANT",
+    "input": "Maxi 1.200 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Maxi",
+      "tokens": [
+        "maxi"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0005",
+    "slice": "MERCHANT",
+    "input": "Idea 2.000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Idea",
+      "tokens": [
+        "idea"
+      ],
+      "candidates": 2
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0006",
+    "slice": "MERCHANT",
+    "input": "Idea 2.350 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "235000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Idea",
+      "tokens": [
+        "idea"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0007",
+    "slice": "MERCHANT",
+    "input": "DIS 3.500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "350000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "DIS",
+      "tokens": [
+        "dis"
+      ],
+      "candidates": 2
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0008",
+    "slice": "MERCHANT",
+    "input": "DIS 15.000 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "1500000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "DIS",
+      "tokens": [
+        "dis"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0009",
+    "slice": "MERCHANT",
+    "input": "Univerexport 150000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "15000000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Univerexport",
+      "tokens": [
+        "univerexport"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0010",
+    "slice": "MERCHANT",
+    "input": "Univerexport 1.250,50 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "125050",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Univerexport",
+      "tokens": [
+        "univerexport"
+      ],
+      "candidates": 1
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0011",
+    "slice": "MERCHANT",
+    "input": "Shop&Go 2,50",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Shop&Go",
+      "tokens": [
+        "shop",
+        "go"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0012",
+    "slice": "MERCHANT",
+    "input": "Shop&Go 1.500 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Shop&Go",
+      "tokens": [
+        "shop",
+        "go"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0013",
+    "slice": "MERCHANT",
+    "input": "Aman 199",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "19900",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Aman",
+      "tokens": [
+        "aman"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0014",
+    "slice": "MERCHANT",
+    "input": "Aman 250 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "25000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Aman",
+      "tokens": [
+        "aman"
+      ],
+      "candidates": 1
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0015",
+    "slice": "MERCHANT",
+    "input": "Roda 349",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "34900",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Roda",
+      "tokens": [
+        "roda"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0016",
+    "slice": "MERCHANT",
+    "input": "Roda 1.200 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Roda",
+      "tokens": [
+        "roda"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0017",
+    "slice": "MERCHANT",
+    "input": "Mere 2.000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Mere",
+      "tokens": [
+        "mere"
+      ],
+      "candidates": 2
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0018",
+    "slice": "MERCHANT",
+    "input": "Mere 2.350 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "235000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Mere",
+      "tokens": [
+        "mere"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0019",
+    "slice": "MERCHANT",
+    "input": "Lilly 3.500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "350000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lilly",
+      "tokens": [
+        "lilly"
+      ],
+      "candidates": 2
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0020",
+    "slice": "MERCHANT",
+    "input": "Lilly 15.000 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "1500000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Lilly",
+      "tokens": [
+        "lilly"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0021",
+    "slice": "MERCHANT",
+    "input": "Pekara Trpković 150000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "15000000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Pekara Trpković",
+      "tokens": [
+        "pekara",
+        "trpkovic"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0022",
+    "slice": "MERCHANT",
+    "input": "Pekara Trpković 1.250,50 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "125050",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Pekara Trpković",
+      "tokens": [
+        "pekara",
+        "trpkovic"
+      ],
+      "candidates": 1
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0023",
+    "slice": "MERCHANT",
+    "input": "Hleb & Kifle 2,50",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Hleb & Kifle",
+      "tokens": [
+        "hleb",
+        "kifle"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0024",
+    "slice": "MERCHANT",
+    "input": "Hleb & Kifle 1.500 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Hleb & Kifle",
+      "tokens": [
+        "hleb",
+        "kifle"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0025",
+    "slice": "MERCHANT",
+    "input": "NIS Petrol 199",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "19900",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "NIS Petrol",
+      "tokens": [
+        "nis",
+        "petrol"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0026",
+    "slice": "MERCHANT",
+    "input": "NIS Petrol 250 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "25000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "NIS Petrol",
+      "tokens": [
+        "nis",
+        "petrol"
+      ],
+      "candidates": 1
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0027",
+    "slice": "MERCHANT",
+    "input": "Lukoil 349",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "34900",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lukoil",
+      "tokens": [
+        "lukoil"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0028",
+    "slice": "MERCHANT",
+    "input": "Lukoil 1.200 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Lukoil",
+      "tokens": [
+        "lukoil"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0029",
+    "slice": "MERCHANT",
+    "input": "OMV 2.000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "OMV",
+      "tokens": [
+        "omv"
+      ],
+      "candidates": 2
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0030",
+    "slice": "MERCHANT",
+    "input": "OMV 2.350 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "235000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "OMV",
+      "tokens": [
+        "omv"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0031",
+    "slice": "MERCHANT",
+    "input": "Shell 3.500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "350000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Shell",
+      "tokens": [
+        "shell"
+      ],
+      "candidates": 2
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0032",
+    "slice": "MERCHANT",
+    "input": "Shell 15.000 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "1500000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Shell",
+      "tokens": [
+        "shell"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0033",
+    "slice": "MERCHANT",
+    "input": "MOL 150000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "15000000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "MOL",
+      "tokens": [
+        "mol"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0034",
+    "slice": "MERCHANT",
+    "input": "MOL 1.250,50 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "125050",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "MOL",
+      "tokens": [
+        "mol"
+      ],
+      "candidates": 1
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0035",
+    "slice": "MERCHANT",
+    "input": "EPS 2,50",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "EPS",
+      "tokens": [
+        "eps"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0036",
+    "slice": "MERCHANT",
+    "input": "EPS 1.500 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "EPS",
+      "tokens": [
+        "eps"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0037",
+    "slice": "MERCHANT",
+    "input": "Vodovod 199",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "19900",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Vodovod",
+      "tokens": [
+        "vodovod"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0038",
+    "slice": "MERCHANT",
+    "input": "Vodovod 250 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "25000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Vodovod",
+      "tokens": [
+        "vodovod"
+      ],
+      "candidates": 1
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0039",
+    "slice": "MERCHANT",
+    "input": "Srbijagas 349",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "34900",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Srbijagas",
+      "tokens": [
+        "srbijagas"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0040",
+    "slice": "MERCHANT",
+    "input": "Srbijagas 1.200 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Srbijagas",
+      "tokens": [
+        "srbijagas"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0041",
+    "slice": "MERCHANT",
+    "input": "Beogradske elektrane 2.000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Beogradske elektrane",
+      "tokens": [
+        "beogradske",
+        "elektrane"
+      ],
+      "candidates": 2
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0042",
+    "slice": "MERCHANT",
+    "input": "Beogradske elektrane 2.350 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "235000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Beogradske elektrane",
+      "tokens": [
+        "beogradske",
+        "elektrane"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0043",
+    "slice": "MERCHANT",
+    "input": "SBB 3.500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "350000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "SBB",
+      "tokens": [
+        "sbb"
+      ],
+      "candidates": 2
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0044",
+    "slice": "MERCHANT",
+    "input": "SBB 15.000 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "1500000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "SBB",
+      "tokens": [
+        "sbb"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0045",
+    "slice": "MERCHANT",
+    "input": "MTS 150000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "15000000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "MTS",
+      "tokens": [
+        "mts"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0046",
+    "slice": "MERCHANT",
+    "input": "MTS 1.250,50 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "125050",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "MTS",
+      "tokens": [
+        "mts"
+      ],
+      "candidates": 1
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0047",
+    "slice": "MERCHANT",
+    "input": "Yettel 2,50",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Yettel",
+      "tokens": [
+        "yettel"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0048",
+    "slice": "MERCHANT",
+    "input": "Yettel 1.500 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Yettel",
+      "tokens": [
+        "yettel"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0049",
+    "slice": "MERCHANT",
+    "input": "A1 199",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "19900",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "A1",
+      "tokens": [
+        "a1"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0050",
+    "slice": "MERCHANT",
+    "input": "A1 250 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "25000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "A1",
+      "tokens": [
+        "a1"
+      ],
+      "candidates": 1
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0051",
+    "slice": "MERCHANT",
+    "input": "Orion Telekom 349",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "34900",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Orion Telekom",
+      "tokens": [
+        "orion",
+        "telekom"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0052",
+    "slice": "MERCHANT",
+    "input": "Orion Telekom 1.200 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Orion Telekom",
+      "tokens": [
+        "orion",
+        "telekom"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0053",
+    "slice": "MERCHANT",
+    "input": "Netflix 2.000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Netflix",
+      "tokens": [
+        "netflix"
+      ],
+      "candidates": 2
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0054",
+    "slice": "MERCHANT",
+    "input": "Netflix 2.350 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "235000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Netflix",
+      "tokens": [
+        "netflix"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0055",
+    "slice": "MERCHANT",
+    "input": "Spotify 3.500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "350000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Spotify",
+      "tokens": [
+        "spotify"
+      ],
+      "candidates": 2
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0056",
+    "slice": "MERCHANT",
+    "input": "Spotify 15.000 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "1500000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Spotify",
+      "tokens": [
+        "spotify"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0057",
+    "slice": "MERCHANT",
+    "input": "HBO Max 150000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "15000000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "HBO Max",
+      "tokens": [
+        "hbo",
+        "max"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0058",
+    "slice": "MERCHANT",
+    "input": "HBO Max 1.250,50 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "125050",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "HBO Max",
+      "tokens": [
+        "hbo",
+        "max"
+      ],
+      "candidates": 1
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0059",
+    "slice": "MERCHANT",
+    "input": "YouTube Premium 2,50",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "YouTube Premium",
+      "tokens": [
+        "youtube",
+        "premium"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0060",
+    "slice": "MERCHANT",
+    "input": "YouTube Premium 1.500 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "YouTube Premium",
+      "tokens": [
+        "youtube",
+        "premium"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0061",
+    "slice": "MERCHANT",
+    "input": "Apoteka Benu 199",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "19900",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Apoteka Benu",
+      "tokens": [
+        "apoteka",
+        "benu"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0062",
+    "slice": "MERCHANT",
+    "input": "Apoteka Benu 250 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "25000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Apoteka Benu",
+      "tokens": [
+        "apoteka",
+        "benu"
+      ],
+      "candidates": 1
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0063",
+    "slice": "MERCHANT",
+    "input": "Apoteka Lilly 349",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "34900",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Apoteka Lilly",
+      "tokens": [
+        "apoteka",
+        "lilly"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0064",
+    "slice": "MERCHANT",
+    "input": "Apoteka Lilly 1.200 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Apoteka Lilly",
+      "tokens": [
+        "apoteka",
+        "lilly"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0065",
+    "slice": "MERCHANT",
+    "input": "DM 2.000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "DM",
+      "tokens": [
+        "dm"
+      ],
+      "candidates": 2
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0066",
+    "slice": "MERCHANT",
+    "input": "DM 2.350 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "235000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "DM",
+      "tokens": [
+        "dm"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0067",
+    "slice": "MERCHANT",
+    "input": "Lilly Drogerie 3.500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "350000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lilly Drogerie",
+      "tokens": [
+        "lilly",
+        "drogerie"
+      ],
+      "candidates": 2
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0068",
+    "slice": "MERCHANT",
+    "input": "Lilly Drogerie 15.000 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "1500000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Lilly Drogerie",
+      "tokens": [
+        "lilly",
+        "drogerie"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0069",
+    "slice": "MERCHANT",
+    "input": "Sport Vision 150000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "15000000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Sport Vision",
+      "tokens": [
+        "sport",
+        "vision"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0070",
+    "slice": "MERCHANT",
+    "input": "Sport Vision 1.250,50 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "125050",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Sport Vision",
+      "tokens": [
+        "sport",
+        "vision"
+      ],
+      "candidates": 1
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0071",
+    "slice": "MERCHANT",
+    "input": "Đak Sport 2,50",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Đak Sport",
+      "tokens": [
+        "dak",
+        "sport"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0072",
+    "slice": "MERCHANT",
+    "input": "Đak Sport 1.500 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Đak Sport",
+      "tokens": [
+        "dak",
+        "sport"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0073",
+    "slice": "MERCHANT",
+    "input": "Teretana 199",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "19900",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Teretana",
+      "tokens": [
+        "teretana"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0074",
+    "slice": "MERCHANT",
+    "input": "Teretana 250 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "25000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Teretana",
+      "tokens": [
+        "teretana"
+      ],
+      "candidates": 1
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0075",
+    "slice": "MERCHANT",
+    "input": "Tempo 349",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "34900",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Tempo",
+      "tokens": [
+        "tempo"
+      ],
+      "candidates": 1
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0076",
+    "slice": "MERCHANT",
+    "input": "Tempo 1.200 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Tempo",
+      "tokens": [
+        "tempo"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0077",
+    "slice": "MERCHANT",
+    "input": "Metro 2.000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Metro",
+      "tokens": [
+        "metro"
+      ],
+      "candidates": 2
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0078",
+    "slice": "MERCHANT",
+    "input": "Metro 2.350 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "235000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Metro",
+      "tokens": [
+        "metro"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0079",
+    "slice": "MERCHANT",
+    "input": "Vero 3.500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "350000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Vero",
+      "tokens": [
+        "vero"
+      ],
+      "candidates": 2
+    },
+    "note": "common path: merchant name plus amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0080",
+    "slice": "MERCHANT",
+    "input": "Vero 15.000 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "1500000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-13",
+      "description": "Vero",
+      "tokens": [
+        "vero"
+      ],
+      "candidates": 2
+    },
+    "note": "common path with the relative day `juče`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0081",
+    "slice": "MERCHANT",
+    "input": "Lidl 2.000 danas",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-14",
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 2
+    },
+    "note": "date extraction: the date is removed from the description and never read as an amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0082",
+    "slice": "MERCHANT",
+    "input": "Maxi 3.500 prekjuče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "350000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-12",
+      "description": "Maxi",
+      "tokens": [
+        "maxi"
+      ],
+      "candidates": 2
+    },
+    "note": "date extraction: the date is removed from the description and never read as an amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0083",
+    "slice": "MERCHANT",
+    "input": "Idea 1.200 prošli petak",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-11",
+      "description": "Idea",
+      "tokens": [
+        "idea"
+      ],
+      "candidates": 2
+    },
+    "note": "date extraction: the date is removed from the description and never read as an amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0084",
+    "slice": "MERCHANT",
+    "input": "DIS 250 1.9.",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "25000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-01",
+      "description": "DIS",
+      "tokens": [
+        "dis"
+      ],
+      "candidates": 1
+    },
+    "note": "date extraction: the date is removed from the description and never read as an amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0085",
+    "slice": "MERCHANT",
+    "input": "Univerexport 15.000 01.09.2026",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "1500000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-01",
+      "description": "Univerexport",
+      "tokens": [
+        "univerexport"
+      ],
+      "candidates": 2
+    },
+    "note": "date extraction: the date is removed from the description and never read as an amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0086",
+    "slice": "MERCHANT",
+    "input": "Aman 150000 1/9",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "15000000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-01",
+      "description": "Aman",
+      "tokens": [
+        "aman"
+      ],
+      "candidates": 1
+    },
+    "note": "date extraction: the date is removed from the description and never read as an amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0087",
+    "slice": "MERCHANT",
+    "input": "Roda 2.350 1.9.2025",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "235000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2025-09-01",
+      "description": "Roda",
+      "tokens": [
+        "roda"
+      ],
+      "candidates": 2
+    },
+    "note": "date extraction: the date is removed from the description and never read as an amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0088",
+    "slice": "MERCHANT",
+    "input": "Mere 1.500 danas",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": "2026-09-14",
+      "description": "Mere",
+      "tokens": [
+        "mere"
+      ],
+      "candidates": 2
+    },
+    "note": "date extraction: the date is removed from the description and never read as an amount",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0089",
+    "slice": "MERCHANT",
+    "input": "plata 150000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "15000000",
+      "currency": null,
+      "kind": "INCOME",
+      "occurredOn": null,
+      "description": "plata",
+      "tokens": [
+        "plata"
+      ]
+    },
+    "note": "docs/04 §3.1 income marker",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0090",
+    "slice": "MERCHANT",
+    "input": "Plata za avgust 150000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "15000000",
+      "currency": null,
+      "kind": "INCOME",
+      "occurredOn": null,
+      "description": "Plata za avgust",
+      "tokens": [
+        "plata",
+        "za",
+        "avgust"
+      ]
+    },
+    "note": "docs/04 §3.1 income marker",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0091",
+    "slice": "MERCHANT",
+    "input": "penzija 45000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "4500000",
+      "currency": null,
+      "kind": "INCOME",
+      "occurredOn": null,
+      "description": "penzija",
+      "tokens": [
+        "penzija"
+      ]
+    },
+    "note": "docs/04 §3.1 income marker",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0092",
+    "slice": "MERCHANT",
+    "input": "uplata 20000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000000",
+      "currency": null,
+      "kind": "INCOME",
+      "occurredOn": null,
+      "description": "uplata",
+      "tokens": [
+        "uplata"
+      ]
+    },
+    "note": "docs/04 §3.1 income marker",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0093",
+    "slice": "MERCHANT",
+    "input": "honorar 60000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "6000000",
+      "currency": null,
+      "kind": "INCOME",
+      "occurredOn": null,
+      "description": "honorar",
+      "tokens": [
+        "honorar"
+      ]
+    },
+    "note": "docs/04 §3.1 income marker",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0094",
+    "slice": "MERCHANT",
+    "input": "primio 25000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2500000",
+      "currency": null,
+      "kind": "INCOME",
+      "occurredOn": null,
+      "description": "primio",
+      "tokens": [
+        "primio"
+      ]
+    },
+    "note": "docs/04 §3.1 income marker",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0095",
+    "slice": "MERCHANT",
+    "input": "povraćaj 3.500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "350000",
+      "currency": null,
+      "kind": "INCOME",
+      "occurredOn": null,
+      "description": "povraćaj",
+      "tokens": [
+        "povracaj"
+      ]
+    },
+    "note": "docs/04 §3.1 income marker",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0096",
+    "slice": "MERCHANT",
+    "input": "refundacija 2.000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": null,
+      "kind": "INCOME",
+      "occurredOn": null,
+      "description": "refundacija",
+      "tokens": [
+        "refundacija"
+      ]
+    },
+    "note": "docs/04 §3.1 income marker",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0097",
+    "slice": "MERCHANT",
+    "input": "Lidl vraćeno 2000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "occurredOn": null,
+      "description": "Lidl vraćeno",
+      "tokens": [
+        "lidl",
+        "vraceno"
+      ],
+      "needsDirectionConfirmation": true
+    },
+    "note": "docs/04 §3.1 refund/negation: confirm the sign, do not guess it. `kind` is not pinned — see README known gaps.",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0098",
+    "slice": "MERCHANT",
+    "input": "storno Lidl 2000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "occurredOn": null,
+      "description": "storno Lidl",
+      "tokens": [
+        "storno",
+        "lidl"
+      ],
+      "needsDirectionConfirmation": true
+    },
+    "note": "docs/04 §3.1 refund/negation: confirm the sign, do not guess it. `kind` is not pinned — see README known gaps.",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0099",
+    "slice": "MERCHANT",
+    "input": "refund Lidl 2000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "occurredOn": null,
+      "description": "refund Lidl",
+      "tokens": [
+        "refund",
+        "lidl"
+      ],
+      "needsDirectionConfirmation": true
+    },
+    "note": "docs/04 §3.1 refund/negation: confirm the sign, do not guess it. `kind` is not pinned — see README known gaps.",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0100",
+    "slice": "MERCHANT",
+    "input": "Maxi 3.500 vraćeno",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "350000",
+      "occurredOn": null,
+      "description": "Maxi vraćeno",
+      "tokens": [
+        "maxi",
+        "vraceno"
+      ],
+      "needsDirectionConfirmation": true
+    },
+    "note": "docs/04 §3.1 refund/negation: confirm the sign, do not guess it. `kind` is not pinned — see README known gaps.",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0101",
+    "slice": "MERCHANT",
+    "input": "Idea 1.200 storno",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "occurredOn": null,
+      "description": "Idea storno",
+      "tokens": [
+        "idea",
+        "storno"
+      ],
+      "needsDirectionConfirmation": true
+    },
+    "note": "docs/04 §3.1 refund/negation: confirm the sign, do not guess it. `kind` is not pinned — see README known gaps.",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0102",
+    "slice": "MERCHANT",
+    "input": "vraćeno Maxi 2.000 juče",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "occurredOn": "2026-09-13",
+      "description": "vraćeno Maxi",
+      "tokens": [
+        "vraceno",
+        "maxi"
+      ],
+      "needsDirectionConfirmation": true
+    },
+    "note": "docs/04 §3.1 refund/negation: confirm the sign, do not guess it. `kind` is not pinned — see README known gaps.",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0103",
+    "slice": "MERCHANT",
+    "input": "Lidl 2.000 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ]
+    },
+    "note": "docs/04 §3.1 currency-suffix forms",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0104",
+    "slice": "MERCHANT",
+    "input": "Shell 20€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Shell",
+      "tokens": [
+        "shell"
+      ]
+    },
+    "note": "docs/04 §3.1 currency-suffix forms",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0105",
+    "slice": "MERCHANT",
+    "input": "Spotify 10€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "1000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Spotify",
+      "tokens": [
+        "spotify"
+      ]
+    },
+    "note": "docs/04 §3.1 currency-suffix forms",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0106",
+    "slice": "MERCHANT",
+    "input": "Netflix 15$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "1500",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Netflix",
+      "tokens": [
+        "netflix"
+      ]
+    },
+    "note": "docs/04 §3.1 currency-suffix forms",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0107",
+    "slice": "MERCHANT",
+    "input": "NIS Petrol 5.000 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "500000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "NIS Petrol",
+      "tokens": [
+        "nis",
+        "petrol"
+      ]
+    },
+    "note": "docs/04 §3.1 currency-suffix forms",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0108",
+    "slice": "MERCHANT",
+    "input": "Univerexport 1.250,50 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "125050",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Univerexport",
+      "tokens": [
+        "univerexport"
+      ]
+    },
+    "note": "docs/04 §3.1 currency-suffix forms",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0109",
+    "slice": "MERCHANT",
+    "input": "Apoteka Benu 20 eur",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Apoteka Benu",
+      "tokens": [
+        "apoteka",
+        "benu"
+      ]
+    },
+    "note": "docs/04 §3.1 currency-suffix forms",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "merchant-0110",
+    "slice": "MERCHANT",
+    "input": "HBO Max 20 dolara",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "HBO Max",
+      "tokens": [
+        "hbo",
+        "max"
+      ]
+    },
+    "note": "docs/04 §3.1 currency-suffix forms",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  }
+]

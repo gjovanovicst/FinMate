@@ -112,13 +112,17 @@ const CURRENCY_SUFFIX =
 /**
  * A numeric token.
  *
- * - the first alternative covers grouped forms: `2.000`, `1 200`, `1.250,50`;
- * - the second covers plain and decimal forms: `2000`, `2,50`, `1.5`;
+ * - the first alternative covers grouped forms: `2.000`, `1 200`, `1.250,50`. It may **not** begin
+ *   inside an alphanumeric token, because `A1 199` — the shipped `A1` Merchant and a 199 RSD top-up —
+ *   would otherwise be read as the single group `1 199` and silently overstated six-fold. A thousands
+ *   group is a number in its own right, not the tail of a name;
+ * - the second covers plain and decimal forms: `2000`, `2,50`, `1.5`, including glued to a
+ *   description (`Lidl2000`), which stays supported;
  * - a trailing `k` is the thousands shorthand, but only when it is not the start of a unit — without
  *   the lookahead, `2000kg` would expand to two million (docs/04 §3.1: reject when ambiguous).
  */
 const AMOUNT_TOKEN =
-  /(?:\d{1,3}(?:[.\u00a0 ]\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)*)(?:k(?![\p{L}\d]))?/giu;
+  /(?:(?<![\p{L}\p{N}])\d{1,3}(?:[.\u00a0 ]\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)*)(?:k(?![\p{L}\d]))?/giu;
 
 const DOT_DATE_WITH_YEAR = /\b(\d{1,2})\.(\d{1,2})\.(\d{4}|\d{2})\.?/;
 const DOT_DATE_NO_YEAR = /\b(\d{1,2})\.(\d{1,2})\./;

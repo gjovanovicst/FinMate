@@ -1,0 +1,1082 @@
+[
+  {
+    "id": "bulk-0001",
+    "slice": "BULK",
+    "input": "Lidl 2000, gorivo 3500, plata 150000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "lidl"
+        ]
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "gorivo"
+        ]
+      },
+      {
+        "description": "plata",
+        "amountMinor": "15000000",
+        "kind": "INCOME",
+        "tokens": [
+          "plata"
+        ]
+      }
+    ],
+    "note": "the Phase 2 exit-criterion line; docs/04 §3",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0002",
+    "slice": "BULK",
+    "input": "Lidl 2000;gorivo 3500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "semicolon separator",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0003",
+    "slice": "BULK",
+    "input": "Lidl 2000\ngorivo 3500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "newline separator",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0004",
+    "slice": "BULK",
+    "input": "Lidl 2000 + gorivo 3500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "plus separator",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0005",
+    "slice": "BULK",
+    "input": "Lidl 2000 i gorivo 3500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "inline conjunction `i`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0006",
+    "slice": "BULK",
+    "input": "Lidl 2000 pa gorivo 3500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "inline conjunction `pa`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0007",
+    "slice": "BULK",
+    "input": "Lidl 2000 I gorivo 3500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "conjunction matching is case-insensitive",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0008",
+    "slice": "BULK",
+    "input": "Lidl 2000 PA gorivo 3500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "uppercase `PA`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0009",
+    "slice": "BULK",
+    "input": "Lidl 2000,,gorivo 3500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "a run of separators collapses",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0010",
+    "slice": "BULK",
+    "input": "Lidl 2000;;gorivo 3500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "run of semicolons",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0011",
+    "slice": "BULK",
+    "input": "Lidl 2,50 i gorivo 3,00",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "250",
+        "kind": "EXPENSE",
+        "tokens": [
+          "lidl"
+        ]
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "300",
+        "kind": "EXPENSE",
+        "tokens": [
+          "gorivo"
+        ]
+      }
+    ],
+    "note": "a decimal comma must not split a fragment",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0012",
+    "slice": "BULK",
+    "input": "Lidl 1.250,50 i Maxi 2.000,00",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "125050",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "Maxi",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "decimal commas with thousands grouping on both sides of the separator",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0013",
+    "slice": "BULK",
+    "input": "kafa 180, hleb 90",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "kafa",
+        "amountMinor": "18000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "kafa"
+        ]
+      },
+      {
+        "description": "hleb",
+        "amountMinor": "9000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "hleb"
+        ]
+      }
+    ],
+    "note": "comma between fragments, no decimals",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0014",
+    "slice": "BULK",
+    "input": "kafa 180, hleb 90, mleko 150",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "kafa",
+        "amountMinor": "18000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "hleb",
+        "amountMinor": "9000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "mleko",
+        "amountMinor": "15000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "three short fragments",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0015",
+    "slice": "BULK",
+    "input": "plata 150000, kirija 45000, struja 3.500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "plata",
+        "amountMinor": "15000000",
+        "kind": "INCOME"
+      },
+      {
+        "description": "kirija",
+        "amountMinor": "4500000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "struja",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "mixed direction in one line",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0016",
+    "slice": "BULK",
+    "input": "Lidl 2000, Maxi 3500, Idea 1200, DIS 800",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "Maxi",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "Idea",
+        "amountMinor": "120000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "DIS",
+        "amountMinor": "80000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "four supermarket fragments",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0017",
+    "slice": "BULK",
+    "input": "Lidl 2000, Maxi 3500\ngorivo 3500;plata 150000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "Maxi",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "plata",
+        "amountMinor": "15000000",
+        "kind": "INCOME"
+      }
+    ],
+    "note": "every hard separator in one input",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0018",
+    "slice": "BULK",
+    "input": "Lidl juče 2000, gorivo danas 3500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE",
+        "occurredOn": "2026-09-13",
+        "tokens": [
+          "lidl"
+        ]
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE",
+        "occurredOn": "2026-09-14",
+        "tokens": [
+          "gorivo"
+        ]
+      }
+    ],
+    "note": "relative dates are resolved per fragment",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0019",
+    "slice": "BULK",
+    "input": "Lidl 1.9. 2000, gorivo 2.9. 3500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE",
+        "occurredOn": "2026-09-01"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE",
+        "occurredOn": "2026-09-02"
+      }
+    ],
+    "note": "absolute dates are resolved per fragment and never read as amounts",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0020",
+    "slice": "BULK",
+    "input": "Lidl 2.000 rsd i gorivo 20€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE",
+        "currency": "RSD"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "2000",
+        "kind": "EXPENSE",
+        "currency": "EUR"
+      }
+    ],
+    "note": "per-fragment currency is independent of the ledger currency",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0021",
+    "slice": "BULK",
+    "input": "Lidl 2k, gorivo 3.5k",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "k shorthand in a bulk line",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0022",
+    "slice": "BULK",
+    "input": "Lidl 2k i gorivo 3,5k",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "comma-decimal shorthand in a bulk line",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0023",
+    "slice": "BULK",
+    "input": "Лиди 2000 и гориво 3500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Лиди",
+        "amountMinor": "200000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "lidi"
+        ]
+      },
+      {
+        "description": "гориво",
+        "amountMinor": "350000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "gorivo"
+        ]
+      }
+    ],
+    "note": "Cyrillic conjunction `и` is the same separator; tokens are folded to Latin",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0024",
+    "slice": "BULK",
+    "input": "Лиди 2000 па гориво 3500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Лиди",
+        "amountMinor": "200000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "lidi"
+        ]
+      },
+      {
+        "description": "гориво",
+        "amountMinor": "350000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "gorivo"
+        ]
+      }
+    ],
+    "note": "Cyrillic conjunction `па`",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0025",
+    "slice": "BULK",
+    "input": "pivo 200, Indian 300",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "pivo",
+        "amountMinor": "20000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "pivo"
+        ]
+      },
+      {
+        "description": "Indian",
+        "amountMinor": "30000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "indian"
+        ]
+      }
+    ],
+    "note": "a word containing `i` never splits",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0026",
+    "slice": "BULK",
+    "input": "Lidl 2000 iMax",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl iMax",
+        "amountMinor": "200000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "lidl",
+          "imax"
+        ]
+      }
+    ],
+    "note": "`i` without whitespace on both sides is not a separator, so this stays one fragment",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0027",
+    "slice": "BULK",
+    "input": "Lidl 2000, gorivo 3500,",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "a trailing separator produces no empty fragment",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0028",
+    "slice": "BULK",
+    "input": "  Lidl 2000 ,, ; \n gorivo 3500  ",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "surrounding whitespace and blank fragments are dropped",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0029",
+    "slice": "BULK",
+    "input": "Vraćeno 2000, Lidl 3500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Vraćeno",
+        "amountMinor": "200000",
+        "tokens": [
+          "vraceno"
+        ],
+        "needsDirectionConfirmation": true
+      },
+      {
+        "description": "Lidl",
+        "amountMinor": "350000",
+        "kind": "EXPENSE",
+        "needsDirectionConfirmation": false
+      }
+    ],
+    "note": "docs/04 §3.1: a refund word flags for confirmation. `kind` is not pinned — see README known gaps.",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0030",
+    "slice": "BULK",
+    "input": "plata 150000 i vraćeno 2000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "plata",
+        "amountMinor": "15000000",
+        "kind": "INCOME",
+        "needsDirectionConfirmation": false
+      },
+      {
+        "description": "vraćeno",
+        "amountMinor": "200000",
+        "tokens": [
+          "vraceno"
+        ],
+        "needsDirectionConfirmation": true
+      }
+    ],
+    "note": "mixed direction: one fragment is unattributable, the other must still be usable (F-06)",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0031",
+    "slice": "BULK",
+    "input": "Lidl 2000+ gorivo 3500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "separator with no surrounding whitespace",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0032",
+    "slice": "BULK",
+    "input": "Lidl 2000 +gorivo 3500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "separator followed directly by the next fragment",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0033",
+    "slice": "BULK",
+    "input": "Lidl 2000\ngorivo 3500\nplata 150000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "plata",
+        "amountMinor": "15000000",
+        "kind": "INCOME"
+      }
+    ],
+    "note": "three newline-separated fragments",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0034",
+    "slice": "BULK",
+    "input": "Mleko 179, Hleb 90, Jogurt 130, Sir 450, Kafa 200",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Mleko",
+        "amountMinor": "17900",
+        "kind": "EXPENSE",
+        "tokens": [
+          "mleko"
+        ]
+      },
+      {
+        "description": "Hleb",
+        "amountMinor": "9000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "hleb"
+        ]
+      },
+      {
+        "description": "Jogurt",
+        "amountMinor": "13000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "jogurt"
+        ]
+      },
+      {
+        "description": "Sir",
+        "amountMinor": "45000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "sir"
+        ]
+      },
+      {
+        "description": "Kafa",
+        "amountMinor": "20000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "kafa"
+        ]
+      }
+    ],
+    "note": "five grocery fragments",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0035",
+    "slice": "BULK",
+    "input": "gorivo 3500 pa kafa 180 pa hleb 90",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "kafa",
+        "amountMinor": "18000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "hleb",
+        "amountMinor": "9000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "chained `pa` separators",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0036",
+    "slice": "BULK",
+    "input": "Lidl 2000 ; gorivo 3500 + plata 150000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "plata",
+        "amountMinor": "15000000",
+        "kind": "INCOME"
+      }
+    ],
+    "note": "separators padded with spaces",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0037",
+    "slice": "BULK",
+    "input": "lidl 2.000 rsd, shell 20€, spotify 10 eur",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE",
+        "currency": "RSD",
+        "tokens": [
+          "lidl"
+        ]
+      },
+      {
+        "description": "shell",
+        "amountMinor": "2000",
+        "kind": "EXPENSE",
+        "currency": "EUR",
+        "tokens": [
+          "shell"
+        ]
+      },
+      {
+        "description": "spotify",
+        "amountMinor": "1000",
+        "kind": "EXPENSE",
+        "currency": "EUR",
+        "tokens": [
+          "spotify"
+        ]
+      }
+    ],
+    "note": "lowercase input keeps its lowercase display text; tokens are folded",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0038",
+    "slice": "BULK",
+    "input": "kupovina 3500 i popravka 1200 i registracija 25000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "kupovina",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "popravka",
+        "amountMinor": "120000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "registracija",
+        "amountMinor": "2500000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "generic descriptions with no merchant",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0039",
+    "slice": "BULK",
+    "input": "Stan 45000, struja 3.500, voda 1.200, internet 2.500, telefon 1.500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Stan",
+        "amountMinor": "4500000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "stan"
+        ]
+      },
+      {
+        "description": "struja",
+        "amountMinor": "350000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "struja"
+        ]
+      },
+      {
+        "description": "voda",
+        "amountMinor": "120000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "voda"
+        ]
+      },
+      {
+        "description": "internet",
+        "amountMinor": "250000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "internet"
+        ]
+      },
+      {
+        "description": "telefon",
+        "amountMinor": "150000",
+        "kind": "EXPENSE",
+        "tokens": [
+          "telefon"
+        ]
+      }
+    ],
+    "note": "five biller fragments",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "bulk-0040",
+    "slice": "BULK",
+    "input": "Lidl 2000, gorivo 3500, plata 150000, kirija 45000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": [
+      {
+        "description": "Lidl",
+        "amountMinor": "200000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "gorivo",
+        "amountMinor": "350000",
+        "kind": "EXPENSE"
+      },
+      {
+        "description": "plata",
+        "amountMinor": "15000000",
+        "kind": "INCOME"
+      },
+      {
+        "description": "kirija",
+        "amountMinor": "4500000",
+        "kind": "EXPENSE"
+      }
+    ],
+    "note": "four fragments mixing direction",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  }
+]

@@ -1,0 +1,3067 @@
+[
+  {
+    "id": "amount-0001",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "plain integer; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0002",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2.000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 2
+    },
+    "note": "dot groups thousands; the decimal reading is the alternative; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0003",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2 000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "space groups thousands and cannot be a decimal point; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0004",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2\u00a0000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "non-breaking space groups thousands; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0005",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.200",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 2
+    },
+    "note": "the docs/04 §3.1 ambiguity named in the spec; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0006",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1 200",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "space-grouped 1200; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0007",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 20000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "twenty thousand, ungrouped; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0008",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 20.000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 2
+    },
+    "note": "dot-grouped twenty thousand; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0009",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 20 000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "space-grouped twenty thousand; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0010",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 200000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "20000000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "two hundred thousand, ungrouped; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0011",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 200.000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "20000000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 2
+    },
+    "note": "dot-grouped two hundred thousand; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0012",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.234.567",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "123456700",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "two groups cannot be a decimal, so one reading; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0013",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1 234 567",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "123456700",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "space-grouped millions; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0014",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2,50",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "comma is the decimal separator; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0015",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2,5",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "one decimal digit pads to 50 para; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0016",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 0,05",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "5",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "five para, below one dinar; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0017",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 0,5",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "50",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "half a dinar; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0018",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.250,50",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "125050",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "both separators: the comma is the decimal point; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0019",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2.000,50",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200050",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "both separators on a round thousand; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0020",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.200,5",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120050",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "one decimal digit after a grouped integer part; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0021",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2,500",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 2
+    },
+    "note": "three digits after a comma: Serbian decimal leads, English grouping is the alternative; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0022",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2k",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "k shorthand; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0023",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.5k",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "fractional shorthand is a decimal point, not a stripped group; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0024",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1,5k",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "comma decimal with k shorthand; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0025",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.200k",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "grouped base: 1200 thousand; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0026",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.200,50k",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120050000",
+      "currency": null,
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "grouped base with a fractional thousand; suffix: no currency named: inherit the ledger currency",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0027",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2000 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "plain integer; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0028",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2.000 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 2
+    },
+    "note": "dot groups thousands; the decimal reading is the alternative; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0029",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2 000 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "space groups thousands and cannot be a decimal point; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0030",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2\u00a0000 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "non-breaking space groups thousands; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0031",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.200 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 2
+    },
+    "note": "the docs/04 §3.1 ambiguity named in the spec; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0032",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1 200 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "space-grouped 1200; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0033",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 20000 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "twenty thousand, ungrouped; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0034",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 20.000 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 2
+    },
+    "note": "dot-grouped twenty thousand; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0035",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 20 000 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "space-grouped twenty thousand; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0036",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 200000 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "20000000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "two hundred thousand, ungrouped; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0037",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 200.000 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "20000000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 2
+    },
+    "note": "dot-grouped two hundred thousand; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0038",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.234.567 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "123456700",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "two groups cannot be a decimal, so one reading; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0039",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1 234 567 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "123456700",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "space-grouped millions; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0040",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2,50 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "comma is the decimal separator; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0041",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2,5 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "one decimal digit pads to 50 para; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0042",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 0,05 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "5",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "five para, below one dinar; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0043",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 0,5 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "50",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "half a dinar; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0044",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.250,50 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "125050",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "both separators: the comma is the decimal point; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0045",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2.000,50 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200050",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "both separators on a round thousand; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0046",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.200,5 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120050",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "one decimal digit after a grouped integer part; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0047",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2,500 din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 2
+    },
+    "note": "three digits after a comma: Serbian decimal leads, English grouping is the alternative; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0048",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2k din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "k shorthand; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0049",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.5k din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "fractional shorthand is a decimal point, not a stripped group; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0050",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1,5k din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "comma decimal with k shorthand; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0051",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.200k din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "grouped base: 1200 thousand; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0052",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.200,50k din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120050000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "grouped base with a fractional thousand; suffix: leading space keeps the k lookahead from eating the suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0053",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2000 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "plain integer; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0054",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2.000 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 2
+    },
+    "note": "dot groups thousands; the decimal reading is the alternative; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0055",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2 000 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "space groups thousands and cannot be a decimal point; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0056",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2\u00a0000 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "non-breaking space groups thousands; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0057",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.200 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 2
+    },
+    "note": "the docs/04 §3.1 ambiguity named in the spec; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0058",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1 200 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "space-grouped 1200; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0059",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 20000 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "twenty thousand, ungrouped; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0060",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 20.000 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 2
+    },
+    "note": "dot-grouped twenty thousand; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0061",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 20 000 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "space-grouped twenty thousand; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0062",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 200000 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "20000000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "two hundred thousand, ungrouped; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0063",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 200.000 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "20000000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 2
+    },
+    "note": "dot-grouped two hundred thousand; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0064",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.234.567 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "123456700",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "two groups cannot be a decimal, so one reading; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0065",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1 234 567 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "123456700",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "space-grouped millions; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0066",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2,50 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "comma is the decimal separator; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0067",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2,5 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "one decimal digit pads to 50 para; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0068",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 0,05 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "5",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "five para, below one dinar; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0069",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 0,5 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "50",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "half a dinar; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0070",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.250,50 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "125050",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "both separators: the comma is the decimal point; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0071",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2.000,50 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200050",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "both separators on a round thousand; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0072",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.200,5 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120050",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "one decimal digit after a grouped integer part; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0073",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2,500 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 2
+    },
+    "note": "three digits after a comma: Serbian decimal leads, English grouping is the alternative; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0074",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2k rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "k shorthand; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0075",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.5k rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "fractional shorthand is a decimal point, not a stripped group; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0076",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1,5k rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "comma decimal with k shorthand; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0077",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.200k rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "grouped base: 1200 thousand; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0078",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.200,50k rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120050000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "grouped base with a fractional thousand; suffix: ISO code as a word",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0079",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2000€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "plain integer; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0080",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2.000€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 2
+    },
+    "note": "dot groups thousands; the decimal reading is the alternative; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0081",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2 000€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "space groups thousands and cannot be a decimal point; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0082",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2\u00a0000€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "non-breaking space groups thousands; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0083",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.200€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 2
+    },
+    "note": "the docs/04 §3.1 ambiguity named in the spec; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0084",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1 200€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "space-grouped 1200; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0085",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 20000€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "twenty thousand, ungrouped; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0086",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 20.000€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 2
+    },
+    "note": "dot-grouped twenty thousand; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0087",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 20 000€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "space-grouped twenty thousand; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0088",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 200000€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "20000000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "two hundred thousand, ungrouped; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0089",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 200.000€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "20000000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 2
+    },
+    "note": "dot-grouped two hundred thousand; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0090",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.234.567€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "123456700",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "two groups cannot be a decimal, so one reading; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0091",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1 234 567€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "123456700",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "space-grouped millions; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0092",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2,50€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "comma is the decimal separator; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0093",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2,5€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "one decimal digit pads to 50 para; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0094",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 0,05€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "5",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "five para, below one dinar; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0095",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 0,5€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "50",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "half a dinar; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0096",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.250,50€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "125050",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "both separators: the comma is the decimal point; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0097",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2.000,50€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200050",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "both separators on a round thousand; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0098",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.200,5€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120050",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "one decimal digit after a grouped integer part; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0099",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2,500€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 2
+    },
+    "note": "three digits after a comma: Serbian decimal leads, English grouping is the alternative; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0100",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2k€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "k shorthand; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0101",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.5k€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "fractional shorthand is a decimal point, not a stripped group; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0102",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1,5k€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "comma decimal with k shorthand; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0103",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.200k€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "grouped base: 1200 thousand; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0104",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.200,50k€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120050000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "grouped base with a fractional thousand; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0105",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2000$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "plain integer; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0106",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2.000$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 2
+    },
+    "note": "dot groups thousands; the decimal reading is the alternative; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0107",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2 000$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "space groups thousands and cannot be a decimal point; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0108",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2\u00a0000$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "non-breaking space groups thousands; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0109",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.200$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 2
+    },
+    "note": "the docs/04 §3.1 ambiguity named in the spec; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0110",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1 200$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "space-grouped 1200; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0111",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 20000$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "twenty thousand, ungrouped; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0112",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 20.000$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 2
+    },
+    "note": "dot-grouped twenty thousand; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0113",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 20 000$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "space-grouped twenty thousand; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0114",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 200000$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "20000000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "two hundred thousand, ungrouped; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0115",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 200.000$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "20000000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 2
+    },
+    "note": "dot-grouped two hundred thousand; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0116",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.234.567$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "123456700",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "two groups cannot be a decimal, so one reading; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0117",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1 234 567$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "123456700",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "space-grouped millions; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0118",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2,50$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "comma is the decimal separator; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0119",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2,5$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "one decimal digit pads to 50 para; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0120",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 0,05$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "5",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "five para, below one dinar; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0121",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 0,5$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "50",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "half a dinar; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0122",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.250,50$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "125050",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "both separators: the comma is the decimal point; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0123",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2.000,50$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200050",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "both separators on a round thousand; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0124",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.200,5$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120050",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "one decimal digit after a grouped integer part; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0125",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2,500$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "250",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 2
+    },
+    "note": "three digits after a comma: Serbian decimal leads, English grouping is the alternative; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0126",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 2k$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "k shorthand; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0127",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.5k$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "fractional shorthand is a decimal point, not a stripped group; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0128",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1,5k$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "comma decimal with k shorthand; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0129",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.200k$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120000000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "grouped base: 1200 thousand; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0130",
+    "slice": "AMOUNT_FORMAT",
+    "input": "kupovina 1.200,50k$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120050000",
+      "currency": "USD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "kupovina",
+      "tokens": [
+        "kupovina"
+      ],
+      "candidates": 1
+    },
+    "note": "grouped base with a fractional thousand; suffix: symbol suffix",
+    "provenance": "synthetic",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0131",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 20€",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000",
+      "currency": "EUR",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "symbol-suffixed euro amount is parsed in EUR, not the RSD ledger currency",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0132",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 20 eur",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000",
+      "currency": "EUR",
+      "description": "Lidl",
+      "candidates": 1
+    },
+    "note": "currency word after a space",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0133",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 20 eura",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000",
+      "currency": "EUR",
+      "description": "Lidl",
+      "candidates": 1
+    },
+    "note": "genitive plural of euro",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0134",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 20 evra",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000",
+      "currency": "EUR",
+      "description": "Lidl",
+      "candidates": 1
+    },
+    "note": "the everyday Serbian spelling of euro",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0135",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1500 dinara",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": "RSD",
+      "description": "Lidl",
+      "candidates": 1
+    },
+    "note": "docs/04 §3.1 currency-suffix form",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0136",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1500 dindži",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": "RSD",
+      "description": "Lidl",
+      "candidates": 1
+    },
+    "note": "docs/04 §3.1 currency-suffix form, with a diacritic",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0137",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1500 dindzi",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "150000",
+      "currency": "RSD",
+      "description": "Lidl",
+      "candidates": 1
+    },
+    "note": "the same suffix folded to ASCII",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0138",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 20$",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000",
+      "currency": "USD",
+      "description": "Lidl",
+      "candidates": 1
+    },
+    "note": "dollar symbol",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0139",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 20 usd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000",
+      "currency": "USD",
+      "description": "Lidl",
+      "candidates": 1
+    },
+    "note": "ISO code as a word",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0140",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 20 dolara",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "2000",
+      "currency": "USD",
+      "description": "Lidl",
+      "candidates": 1
+    },
+    "note": "Serbian word for dollars",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0141",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2000kg",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": null,
+      "description": "Lidl kg",
+      "tokens": [
+        "lidl",
+        "kg"
+      ],
+      "candidates": 1
+    },
+    "note": "the k lookahead: `2000k` would be two million, `2000kg` is two thousand kilograms. `kg` is text, so it stays in the description.",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0142",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.000.000,99",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "100000099",
+      "currency": null,
+      "description": "Lidl",
+      "candidates": 1
+    },
+    "note": "two groups plus a decimal comma, exact to the para",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0143",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 9007199254740993",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "900719925474099300",
+      "currency": null,
+      "description": "Lidl",
+      "candidates": 1
+    },
+    "note": "past Number.MAX_SAFE_INTEGER: a float path loses the last digits (ADR-003)",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0144",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 9007199254740993k",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "900719925474099300000",
+      "currency": null,
+      "description": "Lidl",
+      "candidates": 1
+    },
+    "note": "the same value with a k shorthand, so both scalings stay exact",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0145",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 0,05",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "5",
+      "currency": null,
+      "description": "Lidl",
+      "candidates": 1
+    },
+    "note": "five para must not round to zero",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0146",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2000din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "RSD",
+      "kind": "EXPENSE",
+      "occurredOn": null,
+      "description": "Lidl",
+      "tokens": [
+        "lidl"
+      ],
+      "candidates": 1
+    },
+    "note": "docs/04 §3.1 names the attached form `2000din` verbatim; the suffix axis uses a leading space so the k lookahead cannot eat it",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0147",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 1.200,50din",
+    "today": "2026-09-14",
+    "ledgerCurrency": "RSD",
+    "expected": {
+      "amountMinor": "120050",
+      "currency": "RSD",
+      "description": "Lidl",
+      "candidates": 1
+    },
+    "note": "both separators with an attached currency word",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0148",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "EUR",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": null,
+      "description": "Lidl",
+      "candidates": 1,
+      "kind": "EXPENSE"
+    },
+    "note": "currency stays null so the caller inherits the ledger currency (docs/04 §3.2); 2000 EUR is 200000 cents",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0149",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2000 rsd",
+    "today": "2026-09-14",
+    "ledgerCurrency": "EUR",
+    "expected": {
+      "amountMinor": "200000",
+      "currency": "RSD",
+      "description": "Lidl",
+      "candidates": 1
+    },
+    "note": "a named currency beats the ledger currency",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  },
+  {
+    "id": "amount-0150",
+    "slice": "AMOUNT_FORMAT",
+    "input": "Lidl 2000",
+    "today": "2026-09-14",
+    "ledgerCurrency": "JPY",
+    "expected": {
+      "amountMinor": "2000",
+      "currency": null,
+      "description": "Lidl",
+      "candidates": 1
+    },
+    "note": "JPY has no minor unit: proves the injected ledger currency, not a hardcoded x100, sets the scale",
+    "provenance": "hand-labelled",
+    "addedIn": "2026-09-14"
+  }
+]

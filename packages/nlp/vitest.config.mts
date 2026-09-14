@@ -14,7 +14,10 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.spec.ts'],
+    // `test/**` matters: docs/10 §1 puts the golden-dataset harness at `packages/nlp/test/golden/`,
+    // and with only `src/**` here nothing would ever collect it — a suite that passes by not running
+    // is worse than one that fails.
+    include: ['src/**/*.spec.ts', 'test/**/*.spec.ts'],
     passWithNoTests: true,
   },
 });

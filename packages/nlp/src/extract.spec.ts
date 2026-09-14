@@ -73,6 +73,26 @@ describe('extractFragment — amounts', () => {
   it('finds the amount inside surrounding words', () => {
     expect(fragment('kupovina u Lidlu 1.250,50 juče').amountMinor).toBe(125_050n);
   });
+
+  it('does not start a thousands group inside a merchant name that ends in a digit', () => {
+    // `A1` is a shipped Merchant (apps/api/prisma/seed.ts) and `A1 199` is a mobile top-up. The
+    // tokenizer used to match the group `1 199` across the name/amount boundary and report 1 199 RSD
+    // — a six-fold overstatement on the money path. A group has to be a number in its own right.
+    const result = fragment('A1 199');
+    expect(result.amountMinor).toBe(19_900n);
+    expect(result.description).toBe('A1');
+    expect(result.tokens).toEqual(['a1']);
+    expect(fragment('A1 250 juče').amountMinor).toBe(25_000n);
+    // ...and a genuine group after a name still groups: `A1 1 199` is 1 199 RSD.
+    expect(fragment('A1 1 199').amountMinor).toBe(119_900n);
+  });
+
+  it('still reads a number glued to a description', () => {
+    // The plain alternative has no such guard, because `Lidl2000` is a real if untidy input and
+    // there is no name/amount boundary to respect.
+    expect(fragment('Lidl2000').amountMinor).toBe(200_000n);
+    expect(fragment('Lidl2000').description).toBe('Lidl');
+  });
 });
 
 describe('extractFragment — ambiguity is surfaced, never resolved', () => {

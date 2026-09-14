@@ -93,9 +93,12 @@ Consequences this document implements:
 
 ## 2. The test pyramid
 
-Runners: **Vitest** for `packages/*` (ESM-native, Nx-cacheable), **Jest** for `apps/api` (NestJS
-default) and the golden-dataset harness named in [09 §4](09-implementation-plan.md) task 2.1.2, **Jest +
-`jest-preset-angular`** for `TestBed` component tests, **Playwright** for end-to-end.
+Runners: **Vitest** for `packages/*` (ESM-native, Nx-cacheable) and for `apps/api` — §2A records why
+the plan's original Jest choice was abandoned. The golden-dataset harness named in
+[09 §4](09-implementation-plan.md) task 2.1.2 is Vitest too and lives at `packages/nlp/test/golden/`,
+so it runs inside `pnpm nx run nlp:test` and is a PR gate rather than a separate runner. **Playwright**
+for end-to-end. Angular `TestBed` component tests are not built yet; whatever runner they use must be
+able to load NestJS 12's ESM-only packages, which is the constraint §2A is about.
 
 | # | Layer | Tooling | Scope | Size | Runtime | Blocks merge |
 |---|---|---|---|---|---|---|
