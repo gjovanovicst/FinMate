@@ -1,6 +1,8 @@
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 
 import { balance, formatBalance } from '@finmate/domain';
+
+import { I18nService } from '../../../core/i18n/i18n.service';
 
 /**
  * The Money on the wire (docs/06 §1).
@@ -73,8 +75,18 @@ export class MoneyComponent {
   /** Show a `+`/`−` prefix. Defaults on for anything but `NEUTRAL`. */
   readonly sign = input<boolean | undefined>(undefined);
 
-  /** BCP-47 locale. Serbian latin by default; the app ships latn and cyrl variants (ADR-019). */
-  readonly locale = input<string>('sr-Latn-RS');
+  private readonly i18n = inject(I18nService);
+
+  /**
+   * BCP-47 locale for grouping and the currency symbol.
+   *
+   * Defaults to the **active app language** (ADR-019) so an amount is never formatted in one
+   * language while the rest of the page is in another. Callers may override it for a specific
+   * context, but the sensible thing happens by default.
+   */
+  readonly locale = input<string | undefined>(undefined);
+
+  private readonly effectiveLocale = computed(() => this.locale() ?? this.i18n.tag());
 
   readonly showSign = computed(() => this.sign() ?? this.direction() !== 'NEUTRAL');
 
@@ -94,7 +106,7 @@ export class MoneyComponent {
   readonly formatted = computed(() => {
     const { amountMinor, currency } = this.amount();
     try {
-      return formatBalance(balance(BigInt(amountMinor), currency), this.locale());
+      return formatBalance(balance(BigInt(amountMinor), currency), this.effectiveLocale());
     } catch {
       return '—';
     }

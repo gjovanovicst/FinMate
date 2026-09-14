@@ -1,5 +1,7 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
+
+import { I18nService } from '../../core/i18n/i18n.service';
 
 @Component({
   selector: 'fm-not-found',
@@ -7,9 +9,9 @@ import { RouterLink } from '@angular/router';
   imports: [RouterLink],
   template: `
     <section class="nf">
-      <h1 class="nf__title">Stranica nije pronađena</h1>
-      <p class="nf__body">Link je možda zastareo ili stranica više ne postoji.</p>
-      <a class="nf__cta" routerLink="/">Nazad na pregled</a>
+      <h1 class="nf__title">{{ i18n.t('notFound.title') }}</h1>
+      <p class="nf__body">{{ i18n.t('notFound.body') }}</p>
+      <a class="nf__cta" routerLink="/">{{ i18n.t('notFound.cta') }}</a>
     </section>
   `,
   styles: [
@@ -42,4 +44,6 @@ import { RouterLink } from '@angular/router';
     `,
   ],
 })
-export class NotFoundComponent {}
+export class NotFoundComponent {
+  readonly i18n = inject(I18nService);
+}

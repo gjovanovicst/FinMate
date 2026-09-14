@@ -27,7 +27,8 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 | GraphQL (0.7) | Code-first; `Money` / `UUID` / `LocalDate` scalars; keyset pagination on the UUIDv7 key; `apps/api/schema.gql` generated as a reviewable artifact. First vertical slice: Accounts, with a backend-computed balance |
 | CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → lint → typecheck → test → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
 | Web (0.8) | Angular 22, **zoneless** + signals, ADR-006. Responsive shell (bottom nav → sidebar at 1024px), design tokens (`apps/web/src/styles.css`), `fm-money` as the only Money renderer, auth pages, Accounts consuming GraphQL |
-| Tests | **195 pass** — 175 API + 15 domain + 5 web |
+| i18n | `core/i18n/`: **English primary**, Serbian latin + cyrillic. Runtime catalogue (no rebuild), `TranslationKey` derived from `en`, `sr-Cyrl` generated at runtime. Language switcher in the shell |
+| Tests | **228 pass** — 180 API + 24 domain + 28 web |
 | Not yet built | worker jobs; production build for apps/api (its own decision); PWA service worker (Phase 4) |
 
 ```bash
@@ -43,7 +44,7 @@ nx run web:build          # production bundle
 **The browser talks to `/api/*`; the dev proxy strips the prefix** before forwarding, because the
 API serves `/auth/*` and `/graphql` without one (docs/06). Changing the prefix on one side only
 produces a 404 that looks like an auth failure.
-Verified working: lint 9/9, typecheck 9/9, 195 tests, `web:build`, GraphQL over HTTP through the
+Verified working: lint 9/9, typecheck 9/9, 228 tests, `web:build`, GraphQL over HTTP through the
 browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, and `prisma migrate diff`
 reporting no drift.
 
@@ -137,7 +138,8 @@ A change is not done until (doc 09 §8):
 - [ ] **Money arithmetic** covered by a property-based test where applicable
 - [ ] **Error, empty, loading and offline states** handled — not just the happy path
 - [ ] Verified at **320 / 768 / 1280 px**, and operable by **keyboard alone**
-- [ ] **No hardcoded user-facing strings** (i18n; both latin and cyrillic Serbian)
+- [ ] **No hardcoded user-facing strings** — every string goes through `I18nService.t()`, with
+      English (primary) and Serbian (latin + cyrillic) present
 - [ ] **Telemetry** added if the feature has a success metric
 - [ ] `docs/` updated if a canonical decision changed — **plus an ADR if it is architectural**
 
@@ -199,6 +201,13 @@ A change is not done until (doc 09 §8):
 - **Apps must not set `outDir`.** With it, tsc infers a `rootDir` and then rejects the workspace
   packages it pulls in as source (TS6059). Apps set `declaration: false` and no `outDir`; typecheck
   is `tsc --noEmit` and SWC does the transpiling.
+- **No hardcoded user-facing copy.** Every string goes through `I18nService.t('key')`. English is
+  primary and is the source of the key set: add the string to `translations/en.ts` first, then to
+  `sr-latn.ts` (typed, so a miss is a compile error). `sr-Cyrl` is generated — never edit it. A
+  component that calls `t('key')` in its template re-renders on a language change because `t` reads
+  the locale signal; do NOT introduce an impure pipe for this.
+- **`fm-money` takes its locale from the active language**, so an amount is never formatted in one
+  language while the page is in another.
 - **`**/.angular/**` must stay in the eslint ignores.** The Angular build cache contains bundled
   dependency output, so linting it reports hundreds of errors in `@angular/forms`' own bundle.
 - **Angular targets run with `cwd: {projectRoot}` and project-relative binaries.** Mixing a

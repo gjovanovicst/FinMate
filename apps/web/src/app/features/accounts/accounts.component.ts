@@ -1,8 +1,10 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
-import { messageForError } from '../../core/api/error-messages';
+import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
+import { I18nService } from '../../core/i18n/i18n.service';
+import type { TranslationKey } from '../../core/i18n/translations';
 import { MoneyComponent, type MoneyWire } from '../../shared/ui/money/money.component';
 
 interface AccountNode {
@@ -71,12 +73,12 @@ const CREATE_ACCOUNT_MUTATION = /* GraphQL */ `
   imports: [ReactiveFormsModule, MoneyComponent],
   template: `
     <header class="head">
-      <h1 class="head__title">Računi</h1>
+      <h1 class="head__title">{{ i18n.t('accounts.title') }}</h1>
       <p class="head__sub">
         @if (loading()) {
-          Učitavanje…
+          {{ i18n.t('accounts.loading') }}
         } @else {
-          {{ accounts().length }} od {{ totalCount() }}
+          {{ i18n.t('accounts.count', { shown: accounts().length, total: totalCount() }) }}
         }
       </p>
     </header>
@@ -88,10 +90,8 @@ const CREATE_ACCOUNT_MUTATION = /* GraphQL */ `
     @if (!loading() && accounts().length === 0) {
       <!-- Actionable empty state, not decoration: it says what to do next. -->
       <div class="empty">
-        <p class="empty__title">Još nema računa</p>
-        <p class="empty__body">
-          Dodaj račun (keš, banka ili kartica) da bi mogao da pratiš stanje i troškove.
-        </p>
+        <p class="empty__title">{{ i18n.t('accounts.emptyTitle') }}</p>
+        <p class="empty__body">{{ i18n.t('accounts.emptyBody') }}</p>
       </div>
     }
 
@@ -108,34 +108,33 @@ const CREATE_ACCOUNT_MUTATION = /* GraphQL */ `
     </ul>
 
     <section class="create">
-      <h2 class="create__title">Novi račun</h2>
+      <h2 class="create__title">{{ i18n.t('accounts.newTitle') }}</h2>
       <form class="create__form" [formGroup]="form" (ngSubmit)="create()" novalidate>
         <label class="field">
-          <span class="field__label">Naziv</span>
+          <span class="field__label">{{ i18n.t('accounts.name') }}</span>
           <input class="field__input" type="text" formControlName="name" required />
         </label>
 
         <label class="field">
-          <span class="field__label">Tip</span>
+          <span class="field__label">{{ i18n.t('accounts.kind') }}</span>
           <select class="field__input" formControlName="kind">
-            <option value="CASH">Keš</option>
-            <option value="BANK">Tekući račun</option>
-            <option value="CARD">Kartica</option>
-            <option value="OTHER">Ostalo</option>
+            @for (kind of accountKinds; track kind) {
+              <option [value]="kind">{{ i18n.t(kindKey(kind)) }}</option>
+            }
           </select>
         </label>
 
         <label class="field">
-          <span class="field__label">Početno stanje (u parama)</span>
+          <span class="field__label">{{ i18n.t('accounts.openingBalance') }}</span>
           <input class="field__input" type="text" inputmode="numeric" formControlName="openingMinor" />
           <!-- Deliberately parama, not dinara: the wire format is integer minor units (ADR-003)
                and a text field avoids the browser handing us a float. A friendlier dinara input
                with correct parsing is a Phase 1 concern. -->
-          <span class="field__hint">npr. 150000 za 1.500,00 RSD</span>
+          <span class="field__hint">{{ i18n.t('accounts.openingBalanceHint') }}</span>
         </label>
 
         <button class="create__submit" type="submit" [disabled]="creating()">
-          {{ creating() ? 'Dodavanje…' : 'Dodaj račun' }}
+          {{ creating() ? i18n.t('accounts.submitting') : i18n.t('accounts.submit') }}
         </button>
       </form>
     </section>
@@ -266,8 +265,12 @@ const CREATE_ACCOUNT_MUTATION = /* GraphQL */ `
   ],
 })
 export class AccountsComponent {
+  readonly i18n = inject(I18nService);
   private readonly graphql = inject(GraphqlClient);
   private readonly fb = inject(FormBuilder);
+  private readonly errors = inject(ErrorMessageService);
+
+  readonly accountKinds: readonly AccountNode['kind'][] = ['CASH', 'BANK', 'CARD', 'OTHER'];
 
   readonly accounts = signal<readonly AccountNode[]>([]);
   readonly totalCount = signal(0);
@@ -293,7 +296,7 @@ export class AccountsComponent {
       this.accounts.set(data.accounts.edges.map((edge) => edge.node));
       this.totalCount.set(data.accounts.totalCount);
     } catch (error) {
-      this.error.set(messageForError(error));
+      this.error.set(this.errors.for(error));
     } finally {
       this.loading.set(false);
     }
@@ -319,13 +322,18 @@ export class AccountsComponent {
       this.form.reset({ name: '', kind: 'CASH', openingMinor: '0' });
       await this.load();
     } catch (error) {
-      this.error.set(messageForError(error));
+      this.error.set(this.errors.for(error));
     } finally {
       this.creating.set(false);
     }
   }
 
+  /** The translation key for an account kind, so the label follows the language. */
+  kindKey(kind: AccountNode['kind']): TranslationKey {
+    return `accountKind.${kind}` as TranslationKey;
+  }
+
   kindLabel(kind: AccountNode['kind']): string {
-    return { CASH: 'Keš', BANK: 'Tekući račun', CARD: 'Kartica', OTHER: 'Ostalo' }[kind];
+    return this.i18n.t(this.kindKey(kind));
   }
 }

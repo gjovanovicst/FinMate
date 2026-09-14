@@ -2,8 +2,9 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 
-import { messageForError } from '../../core/api/error-messages';
+import { ErrorMessageService } from '../../core/api/error-message.service';
 import { AuthStore } from '../../core/auth/auth.store';
+import { I18nService } from '../../core/i18n/i18n.service';
 
 @Component({
   selector: 'fm-sign-in',
@@ -11,11 +12,11 @@ import { AuthStore } from '../../core/auth/auth.store';
   imports: [ReactiveFormsModule, RouterLink],
   template: `
     <section class="auth">
-      <h1 class="auth__title">Prijava</h1>
+      <h1 class="auth__title">{{ i18n.t('signIn.title') }}</h1>
 
       <form class="auth__form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
         <label class="field">
-          <span class="field__label">Email</span>
+          <span class="field__label">{{ i18n.t('signIn.email') }}</span>
           <input
             class="field__input"
             type="email"
@@ -27,7 +28,7 @@ import { AuthStore } from '../../core/auth/auth.store';
         </label>
 
         <label class="field">
-          <span class="field__label">Lozinka</span>
+          <span class="field__label">{{ i18n.t('signIn.password') }}</span>
           <input
             class="field__input"
             type="password"
@@ -44,12 +45,12 @@ import { AuthStore } from '../../core/auth/auth.store';
         }
 
         <button class="auth__submit" type="submit" [disabled]="submitting()">
-          {{ submitting() ? 'Prijavljivanje…' : 'Prijavi se' }}
+          {{ submitting() ? i18n.t('signIn.submitting') : i18n.t('signIn.submit') }}
         </button>
       </form>
 
       <p class="auth__alt">
-        Nemaš nalog? <a routerLink="/sign-up">Registruj se</a>
+        {{ i18n.t('signIn.noAccount') }} <a routerLink="/sign-up">{{ i18n.t('signIn.register') }}</a>
       </p>
     </section>
   `,
@@ -119,8 +120,10 @@ import { AuthStore } from '../../core/auth/auth.store';
   ],
 })
 export class SignInComponent {
+  readonly i18n = inject(I18nService);
   private readonly auth = inject(AuthStore);
   private readonly router = inject(Router);
+  private readonly errors = inject(ErrorMessageService);
   private readonly fb = inject(FormBuilder);
 
   readonly form = this.fb.nonNullable.group({
@@ -145,7 +148,7 @@ export class SignInComponent {
       await this.auth.signIn(email, password);
       await this.router.navigateByUrl('/');
     } catch (error) {
-      this.error.set(messageForError(error));
+      this.error.set(this.errors.for(error));
     } finally {
       this.submitting.set(false);
     }

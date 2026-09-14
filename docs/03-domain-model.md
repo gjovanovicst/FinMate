@@ -153,7 +153,9 @@ CREATE TABLE users (
   email_verified_at  TIMESTAMPTZ,
   password_hash      TEXT,                       -- argon2id; NULL if passkey-only
   display_name       TEXT NOT NULL,
-  locale             TEXT NOT NULL DEFAULT 'sr-Latn-RS',
+  -- English is the product's primary language (ADR-019); Serbian is a first-class
+  -- alternative. This drives server-side copy such as email.
+  locale             TEXT NOT NULL DEFAULT 'en',
   status             TEXT NOT NULL DEFAULT 'ACTIVE'
                        CHECK (status IN ('ACTIVE','SUSPENDED','DELETED')),
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),

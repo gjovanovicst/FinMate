@@ -1,7 +1,9 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 import { AuthStore } from '../../core/auth/auth.store';
+import { I18nService } from '../../core/i18n/i18n.service';
+import type { TranslationKey } from '../../core/i18n/translations';
 
 /**
  * Dashboard.
@@ -17,25 +19,22 @@ import { AuthStore } from '../../core/auth/auth.store';
   imports: [RouterLink],
   template: `
     <header class="head">
-      <h1 class="head__title">Pregled</h1>
-      <p class="head__sub">Prijavljeni si kao {{ role() }}.</p>
+      <h1 class="head__title">{{ i18n.t('dashboard.title') }}</h1>
+      <p class="head__sub">{{ i18n.t('session.signedInAs', { role: roleLabel() }) }}</p>
     </header>
 
     <div class="panel">
-      <p class="panel__title">Sledeći korak</p>
-      <p class="panel__body">
-        Dodaj svoj prvi račun da bi mogao da počneš da beležiš troškove.
-      </p>
-      <a class="panel__cta" routerLink="/accounts">Idi na račune</a>
+      <p class="panel__title">{{ i18n.t('dashboard.nextStepTitle') }}</p>
+      <p class="panel__body">{{ i18n.t('dashboard.nextStepBody') }}</p>
+      <a class="panel__cta" routerLink="/accounts">{{ i18n.t('dashboard.nextStepCta') }}</a>
     </div>
 
     <div class="panel panel--muted">
-      <p class="panel__title">U izradi</p>
+      <p class="panel__title">{{ i18n.t('dashboard.inProgressTitle') }}</p>
       <ul class="todo">
-        <li>Unos prirodnim jezikom — „Lidl 2000“ (Faza 2)</li>
-        <li>Budžeti i ciljevi štednje (Faza 1)</li>
-        <li>„Koliko mogu danas da potrošim?“ (Faza 1)</li>
-        <li>Računi i kategorizacija po stavkama (Faza 4)</li>
+        @for (item of roadmap; track item) {
+          <li>{{ i18n.t(item) }}</li>
+        }
       </ul>
     </div>
   `,
@@ -95,6 +94,19 @@ import { AuthStore } from '../../core/auth/auth.store';
   ],
 })
 export class DashboardComponent {
+  readonly i18n = inject(I18nService);
   private readonly auth = inject(AuthStore);
-  readonly role = () => this.auth.role() ?? 'korisnik';
+
+  /** Roadmap items are keys, so the list re-renders with the language. */
+  readonly roadmap: readonly TranslationKey[] = [
+    'dashboard.todo.naturalLanguage',
+    'dashboard.todo.budgets',
+    'dashboard.todo.safeToSpend',
+    'dashboard.todo.receipts',
+  ];
+
+  readonly roleLabel = computed(() => {
+    const role = this.auth.role();
+    return role ? this.i18n.t(`role.${role}` as TranslationKey) : this.i18n.t('role.unknown');
+  });
 }

@@ -2,8 +2,9 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 
-import { messageForError } from '../../core/api/error-messages';
+import { ErrorMessageService } from '../../core/api/error-message.service';
 import { AuthStore } from '../../core/auth/auth.store';
+import { I18nService } from '../../core/i18n/i18n.service';
 
 /**
  * Sign-up.
@@ -20,19 +21,17 @@ const MIN_PASSWORD_LENGTH = 12;
   imports: [ReactiveFormsModule, RouterLink],
   template: `
     <section class="auth">
-      <h1 class="auth__title">Registracija</h1>
-      <p class="auth__hint">
-        Otvaranjem naloga dobijaš svoje domaćinstvo — kasnije možeš da dodaš članove porodice.
-      </p>
+      <h1 class="auth__title">{{ i18n.t('signUp.title') }}</h1>
+      <p class="auth__hint">{{ i18n.t('signUp.intro') }}</p>
 
       <form class="auth__form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
         <label class="field">
-          <span class="field__label">Ime</span>
+          <span class="field__label">{{ i18n.t('signUp.displayName') }}</span>
           <input class="field__input" type="text" formControlName="displayName" autocomplete="name" required />
         </label>
 
         <label class="field">
-          <span class="field__label">Email</span>
+          <span class="field__label">{{ i18n.t('signUp.email') }}</span>
           <input
             class="field__input"
             type="email"
@@ -44,7 +43,7 @@ const MIN_PASSWORD_LENGTH = 12;
         </label>
 
         <label class="field">
-          <span class="field__label">Lozinka</span>
+          <span class="field__label">{{ i18n.t('signUp.password') }}</span>
           <input
             class="field__input"
             type="password"
@@ -52,7 +51,7 @@ const MIN_PASSWORD_LENGTH = 12;
             autocomplete="new-password"
             required
           />
-          <span class="field__hint">Najmanje {{ minLength }} znakova.</span>
+          <span class="field__hint">{{ i18n.t('signUp.passwordHint', { min: minLength }) }}</span>
         </label>
 
         @if (error()) {
@@ -60,11 +59,11 @@ const MIN_PASSWORD_LENGTH = 12;
         }
 
         <button class="auth__submit" type="submit" [disabled]="submitting()">
-          {{ submitting() ? 'Otvaranje naloga…' : 'Otvori nalog' }}
+          {{ submitting() ? i18n.t('signUp.submitting') : i18n.t('signUp.submit') }}
         </button>
       </form>
 
-      <p class="auth__alt">Već imaš nalog? <a routerLink="/sign-in">Prijavi se</a></p>
+      <p class="auth__alt">{{ i18n.t('signUp.haveAccount') }} <a routerLink="/sign-in">{{ i18n.t('signUp.signIn') }}</a></p>
     </section>
   `,
   styles: [
@@ -138,8 +137,10 @@ const MIN_PASSWORD_LENGTH = 12;
   ],
 })
 export class SignUpComponent {
+  readonly i18n = inject(I18nService);
   private readonly auth = inject(AuthStore);
   private readonly router = inject(Router);
+  private readonly errors = inject(ErrorMessageService);
   private readonly fb = inject(FormBuilder);
 
   readonly minLength = MIN_PASSWORD_LENGTH;
@@ -166,7 +167,7 @@ export class SignUpComponent {
       await this.auth.signUp(email, password, displayName);
       await this.router.navigateByUrl('/');
     } catch (error) {
-      this.error.set(messageForError(error));
+      this.error.set(this.errors.for(error));
     } finally {
       this.submitting.set(false);
     }

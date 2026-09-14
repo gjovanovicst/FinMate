@@ -2,10 +2,14 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
 import { AuthStore } from './core/auth/auth.store';
+import { I18nService } from './core/i18n/i18n.service';
+import type { TranslationKey } from './core/i18n/translations';
+import { LanguageSwitcherComponent } from './shared/ui/language-switcher/language-switcher.component';
 
 interface NavItem {
   readonly path: string;
-  readonly label: string;
+  /** A translation key, not a label: the nav re-renders when the language changes. */
+  readonly labelKey: TranslationKey;
   readonly icon: string;
   /** Compact nav shows at most this many items before the rest move under "Više". */
   readonly primary: boolean;
@@ -25,13 +29,13 @@ interface NavItem {
 @Component({
   selector: 'fm-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, LanguageSwitcherComponent],
   template: `
-    <a class="skip-link" href="#main">Preskoči na sadržaj</a>
+    <a class="skip-link" href="#main">{{ i18n.t('app.skipToContent') }}</a>
 
     <div class="shell" [class.shell--authenticated]="isAuthenticated()">
       @if (isAuthenticated()) {
-        <nav class="nav" aria-label="Glavna navigacija">
+        <nav class="nav" [attr.aria-label]="i18n.t('app.primaryNav')">
           <ul class="nav__list">
             @for (item of visibleItems(); track item.path) {
               <li class="nav__item">
@@ -43,7 +47,7 @@ interface NavItem {
                   [attr.aria-current]="rla.isActive ? 'page' : null"
                 >
                   <span class="nav__icon" aria-hidden="true">{{ item.icon }}</span>
-                  <span class="nav__label">{{ item.label }}</span>
+                  <span class="nav__label">{{ i18n.t(item.labelKey) }}</span>
                 </a>
               </li>
             }
@@ -57,9 +61,10 @@ interface NavItem {
 
       @if (isAuthenticated()) {
         <footer class="session">
-          <span class="session__role">{{ role() }}</span>
+          <fm-language-switcher />
+          <span class="session__role">{{ roleLabel() }}</span>
           <button type="button" class="session__signout" (click)="signOut()" [disabled]="signingOut()">
-            {{ signingOut() ? 'Odjavljivanje…' : 'Odjavi se' }}
+            {{ signingOut() ? i18n.t('session.signingOut') : i18n.t('session.signOut') }}
           </button>
         </footer>
       }
@@ -216,9 +221,18 @@ interface NavItem {
 })
 export class AppComponent {
   private readonly auth = inject(AuthStore);
+  readonly i18n = inject(I18nService);
 
   readonly isAuthenticated = this.auth.isAuthenticated;
-  readonly role = computed(() => this.auth.role() ?? '');
+
+  /**
+   * Roles are shown as words, not enum values. The role itself comes from the server (never a token
+   * claim), and only the label is localised.
+   */
+  readonly roleLabel = computed(() => {
+    const role = this.auth.role();
+    return role ? this.i18n.t(`role.${role}` as TranslationKey) : this.i18n.t('role.unknown');
+  });
   readonly signingOut = signal(false);
 
   /**
@@ -227,8 +241,8 @@ export class AppComponent {
    * item, because it teaches the user that the app is incomplete.
    */
   private readonly items: readonly NavItem[] = [
-    { path: '/', label: 'Pregled', icon: '📊', primary: true },
-    { path: '/accounts', label: 'Računi', icon: '🏦', primary: true },
+    { path: '/', labelKey: 'nav.dashboard', icon: '📊', primary: true },
+    { path: '/accounts', labelKey: 'nav.accounts', icon: '🏦', primary: true },
   ];
 
   readonly visibleItems = computed(() => this.items.filter((item) => item.primary));

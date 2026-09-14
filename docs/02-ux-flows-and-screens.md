@@ -1023,7 +1023,13 @@ part of Definition of Done ([09 §8](09-implementation-plan.md)), not a later au
 
 ---
 
-## 10. Microcopy (Serbian latin → English)
+## 10. Microcopy (English primary → Serbian latin)
+
+> **Direction changed (ADR-019).** English is now the **primary** language and the source of truth
+> for the key set; the Serbian strings below are the translations. The table is kept in its original
+> SR → EN order for review, but the shipped catalogue is keyed by English and `TranslationKey` is
+> derived from it, so a missing Serbian string is a compile error rather than a silent fallback.
+> See `apps/web/src/app/core/i18n/translations/`.
 
 Voice: **calm, specific, never congratulatory about money and never scolding.** No exclamation marks,
 no "Oops!". Uncertainty is stated plainly. Every amount is produced by `ui-money`, never assembled in

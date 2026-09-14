@@ -24,8 +24,6 @@
 
 generator client {
   provider        = "prisma-client"
-  // Prisma 7: `prisma-client` is the current generator and `output` is REQUIRED.
-  // `prisma-client-js` is gone. The client is imported from this path, not from @prisma/client.
   output          = "../src/generated/prisma"
   previewFeatures = ["partialIndexes"]
 }
@@ -727,7 +725,7 @@ model users {
   email_verified_at DateTime?           @db.Timestamptz(6)
   password_hash     String?
   display_name      String
-  locale            String              @default("sr-Latn-RS")
+  locale            String              @default("en")
   status            String              @default("ACTIVE")
   created_at        DateTime            @default(now()) @db.Timestamptz(6)
   updated_at        DateTime            @default(now()) @db.Timestamptz(6)

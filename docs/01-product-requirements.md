@@ -101,7 +101,7 @@ MoSCoW is scoped to **release 1.0 (public beta)**.
 |---|---|---|---|
 | F-26 | Offline-capable input + multi-device sync | **Must** | Mobile reality; see [07](07-platform-strategy-mobile-desktop.md). |
 | F-28 | Auth (email+password, refresh tokens), account lifecycle | **Must** | Passkeys are Could. |
-| F-27 | i18n: Serbian (latin + cyrillic input tolerance) and English | **Must** | Tolerance for both scripts is a *parser* requirement, not just UI. |
+| F-27 | i18n: **English primary**, Serbian (latin + cyrillic) alternative | **Must** | Script tolerance is a *parser* requirement, not just UI: Serbian input in either script must parse regardless of interface language. |
 | F-13 | **Onboarding & knowledge seeding** | **Must** | Mitigates the cold-start risk — see §5. |
 | F-29 | Household sharing (multi-user write access) | **Won't (v1)** | Schema supports it; UI deferred to v2. |
 | F-33 | Bank import via Open Banking | **Won't (v1)** | Not practically available in RS yet; revisit in v2. |
@@ -268,7 +268,7 @@ Scenario: Capture without connectivity
 | **Accessibility** | WCAG 2.2 AA: keyboard-complete desktop flows, visible focus, ≥ 4.5:1 contrast, screen-reader labels on every money field. |
 | **Privacy** | Financial text sent to a third-party model only with explicit per-user consent and provider/region configuration; exportable and hard-deletable in one action. |
 | **Portability** | Full data export (CSV + JSON) at any time; no lock-in. |
-| **Localisation** | SR (latin + cyrillic) and EN from day one; all strings externalised; number/date formatting per locale. |
+| **Localisation** | **English is the primary language**; Serbian (latin and cyrillic) is a first-class alternative from day one. All strings externalised — no hardcoded copy in a component. Number, currency and date formatting follow the active locale, so an amount is never formatted in one language while the page is in another. |
 | **Auditability** | Every categorisation records which layer decided, the rule/model version, and the confidence. |
 
 ---
