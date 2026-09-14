@@ -223,6 +223,59 @@ A calendar day in the Household timezone, formatted YYYY-MM-DD (docs/03 §3.2).
 scalar LocalDate
 
 """
+An alternative spelling that resolves to this Merchant. Stored folded (lower case, no diacritics) so it matches however the user types it.
+"""
+type MerchantAliasModel {
+  alias: String!
+  id: String!
+  merchantId: String!
+}
+
+type MerchantConnection {
+  edges: [MerchantModelEdge!]!
+  pageInfo: PageInfo!
+
+  """
+  Total rows matching the filter, ignoring the page window. Useful for "23 transactions" style labels, and cheap because it is a scoped COUNT.
+  """
+  totalCount: Int!
+}
+
+"""
+A shop or service a Transaction was made at. The household sees the shipped platform catalogue plus its own rows; `isOwnedByHousehold` is the distinction (docs/01 F-10, F-13).
+"""
+type MerchantModel {
+  aiHint: String
+  aliases: [MerchantAliasModel!]!
+  createdAt: DateTime!
+  defaultCategoryId: String
+
+  """Breadcrumb of the default Category, by name. Empty when none is set."""
+  defaultCategoryPath: [String!]
+  id: String!
+
+  """
+  True for a shipped seed row (`household_id IS NULL`). Global rows are read-only.
+  """
+  isGlobal: Boolean!
+
+  """
+  True when this Household owns the row. False for a global seed: seeds are copy-on-write, so editing one creates an owned copy rather than mutating platform content.
+  """
+  isOwnedByHousehold: Boolean!
+  name: String!
+
+  """Transactions in this Household that reference this Merchant."""
+  transactionCount: Float!
+  updatedAt: DateTime!
+}
+
+type MerchantModelEdge {
+  cursor: String!
+  node: MerchantModel!
+}
+
+"""
 Money as integer minor units plus an ISO-4217 currency. amountMinor is a string to avoid losing precision beyond Number.MAX_SAFE_INTEGER (ADR-003). Always non-negative.
 """
 scalar Money
@@ -254,6 +307,14 @@ type Mutation {
     name: String!
     parentId: ID
   ): CategoryModel!
+  createMerchant(
+    """
+    A user-authored hint for the classifier. Receipt-item classification outranks it.
+    """
+    aiHint: String
+    defaultCategoryId: ID
+    name: String!
+  ): MerchantModel!
   createTransaction(
     accountId: ID!
 
@@ -290,10 +351,33 @@ type Mutation {
   deleteCategory(id: ID!, reassignToId: ID): Boolean!
 
   """
+  Soft-delete, refusing while Transactions, Receipts or RecurringRules still reference it. Merging is the reassignment path.
+  """
+  deleteMerchant(id: ID!): Boolean!
+
+  """
   Soft-delete. Financial rows are never hard-deleted, so history stays auditable.
   """
   deleteTransaction(id: ID!): Boolean!
+
+  """
+  Move every Transaction, Receipt and RecurringRule from one merchant to another, union their aliases, then delete the source.
+  """
+  mergeMerchants(
+    """The merchant to fold away. Must be Household-owned."""
+    sourceId: ID!
+
+    """The merchant to keep. May be a shipped one."""
+    targetId: ID!
+  ): MerchantModel!
   removeCategoryKeyword(keywordId: ID!): Boolean!
+  setMerchantAliases(
+    """
+    The complete alias set, not a delta. Values are folded (lower case, no diacritics) before storage, so what is stored may differ from what was sent.
+    """
+    aliases: [String!]!
+    merchantId: ID!
+  ): MerchantModel!
   updateCategory(
     aiDescription: String
     color: String
@@ -307,6 +391,11 @@ type Mutation {
     parentId: ID
     sortOrder: Float
   ): CategoryModel!
+
+  """
+  Editing a shipped merchant creates a Household-owned copy and moves this Household’s references onto it, so the platform catalogue is never mutated (seeds are copy-on-write).
+  """
+  updateMerchant(aiHint: String, defaultCategoryId: ID, id: ID!, name: String): MerchantModel!
   updateTransaction(
     amount: Money
     categoryId: ID
@@ -397,6 +486,18 @@ type Query {
   Every dashboard tile in one round trip. All figures are computed by the backend from the ledger and every input is returned, so the UI can show its working (ADR-001).
   """
   dashboard: DashboardModel!
+  merchant(id: ID!): MerchantModel!
+
+  """
+  Merchants visible to this Household: its own rows plus the shipped catalogue, own rows first. Keyset-paginated on the UUIDv7 id.
+  """
+  merchants(
+    after: String
+    first: Int
+
+    """Substring match on the name."""
+    search: String
+  ): MerchantConnection!
 
   """
   Split an amount evenly across categories without losing a para. The backend computes it so the client never rounds money (ADR-003); the result sums exactly (invariant I-1).

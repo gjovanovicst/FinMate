@@ -223,7 +223,7 @@ export function applyTenancyGuard(
     return {
       allowed: true,
       args: globalReadable
-        ? injectGlobalReadableWhere(operation, args, scopeValue)
+        ? injectGlobalReadableWhere(args, scopeValue)
         : injectIntoWhere(operation, args, scopeKey, scopeValue),
     };
   }
@@ -273,7 +273,6 @@ function injectIntoWhere(
  * `AND` accumulates instead, which is what a scope injection must do to be invisible.
  */
 function injectGlobalReadableWhere(
-  operation: string,
   args: Record<string, unknown>,
   scopeValue: string,
 ): Record<string, unknown> {

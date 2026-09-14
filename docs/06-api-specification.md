@@ -1665,6 +1665,28 @@ type Mutation {
 }
 ```
 
+### 5.0 Taxonomy mutations — implementation deviation (Merchants)
+
+Merchants are implemented with the shapes in §3 and §4, with three deviations worth naming rather
+than discovering:
+
+| Spec | Implemented | Why |
+|---|---|---|
+| `createMerchant(input: MerchantCreateInput!): MerchantPayload!` | `createMerchant(name, defaultCategoryId, aiHint): Merchant!` | The implemented surface throughout Phase 1 returns the entity directly and uses `Boolean!` for deletes; the `XPayload` wrappers of §3.6 are not built yet. Introducing them for Merchants alone would make one module inconsistent with the rest. |
+| `deleteMerchant(id: UUID!, version: Int): MerchantPayload!` | `deleteMerchant(id: UUID!): Boolean!` | `merchants` has **no `version` column**, so there is nothing to compare. Two devices editing one Merchant therefore last-write-wins. Acceptable because the row holds no money — a name, aliases and an optional default Category — so a lost update costs a rename, not a total. Adding the column is a migration and not worth one until it bites. |
+| `defaultCategory: Category` | `defaultCategoryPath: [String!]` | A full `Category` carries depth, `sortOrder`, keywords and a path resolved against the whole tree, which is a lot of machinery to hang off an optional hint that ReceiptItem classification outranks anyway (docs/04 §6.3). The breadcrumb is what the UI renders. |
+
+**Seeds are copy-on-write, and it applies to merge targets too.** A global Merchant (`is_global`,
+`household_id IS NULL`) is read-only, so `updateMerchant`, `setMerchantAliases` and a `mergeMerchants`
+whose *target* is global all produce a Household-owned copy and move this Household's references onto
+it. Merging into a seed is a write to it — the alias union has to be stored somewhere — so without
+the copy the merge failed as an opaque `P2025`. The platform row is never mutated.
+
+**Merging is the deletion path for a Merchant in use.** `deleteMerchant` refuses with `CONFLICT` while
+Transactions, Receipts or RecurringRules reference the row and names merging as the way forward;
+`mergeMerchants` is what moves them. A Merchant that is still referenced is never deleted outright,
+and a shipped Merchant is never deleted at all.
+
 ### 5.1 `captureParse`
 
 The preview half of the capture path. Called debounced at 250 ms while the user types

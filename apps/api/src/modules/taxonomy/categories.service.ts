@@ -13,6 +13,7 @@ import {
 } from '@finmate/domain';
 
 import { ApiError } from '../../common/filters/all-exceptions.filter';
+import { normaliseForMatching } from '../../common/text/normalise';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CategoryKind, KeywordPolarity, type CategoryModel } from './category.model';
 
@@ -364,13 +365,12 @@ export class CategoriesService {
    * Stored normalised so `septička`, `septicka` and `септика` all hit the same row (docs/04 §3.1).
    * Display text is never mutated — only the matching key is.
    */
+  /**
+   * Delegates to the shared folder so a Category keyword and a Merchant alias cannot drift apart.
+   * The local copy that used to live here was identical; the second copy was the risk.
+   */
   private normalizeKeyword(keyword: string): string {
-    return keyword
-      .trim()
-      .toLocaleLowerCase('sr-Latn-RS')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/\s+/g, ' ');
+    return normaliseForMatching(keyword);
   }
 
   // -------------------------------------------------------------------------------------------

@@ -22,7 +22,8 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 | Transaction detail/edit sheet (1.2.6) | **Done** — edit + delete, optimistic concurrency; **splits are create-only** (`updateTransaction` accepts no splits) |
 | Budgets CRUD (1.3.1) | **Done** — `upsertBudget` / `deleteBudget` / `budgets` with period consumption and pace |
 | CSV export (1.3.4, F-25) | **Done** — `GET /export/transactions.csv`, filtered, oldest-first. **CSV import is not started** |
-| Merchants/counterparties/tags (1.2.1–1.2.3) | **Not started** |
+| Merchants (1.2.1, F-10) | **Backend done** — `merchants`/`merchant` queries, create/update/delete/setMerchantAliases/mergeMerchants, copy-on-write seeds, merge-as-deletion. **UI not started** |
+| Counterparties/tags (1.2.2–1.2.3) | **Not started** |
 | **Phase 1 UI** | **Done** — transaction entry, filtered/paginated list, edit sheet, budgets, dashboard tiles; Accounts from Phase 0 |
 | Category tree editor + keyword editor (1.2.4, F-02/F-03) | **Done** — rename, reparent, reorder, delete-with-reassign, include/exclude keywords. **Drag-and-drop not implemented**; the Parent select and Alt+arrows cover reparenting |
 | Responsive pass (1.3.5) | **Partially done** — no fixed pixel widths and every multi-column grid is behind a `min-width` query; five known 320 px hazards fixed (nav overflow, hero amount, split-editor row, budget card, keyword chips). **Still needs a human at 320/768/1280 px** |
@@ -42,7 +43,7 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 | CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → lint → typecheck → test → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
 | Web (0.8) | Angular 22, **zoneless** + signals, ADR-006. Responsive shell (bottom nav → sidebar at 1024px), design tokens (`apps/web/src/styles.css`), `fm-money` as the only Money renderer, auth pages, Accounts consuming GraphQL |
 | i18n | `core/i18n/`: **English primary**, Serbian latin + cyrillic. Runtime catalogue (no rebuild), `TranslationKey` derived from `en`, `sr-Cyrl` generated at runtime. Language switcher in the shell |
-| Tests | **398 pass** — 221 API + 97 domain + 80 web |
+| Tests | **415 pass** — 238 API + 97 domain + 80 web |
 | Not yet built | worker jobs; production build for apps/api (its own decision); PWA service worker (Phase 4) |
 | Web screens | `/` dashboard, `/transactions` (filter + edit + CSV export), `/budgets`, `/categories`, `/accounts`, sign-in/up |
 | Navigation | 4 primary destinations in the bottom bar plus **More** (≥1024 px the sidebar lists all 5); `nav.more` is the overflow control |
@@ -60,7 +61,7 @@ nx run web:build          # production bundle
 **The browser talks to `/api/*`; the dev proxy strips the prefix** before forwarding, because the
 API serves `/auth/*` and `/graphql` without one (docs/06). Changing the prefix on one side only
 produces a 404 that looks like an auth failure.
-Verified working: lint 9/9, typecheck 9/9, 398 tests, `web:build`, GraphQL over HTTP through the
+Verified working: lint 9/9, typecheck 9/9, 415 tests, `web:build`, GraphQL over HTTP through the
 browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, and `prisma migrate diff`
 reporting no drift.
 
@@ -256,6 +257,26 @@ A change is not done until (doc 09 §8):
   not a fetch. It is a *browser* URL under `/api/...`; the client fetches it through `HttpClient` so a
   failure lands in the error banner instead of downloading a file full of JSON. Distinct from the
   async whole-household `exportData` (docs/06 §5.11), which needs the worker and is not built.
+- **Merchants are copy-on-write, and that includes a merge target.** A global row is read-only, so
+  `updateMerchant`, `setMerchantAliases` and a `mergeMerchants` whose *target* is global all create a
+  Household-owned copy and move this Household's references onto it. Merging into a seed is a write
+  to it (the alias union must be stored), so without the copy it fails as an opaque `P2025`. Never
+  "simplify" this by relaxing the write predicate.
+- **Merging is the deletion path for a Merchant in use.** `deleteMerchant` refuses with `CONFLICT`
+  while Transactions, Receipts or RecurringRules reference the row; `mergeMerchants` moves them. A
+  shipped Merchant is never deletable at all. The `merchants` table has **no `version` column**, so
+  Merchant writes are last-write-wins — acceptable because the row holds no money.
+- **Normalise keywords and aliases through `common/text/normalise`, never a local copy.** All three
+  fold to the same form the classifier will compare against. `Đ/đ` needed an explicit rule: it has no
+  canonical decomposition, so the combining-mark strip that handles `č/ć/š/ž` left it intact and
+  `Đorđe` never matched `Djordje`. Cyrillic transliteration (docs/04 §3) is still missing and belongs
+  to Phase 2 task 2.1.1, which also moves this into `packages/nlp`.
+- **`runWithTenant` aside, never use the outer client inside an interactive `$transaction`.** Each
+  inner query then waits for a second connection from the same pool and stalls until the transaction
+  times out — surfacing only as an opaque INTERNAL. Always use the `tx` the callback receives.
+- **`transactions.source` has a database DEFAULT but not in the derived Prisma schema.** A direct
+  `transactions.create` must pass `source`; the service does. `prisma db pull` cannot carry a
+  PostgreSQL enum default through.
 - **`merchants` and `ai_provider_configs` are `HOUSEHOLD_SCOPED_WITH_GLOBAL_READS`, not plain
   household-scoped.** Their `household_id` is nullable, and docs/08 §"Layer 2" puts those rows on the
   global allow-list. Reads get `AND: [{ OR: [{ household_id: ctx }, { household_id: null }] }]`;
