@@ -136,6 +136,14 @@ export interface CategoryTrendFact {
   readonly currentMinor: bigint;
   /** Complete periods only — the current, partial one is never part of its own baseline. */
   readonly baseline: readonly PeriodSpend[];
+  /**
+   * Whether the current period has actually ended.
+   *
+   * The asymmetry is deliberate and is the one place these two generators disagree: a **spike** is
+   * worth saying mid-period, because there is still time to act on it, while a **reduction** is not a
+   * saving until the period is over — on the 3rd of the month every category is "down 90 %".
+   */
+  readonly periodComplete: boolean;
 }
 
 /** One transaction that might be unusual for its category. */
@@ -338,6 +346,8 @@ export function unusualSpendInsights(facts: readonly UnusualSpendFact[]): readon
  */
 export function positiveTrendInsights(facts: readonly CategoryTrendFact[]): readonly InsightDraft[] {
   return facts.flatMap((fact) => {
+    // A month is not a saving until it is over (see `CategoryTrendFact.periodComplete`).
+    if (!fact.periodComplete) return [];
     const mean = baselineMean(fact.baseline);
     if (mean < INSIGHT_THRESHOLDS.positiveMinBaselineMinor) return [];
     if (periodsWithSpend(fact.baseline) < INSIGHT_THRESHOLDS.minBaselinePeriods) return [];

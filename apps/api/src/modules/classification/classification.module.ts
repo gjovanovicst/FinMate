@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 
-import { JsonScalar } from '../../graphql/scalars/json.scalar';
 
+import { GraphqlScalarsModule } from '../../graphql/scalars/scalars.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import {
   AI_CLASSIFIER,
@@ -41,7 +41,7 @@ import {
  * tests inject a stub provider instead of reaching the network.
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, GraphqlScalarsModule],
   providers: [
     ClassificationService,
     ClassificationResolver,
@@ -53,10 +53,8 @@ import {
     // The review queue (F-08) — the READ half. The resolver lives on the ledger, because composing
     // the queue needs both this service and the ledger's list, and only that module can reach both.
     ReviewService,
-    // Custom scalars are registered by being provided; they are referenced by type in `@Field()`.
-    // Omitting this makes Nest report `CannotDetermineInputTypeError` naming the class, which reads
-    // like a decorator problem rather than a missing provider.
-    JsonScalar,
+    // `JSON` comes from `GraphqlScalarsModule` (imported above), not from this module's providers:
+    // providing the same scalar twice gives the schema two types named `JSON` and a boot failure.
     { provide: AI_CLASSIFIER, useValue: UNCONFIGURED_AI_CLASSIFIER satisfies AiClassifier },
     // docs/04 §4 rung 5. Same shape and same honesty as the classifier above: no local embedding model
     // is configured in this build, so rung 5 is INERT and the ladder ends at rung 4 (ADR-021). A real

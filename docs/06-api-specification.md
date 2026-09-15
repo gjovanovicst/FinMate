@@ -2529,7 +2529,30 @@ The four generators (this task) and their thresholds are canonical in
 The service exposes `generate` (persist new drafts), `list` (filtered, keyset page on the UUIDv7 id),
 `dismiss` and `latest` (the dashboard's N). `generate` is what the `insights.generate` job calls
 ([05 §8](05-architecture.md)); wiring the scheduler is task 3.1.2's alert path plus the worker, so in
-this task the same method is reachable directly by the resolver for verification.
+this task the same method is reachable as the `generateInsights` mutation — the **same** service method
+the job will call, so wiring the job later changes nothing here.
+
+**Deviations from the SDL, all deliberate.** `kind` stays `String` (a new generator must not need a
+schema change; the column is open `TEXT`), while `severity` **is** an enum because it has a closed CHECK
+constraint and clients branch on it. `dismissInsight` returns the model directly, `nullable`, instead of
+the `InsightPayload` union: a missing insight is not a case the UI distinguishes, and the repo already
+declines to declare union arms with no producer (§5.5). The dashboard rail is `latestInsights(limit:)`
+rather than `Dashboard.insights(limit:)`, because the `dashboard` query belongs to `budgeting` and is
+not built out to the docs/06 §4.1 shape yet — moving the field is a later edit, not a client change.
+
+**Two facts the generators do not yet see, recorded rather than hidden.** `committedMinor` is `0n` for
+every budget: per-budget committed charges need the recurring rules of 3.3.3, and the Household-level
+`reserved` figure belongs to the Household budget scope, so the pace insight is currently a **pace-only**
+projection for a category budget. And the trend and unusual-spend facts are built from **direct**
+Transaction rows, not splits: `BudgetsService.spendIn` is split-aware, so a budget's `spent` includes
+splits, but a `UNUSUAL_SPEND` candidate is a transaction and comparing a direct purchase against a
+split's portion would compare two different things. A split-aware category trend belongs with 3.3.1's
+analytics.
+
+**One more defect found while wiring this.** Providing the same custom scalar in two feature modules
+gives the schema two types named `JSON` and **fails at boot** with
+*"Schema must contain uniquely named types"* — invisible to `api:test`, which builds per-module testing
+modules. `JSON` now lives in `GraphQLScalarsModule` and is imported, never re-provided.
 
 ---
 

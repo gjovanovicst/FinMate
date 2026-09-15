@@ -25,6 +25,8 @@ export {
 export { uuidv7, uuidv7Timestamp } from './uuid';
 
 export {
+  addDays,
+  addMonths,
   compareLocalDates,
   dayOfMonth,
   daysInMonth,

@@ -195,6 +195,36 @@ export function isWithin(date: LocalDate, start: LocalDate, end: LocalDate): boo
   return date >= start && date <= end;
 }
 
+/**
+ * Shift a calendar day by `days` (negative goes back).
+ *
+ * Built on `Date.UTC`, not local time: `new Date(y, m, d)` would shift by the process timezone, which
+ * is how a monthly window silently becomes 30 or 32 days on a machine in another zone.
+ */
+export function addDays(date: LocalDate, days: number): LocalDate {
+  const [year, month, day] = localDate(date).split('-').map(Number) as [number, number, number];
+  const shifted = new Date(Date.UTC(year, month - 1, day + days));
+  return localDate(
+    `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`,
+  );
+}
+
+/**
+ * Shift a calendar day by `months`, clamping the day to the target month's length.
+ *
+ * `2026-03-31` minus one month is `2026-02-28`, not `2026-03-03`: the sliding that `Date.UTC` does when
+ * a day does not exist is right for "one month later in elapsed time" and wrong for "the same month
+ * last month", which is what a period comparison means.
+ */
+export function addMonths(date: LocalDate, months: number): LocalDate {
+  const [year, month, day] = localDate(date).split('-').map(Number) as [number, number, number];
+  const firstOfTarget = new Date(Date.UTC(year, month - 1 + months, 1));
+  const targetYear = firstOfTarget.getUTCFullYear();
+  const targetMonth = firstOfTarget.getUTCMonth() + 1;
+  const lastDay = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate();
+  return localDate(`${targetYear}-${pad(targetMonth)}-${pad(Math.min(day, lastDay))}`);
+}
+
 /** The Household timezone used when none is configured. */
 export const DEFAULT_TIME_ZONE = 'Europe/Belgrade';
 

@@ -10,6 +10,7 @@ import { HealthController } from './health/health.controller';
 import { AccountsModule } from './modules/accounts/accounts.module';
 import { BudgetingModule } from './modules/budgeting/budgeting.module';
 import { ClassificationModule } from './modules/classification/classification.module';
+import { InsightsModule } from './modules/insights/insights.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { TaxonomyModule } from './modules/taxonomy/taxonomy.module';
@@ -36,6 +37,9 @@ import { PrismaModule } from './prisma/prisma.module';
     BudgetingModule,
     // The capture pipeline (docs/04 §2). Imports the pure packages; imports no AI adapter directly.
     ClassificationModule,
+    // Deterministic insight generation (docs/01 F-20/F-22). Composes `budgeting` rather than
+    // recomputing consumption, so the feed and the dashboard cannot disagree.
+    InsightsModule,
   ],
   controllers: [HealthController],
   providers: [

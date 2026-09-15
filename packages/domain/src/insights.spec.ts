@@ -50,6 +50,7 @@ function trendFact(overrides: Partial<CategoryTrendFact> = {}): CategoryTrendFac
     categoryPath: ['Hrana', 'Supermarket'],
     currency: 'RSD',
     currentMinor: 0n,
+    periodComplete: true,
     baseline: [
       { periodStart: '2026-06-01' as LocalDate, spentMinor: 10_000n },
       { periodStart: '2026-07-01' as LocalDate, spentMinor: 10_000n },
@@ -264,6 +265,15 @@ describe('positiveTrendInsights', () => {
 
   it('never reports a category that went up', () => {
     expect(positiveTrendInsights([trendFact({ currentMinor: 20_000n })])).toEqual([]);
+  });
+
+  it('does not call a month a saving before the month is over', () => {
+    // Mid-period every category looks "down", because the spend has not happened yet. A spike is
+    // worth saying now; a saving is not.
+    const midPeriod = trendFact({ currentMinor: 0n, periodComplete: false });
+    expect(positiveTrendInsights([midPeriod])).toEqual([]);
+    // The spike generator still speaks mid-period: that asymmetry is the point.
+    expect(categorySpikeInsights([trendFact({ currentMinor: 30_000n })])).toHaveLength(1);
   });
 });
 

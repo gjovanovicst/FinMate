@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { DateError, instantForLocalNoon, localDate, toLocalDate, type LocalDate } from './dates';
+import {
+  addDays,
+  addMonths,
+  DateError,
+  instantForLocalNoon,
+  localDate,
+  toLocalDate,
+  type LocalDate,
+} from './dates';
 
 /**
  * `instantForLocalNoon` is the inverse of `toLocalDate`, so the property that matters is the
@@ -163,5 +171,38 @@ describe('instantForLocalNoon — invalid input', () => {
     expect(() => instantForLocalNoon('2026-09-14', 'Mars/Olympus')).toThrow(
       /not a valid IANA time zone/,
     );
+  });
+});
+
+describe('addDays', () => {
+  it('shifts across month and year boundaries', () => {
+    expect(addDays('2026-09-14', 1)).toBe('2026-09-15');
+    expect(addDays('2026-09-30', 1)).toBe('2026-10-01');
+    expect(addDays('2026-01-01', -1)).toBe('2025-12-31');
+    expect(addDays('2026-09-14', -90)).toBe('2026-06-16');
+  });
+
+  it('is not affected by the process timezone, because it works in UTC', () => {
+    // A DST-shifting day in Europe/Belgrade: local-time arithmetic would land on the 30th.
+    expect(addDays('2026-03-29', 1)).toBe('2026-03-30');
+    expect(addDays('2026-10-25', 1)).toBe('2026-10-26');
+  });
+
+  it('refuses a malformed date rather than returning NaN', () => {
+    expect(() => addDays('14/09/2026', 1)).toThrow(DateError);
+  });
+});
+
+describe('addMonths', () => {
+  it('lands on the same day of the target month', () => {
+    expect(addMonths('2026-09-14', -1)).toBe('2026-08-14');
+    expect(addMonths('2026-09-14', -3)).toBe('2026-06-14');
+    expect(addMonths('2026-12-15', 1)).toBe('2027-01-15');
+  });
+
+  it('clamps to the target month length instead of sliding into the next month', () => {
+    // `Date.UTC` would make this 2026-03-03; a period comparison means "the same month last month".
+    expect(addMonths('2026-03-31', -1)).toBe('2026-02-28');
+    expect(addMonths('2024-03-31', -1)).toBe('2024-02-29');
   });
 });

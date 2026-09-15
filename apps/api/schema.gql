@@ -680,6 +680,76 @@ enum FragmentKind {
   UNKNOWN
 }
 
+type InsightConnection {
+  edges: [InsightModelEdge!]!
+  pageInfo: PageInfo!
+
+  """
+  Total rows matching the filter, ignoring the page window. Useful for "23 transactions" style labels, and cheap because it is a scoped COUNT.
+  """
+  totalCount: Int!
+}
+
+input InsightFilterInput {
+  """
+  Dismissed insights stay in the table: the feed is a record of what we told the user.
+  """
+  includeDismissed: Boolean = false
+  kind: [String!]
+  periodStartOnOrAfter: LocalDate
+  severity: [InsightSeverity!]
+}
+
+type InsightGenerationModel {
+  """Drafts whose condition was already recorded for this period."""
+  alreadyRecorded: Int!
+
+  """Rows written by this run."""
+  created: Int!
+
+  """Drafts the generators produced, before de-duplication."""
+  drafts: Int!
+}
+
+type InsightModel {
+  createdAt: DateTime!
+  id: ID!
+  isDismissed: Boolean!
+
+  """
+  BUDGET_PACE · CATEGORY_SPIKE · UNUSUAL_SPEND · POSITIVE_TREND. An open string so a new generator does not need a schema change (docs/01 §6 F-22).
+  """
+  kind: String!
+
+  """
+  AI-written narration, validated against `payload` (ADR-017). Null in this build: NARRATE is task 3.2.3, and the feed renders the facts without it.
+  """
+  narrative: String
+
+  """
+  The computed facts behind the insight. Every amount is a minor-unit **string** (ADR-003); the backend computed all of them (ADR-001).
+  """
+  payload: JSON!
+  periodEnd: LocalDate!
+  periodStart: LocalDate!
+  severity: InsightSeverity!
+}
+
+type InsightModelEdge {
+  cursor: String!
+  node: InsightModel!
+}
+
+"""
+`POSITIVE` is first-class, not a shade of `INFO`: F-22 requires the product to say when a user spent less, and the feed renders it differently (docs/02 §7.1).
+"""
+enum InsightSeverity {
+  CRITICAL
+  INFO
+  POSITIVE
+  WARNING
+}
+
 """
 Arbitrary JSON, used for the rule condition and action documents. Unvalidated: the writer is responsible for checking the shape (the rules engine validates every rule on evaluation).
 """
@@ -976,6 +1046,21 @@ type Mutation {
   deleteTransaction(id: ID!): Boolean!
 
   """
+  Dismiss an insight. Returns null when the id is not this Household's — the scoped predicate is the tenancy check, not a lookup the caller could race.
+  """
+  dismissInsight(id: String!): InsightModel
+
+  """
+  Run the deterministic generators for one period. Idempotent per condition and period, so it is safe to call repeatedly; the `insights.generate` job calls the same service method.
+  """
+  generateInsights(
+    """
+    The local day to generate for. Defaults to today in the Household timezone; a past date is how a backfill or a test pins the run.
+    """
+    asOf: String
+  ): InsightGenerationModel!
+
+  """
   Move every Transaction from one counterparty to another, union their aliases, then delete the source. This is how a duplicate created before the fold rule existed is cleaned up.
   """
   mergeCounterparties(
@@ -1240,6 +1325,21 @@ type Query {
   Every dashboard tile in one round trip. All figures are computed by the backend from the ledger and every input is returned, so the UI can show its working (ADR-001).
   """
   dashboard: DashboardModel!
+
+  """
+  The insight feed, newest first, keyset-paged on the UUIDv7 id (docs/06 §4.1).
+  """
+  insights(
+    """Cursor from a previous page (the insight id)."""
+    after: String
+    filter: InsightFilterInput
+    first: Int
+  ): InsightConnection!
+
+  """
+  The newest few undismissed insights — the dashboard rail (docs/06 §4.1). A limit rather than a page: the rail shows three and has no "next".
+  """
+  latestInsights(limit: Int = 3): [InsightModel!]!
   merchant(id: ID!): MerchantModel!
 
   """

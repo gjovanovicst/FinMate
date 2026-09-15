@@ -252,6 +252,9 @@ Scenario: Positive trend (F-22 requires this explicitly)
   When it is at least 20% below a baseline mean of at least 1000 minor units
   Then one POSITIVE_TREND insight is emitted with severity POSITIVE
   And its payload states the amount saved, not only a percentage
+  And it is only emitted once the period is complete — mid-period every category is "down",
+    because the spending has not happened yet. A spike still fires mid-period: there is time to act on
+    an increase, and there is nothing to act on in a reduction that is really a delay.
 
 Scenario: Determinism and re-runs
   Given the same facts

@@ -191,6 +191,13 @@ Code-first GraphQL with custom scalars: most of these are registration problems 
   failure lands in the error banner instead of downloading a file full of JSON. Distinct from the
   async whole-household `exportData` (docs/06 §5.11), which needs the worker and is not built.
 
+- **A custom scalar provided by two modules breaks the schema at boot, not in tests.** `JsonScalar`
+  was legitimately added to `InsightsModule`'s providers exactly as `ClassificationModule` has it, and
+  the whole app then failed to start with `Schema must contain uniquely named types but contains multiple
+  types named "JSON"`. `api:test` stayed green throughout, because a spec builds one module, not eleven.
+  Shared scalars now live in `GraphQLScalarsModule` and are **imported**; never add a `@Scalar()` class to
+  a second module's `providers`.
+
 - **A service that gains a dependency must be resolvable by every module that provides it — and the
   failure is at boot, not at typecheck.** `OnboardingService` was given `EntityEmbeddingsService`
   (task 2.3.4) without adding `ClassificationModule` to `OnboardingModule`'s imports. `typecheck` was
