@@ -241,6 +241,25 @@ export class TagsService {
   }
 
   /**
+   * The subset of `ids` this Household cannot attach.
+   *
+   * Split out from {@link assertAssignable} because `captureCommit` must attribute the failure to the
+   * **rows** that named the tag — it returns per-row diagnostics rather than one request-level error,
+   * so it needs the ids, not a thrown message. `assertAssignable` is the same check for callers that
+   * only need "this whole write is refused".
+   */
+  async unknownAssignable(ids: readonly string[]): Promise<string[]> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return [];
+    const found = await this.prisma.client.tags.findMany({
+      where: { id: { in: unique }, deleted_at: null },
+      select: { id: true },
+    });
+    const known = new Set(found.map((tag) => tag.id));
+    return unique.filter((id) => !known.has(id));
+  }
+
+  /**
    * Every Tag id the Household may attach, or `VALIDATION_FAILED`.
    *
    * Used by the ledger when an assignment arrives, so a foreign or unknown id is a typed failure
@@ -248,14 +267,7 @@ export class TagsService {
    * the chip disappear on reload.
    */
   async assertAssignable(ids: readonly string[]): Promise<void> {
-    const unique = [...new Set(ids)];
-    if (unique.length === 0) return;
-    const found = await this.prisma.client.tags.findMany({
-      where: { id: { in: unique }, deleted_at: null },
-      select: { id: true },
-    });
-    const known = new Set(found.map((tag) => tag.id));
-    const unknown = unique.filter((id) => !known.has(id));
+    const unknown = await this.unknownAssignable(ids);
     if (unknown.length > 0) {
       throw new ApiError(
         'VALIDATION_FAILED',

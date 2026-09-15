@@ -1828,10 +1828,20 @@ The one deliberate exception is the low-confidence case, which is **not** a vali
 | Row state | Behaviour |
 |---|---|
 | `confidence >= 0.90` | Written `CONFIRMED`, `needs_review = false` |
-| `0.60 <= confidence < 0.90` | Written `CONFIRMED`, `needs_review = true` (ADR-009) — the batch is **not** blocked |
+| `0.60 <= confidence < 0.90` | Written `CONFIRMED`, `needs_review = false` — the **advisory** lane, derived from `category_source = 'AI'` + `confidence` (ADR-009, invariant I-8). The batch is **not** blocked |
 | `confidence < 0.60` | Written **`PENDING`**, `needs_review = true`; requires `confirmDespiteLowConfidence` to be written `CONFIRMED` |
-| `categoryId` unresolved | Written `PENDING`, uncategorised, enters the review queue |
+| `categoryId` unresolved | Written `PENDING`, uncategorised, enters the review queue whatever the confidence |
 | `amount` unparseable / missing | **Row rejected ⇒ whole request rejected** |
+
+> **Correction (task 2.2.4).** This table previously read `needs_review = true` for the
+> `0.60–0.89` band while citing ADR-009. That contradicted
+> [03 invariant I-8](03-domain-model.md#5-invariants-enforced-in-the-service-layer--tests) and
+> [04 §7](04-categorization-and-ai-engine.md#7-stage-6-confidence-gates), which define
+> `needs_review` as the **blocking** lane only and derive the advisory lane from
+> `category_source` + `confidence`. The invariant wins: an advisory row that set the flag would make
+> the nav badge count rows that are already applied and valid. `applyConfidenceGate` in the
+> classification module remains the one implementation of this table.
+
 
 This is the F-06 acceptance criterion *"the other rows can still be confirmed without resolving it"*
 implemented literally: one ambiguous row never blocks a batch, but a structurally invalid row always
@@ -1862,6 +1872,10 @@ blocking a legitimate second purchase is a worse failure than showing an unneces
 ago — undo?" chip, and [01 §6](01-product-requirements.md) says *"I am warned … rather than silently
 creating it"*, not *"I am prevented"*.
 
+> **Build state (task 2.2.4).** The first two mechanisms are implemented. The duplicate-suspect
+> mechanism is **task 2.2.5** and is deliberately absent rather than returning an empty list; see
+> [§5.2.4](#524-implementation-deviations-task-224).
+
 ```graphql
 type DuplicateSuspect {
   clientRowId: String!
@@ -1889,6 +1903,38 @@ type DashboardDelta {
   reviewQueueCount: Int!
 }
 ```
+
+#### 5.2.4 Implementation deviations (task 2.2.4)
+
+The write half shipped in `apps/api/src/modules/ledger/transactions.service.ts`
+(`captureCommit`), with the GraphQL surface in `capture-commit.model.ts` and the mutation on
+`TransactionsResolver`. The SDL above is the design; these are the places the build differs, and why.
+
+| Design | Built | Why |
+|---|---|---|
+| `union CaptureCommitResult = CaptureCommitSuccess \| CaptureCommitRejected \| ConflictError \| RateLimitedError` | Two arms: `CaptureCommitSuccessModel \| CaptureCommitRejectedModel` | `CONFLICT` and `RATE_LIMITED` already travel as typed GraphQL errors on `extensions.code` (`ApiError` → `AllExceptionsFilter`), which every client branches on to refresh a session. A second representation of the same code in the same schema would be two sources of truth for one contract. A **row** rejection is different in kind — a successful round trip carrying per-row diagnostics — so it stays a union arm. |
+| `code: ErrorCode!` | `code: CaptureRejectionCode!` (`VALIDATION_FAILED`, `NOT_FOUND`, `CONFLICT`) | §3.1 declares no global `ErrorCode` enum, so `ErrorCode` was an undeclared type. The enum is scoped to the field that uses it rather than committing the schema to a global error enum here. |
+| `type CaptureCommitSuccess` | `type CaptureCommitSuccessModel` | Every GraphQL object type in this build carries the `Model` suffix (`TransactionModel`, `ProposalModel`, …). Renaming one type would make the schema inconsistent with itself. |
+| `duplicateSuspects: [DuplicateSuspect!]!` | **Not built** | Task 2.2.5. Publishing the field now would return an empty list for both "checked and found none" and "never checked" — different facts that a client cannot tell apart. |
+| `dashboardDelta: DashboardDelta!` | **Not built**; `reviewQueueCount: Int!` and `cursor: ID!` are on the success payload | §5.2.3's delta is a caching optimisation for a client with a normalised store. This client refetches `dashboard`, which already exists as one round trip, on a screen the user is leaving. `reviewQueueCount` is the one value capture itself changes and is cheap to compute. |
+| `occurredOn: Date` | `occurredOn: LocalDate` | The codebase's calendar-day scalar; `Date` here would be an instant and would reintroduce the timezone bug I-2 exists to prevent. |
+| row input has no `splits` | confirmed | A capture row is one category; a divided Transaction is edited as parts (ADR-015, I-1). |
+| `confirmDespiteLowConfidence` writes `CONFIRMED` | also clears `needs_review` | I-8's "unless a user explicitly cleared the flag". Writing `CONFIRMED` while leaving the flag set would keep the row in the queue the user just emptied. It cannot rescue a `null` category: an uncategorised Transaction is an unanswered question, not a low-confidence answer. |
+| `discardProposalIds` | marks the decision `wasAccepted: false` with `transaction_id` still `null` | The only durable evidence that a proposal was shown and rejected rather than never generated — the negative half of §6.4's `(raw_confidence, was_accepted)` pair. |
+
+Two behaviours worth stating because they are not visible in the SDL:
+
+- **A replay short-circuits before validation.** A retry echoes a proposal the first call has since
+  linked to a Transaction, so validating it would see "already committed" and refuse the very retry
+  I-10 exists to serve.
+- **Rejections are accumulated and returned in the caller's row order.** Validation runs in phases
+  (fields, then existence, then previews), so a payload assembled phase by phase would arrive out of
+  order and a row with two problems would appear twice.
+
+The audit blob in `classification_decisions.candidates` gained one key, `wasAccepted`
+(`null` until the user resolves the proposal, then `true` or `false`). It is the label
+[04 §6.4](04-categorization-and-ai-engine.md#64-confidence-calibration) consumes, and `null` must stay
+distinguishable from `false`: an unresolved proposal is not a rejection.
 
 ### 5.3 `correctTransaction`
 

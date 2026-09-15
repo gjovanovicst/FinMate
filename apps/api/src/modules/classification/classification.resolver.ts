@@ -133,26 +133,53 @@ export class ClassificationResolver {
     @Args('transactionId', { type: () => ID }) transactionId: string,
   ): Promise<ClassificationDecisionModel[]> {
     const rows = await this.classification.decisionsForTransaction(householdId, transactionId);
-    return rows.map((row) => ({
-      id: row.id,
-      transactionId: row.transaction_id,
-      rawInput: row.raw_input,
-      normalizedInput: row.normalized_input,
-      decidedBy: row.decided_by as DecidedByEnum,
-      ruleId: row.rule_id,
-      categoryId: row.category_id,
-      // `numeric(4,3)` comes back as a Prisma Decimal; `Number` is correct here because a confidence
-      // is a probability, not money (ADR-003 governs `amount_minor`).
-      confidence: row.confidence === null ? null : Number(row.confidence),
-      aiProvider: row.ai_provider,
-      aiModel: row.ai_model,
-      promptVersion: row.prompt_version,
-      latencyMs: row.latency_ms,
-      costMicros: row.cost_micros === null ? null : row.cost_micros.toString(),
-      createdAt: row.created_at,
-      candidatesJson: JSON.stringify(row.candidates ?? {}),
-    }));
+    return rows.map(toClassificationDecisionModel);
   }
+}
+
+/**
+ * A `classification_decisions` row → its GraphQL shape.
+ *
+ * Exported and written field by field rather than spread, so adding a column cannot silently publish
+ * it on the schema — a new field is a deliberate schema change and a reviewable diff. The ledger's
+ * `captureCommit` returns the same type, so this must stay the one definition of the mapping.
+ */
+export function toClassificationDecisionModel(row: {
+  id: string;
+  transaction_id: string | null;
+  raw_input: string;
+  normalized_input: string;
+  decided_by: string;
+  rule_id: string | null;
+  category_id: string | null;
+  confidence: unknown;
+  ai_provider: string | null;
+  ai_model: string | null;
+  prompt_version: number | null;
+  latency_ms: number | null;
+  cost_micros: bigint | null;
+  created_at: Date;
+  candidates: unknown;
+}): ClassificationDecisionModel {
+  return {
+    id: row.id,
+    transactionId: row.transaction_id,
+    rawInput: row.raw_input,
+    normalizedInput: row.normalized_input,
+    decidedBy: row.decided_by as DecidedByEnum,
+    ruleId: row.rule_id,
+    categoryId: row.category_id,
+    // `numeric(4,3)` comes back as a Prisma Decimal; `Number` is correct here because a confidence
+    // is a probability, not money (ADR-003 governs `amount_minor`).
+    confidence: row.confidence === null ? null : Number(row.confidence),
+    aiProvider: row.ai_provider,
+    aiModel: row.ai_model,
+    promptVersion: row.prompt_version,
+    latencyMs: row.latency_ms,
+    costMicros: row.cost_micros === null ? null : row.cost_micros.toString(),
+    createdAt: row.created_at,
+    candidatesJson: JSON.stringify(row.candidates ?? {}),
+  };
 }
 
 /**

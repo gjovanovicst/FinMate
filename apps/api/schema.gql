@@ -142,6 +142,130 @@ enum BudgetPeriod {
 }
 
 """
+The write half of the capture path (docs/06 §5.2). Atomic and idempotent.
+"""
+input CaptureCommitInput {
+  """Request-level AI consent (docs/06 §5.1). Defaults to true."""
+  allowAi: Boolean
+
+  """Used by rows that name no account."""
+  defaultAccountId: ID
+
+  """
+  Fragments the user removed from the preview. They produce no Transaction; their decisions are marked rejected, which is the negative half of the calibration label (docs/04 §6.4).
+  """
+  discardProposalIds: [ID!]
+  occurredAt: DateTime
+  occurredLocalDate: LocalDate
+
+  """
+  The `captureParse` preview these rows came from. When present, every `acceptedProposalId` must belong to it — a stale preview is refused rather than committed against a decision the user never saw.
+  """
+  parseId: ID
+
+  """1..50 rows."""
+  rows: [CaptureCommitRowInput!]!
+}
+
+"""
+Nothing was written. The whole `rows` array is validated before any of it is persisted, so a structurally invalid row rejects the request rather than half-applying it (docs/06 §5.2.1).
+"""
+type CaptureCommitRejectedModel {
+  code: CaptureRejectionCode!
+  message: String!
+
+  """Every offending row, not just the first."""
+  rejected: [RejectedRowModel!]!
+}
+
+"""Either every row was committed, or the request was refused as a whole."""
+union CaptureCommitResult = CaptureCommitRejectedModel | CaptureCommitSuccessModel
+
+"""
+One row of a capture commit (docs/06 §5.2). The split arm is deliberately absent: a capture row is one category, and a divided Transaction is edited as parts (ADR-015, I-1).
+"""
+input CaptureCommitRowInput {
+  """The `Proposal.id` this row came from — `classification_decisions.id`."""
+  acceptedProposalId: ID
+
+  """Falls back to the request-level `defaultAccountId`."""
+  accountId: ID
+  amount: Money!
+
+  """
+  The user’s choice when they overrode the proposal. Absent means "take the proposal’s, or classify this row now".
+  """
+  categoryId: ID
+
+  """
+  A UUIDv7 for an offline-originated row. Unique per Household and permanent, so an outbox flushed twice collapses to one Transaction (docs/06 §5.2.2).
+  """
+  clientId: String
+
+  """
+  Stable within the request and echoed back, so a client can match rows to results.
+  """
+  clientRowId: String!
+
+  """
+  Required to write a row whose calibrated confidence is below 0.60 as CONFIRMED. It is the user’s explicit "yes, I mean it", which is the one thing I-8 allows to clear `needs_review`.
+  """
+  confirmDespiteLowConfidence: Boolean! = false
+  counterpartyId: ID
+
+  """
+  Defaults to the accepted proposal’s description, then to the raw input.
+  """
+  description: String
+
+  """
+  REQUIRED. Unique per Household (I-10); a replay returns the original row with `wasReplayed = true` rather than creating a second one.
+  """
+  idempotencyKey: String!
+
+  """Direction. `amount` is always positive (ADR-003)."""
+  kind: TransactionKind!
+  merchantId: ID
+  note: String
+
+  """Falls back to the request-level instant."""
+  occurredAt: DateTime
+
+  """
+  The Household local day. Preferred over `occurredAt` (I-2): the server derives a stable instant, so a client never has to know the Household timezone.
+  """
+  occurredOn: LocalDate
+  tagIds: [ID!]
+}
+
+"""
+Every row was written (or replayed). One low-confidence row never blocks the batch — it is stored PENDING and enters the review queue (docs/06 §5.2.1, F-06).
+"""
+type CaptureCommitSuccessModel {
+  committed: [CommittedTransactionModel!]!
+
+  """
+  The newest committed Transaction id, usable directly as the Transaction list’s `after` cursor on the next page fetch.
+  """
+  cursor: ID!
+
+  """
+  True when the whole request was an idempotent replay — nothing new was written.
+  """
+  replayed: Boolean!
+
+  """
+  The BLOCKING review lane count after this commit (invariant I-8) — the nav badge.
+  """
+  reviewQueueCount: Int!
+
+  """
+  Rows neither written nor replayed nor rejected. No producer yet: every row is one of the three, and the field is declared so 2.2.5 can introduce one without a schema change.
+  """
+  skipped: [SkippedRowModel!]!
+}
+
+"""
 The capture preview (docs/06 §5.1). Nothing in the ledger changed; one audit row per fragment was written.
 """
 type CaptureParseResultModel {
@@ -164,6 +288,15 @@ type CaptureParseResultModel {
 
   """True when a model contributed to at least one decision."""
   usedAi: Boolean!
+}
+
+"""
+Why a commit row was refused. docs/06 §5.2 calls the field `ErrorCode`; the enum is named for its scope because §3.1 does not declare a global `ErrorCode`, and request-level failures keep travelling as typed GraphQL errors rather than as a schema enum.
+"""
+enum CaptureRejectionCode {
+  CONFLICT
+  NOT_FOUND
+  VALIDATION_FAILED
 }
 
 type CategoryKeywordModel {
@@ -268,6 +401,24 @@ type ClassificationDecisionModel {
 
   """Set once captureCommit writes the Transaction."""
   transactionId: ID
+}
+
+"""
+One Transaction this commit wrote, with the audit decision behind its category (F-31).
+"""
+type CommittedTransactionModel {
+  """
+  The decision row linked to this Transaction. Null only if the link failed, which is a bug.
+  """
+  classification: ClassificationDecisionModel
+  clientRowId: String!
+  idempotencyKey: String!
+  transaction: TransactionModel!
+
+  """
+  True when the row already existed — this call returned the original instead of writing a second one (I-10). Never a silent duplicate.
+  """
+  wasReplayed: Boolean!
 }
 
 """
@@ -479,6 +630,11 @@ type Mutation {
   Add an INCLUDE or EXCLUDE keyword. EXCLUDE hard-blocks the category, which is what keeps "ulje" out of Auto/Gorivo (docs/04 §5.4).
   """
   addCategoryKeyword(categoryId: ID!, keyword: String!, matchMode: String = "WORD", polarity: KeywordPolarity!): Boolean!
+
+  """
+  The write half of the capture path (docs/06 §5.2). Validates, classifies and writes the whole `rows` array in ONE database transaction: if any row is structurally invalid nothing is written and every offending row is named. A row the confidence gate puts in the blocking lane is NOT a validation failure — it is written PENDING and enters the review queue, so one ambiguous row never blocks a batch (F-06). Idempotent per row via `idempotencyKey` (I-10).
+  """
+  captureCommit(input: CaptureCommitInput!): CaptureCommitResult!
 
   """
   Parse and classify without touching the ledger — writes one `classification_decisions` row per fragment for audit and cost (F-07, F-31). Safe to call on every keystroke pause.
@@ -887,6 +1043,20 @@ type Query {
     """Inclusive upper bound."""
     to: LocalDate
   ): TransactionConnection!
+}
+
+type RejectedRowModel {
+  clientRowId: String!
+  code: CaptureRejectionCode!
+
+  """The input field at fault, when one is nameable."""
+  field: String
+  message: String!
+}
+
+type SkippedRowModel {
+  clientRowId: String!
+  reason: String!
 }
 
 """

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { calibratedConfidenceFromStorage, type CalibratedConfidence } from '@finmate/ai';
 import {
   allocate,
   DateError,
@@ -7,6 +8,7 @@ import {
   instantForLocalNoon,
   localDate,
   money,
+  todayIn,
   toLocalDate,
   uuidv7,
   DEFAULT_TIME_ZONE,
@@ -17,7 +19,15 @@ import {
 import { ApiError } from '../../common/filters/all-exceptions.filter';
 import { normalisePageSize, type CursorPage } from '../../graphql/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  ClassificationService,
+  type DecisionOutcome,
+  type DecisionSnapshot,
+  type FragmentResult,
+} from '../classification/classification.service';
+import { applyConfidenceGate, resolveLaneThresholds } from '../classification/confidence-gate';
 import { TagsService } from '../taxonomy/tags.service';
+import { CaptureRejectionCode } from './capture-commit.model';
 import { transactionsToCsv } from './transactions.csv';
 import {
   CategorySource,
@@ -83,6 +93,173 @@ export interface TransactionFilters {
   readonly needsReview?: boolean;
 }
 
+/** One row of `captureCommit` (docs/06 §5.2), after the GraphQL scalars have been parsed. */
+export interface CaptureCommitRow {
+  readonly clientRowId: string;
+  readonly idempotencyKey: string;
+  readonly clientId?: string | null;
+  readonly accountId?: string | null;
+  readonly kind: TransactionKind;
+  readonly amount: Money;
+  readonly categoryId?: string | null;
+  readonly merchantId?: string | null;
+  readonly counterpartyId?: string | null;
+  readonly description?: string | null;
+  readonly note?: string | null;
+  readonly occurredAt?: Date | null;
+  readonly occurredOn?: string | null;
+  readonly tagIds?: readonly string[] | null;
+  readonly acceptedProposalId?: string | null;
+  readonly confirmDespiteLowConfidence?: boolean;
+}
+
+/** The whole `captureCommit` request (docs/06 §5.2). */
+export interface CaptureCommitRequest {
+  readonly parseId?: string | null;
+  readonly rows: readonly CaptureCommitRow[];
+  readonly defaultAccountId?: string | null;
+  readonly occurredAt?: Date | null;
+  readonly occurredLocalDate?: string | null;
+  readonly discardProposalIds?: readonly string[] | null;
+  readonly allowAi?: boolean | null;
+}
+
+/** One refused row, with the field at fault when one is nameable (docs/06 §5.2's `RejectedRow`). */
+export interface CaptureRejectedRow {
+  readonly clientRowId: string;
+  readonly code: CaptureRejectionCode;
+  readonly message: string;
+  readonly field: string | null;
+}
+
+/**
+ * Thrown instead of returning, so a rejection **cannot** be half-ignored.
+ *
+ * It is deliberately not an `ApiError`: an `ApiError` becomes a typed GraphQL error and loses the
+ * per-row diagnostics, while docs/06 §5.2.1 requires the payload to name **every** offending row.
+ * The resolver catches this and returns `CaptureCommitRejected`. Nothing has been written when it is
+ * thrown — that is the invariant this class exists to carry.
+ */
+export class CaptureCommitRejected extends Error {
+  constructor(
+    readonly rows: readonly CaptureRejectedRow[],
+    readonly code: CaptureRejectionCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'CaptureCommitRejected';
+  }
+}
+
+/** One written (or replayed) row. */
+export interface CaptureCommittedRow {
+  readonly clientRowId: string;
+  readonly transaction: TransactionModel;
+  readonly idempotencyKey: string;
+  readonly wasReplayed: boolean;
+  readonly decisionId: string | null;
+}
+
+export interface CaptureCommitOutcome {
+  readonly committed: readonly CaptureCommittedRow[];
+  readonly skipped: readonly { readonly clientRowId: string; readonly reason: string }[];
+  readonly replayed: boolean;
+  readonly cursor: string;
+  readonly reviewQueueCount: number;
+}
+
+/**
+ * docs/06 §5.2: `rows` is `1..50`.
+ *
+ * The cap is not arbitrary politeness — one commit is one interactive transaction, and the row count
+ * bounds how long it holds a connection. A whole day typed at once is well under it; a 5 000-row
+ * import is a different feature with a different failure model.
+ */
+export const MAX_CAPTURE_ROWS = 50;
+
+/**
+ * The Transaction columns `toModel` reads, plus the relations it may be handed.
+ *
+ * Named rather than inlined because three call sites share it and two of them are inferred from
+ * Prisma's `include` result — an inline structural type would have to be repeated, and a column added
+ * in one place but not the other is a silently missing field on the wire.
+ */
+export interface TransactionRowShape {
+  id: string;
+  kind: string;
+  amount_minor: bigint;
+  currency: string;
+  account_id: string;
+  category_id: string | null;
+  merchant_id: string | null;
+  counterparty_id: string | null;
+  description: string;
+  note: string | null;
+  raw_input: string | null;
+  occurred_at: Date;
+  occurred_local_date: Date;
+  status: string;
+  source: string;
+  category_source: string | null;
+  confidence: unknown;
+  needs_review: boolean;
+  version: number;
+  created_at: Date;
+  updated_at: Date;
+  transaction_splits?: {
+    id: string;
+    category_id: string;
+    amount_minor: bigint;
+    note: string | null;
+    confidence: unknown;
+    category_source: string | null;
+  }[];
+  transaction_tags?: {
+    tags: { id: string; name: string; color: string | null; created_at: Date };
+  }[];
+}
+
+/** A pending row after the gate has decided everything about it but its Transaction id. */
+interface CaptureResolution {
+  readonly row: CaptureCommitRow;
+  readonly clientRowId: string;
+  readonly occurrence: { readonly occurredAt: Date; readonly occurredLocalDate: Date };
+  readonly categoryId: string | null;
+  readonly confidence: CalibratedConfidence;
+  readonly categorySource: CategorySource | null;
+  readonly decisionId: string;
+  readonly outcome: DecisionOutcome;
+  readonly description: string;
+  readonly rawText: string;
+  readonly status: TransactionStatus;
+  readonly needsReview: boolean;
+}
+
+/**
+ * `classification_decisions.decided_by` → `transactions.category_source`.
+ *
+ * The two lists are not the same length, and that is not an oversight: `category_source` answers
+ * "which *kind* of thing chose this", so the two entity-default arms collapse to `DEFAULT` and
+ * `FALLBACK` maps to `null` — an honest "nothing chose it". The precise source survives on the audit
+ * row, which is what F-31 reads.
+ */
+function categorySourceFor(decidedBy: string): CategorySource | null {
+  switch (decidedBy) {
+    case 'USER':
+      return CategorySource.USER;
+    case 'RULE':
+    case 'KEYWORD':
+      return CategorySource.RULE;
+    case 'AI':
+      return CategorySource.AI;
+    case 'MERCHANT_DEFAULT':
+    case 'COUNTERPARTY_DEFAULT':
+      return CategorySource.DEFAULT;
+    default:
+      return null;
+  }
+}
+
 /**
  * The ledger — the module that owns money.
  *
@@ -111,6 +288,7 @@ export class TransactionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tags: TagsService,
+    private readonly classification: ClassificationService,
   ) {}
 
   async list(
@@ -326,6 +504,729 @@ export class TransactionsService {
     });
 
     return this.getById(householdId, result.id);
+  }
+
+  /**
+   * `captureCommit` — docs/06 §5.2. The write half of the capture path.
+   *
+   * ## Atomicity is per request, not per row
+   *
+   * The whole `rows` array is validated before a single Transaction is written, and if **any** row is
+   * structurally invalid nothing is written and every offending row is named. The one deliberate
+   * exception is a low-confidence row: it is not a validation failure, it is written `PENDING` and
+   * enters the review queue, so one ambiguous row never blocks a batch (docs/06 §5.2.1, F-06). That
+   * distinction is the most important rule in this method.
+   *
+   * ## Three mechanisms that are easy to conflate
+   *
+   * - **Idempotency** (I-10) is retry safety: a row whose `idempotencyKey` already exists short-circuits
+   *   and is returned with `wasReplayed = true`. The unique index in Postgres is the authority — this
+   *   lookup only avoids the round trip, it does not replace the constraint.
+   * - **Client id** is offline dedupe, with the same short-circuit.
+   * - **Duplicate suspects** (two genuine submissions of the same thing) are task 2.2.5 and are
+   *   deliberately absent: they must *not* block, and returning an empty list today would be
+   *   indistinguishable from "checked and found none".
+   *
+   * ## Money
+   *
+   * `amount.amountMinor` arrives as a `bigint` from the `Money` scalar and is never converted. The
+   * `Money` scalar rejects a JSON number outright, so the cheapest possible mistake — sending `2000`
+   * as a float — fails at the edge rather than being rounded (ADR-003).
+   */
+  async captureCommit(
+    householdId: string,
+    input: CaptureCommitRequest,
+  ): Promise<CaptureCommitOutcome> {
+    const rows = [...(input.rows ?? [])];
+    if (rows.length === 0) {
+      throw new ApiError('VALIDATION_FAILED', 'A capture commit needs at least one row.');
+    }
+    if (rows.length > MAX_CAPTURE_ROWS) {
+      throw new ApiError(
+        'VALIDATION_FAILED',
+        `A capture commit carries at most ${MAX_CAPTURE_ROWS} rows; this one has ${rows.length}.`,
+      );
+    }
+
+    const rejected: CaptureRejectedRow[] = [];
+    /**
+     * Rows already named, so a later phase cannot report the same row twice.
+     *
+     * Every phase accumulates and the request is refused once, at the end, because docs/06 §5.2.1
+     * requires the payload to name every offending row. Without this set a row with both a bad amount
+     * and an unknown category would appear twice, and "3 rows could not be committed" would be a
+     * count of complaints rather than of rows.
+     */
+    const rejectedRowIds = new Set<string>();
+    const reject = (
+      clientRowId: string,
+      code: CaptureRejectionCode,
+      message: string,
+      field: string | null = null,
+    ): void => {
+      rejected.push({ clientRowId, code, message, field });
+      rejectedRowIds.add(clientRowId);
+    };
+
+    /**
+     * Rejections in the caller's row order, not in phase order.
+     *
+     * Validation runs in phases (fields, then existence, then previews), so `rejected` accumulates out
+     * of order. A client that highlights the offending rows has to zip the payload back against its
+     * own list, and a payload that arrives in the order the rows were typed needs no such care. A
+     * `discardProposalIds` entry names a decision, not a row, so it sorts last.
+     */
+    const orderedRejections = (): CaptureRejectedRow[] => {
+      const position = new Map(rows.map((entry, index) => [entry.clientRowId, index]));
+      return [...rejected].sort(
+        (a, b) =>
+          (position.get(a.clientRowId) ?? Number.MAX_SAFE_INTEGER) -
+          (position.get(b.clientRowId) ?? Number.MAX_SAFE_INTEGER),
+      );
+    };
+
+    // ---- structural: identities, within the request only ----
+    const seenRowIds = new Set<string>();
+    const keyOwner = new Map<string, string>();
+    for (const [index, row] of rows.entries()) {
+      const label = row.clientRowId?.trim() || `#${index}`;
+      if (!row.clientRowId?.trim()) {
+        reject(label, CaptureRejectionCode.VALIDATION_FAILED, 'clientRowId is required.', 'clientRowId');
+        continue;
+      }
+      if (seenRowIds.has(label)) {
+        reject(
+          label,
+          CaptureRejectionCode.CONFLICT,
+          `clientRowId "${label}" appears more than once in this request.`,
+          'clientRowId',
+        );
+        continue;
+      }
+      seenRowIds.add(label);
+
+      const key = row.idempotencyKey?.trim() ?? '';
+      if (key === '') {
+        reject(
+          label,
+          CaptureRejectionCode.VALIDATION_FAILED,
+          'idempotencyKey is required (invariant I-10).',
+          'idempotencyKey',
+        );
+        continue;
+      }
+      const owner = keyOwner.get(key);
+      if (owner !== undefined && owner !== label) {
+        // Two rows claiming one key would be a unique-index violation on the second insert, which
+        // would abort the transaction with an opaque P2002. Refusing it here names both rows.
+        reject(
+          label,
+          CaptureRejectionCode.CONFLICT,
+          `idempotencyKey "${key}" is already used by row "${owner}" in this request.`,
+          'idempotencyKey',
+        );
+        continue;
+      }
+      keyOwner.set(key, label);
+    }
+
+    if (rejected.length > 0) throw this.rejection(orderedRejections());
+
+    const household = await this.prisma.client.households.findFirst({ where: { id: householdId } });
+    if (!household) throw new ApiError('NOT_FOUND', 'Household not found.');
+    const currency = household.ledger_currency;
+    const timeZone = household.iana_timezone || DEFAULT_TIME_ZONE;
+    const thresholds = resolveLaneThresholds(household.settings);
+
+    // ---- I-10 / offline dedupe: a replay short-circuits before any validation ----
+    //
+    // Deliberately before validation, not after. A retry echoes a proposal the *first* call has since
+    // linked to a Transaction, so validating it would see "this proposal is already committed" and
+    // refuse the very retry idempotency exists to serve. A replayed row is not re-examined: it is
+    // already written, and the caller asked for it to be there exactly once.
+    const replay = await this.findReplays(householdId, rows);
+    const replayIds = [...replay.transactions.keys()];
+    const linkedDecisions =
+      replayIds.length === 0
+        ? new Map<string, string>()
+        : new Map(
+            (
+              await this.prisma.client.classification_decisions.findMany({
+                where: { household_id: householdId, transaction_id: { in: replayIds } },
+                select: { id: true, transaction_id: true },
+              })
+            ).map((row) => [row.transaction_id as string, row.id]),
+          );
+
+    const committed: CaptureCommittedRow[] = [];
+    const pending: CaptureCommitRow[] = [];
+    for (const row of rows) {
+      const existing = replay.for(row);
+      if (existing === null) {
+        pending.push(row);
+        continue;
+      }
+      committed.push({
+        clientRowId: row.clientRowId,
+        transaction: this.toModel(existing),
+        idempotencyKey: row.idempotencyKey,
+        wasReplayed: true,
+        decisionId: linkedDecisions.get(existing.id) ?? null,
+      });
+    }
+
+    // ---- per-row validation, in memory ----
+    const occurrenceFor = new Map<string, { occurredAt: Date; occurredLocalDate: Date }>();
+    const accountFor = new Map<string, string>();
+    const categoryIds = new Set<string>();
+    const merchantIds = new Set<string>();
+    const counterpartyIds = new Set<string>();
+    const tagIds = new Set<string>();
+    const proposalIds = new Set<string>();
+
+    for (const row of pending) {
+      const label = row.clientRowId.trim();
+
+      if (row.amount.amountMinor <= 0n) {
+        reject(label, CaptureRejectionCode.VALIDATION_FAILED, 'Amount must be greater than zero.', 'amount');
+        continue;
+      }
+      if (row.amount.currency !== currency) {
+        // ADR-011: one ledger currency per Household. Accepting a foreign amount would put two
+        // currencies in one column and make every total a sum of unlike things.
+        reject(
+          label,
+          CaptureRejectionCode.VALIDATION_FAILED,
+          `This Household keeps its ledger in ${currency}; the row is in ${row.amount.currency} ` +
+            `(ADR-011).`,
+          'amount',
+        );
+        continue;
+      }
+
+      const accountId = row.accountId ?? input.defaultAccountId ?? null;
+      if (accountId === null) {
+        reject(
+          label,
+          CaptureRejectionCode.VALIDATION_FAILED,
+          'A row with no accountId needs a defaultAccountId on the request.',
+          'accountId',
+        );
+        continue;
+      }
+
+      let occurrence: { occurredAt: Date; occurredLocalDate: Date };
+      try {
+        occurrence = this.resolveOccurrence(
+          row.occurredAt ?? input.occurredAt ?? null,
+          row.occurredOn ?? input.occurredLocalDate ?? null,
+          timeZone,
+        );
+      } catch (error) {
+        if (error instanceof ApiError) {
+          reject(label, CaptureRejectionCode.VALIDATION_FAILED, error.message, 'occurredOn');
+          continue;
+        }
+        throw error;
+      }
+
+      occurrenceFor.set(label, occurrence);
+      accountFor.set(label, accountId);
+      if (row.categoryId) categoryIds.add(row.categoryId);
+      if (row.merchantId) merchantIds.add(row.merchantId);
+      if (row.counterpartyId) counterpartyIds.add(row.counterpartyId);
+      for (const tagId of row.tagIds ?? []) tagIds.add(tagId);
+      if (row.acceptedProposalId) proposalIds.add(row.acceptedProposalId);
+    }
+
+    const discardIds = [...new Set(input.discardProposalIds ?? [])];
+    for (const decisionId of discardIds) proposalIds.add(decisionId);
+
+    // ---- batch existence checks: one query per table, never one per row ----
+    //
+    // Deliberately NOT preceded by a throw. docs/06 §5.2.1 says the payload names **every** offending
+    // row, and throwing after the in-memory phase would report only the rows with a bad amount and
+    // hide the ones with an unknown category — the caller would fix one, resubmit, and be told about
+    // the next. Every phase accumulates; exactly one throw happens at the end.
+    const [accountIds, categories, merchants, counterparties, unknownTags] = await Promise.all([
+      this.existingIds('accounts', [...new Set(accountFor.values())]),
+      this.categoryKinds([...categoryIds]),
+      this.existingIds('merchants', [...merchantIds]),
+      this.existingIds('counterparties', [...counterpartyIds]),
+      this.tags.unknownAssignable([...tagIds]),
+    ]);
+
+    for (const row of pending) {
+      const label = row.clientRowId.trim();
+      if (rejectedRowIds.has(label)) continue;
+      const accountId = accountFor.get(label);
+      if (accountId !== undefined && !accountIds.has(accountId)) {
+        reject(
+          label,
+          CaptureRejectionCode.NOT_FOUND,
+          'Account not found in this Household.',
+          'accountId',
+        );
+        continue;
+      }
+
+      if (row.categoryId) {
+        const kind = categories.get(row.categoryId);
+        if (kind === undefined) {
+          reject(label, CaptureRejectionCode.NOT_FOUND, 'Category not found.', 'categoryId');
+          continue;
+        }
+        if (kind !== row.kind) {
+          // I-3: an expense must never land in an income category.
+          reject(
+            label,
+            CaptureRejectionCode.VALIDATION_FAILED,
+            `That category classifies ${kind.toLowerCase()} but the row is ${row.kind.toLowerCase()} ` +
+              `(invariant I-3).`,
+            'categoryId',
+          );
+          continue;
+        }
+      }
+
+      if (row.merchantId && !merchants.has(row.merchantId)) {
+        reject(label, CaptureRejectionCode.NOT_FOUND, 'Merchant not found.', 'merchantId');
+        continue;
+      }
+      if (row.counterpartyId && !counterparties.has(row.counterpartyId)) {
+        reject(label, CaptureRejectionCode.NOT_FOUND, 'Counterparty not found.', 'counterpartyId');
+        continue;
+      }
+      const badTags = (row.tagIds ?? []).filter((tagId) => unknownTags.includes(tagId));
+      if (badTags.length > 0) {
+        reject(
+          label,
+          CaptureRejectionCode.NOT_FOUND,
+          `Unknown tag(s): ${badTags.join(', ')}. A tag must belong to this Household (docs/01 F-12).`,
+          'tagIds',
+        );
+      }
+    }
+
+    // ---- the preview proposals this commit echoes ----
+    const decisions = await this.classification.decisionsByIds(householdId, [...proposalIds]);
+    for (const decisionId of discardIds) {
+      const snapshot = decisions.get(decisionId);
+      if (snapshot === undefined) {
+        rejected.push({
+          clientRowId: decisionId,
+          code: CaptureRejectionCode.NOT_FOUND,
+          message: 'Discarded proposal not found in this Household.',
+          field: 'discardProposalIds',
+        });
+        continue;
+      }
+      if (snapshot.transactionId !== null) {
+        rejected.push({
+          clientRowId: decisionId,
+          code: CaptureRejectionCode.CONFLICT,
+          message: 'That proposal was already committed, so it cannot be discarded.',
+          field: 'discardProposalIds',
+        });
+      }
+    }
+
+    for (const row of pending) {
+      const acceptedId = row.acceptedProposalId;
+      if (!acceptedId) continue;
+      if (rejectedRowIds.has(row.clientRowId.trim())) continue;
+      const snapshot = decisions.get(acceptedId);
+      if (snapshot === undefined) {
+        reject(
+          row.clientRowId,
+          CaptureRejectionCode.NOT_FOUND,
+          'That proposal is not one this Household can see.',
+          'acceptedProposalId',
+        );
+        continue;
+      }
+      if (snapshot.transactionId !== null) {
+        reject(
+          row.clientRowId,
+          CaptureRejectionCode.CONFLICT,
+          'That proposal was already committed.',
+          'acceptedProposalId',
+        );
+        continue;
+      }
+      if (input.parseId && snapshot.parseId !== null && snapshot.parseId !== input.parseId) {
+        // Committing a proposal against a *different* preview means the user is confirming something
+        // they were not shown, which is the one thing the preview exists to prevent.
+        reject(
+          row.clientRowId,
+          CaptureRejectionCode.VALIDATION_FAILED,
+          'That proposal came from a different preview than the one this commit names.',
+          'acceptedProposalId',
+        );
+      }
+    }
+
+    // ---- rows with neither a proposal nor an override are classified now ----
+    const unclassified = pending.filter(
+      (row) => !row.categoryId && !row.acceptedProposalId,
+    );
+    for (const row of unclassified) {
+      if (rejectedRowIds.has(row.clientRowId.trim())) continue;
+      if ((row.description ?? '').trim() === '') {
+        reject(
+          row.clientRowId,
+          CaptureRejectionCode.VALIDATION_FAILED,
+          'A row with no category and no proposal needs a description to classify.',
+          'description',
+        );
+      }
+    }
+    // The single throw. Every phase above accumulated, so the caller is told about every row it must
+    // fix in one round trip rather than discovering them one at a time.
+    if (rejected.length > 0) throw this.rejection(orderedRejections());
+
+    const localDay =
+      input.occurredLocalDate ?? todayIn(timeZone, input.occurredAt ?? new Date());
+    const fresh =
+      unclassified.length === 0
+        ? []
+        : await this.classification.classifyForCommit(
+            householdId,
+            unclassified.map((row) => ({ rawText: (row.description ?? '').trim() })),
+            {
+              allowAi: input.allowAi ?? true,
+              occurredAt: input.occurredAt ?? null,
+              localDay,
+            },
+          );
+    const freshByRowId = new Map(
+      unclassified.map((row, index) => [row.clientRowId, fresh[index]!] as const),
+    );
+
+    // ---- the gate, then the write ----
+    const resolutions: CaptureResolution[] = [];
+    for (const row of pending) {
+      const label = row.clientRowId.trim();
+      const snapshot = row.acceptedProposalId
+        ? (decisions.get(row.acceptedProposalId) ?? null)
+        : null;
+      const classified = freshByRowId.get(row.clientRowId) ?? null;
+
+      const resolution = await this.resolveRow(householdId, {
+        row,
+        snapshot,
+        classified,
+        thresholds,
+      });
+      resolutions.push({ ...resolution, clientRowId: label, occurrence: occurrenceFor.get(label)! });
+    }
+
+    const discardedIds = discardIds.filter((id) => decisions.has(id));
+
+    const written = await this.prisma.client.$transaction(async (tx) => {
+      const results: CaptureCommittedRow[] = [];
+
+      for (const resolution of resolutions) {
+        const { row } = resolution;
+        const created = await tx.transactions.create({
+          data: {
+            id: uuidv7(),
+            household_id: householdId,
+            account_id: accountFor.get(resolution.clientRowId)!,
+            kind: row.kind,
+            amount_minor: row.amount.amountMinor,
+            currency,
+            category_id: resolution.categoryId,
+            merchant_id: row.merchantId ?? null,
+            counterparty_id: row.counterpartyId ?? null,
+            description: resolution.description,
+            note: row.note ?? null,
+            raw_input: resolution.rawText,
+            occurred_at: resolution.occurrence.occurredAt,
+            occurred_local_date: resolution.occurrence.occurredLocalDate,
+            status: resolution.status,
+            // Captured input is a natural-language capture, not a hand-keyed row: the distinction is
+            // what lets analytics separate the wedge from manual entry (docs/03 §4).
+            source: TransactionSource.NATURAL_LANGUAGE,
+            category_source: resolution.categorySource,
+            // `numeric(4,3)` as a decimal string — a calibrated probability, three decimals.
+            confidence: resolution.confidence.toFixed(3),
+            needs_review: resolution.needsReview,
+            idempotency_key: row.idempotencyKey,
+            client_id: row.clientId ?? null,
+            ...(row.tagIds?.length
+              ? { transaction_tags: { create: [...new Set(row.tagIds)].map((tagId) => ({ tag_id: tagId })) } }
+              : {}),
+          },
+          include: { transaction_splits: true, transaction_tags: { include: { tags: true } } },
+        });
+
+        // Same connection as the write, so the audit link and the money commit together or not at
+        // all. `db` is the `tx` — using the outer client here is the stall this codebase has already
+        // been bitten by (see AGENTS.md).
+        await this.classification.attachToTransaction(
+          householdId,
+          resolution.decisionId,
+          created.id,
+          resolution.outcome,
+          tx,
+        );
+
+        results.push({
+          clientRowId: resolution.clientRowId,
+          transaction: this.toModel(created),
+          idempotencyKey: row.idempotencyKey,
+          wasReplayed: false,
+          decisionId: resolution.decisionId,
+        });
+      }
+
+      if (discardedIds.length > 0) {
+        await this.classification.markDiscarded(householdId, discardedIds, tx);
+      }
+
+      return results;
+    });
+
+    committed.push(...written);
+
+    const reviewQueueCount = await this.prisma.client.transactions.count({
+      where: { household_id: householdId, needs_review: true, deleted_at: null },
+    });
+
+    const cursor = committed
+      .map((row) => row.transaction.id)
+      .sort()
+      .at(-1);
+
+    return {
+      committed,
+      skipped: [],
+      // docs/06 §5.2: true only when the *whole* call was a replay. A mixed batch wrote something, so
+      // it is not a replay however many of its rows were.
+      replayed: committed.length > 0 && committed.every((row) => row.wasReplayed),
+      cursor: cursor ?? '',
+      reviewQueueCount,
+    };
+  }
+
+  /**
+   * Decide a row's category, the decision row behind it, and the gate's verdict.
+   *
+   * Three sources, in the order the user's intent outranks the machine's: an explicit override, the
+   * proposal the preview produced, then a fresh classification. Each writes or reuses exactly one
+   * `classification_decisions` row, so every committed Transaction has an answer to "why that
+   * category?" (F-31) — including the ones the user chose by hand.
+   */
+  private async resolveRow(
+    householdId: string,
+    args: {
+      readonly row: CaptureCommitRow;
+      readonly snapshot: DecisionSnapshot | null;
+      readonly classified: FragmentResult | null;
+      readonly thresholds: { readonly autoApplyMin: number; readonly verifyMin: number };
+    },
+  ): Promise<Omit<CaptureResolution, 'clientRowId' | 'occurrence'>> {
+    const { row, snapshot, classified } = args;
+
+    let categoryId: string | null;
+    let confidence: CalibratedConfidence;
+    let categorySource: CategorySource | null;
+    let fromAi = false;
+    let decisionId: string;
+    let outcome: DecisionOutcome;
+    let description: string;
+
+    if (row.categoryId) {
+      categoryId = row.categoryId;
+      // 1.000 is not a model claim: the user asserted this category, and the lane it lands in means
+      // no review prompt for a decision a human just made.
+      confidence = calibratedConfidenceFromStorage(1);
+      categorySource = CategorySource.USER;
+      description = (row.description ?? snapshot?.rawInput ?? '').trim();
+      if (snapshot !== null) {
+        decisionId = snapshot.id;
+        outcome = 'OVERRIDDEN';
+      } else {
+        decisionId = await this.classification.recordUserChoice(householdId, {
+          rawText: description || row.categoryId,
+          categoryId,
+        });
+        outcome = 'ACCEPTED';
+      }
+    } else if (snapshot !== null) {
+      categoryId = snapshot.categoryId;
+      confidence = calibratedConfidenceFromStorage(snapshot.confidence ?? 0);
+      categorySource = categorySourceFor(snapshot.decidedBy);
+      fromAi = snapshot.decidedBy === 'AI';
+      decisionId = snapshot.id;
+      outcome = 'ACCEPTED';
+      description = (row.description ?? snapshot.rawInput).trim();
+    } else {
+      if (classified === null) {
+        // Unreachable: every row without a proposal was classified above. Failing loudly beats
+        // writing an uncategorised row that looks like a deliberate choice.
+        throw new ApiError('INTERNAL', 'A commit row reached the write with no classification.');
+      }
+      categoryId = classified.categoryId;
+      confidence = calibratedConfidenceFromStorage(classified.confidence);
+      // `FragmentResult.categorySource` is the parser's two-arm vocabulary (`RULE`/`AI`/null), while
+      // `transactions.category_source` also has USER/IMPORT/DEFAULT. Mapped explicitly so a new arm
+      // on either side is a compile error rather than a silently stored string.
+      categorySource =
+        classified.categorySource === 'RULE'
+          ? CategorySource.RULE
+          : classified.categorySource === 'AI'
+            ? CategorySource.AI
+            : null;
+      fromAi = classified.decidedBy === 'AI';
+      decisionId = classified.decisionId;
+      outcome = 'ACCEPTED';
+      description = (row.description ?? classified.description).trim();
+    }
+
+    if (description === '') {
+      throw new ApiError('VALIDATION_FAILED', 'A description is required.');
+    }
+
+    const gate = applyConfidenceGate({
+      categoryId,
+      confidence,
+      fromAi,
+      thresholds: args.thresholds,
+    });
+
+    // docs/06 §5.2.1's table, with one correction recorded in the docs: the 0.60–0.89 band is the
+    // ADVISORY lane, which never sets `needs_review` — I-8 defines that flag as the blocking lane
+    // only, so §5.2.1's "needs_review = true" for that band contradicted the invariant.
+    let status: TransactionStatus = gate.needsReview
+      ? TransactionStatus.PENDING
+      : TransactionStatus.CONFIRMED;
+    let needsReview = gate.needsReview;
+
+    if (needsReview && categoryId !== null && row.confirmDespiteLowConfidence === true) {
+      // I-8's "unless a user explicitly cleared the flag". A null category is NOT clearable: an
+      // uncategorised Transaction is an unanswered question, not a low-confidence answer.
+      status = TransactionStatus.CONFIRMED;
+      needsReview = false;
+    }
+
+    return {
+      row,
+      categoryId,
+      confidence,
+      categorySource,
+      decisionId,
+      outcome,
+      description,
+      rawText: (snapshot?.rawInput ?? classified?.rawText ?? row.description ?? '').trim(),
+      status,
+      needsReview,
+    };
+  }
+
+  /** The replay lookup behind I-10 and offline dedupe (docs/06 §5.2.2). */
+  private async findReplays(
+    householdId: string,
+    rows: readonly CaptureCommitRow[],
+  ): Promise<{
+    readonly transactions: ReadonlyMap<string, TransactionRowShape>;
+    readonly for: (row: CaptureCommitRow) => TransactionRowShape | null;
+  }> {
+    const keys = [...new Set(rows.map((row) => row.idempotencyKey).filter(Boolean))];
+    const clientIds = [
+      ...new Set(rows.map((row) => row.clientId).filter((value): value is string => Boolean(value))),
+    ];
+
+    const byKey = new Map<string, TransactionRowShape>();
+    const byClientId = new Map<string, TransactionRowShape>();
+    const byId = new Map<string, TransactionRowShape>();
+
+    if (keys.length > 0 || clientIds.length > 0) {
+      const existing = await this.prisma.client.transactions.findMany({
+        where: {
+          household_id: householdId,
+          deleted_at: null,
+          OR: [
+            ...(keys.length > 0 ? [{ idempotency_key: { in: keys } }] : []),
+            ...(clientIds.length > 0 ? [{ client_id: { in: clientIds } }] : []),
+          ],
+        },
+        include: { transaction_splits: true, transaction_tags: { include: { tags: true } } },
+      });
+
+      for (const row of existing) {
+        if (row.idempotency_key) byKey.set(row.idempotency_key, row);
+        if (row.client_id) byClientId.set(row.client_id, row);
+        byId.set(row.id, row);
+      }
+    }
+
+    return {
+      transactions: byId,
+      for: (row) =>
+        (row.idempotencyKey ? byKey.get(row.idempotencyKey) : undefined) ??
+        (row.clientId ? byClientId.get(row.clientId) : undefined) ??
+        null,
+    };
+  }
+
+  /**
+   * One `id IN (…)` existence query for a plain household-scoped table.
+   *
+   * `$transaction` is not the only thing Prisma's generated client type makes awkward — a generic
+   * helper over `findMany` cannot be typed without re-deriving Prisma's argument generics, so the
+   * four call sites are named explicitly instead. One switch, four two-line branches.
+   */
+  private async existingIds(
+    model: 'accounts' | 'merchants' | 'counterparties',
+    ids: readonly string[],
+  ): Promise<Set<string>> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return new Set();
+    const where = { id: { in: unique }, deleted_at: null };
+
+    if (model === 'accounts') {
+      const found = await this.prisma.client.accounts.findMany({ where, select: { id: true } });
+      return new Set(found.map((row) => row.id));
+    }
+    if (model === 'merchants') {
+      // Global-readable: the guard widens this read to include the seeded catalogue, which is exactly
+      // what makes a merchant the app shipped resolvable on the first capture (docs/08 Layer 2).
+      const found = await this.prisma.client.merchants.findMany({ where, select: { id: true } });
+      return new Set(found.map((row) => row.id));
+    }
+    const found = await this.prisma.client.counterparties.findMany({ where, select: { id: true } });
+    return new Set(found.map((row) => row.id));
+  }
+
+  /** Category id → kind, for invariant I-3. */
+  private async categoryKinds(ids: readonly string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const found = await this.prisma.client.categories.findMany({
+      where: { id: { in: [...ids] }, deleted_at: null },
+      select: { id: true, kind: true },
+    });
+    return new Map(found.map((row) => [row.id, row.kind]));
+  }
+
+  private rejection(rows: readonly CaptureRejectedRow[]): CaptureCommitRejected {
+    // The request-level code is the rows' own code when they agree, and `VALIDATION_FAILED` when they
+    // do not — a mixed batch is a validation problem, and reporting one row's `NOT_FOUND` as the
+    // request's code would mislead a client that branches on it.
+    const codes = new Set(rows.map((row) => row.code));
+    // The per-row detail is already in `rows`; it is repeated in the message because a thrown error
+    // is what a log line shows, and "3 rows could not be committed" alone makes a rejection
+    // impossible to diagnose from the logs.
+    const detail = rows
+      .slice(0, 3)
+      .map((row) => `${row.clientRowId}${row.field ? `.${row.field}` : ''}: ${row.message}`)
+      .join(' | ');
+    return new CaptureCommitRejected(
+      rows,
+      codes.size === 1 ? [...codes][0]! : CaptureRejectionCode.VALIDATION_FAILED,
+      `${rows.length} row(s) could not be committed, so none were. ${detail}`,
+    );
   }
 
   /**
@@ -651,40 +1552,7 @@ export class TransactionsService {
     };
   }
 
-  private toModel(row: {
-    id: string;
-    kind: string;
-    amount_minor: bigint;
-    currency: string;
-    account_id: string;
-    category_id: string | null;
-    merchant_id: string | null;
-    counterparty_id: string | null;
-    description: string;
-    note: string | null;
-    raw_input: string | null;
-    occurred_at: Date;
-    occurred_local_date: Date;
-    status: string;
-    source: string;
-    category_source: string | null;
-    confidence: unknown;
-    needs_review: boolean;
-    version: number;
-    created_at: Date;
-    updated_at: Date;
-    transaction_splits?: {
-      id: string;
-      category_id: string;
-      amount_minor: bigint;
-      note: string | null;
-      confidence: unknown;
-      category_source: string | null;
-    }[];
-    transaction_tags?: {
-      tags: { id: string; name: string; color: string | null; created_at: Date };
-    }[];
-  }): TransactionModel {
+  private toModel(row: TransactionRowShape): TransactionModel {
     return {
       id: row.id,
       kind: row.kind as TransactionKind,

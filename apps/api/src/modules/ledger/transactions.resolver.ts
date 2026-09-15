@@ -4,13 +4,21 @@ import { CurrentHouseholdId } from '../../common/auth/current-tenant.decorator';
 import { toConnection } from '../../graphql/pagination';
 import { MoneyScalar } from '../../graphql/scalars/money.scalar';
 import { LocalDateScalar } from '../../graphql/scalars/uuid.scalar';
+import { toClassificationDecisionModel } from '../classification/classification.resolver';
+import { ClassificationService } from '../classification/classification.service';
+import {
+  CaptureCommitInput,
+  CaptureCommitResult,
+  type CaptureCommitRejectedModel,
+  type CaptureCommitSuccessModel,
+} from './capture-commit.model';
 import {
   TransactionConnection,
   TransactionKind,
   TransactionModel,
   TransactionStatus,
 } from './transaction.model';
-import { TransactionsService } from './transactions.service';
+import { CaptureCommitRejected, TransactionsService } from './transactions.service';
 
 @ArgsType()
 export class TransactionsPageArgs {
@@ -191,7 +199,13 @@ export class UpdateTransactionArgs {
 
 @Resolver(() => TransactionModel)
 export class TransactionsResolver {
-  constructor(private readonly transactionsService: TransactionsService) {}
+  constructor(
+    private readonly transactionsService: TransactionsService,
+    // `captureCommit` returns the classification decision behind every row it wrote (F-31). The
+    // ledger already depends on the classification module for its pipeline, so this is the same
+    // edge, not a new one.
+    private readonly classification: ClassificationService,
+  ) {}
 
   @Query(() => TransactionConnection, {
     description: 'Transactions, newest first, keyset-paginated on the UUIDv7 id.',
@@ -286,6 +300,92 @@ export class TransactionsResolver {
   ): Promise<boolean> {
     await this.transactionsService.remove(householdId, id);
     return true;
+  }
+
+  @Mutation(() => CaptureCommitResult, {
+    description:
+      'The write half of the capture path (docs/06 §5.2). Validates, classifies and writes the whole ' +
+      '`rows` array in ONE database transaction: if any row is structurally invalid nothing is ' +
+      'written and every offending row is named. A row the confidence gate puts in the blocking lane ' +
+      'is NOT a validation failure — it is written PENDING and enters the review queue, so one ' +
+      'ambiguous row never blocks a batch (F-06). Idempotent per row via `idempotencyKey` (I-10).',
+  })
+  async captureCommit(
+    @Args('input', { type: () => CaptureCommitInput }) input: CaptureCommitInput,
+    @CurrentHouseholdId() householdId: string,
+  ): Promise<typeof CaptureCommitResult> {
+    try {
+      const outcome = await this.transactionsService.captureCommit(householdId, {
+        parseId: input.parseId ?? null,
+        rows: input.rows.map((row) => ({
+          clientRowId: row.clientRowId,
+          idempotencyKey: row.idempotencyKey,
+          clientId: row.clientId ?? null,
+          accountId: row.accountId ?? null,
+          kind: row.kind,
+          // The `Money` scalar already rejected a JSON number, so this `BigInt` is a widening of a
+          // string and never a float being truncated (ADR-003).
+          amount: { amountMinor: BigInt(row.amount.amountMinor), currency: row.amount.currency },
+          categoryId: row.categoryId ?? null,
+          merchantId: row.merchantId ?? null,
+          counterpartyId: row.counterpartyId ?? null,
+          description: row.description ?? null,
+          note: row.note ?? null,
+          occurredAt: row.occurredAt ?? null,
+          occurredOn: row.occurredOn ?? null,
+          tagIds: row.tagIds ?? [],
+          acceptedProposalId: row.acceptedProposalId ?? null,
+          confirmDespiteLowConfidence: row.confirmDespiteLowConfidence ?? false,
+        })),
+        defaultAccountId: input.defaultAccountId ?? null,
+        occurredAt: input.occurredAt ?? null,
+        occurredLocalDate: input.occurredLocalDate ?? null,
+        discardProposalIds: input.discardProposalIds ?? [],
+        allowAi: input.allowAi ?? true,
+      });
+
+      // One batched read for the whole batch: docs/06 §5.2 puts the audit decision on every
+      // `CommittedTransaction`, and a per-row read would make capture's cost scale with the batch.
+      const decisions = await this.classification.decisionsForTransactions(
+        householdId,
+        outcome.committed.map((row) => row.transaction.id),
+      );
+
+      const success: CaptureCommitSuccessModel = {
+        committed: outcome.committed.map((row) => {
+          const decision = decisions.get(row.transaction.id);
+          return {
+            clientRowId: row.clientRowId,
+            transaction: row.transaction,
+            idempotencyKey: row.idempotencyKey,
+            wasReplayed: row.wasReplayed,
+            classification: decision ? toClassificationDecisionModel(decision) : null,
+          };
+        }),
+        skipped: [...outcome.skipped],
+        replayed: outcome.replayed,
+        cursor: outcome.cursor,
+        reviewQueueCount: outcome.reviewQueueCount,
+      };
+      return success;
+    } catch (error) {
+      if (error instanceof CaptureCommitRejected) {
+        // The rejection is a *successful* round trip carrying per-row diagnostics, not an error: the
+        // client renders it inline next to the offending rows. Nothing was written.
+        const rejected: CaptureCommitRejectedModel = {
+          rejected: error.rows.map((row) => ({
+            clientRowId: row.clientRowId,
+            code: row.code,
+            message: row.message,
+            field: row.field,
+          })),
+          code: error.code,
+          message: error.message,
+        };
+        return rejected;
+      }
+      throw error;
+    }
   }
 
   @Query(() => [ProposedSplit], {

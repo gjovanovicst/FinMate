@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { CalibrationTable } from '@finmate/ai';
 import { todayIn, uuidv7, type LocalDate } from '@finmate/domain';
 import {
+  extractFragment,
   extractFragments,
   foldForMatching,
   type TransactionFragment,
@@ -11,6 +12,7 @@ import type { CategoryKeyword, Rule as EngineRule } from '@finmate/rules-engine'
 
 import { ApiError } from '../../common/filters/all-exceptions.filter';
 import type { Prisma } from '../../generated/prisma/client';
+import type { classification_decisionsModel } from '../../generated/prisma/models';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   AI_CLASSIFIER,
@@ -125,6 +127,50 @@ export interface ParseResult {
   readonly rung: PipelineRung;
   readonly latencyMs: number;
 }
+
+/**
+ * A row `captureCommit` must classify itself, because the preview it came from never produced a
+ * proposal for it (docs/06 §5.2 classifies the whole `rows` array, not only the parsed fragments).
+ */
+export interface CommitRowClassification {
+  /** The text to classify — normally the row's description, which the user may have edited. */
+  readonly rawText: string;
+  /** Per-row override of the request-level `allowAi` (docs/06 §5.1's consent switch). */
+  readonly allowAi?: boolean;
+}
+
+/**
+ * The read-only view of a `classification_decisions` row that `captureCommit` needs.
+ *
+ * Deliberately not the Prisma row: the ledger has no business with `prompt_template_id` or the raw
+ * JSON blob, and narrowing it here keeps the audit table's shape free to change.
+ */
+export interface DecisionSnapshot {
+  readonly id: string;
+  /** `null` is the blocking lane whatever the confidence was (I-8). */
+  readonly categoryId: string | null;
+  /** The **calibrated** confidence, `null` when the row never carried one. */
+  readonly confidence: number | null;
+  readonly decidedBy: DecidedBy;
+  readonly ruleId: string | null;
+  readonly rawInput: string;
+  /** The parse this decision came from, so a commit can prove the preview it echoes is its own. */
+  readonly parseId: string | null;
+  /** Non-null when the row was already committed — a decision is linked to at most one Transaction. */
+  readonly transactionId: string | null;
+}
+
+/**
+ * How the user resolved a proposal.
+ *
+ * This is docs/04 §6.4's `was_accepted` label: the weekly re-fit consumes `(raw_confidence, accepted)`
+ * pairs, and without it a correction and an acceptance are indistinguishable in the audit trail.
+ *
+ * - `ACCEPTED` — the proposal's category was committed unchanged.
+ * - `OVERRIDDEN` — the row was committed with a category the user chose instead.
+ * - `DISCARDED` — the fragment was removed from the preview and produced no Transaction at all.
+ */
+export type DecisionOutcome = 'ACCEPTED' | 'OVERRIDDEN' | 'DISCARDED';
 
 /** One fragment as the pipeline saw it, before mapping to the API shape. */
 interface ClassifiedFragment {
@@ -401,6 +447,11 @@ export class ClassificationService {
           confidence: candidate.confidence ?? null,
         })),
       candidates: [...pipeline.candidates],
+      // docs/04 §6.4's `was_accepted`, which is a *later* fact than this row: the user accepts,
+      // overrides or discards the proposal in `captureCommit`. `null` is "not resolved yet", which
+      // must stay distinguishable from `false` ("shown and rejected") — a re-fit that reads an
+      // unresolved proposal as a rejection would train on answers nobody ever gave.
+      wasAccepted: null,
     };
 
     const id = uuidv7();
@@ -440,21 +491,240 @@ export class ClassificationService {
   }
 
   /**
-   * Attach a decision to the Transaction it produced.
+   * Classify rows that no preview produced a proposal for, in **one** Household-context load.
+   *
+   * `captureCommit` accepts rows the client built itself — an edited description, a row typed
+   * straight into the commit, an offline outbox replay. Those still need a category and still need an
+   * audit row, and the honest way to get them is the same pipeline rather than a second classifier
+   * call. One context load for the whole batch, because `loadContext` is five queries and a 50-row
+   * commit must not be 250 of them.
+   *
+   * Returns one {@link FragmentResult} per input, in input order, each already carrying the id of the
+   * `classification_decisions` row it wrote.
+   */
+  async classifyForCommit(
+    householdId: string,
+    rows: readonly CommitRowClassification[],
+    options: {
+      readonly allowAi?: boolean;
+      readonly locale?: string | null;
+      readonly occurredAt?: Date | null;
+      readonly localDay?: LocalDate | null;
+    } = {},
+  ): Promise<FragmentResult[]> {
+    if (rows.length === 0) return [];
+
+    const context = await this.loadContext(householdId);
+    const occurredAt = options.occurredAt ?? new Date();
+    const localDay = options.localDay ?? todayIn(context.household.timeZone, occurredAt);
+    const allowAi = options.allowAi ?? true;
+    const calibration = await this.calibration.tableFor(householdId);
+    const parseId = uuidv7();
+
+    const results: FragmentResult[] = [];
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index]!;
+      // `extractFragment`, not `extractFragments`: a commit row is one known row, and re-segmenting
+      // its description could split it into several fragments the caller never asked about.
+      const fragment = extractFragment(row.rawText, {
+        currency: context.household.currency as Parameters<typeof extractFragment>[1]['currency'],
+        today: localDay,
+      });
+
+      const classified = await this.classifyFragment({
+        householdId,
+        fragment,
+        context,
+        localDay,
+        index,
+        count: rows.length,
+        allowAi: row.allowAi ?? allowAi,
+        calibration,
+        locale: options.locale ?? null,
+      });
+
+      const decisionId = await this.recordDecision(householdId, {
+        parseId,
+        fragment,
+        pipeline: classified.pipeline,
+      });
+      results.push(this.toFragmentResult(decisionId, fragment, classified.pipeline, context));
+    }
+
+    return results;
+  }
+
+  /**
+   * Read the decisions a commit echoes back, in one scoped query.
+   *
+   * A caller that passes an id it cannot read simply does not find it here — the tenancy guard makes
+   * another Household's decision invisible rather than forbidden, exactly like `findFirst` on any
+   * other scoped model. The caller decides whether a missing id is a client bug (it is).
+   */
+  async decisionsByIds(
+    householdId: string,
+    ids: readonly string[],
+  ): Promise<Map<string, DecisionSnapshot>> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return new Map();
+
+    const rows = await this.prisma.client.classification_decisions.findMany({
+      where: { household_id: householdId, id: { in: unique } },
+      select: {
+        id: true,
+        category_id: true,
+        confidence: true,
+        decided_by: true,
+        rule_id: true,
+        raw_input: true,
+        transaction_id: true,
+        candidates: true,
+      },
+    });
+
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        {
+          id: row.id,
+          categoryId: row.category_id,
+          // `numeric(4,3)` comes back as a Prisma Decimal, so a `Number` is a widening of the
+          // storage type — not a float in the money path (ADR-003 governs `amount_minor`).
+          confidence: row.confidence === null ? null : Number(row.confidence),
+          decidedBy: row.decided_by as DecidedBy,
+          ruleId: row.rule_id,
+          rawInput: row.raw_input,
+          parseId: readParseId(row.candidates),
+          transactionId: row.transaction_id,
+        },
+      ]),
+    );
+  }
+
+  /**
+   * Record a category the user chose themselves as a decision row.
+   *
+   * Without this a capture the user categorised by hand would have **no** `classification_decisions`
+   * row, so F-31's "why is it in this category?" would answer nothing for exactly the rows the user
+   * cared enough to fix. `confidence = 1.000` is not a model claim: the user asserted it, and the lane
+   * it lands in (`>= 0.90`) is the honest one — no review prompt for a decision a human just made.
+   */
+  async recordUserChoice(
+    householdId: string,
+    args: { readonly rawText: string; readonly categoryId: string },
+  ): Promise<string> {
+    const id = uuidv7();
+    await this.prisma.client.classification_decisions.create({
+      data: {
+        id,
+        household_id: householdId,
+        raw_input: args.rawText,
+        normalized_input: foldForMatching(args.rawText),
+        decided_by: 'USER',
+        rule_id: null,
+        category_id: args.categoryId,
+        confidence: '1.000',
+        candidates: {
+          parseId: null,
+          rawConfidence: null,
+          calibratedConfidence: 1,
+          rationale: 'USER_CHOICE',
+          source: 'USER',
+          entityId: null,
+          rung: 'FULL_PIPELINE',
+          alternatives: [],
+          candidates: [],
+          wasAccepted: null,
+        } as unknown as Prisma.InputJsonObject,
+        ai_provider: null,
+        ai_model: null,
+        prompt_template_id: null,
+        prompt_version: null,
+        latency_ms: null,
+        cost_micros: null,
+      },
+    });
+    return id;
+  }
+
+  /**
+   * Attach a decision to the Transaction it produced, and record how the user resolved it.
    *
    * `classification_decisions.transaction_id` is nullable because docs/06 §5.1 says `captureParse`
    * writes the row for audit/cost while committing nothing; `captureCommit` is what closes the loop.
-   * Exposed as a method now so the ledger write (task 2.2.5) has one call to make, rather than a new
-   * query written from scratch next to it.
+   *
+   * The merge is a read-then-write rather than a JSONB patch, and that is deliberate: the update goes
+   * through the tenancy guard's scoped `updateMany` instead of a raw statement, so a future column
+   * rename cannot quietly turn this into an unscoped write. A commit is at most 50 rows, so one extra
+   * read each is not a hot path.
    */
   async attachToTransaction(
     householdId: string,
     decisionId: string,
     transactionId: string,
+    outcome: DecisionOutcome = 'ACCEPTED',
+    db?: Prisma.TransactionClient,
   ): Promise<void> {
-    await this.prisma.client.classification_decisions.updateMany({
+    await this.setResolution(
+      householdId,
+      decisionId,
+      { transactionId, wasAccepted: outcome === 'ACCEPTED' },
+      db,
+    );
+  }
+
+  /**
+   * Record fragments the user removed from the preview.
+   *
+   * They produced no Transaction, so `transaction_id` stays `null` — what changes is the
+   * `wasAccepted: false` label, which is the only durable evidence that a proposal was shown and
+   * rejected rather than never generated.
+   */
+  async markDiscarded(
+    householdId: string,
+    decisionIds: readonly string[],
+    db?: Prisma.TransactionClient,
+  ): Promise<void> {
+    for (const decisionId of [...new Set(decisionIds)]) {
+      await this.setResolution(householdId, decisionId, { transactionId: null, wasAccepted: false }, db);
+    }
+  }
+
+  /**
+   * `db` is the caller's interactive-transaction client when this runs as part of a commit.
+   *
+   * That matters: the ledger writes the Transaction and its audit link atomically, so this must run
+   * on the **same** connection as the write. Defaulting to the outer client keeps the standalone
+   * caller (the audit-link path) working, and passing `tx` is what stops the "outer client inside its
+   * own transaction" stall this codebase has already been bitten by.
+   */
+  private async setResolution(
+    householdId: string,
+    decisionId: string,
+    patch: { readonly transactionId: string | null; readonly wasAccepted: boolean },
+    db: Prisma.TransactionClient = this.prisma.client,
+  ): Promise<void> {
+    const row = await db.classification_decisions.findFirst({
       where: { id: decisionId, household_id: householdId },
-      data: { transaction_id: transactionId },
+      select: { candidates: true },
+    });
+    if (row === null) {
+      // A decision that is not this Household's, or was never written, is a caller bug. Silently
+      // succeeding would leave a committed Transaction with no audit trail and no way to notice.
+      throw new ApiError('NOT_FOUND', 'Classification decision not found for this household.');
+    }
+
+    const existing =
+      row.candidates !== null && typeof row.candidates === 'object' && !Array.isArray(row.candidates)
+        ? (row.candidates as Record<string, unknown>)
+        : {};
+
+    await db.classification_decisions.updateMany({
+      where: { id: decisionId, household_id: householdId },
+      data: {
+        transaction_id: patch.transactionId,
+        candidates: { ...existing, wasAccepted: patch.wasAccepted } as Prisma.InputJsonObject,
+      },
     });
   }
 
@@ -466,6 +736,29 @@ export class ClassificationService {
       where: { household_id: householdId, transaction_id: transactionId },
       orderBy: { created_at: 'desc' },
     });
+  }
+
+  /**
+   * The audit row for each of several Transactions, keyed by `transaction_id`.
+   *
+   * One query for a whole commit, not one per row: `captureCommit` returns the decision behind every
+   * Transaction it wrote, and a 50-row batch issuing 50 reads to render its own response would make
+   * the capture path's cost scale with the batch size for no reason.
+   *
+   * A Transaction has at most one decision — the write path creates or links exactly one — so a
+   * later row overwriting an earlier one cannot lose information.
+   */
+  async decisionsForTransactions(
+    householdId: string,
+    transactionIds: readonly string[],
+  ): Promise<Map<string, classification_decisionsModel>> {
+    const unique = [...new Set(transactionIds)];
+    if (unique.length === 0) return new Map();
+
+    const rows = await this.prisma.client.classification_decisions.findMany({
+      where: { household_id: householdId, transaction_id: { in: unique } },
+    });
+    return new Map(rows.map((row) => [row.transaction_id as string, row]));
   }
 
   // -------------------------------------------------------------------------------------------
@@ -615,6 +908,19 @@ export class ClassificationService {
       candidates: [...pipeline.candidates],
     };
   }
+}
+
+/**
+ * The `parseId` a decision recorded, read back out of its `candidates` blob.
+ *
+ * `captureCommit` uses it to check that the `acceptedProposalId` a client echoes really came from the
+ * preview it names. Returns `null` for anything unexpected rather than throwing: the blob is opaque
+ * JSON, and a value that is not a string is simply not a parse id.
+ */
+function readParseId(candidates: unknown): string | null {
+  if (candidates === null || typeof candidates !== 'object' || Array.isArray(candidates)) return null;
+  const value = (candidates as Record<string, unknown>)['parseId'];
+  return typeof value === 'string' ? value : null;
 }
 
 /** One Merchant/Counterparty row → the pipeline's entity shape. */

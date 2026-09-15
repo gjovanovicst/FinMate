@@ -5,12 +5,13 @@ import { defineConfig } from 'vitest/config';
 /**
  * Web unit tests.
  *
- * These cover pure client logic — money rendering, error mapping — rather than components. Angular
- * DOM tests need a TestBed harness; that lands with the first component that has real behaviour
- * worth asserting (Phase 1). Testing a thin template wrapper would add ceremony without coverage.
+ * These cover pure client logic — money rendering, error mapping — and, since the capture screen,
+ * **mounted components** too. That needs Angular's JIT compiler and a DOM, so a component spec opts
+ * in with `// @vitest-environment jsdom` plus `initAngularTesting()` from `@web-test/angular-testing`;
+ * the global environment stays `node`, because standing up jsdom for a pure function is wasted work.
  *
- * No `unplugin-swc` here: Angular compiles its own templates, and the code under test in Phase 0 is
- * plain TypeScript that esbuild handles.
+ * No `unplugin-swc` here: Angular compiles its own templates, and the code under test is plain
+ * TypeScript that esbuild handles.
  */
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
@@ -22,6 +23,8 @@ export default defineConfig({
       // ...and on scope:nlp (docs/05 §5.3): the capture parser and the match fold run in the browser
       // so the client and the API fold keywords, aliases and text identically.
       '@finmate/nlp': fileURLToPath(new URL('../../packages/nlp/src/index.ts', import.meta.url)),
+      // Test-only helpers live outside `src` so application code cannot import them.
+      '@web-test': fileURLToPath(new URL('./test', import.meta.url)),
     },
   },
   test: {

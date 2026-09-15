@@ -339,16 +339,18 @@ export class AppComponent {
   readonly signingOut = signal(false);
 
   /**
-   * Every destination here is a working screen. The rest of docs/02 §2 (Capture, Review, Insights)
-   * lands with the features themselves — an empty nav item that leads to "coming soon" is worse
-   * than no item, because it teaches the user that the app is incomplete.
+   * Every destination here is a working screen. The rest of docs/02 §2 (Review, Insights) lands with
+   * the features themselves — an empty nav item that leads to "coming soon" is worse than no item,
+   * because it teaches the user that the app is incomplete.
    *
-   * Budgets sits before Accounts because it is the screen that produces the product's headline
-   * number; Accounts is setup the user visits once.
+   * Capture sits in the middle of the compact bar, which is docs/02 §2's "➕ centre action" and where
+   * a thumb already is. Budgets sits before Accounts because it is the screen that produces the
+   * product's headline number; Accounts is setup the user visits once.
    */
   readonly items: readonly NavItem[] = [
     { path: '/', labelKey: 'nav.dashboard', icon: '📊', primary: true },
     { path: '/transactions', labelKey: 'nav.transactions', icon: '🧾', primary: true },
+    { path: '/capture', labelKey: 'nav.capture', icon: '➕', primary: true },
     { path: '/budgets', labelKey: 'nav.budgets', icon: '🎯', primary: true },
     { path: '/accounts', labelKey: 'nav.accounts', icon: '🏦', primary: true },
     { path: '/categories', labelKey: 'nav.categories', icon: '🗂️', primary: false },

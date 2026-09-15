@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { ClassificationModule } from '../classification/classification.module';
 import { TaxonomyModule } from '../taxonomy/taxonomy.module';
 import { TransactionsExportController } from './transactions-export.controller';
 import { TransactionsResolver } from './transactions.resolver';
@@ -15,9 +16,14 @@ import { TransactionsService } from './transactions.service';
  * It imports `TaxonomyModule` for one reason: attaching a Tag to a Transaction has to validate that
  * the Tag is one this Household can see, and `tags` is Taxonomy's table. The edge goes through the
  * owning module's service rather than a direct query (docs/05 §3).
+ *
+ * `ClassificationModule` is imported for `captureCommit`: a captured row's category comes from the
+ * pipeline, and the audit row that records *why* is `classification_decisions`, which classification
+ * owns. The edge is one-directional — classification imports nothing from the ledger — so the
+ * capture write path never becomes a cycle.
  */
 @Module({
-  imports: [TaxonomyModule],
+  imports: [TaxonomyModule, ClassificationModule],
   controllers: [TransactionsExportController],
   providers: [TransactionsResolver, TransactionsService],
   exports: [TransactionsService],

@@ -37,6 +37,13 @@ export const routes: Routes = [
     title: 'Računi',
   },
   {
+    path: 'capture',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/capture/capture.component').then((m) => m.CaptureComponent),
+    title: 'Novi unos',
+  },
+  {
     path: 'transactions',
     canActivate: [authenticatedGuard],
     loadComponent: () =>

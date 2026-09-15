@@ -784,9 +784,14 @@ describe('ClassificationService (integration)', () => {
       const result = await parseInput(stub, 'Lidl 5555');
       const decisionId = result.fragments[0]!.decisionId;
 
-      await runWithTenant(otherContext, () =>
-        service({ stub }).attachToTransaction(otherHouseholdId, decisionId, uuidv7()),
-      );
+      // A silent no-op would be worse than a failure: the caller would believe the audit link exists,
+      // and a committed Transaction would have no answer to "why that category?" (F-31). The link is
+      // refused loudly, and the foreign Household still cannot touch the row.
+      await expect(
+        runWithTenant(otherContext, () =>
+          service({ stub }).attachToTransaction(otherHouseholdId, decisionId, uuidv7()),
+        ),
+      ).rejects.toThrow(/not found for this household/i);
 
       const row = await latestDecision('Lidl 5555');
       expect(row.transaction_id).toBeNull();
