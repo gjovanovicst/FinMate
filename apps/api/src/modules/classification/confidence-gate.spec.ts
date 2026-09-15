@@ -187,22 +187,36 @@ describe('resolveLaneThresholds — the per-Household override point', () => {
   });
 
   it('reads a coherent override out of households.settings', () => {
+    // The key and the field names are docs/03 §4's, verbatim. This test used to assert a
+    // `classificationThresholds: {autoApplyMin, verifyMin}` shape that no document mentioned, so the
+    // code and the spec agreed with each other and with nothing else.
     expect(
-      resolveLaneThresholds({
-        classificationThresholds: { autoApplyMin: 0.8, verifyMin: 0.5 },
-      }),
+      resolveLaneThresholds({ aiConfidenceThresholds: { auto: 0.8, verify: 0.5 } }),
     ).toEqual({ autoApplyMin: 0.8, verifyMin: 0.5 });
+
+    // A Household that follows the spec must not be silently gated at the defaults.
+    expect(
+      resolveLaneThresholds({ aiConfidenceThresholds: { auto: 0.8, verify: 0.5 } }),
+    ).not.toEqual(DEFAULT_LANE_THRESHOLDS);
+  });
+
+  it('still ignores the shape this code used to read, now that it is undocumented', () => {
+    // A stale writer would otherwise keep looking like it worked. Falling back to the defaults is the
+    // safe direction and the next settings mutation writes the documented key.
+    expect(
+      resolveLaneThresholds({ classificationThresholds: { autoApplyMin: 0.8, verifyMin: 0.5 } }),
+    ).toEqual(DEFAULT_LANE_THRESHOLDS);
   });
 
   it('ignores a malformed override rather than throwing', () => {
     // Settings is operator-editable JSON; a typo there must not make capture fail.
     for (const value of [
-      { classificationThresholds: 'high' },
-      { classificationThresholds: { autoApplyMin: '0.9', verifyMin: 0.6 } },
-      { classificationThresholds: { autoApplyMin: 0.9 } },
-      { classificationThresholds: { autoApplyMin: 1.4, verifyMin: 0.6 } },
-      { classificationThresholds: { autoApplyMin: 0.9, verifyMin: -0.1 } },
-      { classificationThresholds: { autoApplyMin: Number.NaN, verifyMin: 0.6 } },
+      { aiConfidenceThresholds: 'high' },
+      { aiConfidenceThresholds: { auto: '0.9', verify: 0.6 } },
+      { aiConfidenceThresholds: { auto: 0.9 } },
+      { aiConfidenceThresholds: { auto: 1.4, verify: 0.6 } },
+      { aiConfidenceThresholds: { auto: 0.9, verify: -0.1 } },
+      { aiConfidenceThresholds: { auto: Number.NaN, verify: 0.6 } },
     ]) {
       expect(resolveLaneThresholds(value), JSON.stringify(value)).toEqual(DEFAULT_LANE_THRESHOLDS);
     }
@@ -212,19 +226,19 @@ describe('resolveLaneThresholds — the per-Household override point', () => {
     // 0.95 / 0.90 reads as "auto above .95, verify above .90" but a power user typing it backwards
     // would otherwise silently accept a threshold table where no row can ever be advisory.
     expect(
-      resolveLaneThresholds({ classificationThresholds: { autoApplyMin: 0.9, verifyMin: 0.95 } }),
+      resolveLaneThresholds({ aiConfidenceThresholds: { auto: 0.9, verify: 0.95 } }),
     ).toEqual(DEFAULT_LANE_THRESHOLDS);
     expect(
-      resolveLaneThresholds({ classificationThresholds: { autoApplyMin: 0.6, verifyMin: 0.6 } }),
+      resolveLaneThresholds({ aiConfidenceThresholds: { auto: 0.6, verify: 0.6 } }),
     ).toEqual(DEFAULT_LANE_THRESHOLDS);
   });
 
   it('accepts the extreme endpoints of the legal range', () => {
     expect(
-      resolveLaneThresholds({ classificationThresholds: { autoApplyMin: 1, verifyMin: 0 } }),
+      resolveLaneThresholds({ aiConfidenceThresholds: { auto: 1, verify: 0 } }),
     ).toEqual({ autoApplyMin: 1, verifyMin: 0 });
     expect(
-      resolveLaneThresholds({ classificationThresholds: { autoApplyMin: 0.01, verifyMin: 0 } }),
+      resolveLaneThresholds({ aiConfidenceThresholds: { auto: 0.01, verify: 0 } }),
     ).toEqual({ autoApplyMin: 0.01, verifyMin: 0 });
   });
 });

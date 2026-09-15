@@ -512,7 +512,8 @@ describe('ClassificationService (integration)', () => {
       await asTenant(() =>
         prisma.client.households.update({
           where: { id: householdId },
-          data: { settings: { classificationThresholds: { autoApplyMin: 0.7, verifyMin: 0.3 } } },
+          // docs/03 §4's key and field names, which is what a settings writer will use.
+          data: { settings: { aiConfidenceThresholds: { auto: 0.7, verify: 0.3 } } },
         }),
       );
 

@@ -136,25 +136,32 @@ export function applyConfidenceGate(input: GateInput): GateDecision {
  * the storage that already exists — reading it here is the override point, and inventing a table for
  * two numbers would be a migration with no data behind it.
  *
+ * **The key and the field names come from docs/03 §4's DDL comment, verbatim:**
+ * `aiConfidenceThresholds: {"auto": 0.90, "verify": 0.60}`. This function used to read
+ * `classificationThresholds: {autoApplyMin, verifyMin}` — a shape no document mentioned, so a
+ * household that followed the spec would have had its override silently ignored and been gated at
+ * ADR-009's defaults. A setting that silently does nothing is worse than one that errors, because
+ * nothing surfaces it.
+ *
  * A malformed or absent override falls back to ADR-009's defaults rather than throwing: settings is
  * operator-editable JSON, and a typo there must not make capture fail. An override is **only**
- * accepted when it is coherent — both numbers present, both in `0..1`, and `verifyMin` strictly below
- * `autoApplyMin`. An incoherent pair (say `0.95 / 0.90`) would make a whole band unreachable or
- * invert the lanes, so it is ignored rather than honoured.
+ * accepted when it is coherent — both numbers present, both in `0..1`, and `verify` strictly below
+ * `auto`. An incoherent pair (say `0.95 / 0.90`) would make a whole band unreachable or invert the
+ * lanes, so it is ignored rather than honoured.
  */
 export function resolveLaneThresholds(settings: unknown): LaneThresholds {
   if (settings === null || typeof settings !== 'object' || Array.isArray(settings)) {
     return DEFAULT_LANE_THRESHOLDS;
   }
 
-  const candidate = (settings as Record<string, unknown>)['classificationThresholds'];
+  const candidate = (settings as Record<string, unknown>)['aiConfidenceThresholds'];
   if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) {
     return DEFAULT_LANE_THRESHOLDS;
   }
 
   const record = candidate as Record<string, unknown>;
-  const autoApplyMin = record['autoApplyMin'];
-  const verifyMin = record['verifyMin'];
+  const autoApplyMin = record['auto'];
+  const verifyMin = record['verify'];
 
   if (!isUnitNumber(autoApplyMin) || !isUnitNumber(verifyMin)) return DEFAULT_LANE_THRESHOLDS;
   if (verifyMin >= autoApplyMin) return DEFAULT_LANE_THRESHOLDS;

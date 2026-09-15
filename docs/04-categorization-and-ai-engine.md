@@ -384,6 +384,19 @@ lane only — a badge that never clears because of advisory rows is a badge user
 Thresholds are per-household tunable in settings (a power user may prefer aggressive auto-apply).
 Every threshold change is recorded in `audit_log`.
 
+The override lives in `households.settings` under the key [03 §4](03-domain-model.md) documents:
+
+```jsonc
+{ "aiConfidenceThresholds": { "auto": 0.90, "verify": 0.60 } }
+```
+
+`resolveLaneThresholds` reads exactly that key and those two field names, and falls back to
+ADR-009's defaults when the pair is absent, non-numeric, out of `0..1`, or incoherent
+(`verify >= auto`, which would make the advisory band unreachable). It is named here because the
+write half of this setting does not exist yet, and a reader of this section is the person most likely
+to add it — a *different* key or field names would silently do nothing rather than fail, which is the
+worst way for a threshold to be wrong.
+
 **Bulk-input special case:** in a batch of 3 fragments where one is < 0.60, the other two are still
 confirmable in one action. Blocking a whole batch on one ambiguous row is the single most annoying
 failure mode we can ship, and F-06's acceptance criteria forbid it.
