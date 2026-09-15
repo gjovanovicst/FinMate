@@ -163,13 +163,18 @@ export const STARTER_CATEGORIES: readonly StarterCategory[] = [
         key: 'kuca-internet',
         name: 'Internet i TV',
         kind: 'EXPENSE',
-        strong: ['internet', 'sbb', 'mts', 'orion', 'yettel'],
+        // `yettel` is deliberately NOT here. It used to be, while `merchants.ts` gives `Yettel` a
+        // `Kuća / Telefon` default and a `telenor` alias — and because a keyword decision outranks an
+        // entity default, "Yettel 2,50" resolved to *Internet i TV*. The evaluation harness caught the
+        // contradiction on its first run (docs/04 §8.1.5). The merchant's default is the more specific
+        // artefact and matches the brand, so the keyword moved to `kuca-telefon`.
+        strong: ['internet', 'sbb', 'mts', 'orion'],
       },
       {
         key: 'kuca-telefon',
         name: 'Telefon',
         kind: 'EXPENSE',
-        strong: ['telefon', 'telekom', 'mobilni', 'a1'],
+        strong: ['telefon', 'telekom', 'mobilni', 'a1', 'yettel'],
       },
       {
         key: 'kuca-septicka',

@@ -119,7 +119,8 @@ packages/ai/test/contract/                                     # adapter contrac
 apps/api/test/{integration,security,migrations}/               # layer 2, §7, §4.3
 apps/web/src/**/*.spec.ts                                      # layer 3
 apps/web/e2e/                                                  # layer 5
-tools/evals/                                                   # layer 6 (§5)
+tools/evals/                                                   # layer 6 nightly service (§5); the
+                                                               # Phase 2 gate is apps/api/src/evals (§5.9)
 ```
 
 | Package / app | Lines | Branches | Note |
@@ -634,7 +635,10 @@ expected.categoryPath vs. decision.categoryPath
 | Cost per classified transaction | ≤ $0.002 |
 
 A gate run exits non-zero on any breach. The nightly run reports without failing the pipeline; the
-release-candidate run **blocks** ([09 §7](09-implementation-plan.md)).
+release-candidate run **blocks** ([09 §7](09-implementation-plan.md)). **Which of these gates the
+Phase 2 harness can measure today — and which two are `skipped` because NARRATE does not exist — is
+[§5.9](#59-what-the-phase-2-harness-actually-is-task-235); the withheld ones print their measured
+value rather than a blank.**
 
 ### 5.6 Tracked, but not a §11 gate
 
@@ -735,6 +739,44 @@ flowchart TD
 
 5. **A prompt edit is a versioned artefact with the review discipline of a migration**: its PR must link
    the `run_id` proving it does not regress the §5.5 metrics.
+
+---
+
+### 5.9 What the Phase 2 harness actually is (task 2.3.5)
+
+The section above is the design. This is the delivered v1: `pnpm test:evals`, run in CI right after
+`pnpm test`, gating on the metrics it can measure.
+
+| Design | Built | Why |
+|---|---|---|
+| `tools/evals/` (the §1 layout sketch) | **`apps/api/src/evals/`** | The runner must boot the API's DI container and call `ClassificationService.parse` — docs/10 §5.4's "full pipeline, not the bare model". A separate project would have to import `scope:api` source and duplicate the module graph. The sketch describes the eventual layer-6 *service* (nightly, live providers, `evals` schema); this is the deterministic Phase 2 gate, and it lives next to what it measures. The sketch is corrected to say so. |
+| A `Node runner + golden dataset + provider adapters` | A Nest application context + the v1 dataset read as data | Provider adapters arrive with the first provider. `EvalModule` imports only `ConfigModule`, `PrismaModule`, `ClassificationModule` and `OnboardingModule`: booting `AppModule` would drag in GraphQL and the HTTP guards, and a harness that fails for unrelated reasons is a harness nobody trusts. |
+| `EvalCase` fixtures with `fixtureTree` and `expected.categoryPath` | The v1 golden fixtures **plus** a 83-row label table | The 300 parsing expectations already exist in `packages/nlp/test/golden/`; copying them would let the two datasets drift into disagreeing about what a case says. `apps/api/src/evals/fixtures/category-expectations.json` adds only what parsing cannot state — the category a human labelled from the text alone — and **`dataset.spec.ts` fails if a single description is unlabelled**, so the table cannot fall behind a growing dataset. |
+| A synthetic category tree per fixture | The **shipped** tree, written by `OnboardingService` | The seed's `strong`/`include` weights *are* the knowledge under test (§8.1.3 of doc 04 was invisible for weeks because a fixture tree hid it). One Household per `ledgerCurrency` in the dataset, because the amount scale is derived from the Household's currency (ADR-011). |
+| `evals.run` / `slice_metric` / `failing_case` tables | `apps/api/.evals/report.{json,md}` + stdout | The tables are for trending 60 runs against a pinned triple; that is the nightly runner's job. A gate needs a number and a list, and the artefacts carry both. Recorded as not-built rather than implied. |
+| Every §5.5 gate enforced | The four the build can measure, plus the Phase 2 rule-hit ratio | Narration (2 gates) is `skipped`: NARRATE is Phase 3. Top-3 and cost are `requiresProvider`: with no model the candidate list is empty for every fragment the deterministic ladder did not resolve, so top-3 degenerates into a second copy of the rule-hit ratio. **Measured values are always printed** — a gate is withheld, never a number. |
+
+**The first run paid for the harness immediately.** It found two defects — a reversal word being
+auto-categorised at 0.923, and a keyword in the seed contradicting the merchant catalogue — both
+recorded in [04 §8.1.5](04-categorization-and-ai-engine.md#815-the-evaluation-harness-found-two-defects-on-its-first-run-task-235).
+Neither was visible to any existing test, because no test in the repo had ever fed a refund or a
+Yettel bill through the pipeline.
+
+**Scores after those fixes** (300 cases, 359 fragments, no provider configured):
+
+| Slice | Cases | Fragments | Rule-hit | Top-1 (≥0.90) | Overconfident-wrong | Should-ask recall | Extraction | p95 |
+|---|---|---|---|---|---|---|---|---|
+| AMOUNT_FORMAT | 85 | 85 | 100 % | 100 % (85) | 0 % | n/a | 100 % | 33 ms |
+| BULK | 30 | 67 | 94.0 % | 100 % (63) | 0 % | n/a | 100 % | 40 ms |
+| MERCHANT | 104 | 104 | 99.0 % | 100 % (103) | 0 % | n/a | 100 % | 30 ms |
+| SHOULD_ASK | 81 | 103 | 13.6 % | 100 % (13) | 0.97 % | 98.8 % | 100 % | 48 ms |
+| **all** | **300** | **359** | **73.8 %** | **100 %** | **0.28 %** | **98.8 %** | **100 %** | **39 ms** |
+
+The `SHOULD_ASK` slice is large (81 of 300 cases) because a case moves there when *any* of its
+fragments cannot be categorised from the text — the 66 bare `kupovina` cases plus refunds, rent and
+the deliberately corroborating `kafa`/`voda`. That is a statement about the v1 dataset's composition,
+not about the pipeline: the parsing slices were authored for amount handling, and a category-label
+slice with more retail vocabulary is the obvious next dataset investment.
 
 ---
 

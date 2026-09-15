@@ -367,6 +367,26 @@ docs/04 is canonical for all of this. The recurring theme is that a second copy 
   work" with a lexeme stand-in behind the interface — it would clear some thresholds and not others and become
   the thing under test instead of the plumbing (ADR-021, docs/04 §8.1.4).
 
+- **A reversal word must not be categorised — not by a rule, not by a keyword, not by an entity default.**
+  `@finmate/nlp` sets `needsDirectionConfirmation` on `Lidl vraćeno 2000` / `storno Lidl` / `refund Lidl`
+  and pins no `kind` for them, because the sign is a question only the user can answer. Nothing read that
+  flag until task 2.3.5, so the keyword tier matched `lidl` and the row was **auto-applied** as
+  `Hrana / Supermarket` at 0.923 — an EXPENSE Category on a direction the parser had refused to guess.
+  Every Category carries a `kind` (I-3), so the pipeline now returns an uncategorised **blocking** row for
+  those fragments, keeping the resolved entity (so the row stays learnable) and the losing candidates (so
+  the audit shows what it would have said, marked `direction-unconfirmed`). The AI is not asked either:
+  a model cannot know the user's intent. Found by the evaluation harness's first run — see docs/04 §8.1.5.
+
+- **The evaluation harness reads the shipped content, so a fixture tree would hide a seed defect.** The
+  harness seeds the real starter tree and merchant catalogue through `OnboardingService` and runs all 300
+  v1 golden cases through `ClassificationService.parse`. Its first run found that `categories.ts` listed
+  `yettel` as a keyword of `Kuća / Internet i TV` while `merchants.ts` gives the `Yettel` merchant a
+  `Kuća / Telefon` default — and a keyword outranks an entity default, so `Yettel 2,50` came out as
+  *Internet i TV*. When you add a keyword, check the merchant catalogue for the same name: a name in both
+  places is a contradiction waiting for whichever stage runs first. The corollary is the reason
+  `dataset.spec.ts` fails on an **unlabelled** description rather than defaulting: a dataset that shrinks
+  silently makes every rate that is a fraction of cases look better (docs/10 §5.9).
+
 ---
 
 ## 7. Capture and the commit path

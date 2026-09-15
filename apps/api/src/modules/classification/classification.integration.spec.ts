@@ -490,6 +490,83 @@ describe('ClassificationService (integration)', () => {
   });
 
   // -------------------------------------------------------------------------------------------
+  // The direction gate
+  // -------------------------------------------------------------------------------------------
+
+  describe('the direction gate (docs/04 §7, §8.1.5, I-3)', () => {
+    it('leaves a reversal uncategorised and blocking, and never asks the model', async () => {
+      // `Lidl vraćeno 2000` used to be auto-applied as `Hrana / Supermarket` at 0.923 — the keyword
+      // tier decided it — which asserts a direction `@finmate/nlp` deliberately refused to guess
+      // (`needsDirectionConfirmation`). Every Category carries a kind (I-3), so the honest outcome is
+      // the blocking lane with the direction as the question. The evaluation harness found this on its
+      // first run; see docs/04 §8.1.5.
+      // A Merchant **with a default category**, so the gate is what stops the decision rather than the
+      // absence of knowledge — which is the whole point.
+      const merchantId = uuidv7();
+      await asTenant(() =>
+        prisma.client.merchants.create({
+          data: { id: merchantId, name: 'Lidl', default_category_id: foodId },
+        }),
+      );
+
+      const stub = stubClassifier();
+      const result = await parseInput(stub, 'Lidl vraćeno 2000');
+      const fragment = result.fragments[0]!;
+
+      expect(fragment.decidedBy).toBe('FALLBACK');
+      expect(fragment.categoryId).toBeNull();
+      expect(fragment.confidence).toBe(0);
+      expect(fragment.needsReview).toBe(true);
+      expect(fragment.needsDirectionConfirmation).toBe(true);
+      // Resolution still happened: the entity is what the review queue, the correction path and rule
+      // synthesis read, and losing it would make the row unlearnable.
+      expect(fragment.merchantId).toBe(merchantId);
+      // A model cannot know the user's intent either, so it is not asked.
+      expect(stub.calls).toHaveLength(0);
+
+      const row = await latestDecision('Lidl vraćeno 2000');
+      expect(JSON.stringify(row.candidates)).toContain('direction-unconfirmed');
+
+      await asTenant(() => prisma.client.merchants.deleteMany({ where: { id: merchantId } }));
+    });
+
+    it('does not let a user rule categorise a reversal either', async () => {
+      // A rule's `setCategoryId` carries a kind too, and the user's rule was written about purchases.
+      const ruleId = uuidv7();
+      await asTenant(() =>
+        prisma.client.rules.create({
+          data: {
+            id: ruleId,
+            name: 'Lidl → Hrana',
+            priority: 1,
+            conditions: { all: [{ field: 'text', op: 'contains', value: 'lidl' }] },
+            actions: { setCategoryId: foodId },
+            origin: 'USER',
+          },
+        }),
+      );
+
+      const stub = stubClassifier();
+      const result = await parseInput(stub, 'Lidl storno 3000');
+      expect(result.fragments[0]!.decidedBy).toBe('FALLBACK');
+      expect(result.fragments[0]!.categoryId).toBeNull();
+      expect(result.fragments[0]!.decidedBy).not.toBe('RULE');
+      expect(stub.calls).toHaveLength(0);
+
+      await asTenant(() => prisma.client.rules.deleteMany({ where: { id: ruleId } }));
+    });
+
+    it('still categorises the same merchant when the direction is not in question', async () => {
+      // The gate is about the *reversal*, not about the merchant: the ordinary path is unchanged.
+      const stub = stubClassifier();
+      const result = await parseInput(stub, 'Lidl 2000');
+      expect(result.fragments[0]!.decidedBy).toBe('KEYWORD');
+      expect(result.fragments[0]!.categoryId).toBe(foodId);
+      expect(result.fragments[0]!.needsDirectionConfirmation).toBe(false);
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------
   // The confidence gate
   // -------------------------------------------------------------------------------------------
 

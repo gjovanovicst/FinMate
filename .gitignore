@@ -53,3 +53,6 @@ pnpm-debug.log*
 # Prisma / generated clients
 **/generated/
 prisma/*.db
+
+# Evaluation-harness artefacts (docs/10 §5). The runner writes a report; nothing in it is source.
+apps/api/.evals/

@@ -1,7 +1,7 @@
 # Continuous integration (docs/11-devops-and-observability.md §5).
 #
 # Gates, in the order a failure is cheapest to fix:
-#   install → generate → migrate → lint → typecheck → test
+#   install → generate → migrate → lint → typecheck → test → evals
 #
 # Deliberately absent for now:
 #   * production build — apps/api has no build target yet; bundling source-consumed workspace
@@ -9,9 +9,13 @@
 #     a message and exits 0, so this pipeline stays honest rather than green-by-omission).
 #   * deploy to staging — Phase 0 task 0.9 in docs/09 also covers it; it needs a host decision
 #     (docs/14 Q-7), so it is not wired here.
-#   * the statistical AI evaluation harness — the nightly layer-6 runner (docs/10 §5), which needs
-#     live providers and the full 1 300-case composition. The deterministic golden dataset
-#     (packages/nlp/test/golden/, task 2.1.2) is NOT in this list: it runs inside `nlp:test` above.
+#
+# The evaluation step runs the Phase 2 harness (docs/10 §5, `pnpm test:evals`) and BLOCKS on the
+# gates it can measure. It is explicit about the ones it cannot: with no provider configured the two
+# narration gates are reported `skipped` and the model-dependent ones (top-3, cost) are measured but
+# not enforced, each with its reason in the report. They become blocking the moment a provider is
+# wired — same run, no change to this file. The deterministic golden dataset
+# (packages/nlp/test/golden/, task 2.1.2) is NOT in this list: it runs inside `nlp:test` above.
 
 name: CI
 
@@ -111,6 +115,13 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      # The Phase 2 evaluation gates (docs/04 §11.2, docs/10 §5). It boots a real Nest context, seeds
+      # a synthetic Household with the shipped content through the production writers, and pushes all
+      # 300 v1 golden cases through `ClassificationService.parse`. No network, no LLM judge: every
+      # score is a comparison against a hand-written label.
+      - name: AI evaluation gates
+        run: pnpm test:evals
 
       # Guardrail: the live database and schema.prisma must agree.
       #

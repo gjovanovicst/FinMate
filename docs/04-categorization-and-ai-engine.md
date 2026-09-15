@@ -592,7 +592,50 @@ Two more things the task settled:
 - **The audit blob records the cosine and the model** (`entityEmbedding`), so "why this person?" is
   answerable after the fact instead of being an unqualified assertion.
 
+#### 8.1.5 The evaluation harness found two defects on its first run (task 2.3.5)
+
+The Phase 2 evaluation harness ([10 §5](10-testing-and-quality.md#5-ai-evaluation-harness)) runs all
+300 v1 golden cases through the real pipeline, with the shipped starter tree and merchant catalogue
+seeded by the production writers. Its **first run** produced two defects and a list of knowledge gaps.
+
+**(a) A reversal was auto-categorised, asserting a direction the parser refused to guess.**
+`@finmate/nlp` sets `needsDirectionConfirmation` on `Lidl vraćeno 2000`, `storno Lidl 2000`,
+`refund Lidl 2000` and their variants, because the *sign* is a question only the user can answer — and
+the golden cases pin no `kind` for them. Nothing in the pipeline read that flag. The keyword tier
+matched `lidl`, the entity default supplied `Hrana / Supermarket`, and the row was **auto-applied at
+0.923** — an EXPENSE Category on a fragment whose direction was explicitly unknown. Every Category
+carries a `kind` (§4's tree, invariant I-3), so that decision asserted more than the pipeline knew.
+
+The fix is a **direction gate**: when `needsDirectionConfirmation` is set, no category-implying stage
+decides — not rules, not keywords, not the entity default — and the AI is not asked either, because a
+model cannot know the user's intent and a 0.6 guess would only move the guess into the verify lane. The
+row is left uncategorised and **blocking** (I-8's `null`-category arm), with the direction as the
+question to ask. Two things are deliberately preserved: the resolved entity (the review queue, the
+correction path and rule synthesis all read it, so the row stays learnable) and the losing candidates
+(the audit shows what the pipeline *would* have said — `direction-unconfirmed` marks the reason).
+
+**(b) The seed contradicted itself about Yettel, and the keyword won.** `categories.ts` listed
+`yettel` as a `strong` keyword of `Kuća / Internet i TV` while `merchants.ts` gives the `Yettel`
+merchant a `Kuća / Telefon` default and a `telenor` alias. A keyword decision outranks an entity
+default, so `Yettel 2,50` resolved to *Internet i TV* — the merchant's own default never got a chance.
+The merchant catalogue is the more specific artefact and matches the brand (Yettel is a mobile
+operator), so the keyword moved to `kuca-telefon`. This is the class of defect a fixture tree would
+have hidden: it only appears when the *shipped* content is the one being measured.
+
+**What the run also showed, and deliberately did not fix.** After those two fixes every measurable
+gate passed (top-1 100 %, overconfident-wrong 0.28 %, should-ask recall 98.8 %, rule-hit ratio 73.8 %,
+p95 39 ms), with nine cases still mis- or un-categorised. They are knowledge gaps, not pipeline bugs,
+and they are the input to the next content iteration rather than a rewrite of the ladder:
+
+| Case | What happens | Why |
+|---|---|---|
+| `popravka` (`bulk-0038`) | `Automobil / Servis` at 0.90 — the **only** overconfident-wrong left | The tree weights `popravka` 2 on `Automobil / Servis` and 1 on `Kuća / Održavanje`, so the engine decides. The label says the text alone cannot say whether the car or the house was repaired; the run surfaces the disagreement rather than hiding it |
+| `primio` | uncategorised | `primio` is an `include` (1.0) keyword of `Uplata`, so it cannot decide alone |
+| `kafa`, `hleb`, `mleko`, `jogurt`, `sir`, `pivo`, `Indian` | uncategorised | Out-of-vocabulary for the shipped tree. `kafa` and `voda` are deliberately corroborating (§8.1.3) |
+| `Лиди` | uncategorised | A Cyrillic *variant* spelling: the seed alias is `лидл`, which folds to `lidl`, and `Лиди` folds to `lidi` |
+
 ### 8.2 Guardrails (the user is not always right, and neither are we)
+
 - **Never auto-create rules.** Synthesis always proposes; the user confirms. (P-2, and the source
   transcript's explicit "backend decides when a correction is clear enough".)
 - **No rule from a single ambiguous correction** unless the trigger is a resolved entity — a typo'd

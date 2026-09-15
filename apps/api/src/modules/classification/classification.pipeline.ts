@@ -454,6 +454,45 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineOutcome
     ...amountCandidates(fragment),
   ];
 
+  /**
+   * ── The direction gate (docs/04 §7, §8.1.5, invariant I-3).
+   *
+   * `@finmate/nlp` sets `needsDirectionConfirmation` on a fragment carrying a reversal word
+   * (`Lidl vraćeno 2000`, `storno Lidl`, `refund Lidl`) because the *sign* is a question only the user
+   * can answer — it deliberately does not guess, and the golden dataset pins no `kind` for those cases.
+   *
+   * Every Category in the tree carries a `kind` (I-3), so deciding one here would assert a direction
+   * the parser just declined to assert: `Lidl vraćeno 2000` came out as `Hrana / Supermarket` at 0.923
+   * — auto-applied, and wrong the moment the user means "Lidl refunded me". That is precisely the
+   * overconfident-wrong failure docs/04 §11.2 exists to catch, and the AI is not asked either: a model
+   * cannot know the user's intent here, and a guess at 0.6 would only move the guess into the
+   * verify lane.
+   *
+   * So the row is left uncategorised and **blocking** (I-8's `null`-category arm), with the direction
+   * as the question to ask. The resolved entity is still recorded — it is what the review queue, the
+   * correction path and rule synthesis read — and the losing candidates are kept so the audit can show
+   * what the pipeline *would* have said.
+   */
+  if (fragment.needsDirectionConfirmation) {
+    return finish({
+      decidedBy: 'FALLBACK',
+      categoryId: null,
+      ruleId: null,
+      ruleName: null,
+      entityId: null,
+      entityName: null,
+      confidence: calibratedConfidenceFromStorage(0),
+      rawConfidence: null,
+      candidates: [
+        ...ruleLosers,
+        ...entityLosers(merchant, counterparty),
+        { kind: 'DEFAULT', reason: 'direction-unconfirmed' },
+      ],
+      rung: 'FULL_PIPELINE',
+      ai: null,
+    });
+  }
+
   if (ruleDecision.decidedBy === 'RULE') {
     return finish({
       decidedBy: 'RULE',

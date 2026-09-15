@@ -137,6 +137,7 @@ enough until there is a product.
 | 2.3.2 | Review queue UI: badge, filtered list, bulk resolve, keyboard-driven | 2.5 | F-08 |
 | 2.3.3 | Onboarding wizard (F-13) incl. seeded Serbian category tree + ~60 merchants | 3 | F-13 |
 | 2.3.4 | Embedding-based entity resolution (local model, `pgvector`) | 1.5 | F-07 |
+| 2.3.5 | Phase 2 evaluation harness (v1 golden set through the real pipeline; rule-hit ratio + the §11.2 gates in CI) | 2 | — |
 
 **Exit criteria**
 - `Lidl 2000, gorivo 3500, plata 150000` parses to 3 correct transactions, one confirm, ≤ 4 s median.
@@ -145,6 +146,16 @@ enough until there is a product.
   AI calls — asserted by an integration test.
 - Overconfident-wrong rate on the golden set ≤ 1.5 %; CI blocks otherwise.
 - With the AI provider mocked to always fail, capture still succeeds and rows are marked for review.
+
+**Where Phase 2 stands (measured, task 2.3.5).** `pnpm test:evals` runs all 300 v1 golden cases through
+the real pipeline in CI ([10 §5.9](10-testing-and-quality.md#59-what-the-phase-2-harness-actually-is-task-235)):
+rule-hit ratio **73.8 %** (criterion ≥ 50 %, inside the 70–85 % steady-state target), overconfident-wrong
+**0.28 %** (≤ 1.5 %, and CI now blocks on it), top-1 in the ≥0.90 bucket **100 %**, should-ask recall
+**98.8 %**, extraction **100 %**, p95 **39 ms**. The zero-AI-after-correction criterion and the
+provider-down criterion are both asserted by integration tests. Two gates remain unenforceable in this
+build and say so in every report: the narration pair (NARRATE is Phase 3) and top-3/cost (no provider is
+configured). The first run of the harness found and fixed two real defects — see
+[04 §8.1.5](04-categorization-and-ai-engine.md#815-the-evaluation-harness-found-two-defects-on-its-first-run-task-235).
 
 ---
 

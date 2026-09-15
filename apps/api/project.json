@@ -26,6 +26,19 @@
         "cwd": "{workspaceRoot}"
       }
     },
+    "evals": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --env-file-if-exists=../../.env -r @swc-node/register src/evals/run-evals.ts",
+        "cwd": "{projectRoot}"
+      },
+      "configurations": {
+        "reportOnly": {
+          "command": "node --env-file-if-exists=../../.env -r @swc-node/register src/evals/run-evals.ts --report-only",
+          "cwd": "{projectRoot}"
+        }
+      }
+    },
     "lint": {
       "executor": "nx:run-commands",
       "options": {
