@@ -7,6 +7,7 @@ import {
   instantForLocalNoon,
   localDate,
   toLocalDate,
+  weekPeriod,
   type LocalDate,
 } from './dates';
 
@@ -204,5 +205,23 @@ describe('addMonths', () => {
     // `Date.UTC` would make this 2026-03-03; a period comparison means "the same month last month".
     expect(addMonths('2026-03-31', -1)).toBe('2026-02-28');
     expect(addMonths('2024-03-31', -1)).toBe('2024-02-29');
+  });
+});
+
+describe('weekPeriod', () => {
+  it('returns the Monday–Sunday week containing the day', () => {
+    // 2026-09-14 is a Monday.
+    expect(weekPeriod('2026-09-14')).toEqual({ start: '2026-09-14', end: '2026-09-20' });
+    expect(weekPeriod('2026-09-17')).toEqual({ start: '2026-09-14', end: '2026-09-20' });
+  });
+
+  it('puts Sunday at the end of the week it belongs to, not the start of the next one', () => {
+    // `getUTCDay()` returns 0 for Sunday; a naive implementation would start the week that day.
+    expect(weekPeriod('2026-09-20')).toEqual({ start: '2026-09-14', end: '2026-09-20' });
+    expect(weekPeriod('2026-09-21')).toEqual({ start: '2026-09-21', end: '2026-09-27' });
+  });
+
+  it('crosses a month and a year boundary', () => {
+    expect(weekPeriod('2026-01-01')).toEqual({ start: '2025-12-29', end: '2026-01-04' });
   });
 });

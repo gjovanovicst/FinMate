@@ -3000,7 +3000,27 @@ If `transactionCount = 0`, `answerText` must say so plainly and `answered` may s
 spent nothing on that" is a correct answer, and the F-23 acceptance criterion forbids fabricating a
 figure, not reporting a zero.
 
-### 8.4 The numeric-validator guarantee
+### 8.4 What the planner actually is (task 3.2.1)
+
+`apps/api/src/modules/assistant/` — `assistant-intents.ts` (the registry) and `query-planner.ts`
+(**pure**, 30 tests, no database).
+
+| Decision | Built | Why |
+|---|---|---|
+| The registry is a `Record<AssistantIntent, IntentTemplate>` | Every intent has exactly one template naming a repository method | ADR-017's "no generic *run this query* escape hatch" becomes a **compile-time** property: an intent added to the enum without a template fails `tsc`, and there is no `default:` arm to fall into. `registeredSourceQueries()` prints the allow-list a reviewer can read. |
+| The planner is pure, and its output type has no field a query could travel in | `Plan { intent, template, slots, matchedOn }` | The guarantee is the shape, not a promise: the caller looks the intent up and calls the named method with the slots. A test asserts the serialised plan contains no SQL-shaped word. |
+| Entity slots match the Household's **own** names, through the shared fold | `matchEntity` over categories/merchants/accounts/tags | A keyword list here would drift from the tree the user actually has. The fold is `common/text/normalise` — the same one the classifier and the editors use. |
+| …with **stem tolerance**, because Serbian inflects | A 3-character common prefix, at most two trailing characters free | `Hrana` is the category; people type *"na hranu"*. Word-for-word matching found nothing and the question fell through to `SPEND_TOTAL` — a confident wrong answer to a question the template set *can* answer. `Gorivo`/`goriva`, `Tekući`/`tekućeg`, `Lidl`/`lidlu` are the same shape. An exact occurrence still scores above a stem match. ⚠️ Bounded cost: a name beginning with a month stem (`Martin`) reads as March; the period is provenance the user sees (`matchedOn`), so a wrong guess is visible rather than silent. |
+| A **scoped** spend question with an unresolved scope is refused | "na/za/u/kod X" where X resolved to no entity ⇒ `NO_TEMPLATE_MATCH` | *"koliko sam potrošio na more"* must not be answered with the month's total: that is a true figure to a question nobody asked, which is the failure ADR-017 exists to make impossible. |
+| Period resolution is a phrase table, and a named month resolves to its **most recent** occurrence | `danas`/`juče`/`ove i prošle nedelje`/`ovog i prošlog meseca`/`ove i prošle godine`/`poslednjih N dana`/month stems | Asking in March about *avgust* means last August; answering with one that has not happened yet gives a figure the user cannot reconcile. The default is the current month and it says so. |
+| `isRunnable` + `missingSlots` are separate from matching | A routed intent with an unresolved **required** slot is refused | Goals and recurring rules have no slot resolution yet (3.3.2/3.3.3), so a goal question routes correctly and is then refused — the difference between "not implemented" and "answered with something else". |
+| `matchedOn` carries the cues | Period phrase, `category:<name>`, `intent:<phrase>` | docs/06 §8.3 requires an answer to be checkable; "why did it think I meant Hrana?" is the first question a wrong answer raises, and this answers it from the audit instead of by re-reading the planner. |
+
+**Reachability is asserted.** One test pins the set of intents a phrase can select today, so an arm that
+nothing routes to — the class of dead configuration `RECURRING_DUE` was for alerts — fails rather than
+sits in the enum looking available.
+
+### 8.5 The numeric-validator guarantee
 
 **Guarantee:** an `AssistantAnswer` returned with `narrationMode = "LLM"` contains **no numeral that is
 not present in its own `facts` payload**.

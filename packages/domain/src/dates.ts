@@ -196,6 +196,21 @@ export function isWithin(date: LocalDate, start: LocalDate, end: LocalDate): boo
 }
 
 /**
+ * The ISO week (Monday–Sunday) containing `date`, inclusive.
+ *
+ * Monday-based because that is the Serbian convention and the ISO one; a Sunday-based week would move
+ * every "this week" figure by a day and nobody would notice until a Sunday.
+ */
+export function weekPeriod(date: LocalDate): { start: LocalDate; end: LocalDate } {
+  const [year, month, day] = localDate(date).split('-').map(Number) as [number, number, number];
+  // `getUTCDay()` is 0 for Sunday, so Sunday belongs to the week that started six days earlier.
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  const offset = weekday === 0 ? -6 : 1 - weekday;
+  const start = addDays(date, offset);
+  return { start, end: addDays(start, 6) };
+}
+
+/**
  * Shift a calendar day by `days` (negative goes back).
  *
  * Built on `Date.UTC`, not local time: `new Date(y, m, d)` would shift by the process timezone, which

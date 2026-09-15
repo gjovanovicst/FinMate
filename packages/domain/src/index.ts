@@ -39,6 +39,7 @@ export {
   monthPeriod,
   todayIn,
   toLocalDate,
+  weekPeriod,
   type LocalDate,
 } from './dates';
 
