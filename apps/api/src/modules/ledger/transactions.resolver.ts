@@ -23,6 +23,7 @@ import {
 import {
   CaptureCommitInput,
   CaptureCommitResult,
+  toCommitRow,
   type CaptureCommitRejectedModel,
   type CaptureCommitSuccessModel,
 } from './capture-commit.model';
@@ -332,26 +333,9 @@ export class TransactionsResolver {
     try {
       const outcome = await this.transactionsService.captureCommit(householdId, {
         parseId: input.parseId ?? null,
-        rows: input.rows.map((row) => ({
-          clientRowId: row.clientRowId,
-          idempotencyKey: row.idempotencyKey,
-          clientId: row.clientId ?? null,
-          accountId: row.accountId ?? null,
-          kind: row.kind,
-          // The `Money` scalar already rejected a JSON number, so this `BigInt` is a widening of a
-          // string and never a float being truncated (ADR-003).
-          amount: { amountMinor: BigInt(row.amount.amountMinor), currency: row.amount.currency },
-          categoryId: row.categoryId ?? null,
-          merchantId: row.merchantId ?? null,
-          counterpartyId: row.counterpartyId ?? null,
-          description: row.description ?? null,
-          note: row.note ?? null,
-          occurredAt: row.occurredAt ?? null,
-          occurredOn: row.occurredOn ?? null,
-          tagIds: row.tagIds ?? [],
-          acceptedProposalId: row.acceptedProposalId ?? null,
-          confirmDespiteLowConfidence: row.confirmDespiteLowConfidence ?? false,
-        })),
+        // `toCommitRow` (not an inline literal) because it is where the absent-vs-`null` distinction
+        // for `merchantId`/`counterpartyId` is preserved; see its doc comment.
+        rows: input.rows.map(toCommitRow),
         defaultAccountId: input.defaultAccountId ?? null,
         occurredAt: input.occurredAt ?? null,
         occurredLocalDate: input.occurredLocalDate ?? null,

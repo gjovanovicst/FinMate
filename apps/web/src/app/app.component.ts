@@ -1,23 +1,13 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { filter } from 'rxjs';
 
 import { AuthStore } from './core/auth/auth.store';
 import { I18nService } from './core/i18n/i18n.service';
 import type { TranslationKey } from './core/i18n/translations';
+import { NAV_ITEMS, OVERFLOW_ITEMS, badgeAccessibleName, badgeText } from './core/navigation';
+import { ReviewQueueStore } from './core/review/review-queue.store';
 import { LanguageSwitcherComponent } from './shared/ui/language-switcher/language-switcher.component';
-
-interface NavItem {
-  readonly path: string;
-  /** A translation key, not a label: the nav re-renders when the language changes. */
-  readonly labelKey: TranslationKey;
-  readonly icon: string;
-  /**
-   * Whether the item sits in the bottom bar. Non-primary items live behind "More" on compact
-   * screens (docs/02 §2 puts the library there) and are listed in full in the sidebar, so the
-   * sidebar is never a reduced view of the app.
-   */
-  readonly primary: boolean;
-}
 
 /**
  * The application shell: navigation plus a content outlet.
@@ -29,6 +19,9 @@ interface NavItem {
  *
  * The nav is a `<nav>` with real links rather than buttons: keyboard navigation, middle-click and
  * "open in new tab" all work for free, and the active route is announced via `aria-current`.
+ *
+ * The destinations and their primary/overflow split live in `core/navigation.ts`, because that split
+ * is docs/02 §2's information architecture rather than styling — see the module header there.
  */
 @Component({
   selector: 'fm-root',
@@ -44,7 +37,7 @@ interface NavItem {
             <!-- Compact only: on wide screens the overflow items are in the sidebar already, and
                  CSS hides this panel so the same two lists never both render. -->
             <ul class="nav__more-panel">
-              @for (item of overflowItems(); track item.path) {
+              @for (item of overflowItems; track item.path) {
                 <li>
                   <a
                     class="nav__more-link"
@@ -69,14 +62,22 @@ interface NavItem {
                   routerLinkActive="nav__link--active"
                   #rla="routerLinkActive"
                   [attr.aria-current]="rla.isActive ? 'page' : null"
+                  [attr.aria-label]="item.badged ? badgeName() : null"
                 >
-                  <span class="nav__icon" aria-hidden="true">{{ item.icon }}</span>
+                  <span class="nav__icon" aria-hidden="true">
+                    {{ item.icon }}
+                    <!-- docs/02 §2.3: hidden at 0. The badge is decoration for a sighted reader; the
+                         aria-label above carries the count to a screen reader. -->
+                    @if (item.badged && badge() !== '') {
+                      <span class="nav__badge">{{ badge() }}</span>
+                    }
+                  </span>
                   <span class="nav__label">{{ i18n.t(item.labelKey) }}</span>
                 </a>
               </li>
             }
 
-            @if (overflowItems().length > 0) {
+            @if (overflowItems.length > 0) {
               <li class="nav__item nav__item--more">
                 <button
                   class="nav__link nav__link--button"
@@ -193,8 +194,25 @@ interface NavItem {
         color: var(--color-primary);
       }
       .nav__icon {
+        position: relative;
         font-size: 1.25rem;
         line-height: 1;
+      }
+      /* docs/02 section 2.3: hidden at 0 (the span is not rendered), the literal count up to nine,
+         then "9+" above. Positioned against the glyph so the label underneath never shifts when the
+         count appears. */
+      .nav__badge {
+        position: absolute;
+        inset-block-start: -0.35rem;
+        inset-inline-start: 0.85rem;
+        min-inline-size: 1.1rem;
+        padding: 0 0.25rem;
+        font-size: 0.65rem;
+        line-height: 1.1rem;
+        text-align: center;
+        color: var(--color-primary-contrast);
+        background: var(--color-danger);
+        border-radius: var(--radius-lg);
       }
       .nav__link--button {
         font: inherit;
@@ -324,6 +342,8 @@ interface NavItem {
 })
 export class AppComponent {
   private readonly auth = inject(AuthStore);
+  private readonly router = inject(Router);
+  private readonly reviewQueue = inject(ReviewQueueStore);
   readonly i18n = inject(I18nService);
 
   readonly isAuthenticated = this.auth.isAuthenticated;
@@ -339,34 +359,50 @@ export class AppComponent {
   readonly signingOut = signal(false);
 
   /**
-   * Every destination here is a working screen. The rest of docs/02 §2 (Review, Insights) lands with
-   * the features themselves — an empty nav item that leads to "coming soon" is worse than no item,
-   * because it teaches the user that the app is incomplete.
-   *
-   * Capture sits in the middle of the compact bar, which is docs/02 §2's "➕ centre action" and where
-   * a thumb already is. Budgets sits before Accounts because it is the screen that produces the
-   * product's headline number; Accounts is setup the user visits once.
+   * docs/02 §2.2's five slots: four primary destinations plus **More**. The full list is rendered in
+   * one `<ul>` and CSS decides — the overflow items are hidden on compact screens and appear in the
+   * sidebar from 1024 px, so the sidebar stays a complete view of the app rather than a reduced one.
+   * Budgets and Accounts are behind More here even though they were primary before the queue landed:
+   * a sixth item is what pushed the 320 px bottom bar into horizontal scroll, and docs/02 §2.1 files
+   * both of them under `Više` anyway.
    */
-  readonly items: readonly NavItem[] = [
-    { path: '/', labelKey: 'nav.dashboard', icon: '📊', primary: true },
-    { path: '/transactions', labelKey: 'nav.transactions', icon: '🧾', primary: true },
-    { path: '/capture', labelKey: 'nav.capture', icon: '➕', primary: true },
-    { path: '/budgets', labelKey: 'nav.budgets', icon: '🎯', primary: true },
-    { path: '/accounts', labelKey: 'nav.accounts', icon: '🏦', primary: true },
-    { path: '/categories', labelKey: 'nav.categories', icon: '🗂️', primary: false },
-    { path: '/merchants', labelKey: 'nav.merchants', icon: '🏪', primary: false },
-    { path: '/counterparties', labelKey: 'nav.counterparties', icon: '👤', primary: false },
-    { path: '/tags', labelKey: 'nav.tags', icon: '🏷️', primary: false },
-    { path: '/rules', labelKey: 'nav.rules', icon: '⚙️', primary: false },
-  ];
+  readonly items = NAV_ITEMS;
+  readonly overflowItems = OVERFLOW_ITEMS;
+
+  readonly moreOpen = signal(false);
+
+  /** docs/02 §2.3: hidden at 0, `1`–`9` literal, `9+` above. */
+  readonly badge = computed(() => badgeText(this.reviewQueue.count()));
 
   /**
-   * Five destinations do not fit a 320 px bottom bar with readable labels, and the spec's own
-   * information architecture puts the library behind "Više" (docs/02 §2). The overflow set grows
-   * here rather than by shrinking every label into an abbreviation.
+   * The badged link's accessible name — *"Provera, 3 stavke čekaju"*, so the count is spoken and not
+   * only drawn. `null` when the badge is hidden, which leaves the link's own text as its name.
+   *
+   * Both wordings are interpolated here: the catalogue has no plural machinery (ADR-019), so Serbian
+   * needs two forms and the count goes into the one that fits.
    */
-  readonly overflowItems = computed(() => this.items.filter((item) => !item.primary));
-  readonly moreOpen = signal(false);
+  readonly badgeName = computed(() =>
+    badgeAccessibleName(
+      this.reviewQueue.count(),
+      this.i18n.t('nav.reviewBadgeOne'),
+      this.i18n.t('nav.reviewBadgeMany', { count: this.reviewQueue.count() }),
+    ),
+  );
+
+  constructor() {
+    // Ask the scoped COUNT as soon as there is a session, and again on every navigation: the API
+    // documents `reviewQueueCount` as the shell's call on every screen, and there is no realtime
+    // layer to push it. See `ReviewQueueStore` for why this replaces the spec's subscription.
+    effect(() => {
+      if (this.isAuthenticated()) void this.reviewQueue.refresh();
+    });
+
+    this.router.events
+      .pipe(filter((event) => event instanceof NavigationEnd))
+      .subscribe(() => {
+        if (this.isAuthenticated()) void this.reviewQueue.refresh();
+      });
+  }
 
   async signOut(): Promise<void> {
     this.signingOut.set(true);

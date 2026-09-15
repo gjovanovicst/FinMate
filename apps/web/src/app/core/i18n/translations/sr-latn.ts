@@ -25,6 +25,10 @@ export const srLatn: Record<keyof typeof en, string> = {
   'nav.merchants': 'Prodavci',
   'nav.counterparties': 'Osobe',
   'nav.tags': 'Oznake',
+  'nav.rules': 'Pravila',
+  'nav.review': 'Provera',
+  'nav.reviewBadgeOne': 'Provera, 1 stavka čeka',
+  'nav.reviewBadgeMany': 'Provera, {count} stavke čekaju',
   'nav.more': 'Više',
 
   // ---- session ----
@@ -468,10 +472,11 @@ export const srLatn: Record<keyof typeof en, string> = {
   'capture.account': 'Račun',
   'capture.date': 'Datum',
   'capture.confidence': 'Sigurnost {percent} %',
-  'capture.lane.AUTO': 'Automatski',
-  'capture.lane.ADVISORY': 'Proveri',
-  'capture.lane.ASK': 'Nisam siguran',
-  'capture.lane.AWAITING': 'Računam…',
+  // ADR-009's four gate states (docs/02 §10) — shared by the capture preview and the review queue.
+  'confidence.auto': 'Automatski',
+  'confidence.verify': 'Proveri',
+  'confidence.ask': 'Nisam siguran',
+  'confidence.pending': 'Računam…',
   'capture.provenance.USER': 'Sam si izabrao kategoriju',
   'capture.provenance.RULE': 'Tvoje pravilo',
   'capture.provenance.KEYWORD': 'Poklapanje ključne reči',
@@ -529,7 +534,6 @@ export const srLatn: Record<keyof typeof en, string> = {
   'rules.explain.RULE_SYNTH_CONTRADICTS':
     'Postojeće pravilo to već rešava, pa novo nikad ne bi radilo. Bolje je urediti to pravilo.',
   // ---- rules (F-09) ----
-  'nav.rules': 'Pravila',
   'rules.title': 'Pravila',
   'rules.subtitle':
     'Šta je aplikacija naučila o tvojoj potrošnji, i pravila koja si sam napisao. Svako od njih se primenjuje pre nego što kategorizacija uopšte dođe do modela.',
@@ -594,6 +598,35 @@ export const srLatn: Record<keyof typeof en, string> = {
   'rules.origin.LEARNED': 'naučeno',
   'rules.origin.SYSTEM': 'ugrađeno',
   'rules.origin.IMPORT': 'uvezeno',
+
+  // ---- review queue (F-08; docs/02 §4.6) ----
+  'review.title': 'Provera',
+  'review.subtitle': 'Stavke bez kategorije, ili sa onom u koju sistem nije siguran.',
+  'review.waiting': '{count} čeka',
+  'review.listLabel': 'Transakcije koje čekaju odluku',
+  'review.category': 'Kategorija',
+  'review.noChoice': 'Izaberi kategoriju',
+  'review.alternatives': 'Alternative',
+  'review.remember': 'Zapamti za ubuduće',
+  'review.rememberNotApplicable': 'Potvrđuješ predlog takav kakav je — nema šta novo da se zapamti.',
+  'review.applyToSimilar': 'Primeni i na slične stavke',
+  'review.resolve': 'Rešeno',
+  'review.acceptHint': 'Enter potvrđuje predlog.',
+  'review.chooseFirst': 'Prvo izaberi kategoriju.',
+  'review.shortcuts': 'j / k pomeranje · 1–3 alternativa · Enter rešava · c fokusira kategoriju',
+  'review.retry': 'Pokušaj ponovo',
+  'review.empty': 'Ništa ne čeka proveru. Sve je sređeno.',
+  'review.emptyBody': 'Ovde stižu stavke kada sistem nije dovoljno siguran da odluči sam.',
+  'review.cleared': 'Red za proveru je prazan.',
+  'review.clearedDismiss': 'Zatvori',
+  'review.ageHours': 'čeka {count} h',
+  'review.rowAnnounce': 'Red {index} od {total}: {description}',
+  'review.resolvedOne': 'Rešena je jedna stavka.',
+  'review.resolvedMany': 'Rešeno je {count} stavki.',
+  'review.ruleCreated': 'Napravljeno pravilo: {name}.',
+  'review.noConfidence': 'Bez predloga',
+  'review.reason.LOW_CONFIDENCE': 'Nedovoljno sigurno',
+  'review.reason.UNCATEGORISED': 'Bez kategorije',
 
   // ---- API error codes ----
   'error.UNAUTHENTICATED': 'Pogrešan email ili lozinka.',

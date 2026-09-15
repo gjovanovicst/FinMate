@@ -1,6 +1,8 @@
 import { toLocalDate, uuidv7, type LocalDate } from '@finmate/domain';
 import { extractFragments, type TransactionFragment } from '@finmate/nlp';
 
+import { AUTO_APPLY_MIN, VERIFY_MIN } from '../../shared/confidence';
+
 /**
  * The capture preview's state machine, as pure functions.
  *
@@ -92,10 +94,6 @@ export interface CaptureRow {
 
 /** The row's confidence lane, as docs/02 §3's four-state badge. */
 export type CaptureLane = 'AWAITING' | 'AUTO' | 'ADVISORY' | 'ASK';
-
-/** docs/04 §7's thresholds, mirrored for the badge. The server is the authority; this is the label. */
-export const AUTO_APPLY_MIN = 0.9;
-export const VERIFY_MIN = 0.6;
 
 /** Local (device) calendar day. The server derives the Household's own day from this or from now. */
 export function todayLocally(now: Date = new Date()): LocalDate {

@@ -51,6 +51,13 @@ export const routes: Routes = [
     title: 'Transakcije',
   },
   {
+    path: 'review',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/review/review.component').then((m) => m.ReviewComponent),
+    title: 'Provera',
+  },
+  {
     path: 'counterparties',
     canActivate: [authenticatedGuard],
     loadComponent: () =>

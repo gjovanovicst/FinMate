@@ -3,6 +3,7 @@ import { Field, Float, ID, InputType, Int, ObjectType, createUnionType, register
 import { MoneyScalar } from '../../graphql/scalars/money.scalar';
 import { LocalDateScalar } from '../../graphql/scalars/uuid.scalar';
 import { ClassificationDecisionModel } from '../classification/classification.model';
+import type { CaptureCommitRow } from './transactions.service';
 import { TransactionKind, TransactionModel } from './transaction.model';
 
 /**
@@ -331,3 +332,39 @@ export const CaptureCommitResult = createUnionType({
   resolveType: (value: object) =>
     'rejected' in value ? CaptureCommitRejectedModel : CaptureCommitSuccessModel,
 });
+
+/**
+ * The GraphQL input row as the ledger's own shape.
+ *
+ * Extracted from the resolver so the one decision that is invisible at every other layer — **an
+ * absent optional field versus an explicit `null`** — has a home that can be tested. Coalescing with
+ * `?? null` (which the resolver did) makes the two indistinguishable, and for `merchantId` /
+ * `counterpartyId` that is not cosmetic: absent means "this client did not preview, so fill in
+ * whatever the classification resolved", while `null` means "there is no entity here, do not
+ * overrule me". The distinction only exists because GraphQL preserves it, so it is preserved here
+ * and nowhere else.
+ */
+export function toCommitRow(row: CaptureCommitRowInput): CaptureCommitRow {
+  return {
+    clientRowId: row.clientRowId,
+    idempotencyKey: row.idempotencyKey,
+    clientId: row.clientId ?? null,
+    accountId: row.accountId ?? null,
+    kind: row.kind,
+    // The `Money` scalar already rejected a JSON number, so this `BigInt` is a widening of a string
+    // and never a float being truncated (ADR-003).
+    amount: { amountMinor: BigInt(row.amount.amountMinor), currency: row.amount.currency },
+    // `categoryId` is coalesced on purpose: `null` and absent both mean "no override", and the ledger
+    // then takes the proposal's category or classifies the row.
+    categoryId: row.categoryId ?? null,
+    ...(row.merchantId !== undefined ? { merchantId: row.merchantId } : {}),
+    ...(row.counterpartyId !== undefined ? { counterpartyId: row.counterpartyId } : {}),
+    description: row.description ?? null,
+    note: row.note ?? null,
+    occurredAt: row.occurredAt ?? null,
+    occurredOn: row.occurredOn ?? null,
+    tagIds: row.tagIds ?? [],
+    acceptedProposalId: row.acceptedProposalId ?? null,
+    confirmDespiteLowConfidence: row.confirmDespiteLowConfidence ?? false,
+  };
+}

@@ -332,7 +332,9 @@ export class RulesComponent {
     try {
       const [rules, categories, merchants, counterparties] = await Promise.all([
         this.graphql.query<{ rules: RuleNode[] }>(RULES_QUERY),
-        this.graphql.query<{ categories: { id: string; path: string }[] }>(CATEGORY_NAMES_QUERY),
+        this.graphql.query<{ categories: { id: string; path: readonly string[] }[] }>(
+          CATEGORY_NAMES_QUERY,
+        ),
         this.graphql.query<{ merchants: { edges: { node: { id: string; name: string } }[] } }>(
           MERCHANT_NAMES_QUERY,
         ),
@@ -342,7 +344,12 @@ export class RulesComponent {
       ]);
 
       const names = new Map<string, string>();
-      for (const category of categories.categories) names.set(`categoryId:${category.id}`, category.path);
+      // `path` is `[String!]!` on the wire (docs/06 §3) — a list of names, root first. Typing it as a
+      // `string` and setting it directly made the label a comma-joined array ("Hrana,Supermarket")
+      // rather than the breadcrumb every other screen renders. Join it like they do.
+      for (const category of categories.categories) {
+        names.set(`categoryId:${category.id}`, category.path.join(' › '));
+      }
       for (const edge of merchants.merchants.edges) names.set(`merchant:${edge.node.id}`, edge.node.name);
       for (const edge of counterparties.counterparties.edges) {
         names.set(`counterparty:${edge.node.id}`, edge.node.name);

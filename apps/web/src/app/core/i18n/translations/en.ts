@@ -23,6 +23,10 @@ export const en = {
   'nav.merchants': 'Merchants',
   'nav.counterparties': 'People',
   'nav.tags': 'Tags',
+  'nav.rules': 'Rules',
+  'nav.review': 'Review',
+  'nav.reviewBadgeOne': 'Review, 1 item waiting',
+  'nav.reviewBadgeMany': 'Review, {count} items waiting',
   'nav.more': 'More',
 
   // ---- session ----
@@ -466,10 +470,13 @@ export const en = {
   'capture.account': 'Account',
   'capture.date': 'Date',
   'capture.confidence': 'Confidence {percent} %',
-  'capture.lane.AUTO': 'Automatic',
-  'capture.lane.ADVISORY': 'Check it',
-  'capture.lane.ASK': 'I am not sure',
-  'capture.lane.AWAITING': 'Working it out…',
+  // ADR-009's four gate states, under the names docs/02 §10 gives them. These are shared by the
+  // capture preview and the review queue, so they are not `capture.*`: the same band must read the
+  // same way on both screens.
+  'confidence.auto': 'Automatic',
+  'confidence.verify': 'Check it',
+  'confidence.ask': 'I am not sure',
+  'confidence.pending': 'Working it out…',
   'capture.provenance.USER': 'You chose this category',
   'capture.provenance.RULE': 'Your rule',
   'capture.provenance.KEYWORD': 'Keyword match',
@@ -527,7 +534,6 @@ export const en = {
   'rules.explain.RULE_SYNTH_CONTRADICTS':
     'An existing rule already handles this, so a new one would never run. Editing that rule is usually better.',
   // ---- rules (F-09; docs/04 §8.2) ----
-  'nav.rules': 'Rules',
   'rules.title': 'Rules',
   'rules.subtitle':
     'What the app has learned about your spending, and the rules you wrote. Every one of these is applied before the categoriser reaches for a model.',
@@ -592,6 +598,37 @@ export const en = {
   'rules.origin.LEARNED': 'learned',
   'rules.origin.SYSTEM': 'built in',
   'rules.origin.IMPORT': 'imported',
+
+  // ---- review queue (F-08; docs/02 §4.6, invariant I-8) ----
+  // The blocking lane only. Wording rule from docs/02 §10: never *error* for a classification the
+  // user is about to fix — that is *review*.
+  'review.title': 'Review',
+  'review.subtitle': 'Rows with no category, or one the system is not sure about.',
+  'review.waiting': '{count} waiting',
+  'review.listLabel': 'Transactions waiting for a decision',
+  'review.category': 'Category',
+  'review.noChoice': 'Choose a category',
+  'review.alternatives': 'Alternatives',
+  'review.remember': 'Remember this for next time',
+  'review.rememberNotApplicable': 'Confirming the suggestion as it is — nothing new to remember.',
+  'review.applyToSimilar': 'Apply to similar rows too',
+  'review.resolve': 'Resolved',
+  'review.acceptHint': 'Enter confirms the suggestion.',
+  'review.chooseFirst': 'Pick a category first.',
+  'review.shortcuts': 'j / k move · 1–3 pick an alternative · Enter resolves · c focuses the category',
+  'review.retry': 'Try again',
+  'review.empty': 'Nothing is waiting. You are all caught up.',
+  'review.emptyBody': 'Rows land here when the system is not sure enough to decide on its own.',
+  'review.cleared': 'The blocking queue is clear.',
+  'review.clearedDismiss': 'Close',
+  'review.ageHours': 'waiting {count} h',
+  'review.rowAnnounce': 'Row {index} of {total}: {description}',
+  'review.resolvedOne': 'One row resolved.',
+  'review.resolvedMany': '{count} rows resolved.',
+  'review.ruleCreated': 'Rule created: {name}.',
+  'review.noConfidence': 'No suggestion',
+  'review.reason.LOW_CONFIDENCE': 'Not sure enough',
+  'review.reason.UNCATEGORISED': 'No category',
 
   // ---- API error codes (docs/06 §10) ----
   // The server returns a stable CODE and a safe English message; the client localises it. That

@@ -1019,11 +1019,13 @@ export class CaptureComponent {
 
   laneLabel(lane: CaptureLane): string {
     // A closed list, so a new arm in the view is a compile error here rather than a raw key on screen.
+    // These are docs/02 §10's canonical `confidence.*` keys, shared with the review queue: the same
+    // ADR-009 band must read the same way wherever it is drawn.
     const keys: Record<CaptureLane, TranslationKey> = {
-      AUTO: 'capture.lane.AUTO',
-      ADVISORY: 'capture.lane.ADVISORY',
-      ASK: 'capture.lane.ASK',
-      AWAITING: 'capture.lane.AWAITING',
+      AUTO: 'confidence.auto',
+      ADVISORY: 'confidence.verify',
+      ASK: 'confidence.ask',
+      AWAITING: 'confidence.pending',
     };
     return this.i18n.t(keys[lane]);
   }

@@ -722,9 +722,11 @@ describe('TransactionsService.captureCommit (integration)', () => {
       expect(outcome.committed[0]!.transaction.counterpartyId).toBeNull();
     });
 
-    it('writes no entity when the row names none, even if the text would resolve', async () => {
-      // The ledger does not re-run resolution: the row is the truth, so a client that deliberately
-      // cleared a merchant is not overruled by the pipeline.
+    it('fills in the entity the fresh classification resolved when the row omits one', async () => {
+      // A client that commits without previewing sends no entity, and `captureCommit` classifies the
+      // row anyway to get a category — from the SAME decision. Discarding that decision's entity
+      // stored a row whose category came from the pipeline while its Merchant did not, which silently
+      // made `applyToSimilar` and a counterparty rule unlearnable for every non-previewing client.
       const merchantId = uuidv7();
       await asTenant(() =>
         prisma.client.merchants.create({
@@ -733,6 +735,21 @@ describe('TransactionsService.captureCommit (integration)', () => {
       );
 
       const outcome = await commit({ rows: [row({ description: 'Tempo 2000' })] });
+      expect(outcome.committed[0]!.transaction.merchantId).toBe(merchantId);
+    });
+
+    it('keeps a deliberately cleared entity cleared', async () => {
+      // An absent field and an explicit `null` are different instructions: absent means "the client did
+      // not preview", explicit `null` means "the client decided there is no entity". The pipeline must
+      // not overrule the second, which is what the row-is-the-truth rule protects.
+      const merchantId = uuidv7();
+      await asTenant(() =>
+        prisma.client.merchants.create({
+          data: { id: merchantId, household_id: householdId, name: 'Tempo' },
+        }),
+      );
+
+      const outcome = await commit({ rows: [row({ description: 'Tempo 2000', merchantId: null })] });
       expect(outcome.committed[0]!.transaction.merchantId).toBeNull();
     });
   });

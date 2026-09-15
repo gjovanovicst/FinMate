@@ -477,6 +477,17 @@ client **echoes it on the commit row**, because the ledger writes the row it is 
 re-run resolution — a client that drops the echo leaves the entity resolved for the preview and absent
 from the row.
 
+**Correction (task 2.3.2b): the echo is what a client *may* send, not what it *must*.** Read strictly,
+"does not re-run resolution" also meant that a `captureCommit` row with no proposal and no category —
+which the ledger classifies anyway, server-side, to get the category — threw away that same
+classification's entity. A live check caught the asymmetry: `captureParse` on a text resolved a
+Merchant while `captureCommit` on the same text in the same Household stored `merchant_id = null`, so
+`applyToSimilar` and a counterparty rule stayed unlearnable for every client that commits without
+previewing. The ledger still does not *re-run* anything: it uses the decision it already made. The row
+wins when it carries a pair, an **absent** field is filled from that decision, and an explicit `null`
+is respected as "there is no entity here". See
+[06 §5.5](06-api-specification.md#55-resolvereviewitem).
+
 ### 8.2 Guardrails (the user is not always right, and neither are we)
 
 - **Never auto-create rules.** Synthesis always proposes; the user confirms. (P-2, and the source

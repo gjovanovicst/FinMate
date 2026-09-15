@@ -122,7 +122,7 @@ Size classes are [07 §3.1](07-platform-strategy-mobile-desktop.md): `compact` <
 | Property | Behaviour |
 |---|---|
 | Source | Count of Transactions with `needs_review = true`, `deleted_at IS NULL`, via the partial index in [03 §4](03-domain-model.md). |
-| Lanes | **Lane A — "Čeka odluku"**: `needs_review = true` (confidence < 0.60 or `category_id IS NULL`, I-8). **Lane B — "Za proveru"**: `needs_review = false` and `0.60 ≤ confidence ≤ 0.89`. The **badge counts Lane A only**; Lane B is a tab inside the queue. |
+| Lanes | **Lane A — "Čeka odluku"**: `needs_review = true` (confidence < 0.60 or `category_id IS NULL`, I-8). **Lane B — "Za proveru"**: `category_source = 'AI'` and `0.60 ≤ confidence < 0.90` ([04 §7](04-categorization-and-ai-engine.md#7-stage-6-confidence-gates) is canonical). The **badge counts Lane A only**; Lane B is a tab inside the queue. |
 | Rendering | Hidden at 0, `1`–`9` literal, `9+` above. Never `99+` — the queue is a to-do list, not a metric. |
 | Realtime | GraphQL subscription on the count; optimistic decrement when the client resolves a row. |
 | Accessibility | Accessible name is *Provera, 3 stavke čekaju* — the count is spoken, not only drawn. |
@@ -379,6 +379,17 @@ commit.
 Number keys `1`–`3` apply the listed alternatives, `Enter` resolves, `j`/`k` move — a 20-row queue is
 a sub-minute task. Accepting *Zapamti za ubuduće* runs FL-04 and then offers the bounded bulk
 re-classify (*Primeni i na 4 slične?*) with a diff preview. The queue never auto-resolves anything.
+
+> **Build state (task 2.3.2b).** `/review` ships **Lane A only**, and the box above is the target.
+> Lane B needs the advisory band served by the API, which it is not: `reviewQueue` filters
+> `needs_review: true` and `resolveReviewItem` no-ops on a row where that flag is already false, so an
+> advisory row is neither listable nor resolvable. A tab that is permanently empty would be worse than
+> no tab, so the reasoning is recorded in [06 §4.2](06-api-specification.md#42-review-queue) rather
+> than faked. Likewise *"offers the bounded bulk re-classify with a diff preview"*: the count-bearing
+> offer **is** the rule backfill (`backfillPreview`, [06 §5.3](06-api-specification.md#53-createrule)),
+> which is not built. `applyToSimilar` therefore ships as a per-row opt-in checkbox and reports what
+> it swept afterwards. Multi-select (`Shift+J`/`Shift+K`) is not built either; `applyToSimilar` is the
+> batch affordance.
 
 ### 4.7 Category tree editor with keywords — F-02, F-03, F-32
 

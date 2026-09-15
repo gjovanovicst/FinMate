@@ -336,6 +336,18 @@ interface CaptureResolution {
   readonly rawText: string;
   readonly status: TransactionStatus;
   readonly needsReview: boolean;
+  /**
+   * The resolved pair the Transaction will store.
+   *
+   * **The row wins, and a fresh classification fills the gap.** The row is what the preview the user
+   * confirmed produced, so it is authoritative; but when a row arrives with no `merchantId` and no
+   * accepted proposal, `captureCommit` classifies it anyway to get a category — and that same
+   * decision resolved an entity. Discarding it stored a Transaction whose category came from the
+   * classification while its Merchant did not, which silently made `applyToSimilar` and a
+   * counterparty rule unlearnable for any client that commits without previewing first.
+   */
+  readonly merchantId: string | null;
+  readonly counterpartyId: string | null;
 }
 
 /**
@@ -1113,8 +1125,8 @@ export class TransactionsService {
             amount_minor: row.amount.amountMinor,
             currency,
             category_id: resolution.categoryId,
-            merchant_id: row.merchantId ?? null,
-            counterparty_id: row.counterpartyId ?? null,
+            merchant_id: resolution.merchantId,
+            counterparty_id: resolution.counterpartyId,
             description: resolution.description,
             note: row.note ?? null,
             raw_input: resolution.rawText,
@@ -1364,6 +1376,14 @@ export class TransactionsService {
     let ruleId: string | null = null;
     let outcome: DecisionOutcome;
     let description: string;
+    // The row's own pair wins wherever it carries one: it is what the preview the user confirmed
+    // resolved. `undefined` and `null` are kept apart on purpose — an ABSENT field is "the client did
+    // not preview", and an explicit `null` is "the client decided there is no entity", which the
+    // pipeline must not overrule.
+    const merchantDecided = row.merchantId !== undefined;
+    const counterpartyDecided = row.counterpartyId !== undefined;
+    let merchantId: string | null = row.merchantId ?? null;
+    let counterpartyId: string | null = row.counterpartyId ?? null;
 
     if (row.categoryId) {
       categoryId = row.categoryId;
@@ -1416,6 +1436,11 @@ export class TransactionsService {
       ruleId = classified.ruleId;
       outcome = 'ACCEPTED';
       description = (row.description ?? classified.description).trim();
+      // The classification resolved an entity as part of deciding the category, so it is the same
+      // decision — not a second guess. Fills only what the row left absent, so a client that echoed
+      // the preview is untouched and a client that deliberately cleared an entity is not overruled.
+      if (!merchantDecided) merchantId = classified.merchantId;
+      if (!counterpartyDecided) counterpartyId = classified.counterpartyId;
     }
 
     if (description === '') {
@@ -1456,6 +1481,8 @@ export class TransactionsService {
       rawText: (snapshot?.rawInput ?? classified?.rawText ?? row.description ?? '').trim(),
       status,
       needsReview,
+      merchantId,
+      counterpartyId,
     };
   }
 

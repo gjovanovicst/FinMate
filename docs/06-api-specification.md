@@ -1366,6 +1366,27 @@ Ordered by `ageHours DESC` by default. The queue is keyboard-driven on desktop (
 via `resolveReviewItem` with `applyToSimilar` (§5.5), which is the affordance that keeps the queue from
 becoming a chore — and a nuisance queue is a churn driver ([04 §6.4](04-categorization-and-ai-engine.md)).
 
+#### 4.2.1 Implementation notes (task 2.3.2a, and what the 2.3.2b screen does not use)
+
+`reviewQueue` serves **Lane A only** — the blocking set from invariant I-8. Lane B, the advisory band
+of [04 §7](04-categorization-and-ai-engine.md#7-stage-6-confidence-gates) (`category_source = 'AI'`,
+confidence in `[0.60, 0.90)`), is **not reachable through this API**, and the screen that consumes it
+(docs/02 §4.6) therefore ships without its tab. Two blockers, both structural rather than cosmetic:
+
+- `reviewQueue` filters `needs_review: true`, and the advisory band never sets that flag — I-8 defines
+  it as the blocking lane only. A lane argument would need a different SQL predicate, not a wider one;
+- `resolveReviewItem` is a **no-op** on a row whose `needs_review` is already false (deliberately: two
+  devices clearing the same queue is not an error). So even a listed advisory row could not be acted on
+  without a lane-aware write predicate, which changes the meaning of the operation's guard.
+
+That is a task, not a parameter, so it is recorded here rather than half-served.
+
+**The `reason` and `confidenceBelow` filters are applied to the enriched item, not in SQL.** They work,
+but a filtered page can come back **shorter than `first`** while matches sit on the next page, because
+the page is fetched first and filtered afterwards. Nothing on the 2.3.2b screen uses them: a control
+whose "nothing matches" can be false is worse than no control. Pushing either predicate into the
+ledger's `list` (or paging until the page is full) is the prerequisite for a filter UI.
+
 ### 4.3 Analytics
 
 ```graphql
@@ -2170,6 +2191,41 @@ still need it and reports how many that was.
 splits (I-1) and `VOID` rows. One decision produces **one** Correction: the peers are an application of
 it, not N separate answers, and N rows would inflate the calibration re-fit with duplicates of one
 fact.
+
+**Correction (task 2.3.2b): an absent `merchantId`/`counterpartyId` is not the same as an explicit
+`null` on a commit row.** §5.5's own note said the ledger "does not re-run resolution", and taken
+literally that made `captureCommit` discard the entity resolved by the classification it had *already
+run to get the category*: a row with no category and no proposal is classified server-side, and the
+result carried `merchantId`/`counterpartyId` that were then thrown away in favour of the row's own
+(often absent) pair. A live check caught it — the same text resolved to a Merchant in `captureParse`
+and stored `merchant_id = null` through `captureCommit`, which silently made `applyToSimilar` and a
+counterparty rule unlearnable for any client that commits without previewing first.
+
+The rule is now: **the row's pair wins when it carries one; an absent field is filled from the
+classification that decided the category; an explicit `null` is left alone.** The three arms are one
+line each in `resolveRow`, and the absent-vs-`null` distinction has to survive the resolver — where
+`?? null` used to erase it, so it now lives in a pure `toCommitRow` with its own spec. The browser is
+unaffected: the capture screen always echoes the preview's pair, so behaviour there is unchanged.
+
+#### 5.5.2 Implementation notes (task 2.3.2b — the screen)
+
+`/review` (docs/02 §4.6) is served by this API with no additions. Three things it deliberately does
+**not** do, each because the alternative would render a control that lies:
+
+- **No lane B tab**, for the structural reasons in §4.2.1;
+- **No reason/confidence filter**, for the filtered-page reason in §4.2.1;
+- **The "Zapamti za ubuduće" checkbox is only rendered where the server honours it.** It appears when
+  the resolution writes a category *change*, because that is the only path that reaches
+  `correctTransaction` and reads `rememberForFuture`. Confirming a suggestion as it stands is a
+  positive signal the schema cannot store (a `Correction` means "this changed"), so the row says so
+  instead of offering a dead control. Persisting that signal — "confirm the suggestion and remember
+  it" — is its own task: it needs either a consenting arm on `acceptProposal` or a new Correction kind.
+
+`applyToSimilar` is offered only where a Merchant or Counterparty resolved, because
+`similarQueuedRows` returns nothing without one. The count of swept rows is **not** known before the
+call, so the checkbox does not promise one; the response's `resolvedSimilarCount` is what is reported.
+The count-bearing offer *"Primeni i na 4 slične?"* with a diff preview is the rule backfill
+(`backfillPreview`, §5.3), which is not built.
 
 ---
 

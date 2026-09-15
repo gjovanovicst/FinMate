@@ -22,10 +22,13 @@ initAngularTesting();
  * false.
  */
 
+// `path` is `[String!]!` on the wire — a list of names, root first (docs/06 §3). The component joins
+// it into a breadcrumb, so a string here would have made this fixture agree with a bug the screen
+// shipped with until 2.3.2b.
 const CATEGORIES = {
   categories: [
-    { id: 'cat-food', path: 'Hrana › Supermarket' },
-    { id: 'cat-house', path: 'Kuća › Septička jama' },
+    { id: 'cat-food', path: ['Hrana', 'Supermarket'] },
+    { id: 'cat-house', path: ['Kuća', 'Septička jama'] },
   ],
 };
 const MERCHANTS = { merchants: { edges: [{ node: { id: 'merchant-lidl', name: 'Lidl' } }] } };
