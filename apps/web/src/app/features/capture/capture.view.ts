@@ -40,6 +40,15 @@ export interface CaptureProposal {
   readonly advisory: boolean;
   readonly rationale: string;
   readonly merchantId: string | null;
+  /**
+   * The Counterparty the server resolved.
+   *
+   * Echoed back on commit so the ledger **records** it. The pipeline resolves it, but a captured row
+   * only carries what the client sends — so a client that dropped this would leave the counterparty
+   * resolved for the preview and absent from the row, which is exactly what made a counterparty rule
+   * impossible to learn from a capture.
+   */
+  readonly counterpartyId: string | null;
   readonly alternatives: readonly { readonly categoryId: string; readonly confidence: number }[];
   /** The server's own reading of the amount, when it disagrees with the local one. */
   readonly amountMinor: bigint | null;
@@ -261,6 +270,15 @@ export interface CommitRowPayload {
   readonly description: string;
   readonly occurredOn: string | null;
   readonly acceptedProposalId: string | null;
+  /**
+   * The entities the preview resolved, echoed back so the committed row records them.
+   *
+   * The server resolution is returned in the proposal and is **not** re-derived at commit time, so
+   * these are the only source. A row the server classified itself therefore still needs them sent
+   * back — which is why they come from the proposal rather than from the row's own state.
+   */
+  readonly merchantId: string | null;
+  readonly counterpartyId: string | null;
   readonly confirmDespiteLowConfidence: boolean;
 }
 
@@ -296,6 +314,9 @@ export function toCommitRows(rows: readonly CaptureRow[]): readonly CommitRowPay
       description: row.description,
       occurredOn: row.occurredOn,
       acceptedProposalId: row.proposal?.id ?? null,
+      // The preview's resolution, not the row's (the row does not track entities at all yet).
+      merchantId: row.proposal?.merchantId ?? null,
+      counterpartyId: row.proposal?.counterpartyId ?? null,
       confirmDespiteLowConfidence: false,
     };
   });

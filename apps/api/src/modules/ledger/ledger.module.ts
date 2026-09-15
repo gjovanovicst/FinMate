@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { ClassificationModule } from '../classification/classification.module';
 import { TaxonomyModule } from '../taxonomy/taxonomy.module';
+import { ReviewResolver } from './review.resolver';
 import { TransactionsExportController } from './transactions-export.controller';
 import { TransactionsResolver } from './transactions.resolver';
 import { TransactionsService } from './transactions.service';
@@ -25,7 +26,7 @@ import { TransactionsService } from './transactions.service';
 @Module({
   imports: [TaxonomyModule, ClassificationModule],
   controllers: [TransactionsExportController],
-  providers: [TransactionsResolver, TransactionsService],
+  providers: [TransactionsResolver, TransactionsService, ReviewResolver],
   exports: [TransactionsService],
 })
 export class LedgerModule {}

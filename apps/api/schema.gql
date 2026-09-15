@@ -963,6 +963,11 @@ type Mutation {
     targetId: ID!
   ): MerchantModel!
   removeCategoryKeyword(keywordId: ID!): Boolean!
+
+  """
+  Resolve one queued row (docs/06 §5.5). Choosing a category goes through the correction path, so it records a Correction and can create a rule — the queue is a learning surface, not a dismiss button. Resolving an already-resolved row is a NO-OP rather than a conflict: two devices clearing the same queue is not an error.
+  """
+  resolveReviewItem(input: ResolveReviewItemInput!): ResolveReviewItemSuccessModel!
   setCounterpartyAliases(
     """
     The complete alias set, not a delta. Values are folded (lower case, no diacritics) before storage, so what is stored may differ from what was sent. This is the supported way to record a second spelling of one person ("dejan roda" for "Dejan rođa").
@@ -1187,6 +1192,28 @@ type Query {
   Split an amount evenly across categories without losing a para. The backend computes it so the client never rounds money (ADR-003); the result sums exactly (invariant I-1).
   """
   proposeEqualSplits(amount: Money!, categoryIds: [ID!]!): [ProposedSplit!]!
+
+  """
+  The blocking lane (invariant I-8): Transactions with no category or a calibrated confidence below 0.60, oldest-recorded first so nothing starves. The advisory band is not here — those rows are applied and valid (docs/04 §7).
+  """
+  reviewQueue(
+    """Cursor from a previous page."""
+    after: String
+    categoryIds: [ID!]
+
+    """Only rows below this calibrated confidence."""
+    confidenceBelow: Float
+    first: Int
+    occurredOnOrAfter: LocalDate
+    occurredOnOrBefore: LocalDate
+    reason: [ReviewReason!]
+    sort: ReviewSort
+  ): ReviewQueueItemModelConnection!
+
+  """
+  The BLOCKING lane count (invariant I-8) — the nav badge. A scoped COUNT, so the shell can ask on every screen without loading rows.
+  """
+  reviewQueueCount: Int!
   rule(id: ID!): RuleModel!
 
   """
@@ -1233,6 +1260,127 @@ type RejectedRowModel {
   """The input field at fault, when one is nameable."""
   field: String
   message: String!
+}
+
+input ResolveReviewItemInput {
+  action: ReviewResolveAction!
+
+  """
+  Resolve every queued row sharing the same resolved entity AND the same suggestion in one operation (F-08’s power affordance). One decision, one Correction — the peers are an application of that decision, not N decisions.
+  """
+  applyToSimilar: Boolean! = false
+
+  """Required for `SET_CATEGORY`."""
+  categoryId: ID
+  id: ID!
+
+  """
+  The "Zapamti za ubuduće" checkbox (F-09). Records the Correction either way; a rule is created only when the trigger is a resolved entity and nothing shadows it (docs/06 §5.3).
+  """
+  rememberForFuture: Boolean! = false
+}
+
+type ResolveReviewItemSuccessModel {
+  correction: CorrectionModel
+
+  """
+  The item refreshed after resolution — null when the action removed it (DELETE, VOID).
+  """
+  item: ReviewQueueItemModel
+
+  """
+  How many rows this resolution actually cleared, including the one acted on. 1 when `applyToSimilar` was not asked for or found no peers.
+  """
+  resolvedSimilarCount: Int!
+
+  """The blocking-lane count after this resolution — the nav badge."""
+  reviewQueueCount: Int!
+  ruleCreated: RuleModel
+  synthesisedRule: RuleProposalModel
+  transaction: TransactionModel
+}
+
+"""One losing proposal, for the numbered alternatives in docs/02 §4.6."""
+type ReviewCandidateModel {
+  categoryId: ID!
+
+  """The **raw** model confidence — recorded, not gated (docs/04 §6.4)."""
+  confidence: Float!
+}
+
+"""
+`RECEIPT_ITEM` is declared in docs/06 §3.2 but needs the receipts module, which is not built.
+"""
+enum ReviewItemKind {
+  TRANSACTION
+}
+
+"""
+A Transaction awaiting a decision (F-08). It is in the BLOCKING lane: `needs_review = true` because it has no category or a calibrated confidence below 0.60 (invariant I-8).
+"""
+type ReviewQueueItemModel {
+  """Hours since the row was recorded — the queue’s sort key."""
+  ageHours: Int!
+  candidates: [ReviewCandidateModel!]!
+
+  """
+  The calibrated confidence. Null when nothing was recorded, which is not the same as zero.
+  """
+  confidence: Float
+  id: ID!
+  kind: ReviewItemKind!
+  reason: ReviewReason!
+
+  """
+  The category to accept. Null for an uncategorised row — there is nothing to suggest, and inventing one is what the queue exists to avoid.
+  """
+  suggestedCategoryId: ID
+  transaction: TransactionModel!
+}
+
+type ReviewQueueItemModelConnection {
+  edges: [ReviewQueueItemModelEdge!]!
+  pageInfo: PageInfo!
+
+  """
+  Total rows matching the filter, ignoring the page window. Useful for "23 transactions" style labels, and cheap because it is a scoped COUNT.
+  """
+  totalCount: Int!
+}
+
+type ReviewQueueItemModelEdge {
+  cursor: String!
+  node: ReviewQueueItemModel!
+}
+
+"""
+Why this row is in the blocking lane (invariant I-8): it has no category at all, or its calibrated confidence is below 0.60. The advisory band (0.60–0.89) is never in this queue.
+"""
+enum ReviewReason {
+  LOW_CONFIDENCE
+  UNCATEGORISED
+}
+
+"""
+What the user decided. `SET_CATEGORY` and `ACCEPT_SUGGESTION` are the learning-loop paths — choosing a category records a Correction and can create a rule (ADR-010).
+"""
+enum ReviewResolveAction {
+  ACCEPT_SUGGESTION
+  DELETE
+  KEEP_AS_IS
+  MARK_AS_DUPLICATE
+  SET_CATEGORY
+  VOID
+}
+
+"""
+`RECORDED_ASC` (the default) is oldest-recorded first, so no row starves. docs/06 §4.2 also declares CONFIDENCE and AMOUNT sorts; those are **not** implemented, because a keyset page on a non-unique sort key needs a composite cursor and would silently repeat or skip rows.
+"""
+enum ReviewSort {
+  OCCURRED_ASC
+  OCCURRED_DESC
+  RECORDED_ASC
+  RECORDED_DESC
 }
 
 type RuleConflictErrorModel {

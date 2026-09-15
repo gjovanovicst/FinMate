@@ -47,6 +47,7 @@ function proposal(overrides: Partial<CaptureProposal> = {}): CaptureProposal {
     advisory: false,
     rationale: 'KEYWORD',
     merchantId: null,
+    counterpartyId: null,
     alternatives: [],
     amountMinor: 200000n,
     currency: 'RSD',
@@ -221,6 +222,25 @@ describe('toCommitRows', () => {
     const rows = parse('nepoznato 500').map((row) => ({ ...row, categoryId: 'cat-other' }));
     expect(toCommitRows(rows)[0]!.categoryId).toBe('cat-other');
     expect(toCommitRows(rows)[0]!.acceptedProposalId).toBeNull();
+  });
+
+  it('echoes the entities the preview resolved, so the ledger can record them', () => {
+    const rows = parse('Dejan rođa 3600').map((row) => ({ ...row }));
+    const payload = toCommitRows(
+      applyFragments(rows, [proposal({ merchantId: 'merchant-lidl', counterpartyId: 'cp-dejan' })]),
+    );
+
+    // The pipeline resolves these and does NOT re-derive them at commit time, so a client that drops
+    // them leaves the entity resolved for the preview and absent from the row — which is exactly what
+    // made a counterparty rule impossible to learn from a capture.
+    expect(payload[0]!.merchantId).toBe('merchant-lidl');
+    expect(payload[0]!.counterpartyId).toBe('cp-dejan');
+  });
+
+  it('sends no entity for a row the server resolved none for', () => {
+    const payload = toCommitRows(applyFragments(parse('nepoznato 500'), [proposal()]));
+    expect(payload[0]!.merchantId).toBeNull();
+    expect(payload[0]!.counterpartyId).toBeNull();
   });
 
   it('keeps the row’s own idempotency key so a retry collapses (I-10)', () => {

@@ -685,6 +685,59 @@ describe('TransactionsService.captureCommit (integration)', () => {
   });
 
   // -------------------------------------------------------------------------------------------
+  // Resolved entities: who resolves, who echoes, who writes
+  // -------------------------------------------------------------------------------------------
+
+  describe('resolved entities', () => {
+    it('writes an echoed Counterparty into counterparty_id, never merchant_id', async () => {
+      // The pipeline resolves the entity and returns it in the proposal; the **row** is what the
+      // ledger writes, so the client echoes it. The column matters: `merchant_id` has a foreign key
+      // to `merchants`, so a Counterparty id there is an FK violation rather than a wrong label.
+      const counterpartyId = uuidv7();
+      await asTenant(() =>
+        prisma.client.counterparties.create({
+          data: { id: counterpartyId, household_id: householdId, name: 'Roda', type: 'PERSON' },
+        }),
+      );
+
+      const outcome = await commit({
+        rows: [row({ description: 'Roda 3600', counterpartyId })],
+      });
+      const written = outcome.committed[0]!.transaction;
+
+      expect(written.counterpartyId).toBe(counterpartyId);
+      expect(written.merchantId).toBeNull();
+    });
+
+    it('writes an echoed Merchant into merchant_id', async () => {
+      const merchantId = uuidv7();
+      await asTenant(() =>
+        prisma.client.merchants.create({
+          data: { id: merchantId, household_id: householdId, name: 'Maxi' },
+        }),
+      );
+
+      const outcome = await commit({ rows: [row({ description: 'Maxi 2000', merchantId })] });
+      expect(outcome.committed[0]!.transaction.merchantId).toBe(merchantId);
+      expect(outcome.committed[0]!.transaction.counterpartyId).toBeNull();
+    });
+
+    it('writes no entity when the row names none, even if the text would resolve', async () => {
+      // The ledger does not re-run resolution: the row is the truth, so a client that deliberately
+      // cleared a merchant is not overruled by the pipeline.
+      const merchantId = uuidv7();
+      await asTenant(() =>
+        prisma.client.merchants.create({
+          data: { id: merchantId, household_id: householdId, name: 'Tempo' },
+        }),
+      );
+
+      const outcome = await commit({ rows: [row({ description: 'Tempo 2000' })] });
+      expect(outcome.committed[0]!.transaction.merchantId).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------
   // docs/06 §5.2.2 — the advisory third mechanism
   // -------------------------------------------------------------------------------------------
 

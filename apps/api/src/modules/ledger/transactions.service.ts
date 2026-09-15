@@ -94,6 +94,32 @@ export interface UpdateTransactionInput {
   readonly tagIds?: readonly string[];
 }
 
+/**
+ * How a page of Transactions is ordered.
+ *
+ * Four modes, all **id-aligned**, which is what makes the keyset exact rather than approximately
+ * right: `UUIDv7` ids are generated in creation order (docs/03 §3.3), so `id ASC` *is* "oldest
+ * recorded first" and the cursor is a plain id. A sort on a value that is not the id — amount,
+ * confidence — would need a composite cursor, and a page boundary placed on a non-unique key returns
+ * rows that were already shown or skips them, silently. Those sorts are deliberately absent.
+ */
+export type TransactionSort =
+  /** Newest occurrence first. The Transaction list's default. */
+  | 'OCCURRED_DESC'
+  /** Oldest occurrence first. */
+  | 'OCCURRED_ASC'
+  /** Oldest **recorded** first. The review queue's default, so no row starves. */
+  | 'RECORDED_ASC'
+  /** Newest recorded first. */
+  | 'RECORDED_DESC';
+
+/** A page request: size, cursor, order. */
+export interface TransactionPageRequest {
+  readonly first?: number;
+  readonly after?: string;
+  readonly sort?: TransactionSort;
+}
+
 export interface TransactionFilters {
   readonly accountId?: string;
   readonly categoryId?: string;
@@ -205,6 +231,32 @@ export interface CorrectTransactionOutcome {
   readonly synthesis: { readonly synthesis: RuleSynthesis; readonly check: ShadowCheck } | null;
   /** The rule created because the user ticked "remember", if the narrow case applied. */
   readonly ruleCreated: RuleView | null;
+}
+
+/** docs/06 §5.5's `ReviewResolveAction`. */
+export type ReviewAction =
+  | 'ACCEPT_SUGGESTION'
+  | 'SET_CATEGORY'
+  | 'MARK_AS_DUPLICATE'
+  | 'VOID'
+  | 'DELETE'
+  | 'KEEP_AS_IS';
+
+export interface ResolveReviewInput {
+  readonly id: string;
+  readonly action: ReviewAction;
+  readonly categoryId?: string | null;
+  readonly rememberForFuture?: boolean;
+  readonly applyToSimilar?: boolean;
+}
+
+export interface ReviewResolution {
+  readonly transaction: TransactionModel;
+  readonly correction: CorrectionView | null;
+  readonly synthesis: CorrectTransactionOutcome['synthesis'];
+  readonly ruleCreated: RuleView | null;
+  /** How many rows this decision actually cleared, including the one acted on. */
+  readonly resolvedSimilarCount: number;
 }
 
 /** One just-written row that looks like a repeat of an existing Transaction. */
@@ -402,24 +454,40 @@ export class TransactionsService {
   async list(
     householdId: string,
     filters: TransactionFilters,
-    page: { first?: number; after?: string },
+    page: TransactionPageRequest,
   ): Promise<CursorPage<TransactionModel>> {
     const take = normalisePageSize(page.first);
+    const sort = page.sort ?? 'OCCURRED_DESC';
 
     // Keyset on the UUIDv7 primary key: it is time-ordered, so `id desc` is newest-first and an
-    // OFFSET page would shift under the client as rows arrive.
+    // OFFSET page would shift under the client as rows arrive. The **cursor comparison flips** with
+    // the sort, or a backwards page walks away from the cursor instead of towards it.
+    const ascending = sort === 'OCCURRED_ASC' || sort === 'RECORDED_ASC';
+    // `RECORDED_*` orders on the id alone: a UUIDv7 *is* the creation order, so the cursor and the
+    // sort key are the same column and the keyset is exact. The occurrence orders keep the date as
+    // the primary key of the sort with the id as a stable tiebreak, which is the list screen's
+    // existing behaviour.
+    const orderBy =
+      sort === 'RECORDED_ASC'
+        ? [{ id: 'asc' as const }]
+        : sort === 'RECORDED_DESC'
+          ? [{ id: 'desc' as const }]
+          : sort === 'OCCURRED_ASC'
+            ? [{ occurred_local_date: 'asc' as const }, { id: 'asc' as const }]
+            : [{ occurred_local_date: 'desc' as const }, { id: 'desc' as const }];
+
     // One filter, one builder: the page and its `totalCount` used to be assembled separately, and
     // the count quietly ignored the date range, so a date-filtered list read "8 transactions" above
     // seven rows. Anything that filters Transactions goes through `buildWhere` now.
     const where = {
       ...this.buildWhere(householdId, filters),
-      ...(page.after ? { id: { lt: page.after } } : {}),
+      ...(page.after ? { id: ascending ? { gt: page.after } : { lt: page.after } } : {}),
     };
 
     const [rows, totalCount] = await Promise.all([
       this.prisma.client.transactions.findMany({
         where,
-        orderBy: [{ occurred_local_date: 'desc' }, { id: 'desc' }],
+        orderBy,
         take: take + 1,
         include: { transaction_splits: true, transaction_tags: { include: { tags: true } } },
       }),
@@ -1707,6 +1775,155 @@ export class TransactionsService {
   }
 
   /**
+   * Resolve one queued row — docs/06 §5.5 — optionally sweeping the rows that share its situation.
+   *
+   * ## Choosing a category is the learning loop
+   *
+   * `SET_CATEGORY` goes through {@link correctTransaction}, so it records a Correction and can create
+   * a rule exactly like a correction made anywhere else. The queue is the place a user most often
+   * knows better than the product, so it is the last place that should throw the signal away.
+   *
+   * ## The peers are computed BEFORE the write
+   *
+   * `applyToSimilar` matches on the resolved entity **and** the category the row currently shares with
+   * its peers, and the resolution is about to change both. Reading them afterwards would compare
+   * against the new state and find nothing.
+   *
+   * ## One decision, one Correction
+   *
+   * The peers get the same category applied without their own Correction rows: the user made **one**
+   * decision about one entity, and the peers are an application of it rather than N separate answers.
+   * Recording N would inflate the re-fit's signal with duplicates of the same fact.
+   */
+  async resolveReviewItem(
+    householdId: string,
+    input: ResolveReviewInput,
+  ): Promise<ReviewResolution> {
+    const before = await this.getById(householdId, input.id);
+
+    if (!before.needsReview) {
+      // Not an error: two devices can both be clearing the queue, and the second one's work is already
+      // done. Reported as a no-op rather than a CONFLICT, because nothing is wrong.
+      return { transaction: before, correction: null, synthesis: null, ruleCreated: null, resolvedSimilarCount: 0 };
+    }
+
+    const peers = input.applyToSimilar
+      ? await this.similarQueuedRows(householdId, {
+          excludeId: before.id,
+          kind: before.kind,
+          categoryId: before.categoryId,
+          merchantId: before.merchantId,
+          counterpartyId: before.counterpartyId,
+        })
+      : [];
+
+    switch (input.action) {
+      case 'SET_CATEGORY': {
+        if (input.categoryId === undefined || input.categoryId === null) {
+          throw new ApiError('VALIDATION_FAILED', 'Choosing a category needs one.');
+        }
+
+        const corrected =
+          input.categoryId === before.categoryId
+            ? null
+            : await this.correctTransaction(householdId, {
+                transactionId: before.id,
+                version: before.version,
+                field: 'category',
+                categoryId: input.categoryId,
+                rememberForFuture: input.rememberForFuture ?? false,
+              });
+
+        // The correction sets the category; `needs_review` is a separate fact about the
+        // categorisation, so it is cleared here — and the peers get the same decision applied.
+        const cleared = await this.resolveReview(householdId, [before.id, ...peers], {
+          categoryId: input.categoryId,
+          categorySource: CategorySource.USER,
+          status: TransactionStatus.CONFIRMED,
+        });
+
+        return {
+          // Re-read after the flag is cleared: `corrected.transaction` was read before it, so it
+          // still says `needsReview: true` — a stale model in the response is how a client keeps
+          // showing a row the server has already resolved.
+          transaction: await this.getById(householdId, before.id),
+          correction: corrected?.correction ?? null,
+          synthesis: corrected?.synthesis ?? null,
+          ruleCreated: corrected?.ruleCreated ?? null,
+          resolvedSimilarCount: cleared,
+        };
+      }
+
+      case 'ACCEPT_SUGGESTION': {
+        // The suggestion IS the stored category — that is what a low-confidence row is — so there is
+        // nothing to change: the user is saying "yes, that is right". An uncategorised row has no
+        // suggestion to accept, and saying so is better than silently clearing the flag.
+        if (before.categoryId === null) {
+          throw new ApiError(
+            'VALIDATION_FAILED',
+            'This row has no suggested category to accept. Choose one instead.',
+          );
+        }
+        await this.resolveReview(householdId, [before.id, ...peers], {
+          status: TransactionStatus.CONFIRMED,
+        });
+        return {
+          // Re-read, never `before`: the response has to describe the row as it now is.
+          transaction: await this.getById(householdId, before.id),
+          correction: null,
+          synthesis: null,
+          ruleCreated: null,
+          resolvedSimilarCount: 1 + peers.length,
+        };
+      }
+
+      case 'KEEP_AS_IS':
+        await this.resolveReview(householdId, [before.id, ...peers], {
+          status: TransactionStatus.CONFIRMED,
+        });
+        return {
+          transaction: await this.getById(householdId, before.id),
+          correction: null,
+          synthesis: null,
+          ruleCreated: null,
+          resolvedSimilarCount: 1 + peers.length,
+        };
+
+      case 'VOID':
+        await this.resolveReview(householdId, [before.id, ...peers], {
+          status: TransactionStatus.VOID,
+        });
+        return {
+          transaction: await this.getById(householdId, before.id),
+          correction: null,
+          synthesis: null,
+          ruleCreated: null,
+          resolvedSimilarCount: 1 + peers.length,
+        };
+
+      case 'DELETE':
+      case 'MARK_AS_DUPLICATE': {
+        // Both remove the row, and both are soft (docs/03 §3.4). `MARK_AS_DUPLICATE` has no
+        // `duplicate_of_id` column to record the pair, so it is the same deletion with a different
+        // intent — and the API says so rather than pretending it recorded a link.
+        await this.resolveReview(householdId, [before.id, ...peers]);
+        for (const id of [before.id, ...peers]) {
+          await this.remove(householdId, id);
+        }
+        return {
+          // The row is soft-deleted, so there is nothing to re-read — `before` is the last state the
+          // client can still be shown, and the client removes it from the list regardless.
+          transaction: before,
+          correction: null,
+          synthesis: null,
+          ruleCreated: null,
+          resolvedSimilarCount: peers.length + 1,
+        };
+      }
+    }
+  }
+
+  /**
    * Everything synthesis needs about a Transaction, resolved.
    *
    * Lives here because it starts from the Transaction, which the ledger owns; the two lookups it needs
@@ -1782,6 +1999,99 @@ export class TransactionsService {
         // new field on the enum is a compile error rather than a silent no-op.
         throw new ApiError('VALIDATION_FAILED', 'Direction cannot be corrected in place.');
     }
+  }
+
+  /**
+   * Clear the blocking lane on one or more Transactions — the review queue's write (F-08, I-8).
+   *
+   * `needs_review` is not an editable field on `updateTransaction`, and it should not be: it is a
+   * fact about the categorisation, not a property the user sets. Resolving a review item is its own
+   * operation, and this is it.
+   *
+   * The predicate carries `needs_review: true`, so the statement resolves **the rows that still need
+   * it** and reports how many that was. Two devices clearing the same queue therefore cannot double
+   * count, and a second tap is a no-op rather than a surprise.
+   *
+   * `categoryId` is only set when the caller has already decided it belongs on every named row — the
+   * review service applies the same resolution `applyToSimilar` computed, and it has already filtered
+   * to rows whose `kind` matches (I-3) and that carry no splits (I-1).
+   */
+  async resolveReview(
+    householdId: string,
+    transactionIds: readonly string[],
+    patch: {
+      readonly status?: TransactionStatus;
+      readonly categoryId?: string | null;
+      readonly categorySource?: CategorySource | null;
+    } = {},
+  ): Promise<number> {
+    const ids = [...new Set(transactionIds)];
+    if (ids.length === 0) return 0;
+
+    const result = await this.prisma.client.transactions.updateMany({
+      where: { id: { in: ids }, household_id: householdId, needs_review: true, deleted_at: null },
+      data: {
+        needs_review: false,
+        updated_at: new Date(),
+        ...(patch.status === undefined ? {} : { status: patch.status }),
+        ...(patch.categoryId === undefined
+          ? {}
+          : { category_id: patch.categoryId, category_source: patch.categorySource ?? null }),
+      },
+    });
+
+    return result.count;
+  }
+
+  /**
+   * The other queued rows that share a resolved entity **and** a suggestion — `applyToSimilar`'s set.
+   *
+   * "Same suggestion" is what makes this safe to bulk: the peers already sit in the same situation
+   * (same entity, same category or the same absence of one), so the decision the user just made
+   * applies to them unchanged. Matching on the entity alone would sweep in rows the user never saw.
+   *
+   * Three exclusions, each an invariant rather than a preference:
+   *  - **`kind` must match** — a category of the other direction is an I-3 violation (an expense
+   *    landing in an income category), and the resolution's category belongs to this direction.
+   *  - **No splits** — a divided Transaction's categories live on its parts, so setting a
+   *    transaction-level one would break I-1.
+   *  - **Not `VOID`** — the user has said those rows never happened.
+   */
+  async similarQueuedRows(
+    householdId: string,
+    args: {
+      readonly excludeId: string;
+      readonly kind: TransactionKind;
+      /** The category the peers must currently share, `null` for "also uncategorised". */
+      readonly categoryId: string | null;
+      readonly merchantId: string | null;
+      readonly counterpartyId: string | null;
+    },
+  ): Promise<readonly string[]> {
+    // No entity, no similarity: "uncategorised rows of the same kind" is not a group a human would
+    // recognise as "the same thing", and resolving them together would be a surprise.
+    if (args.merchantId === null && args.counterpartyId === null) return [];
+
+    const rows = await this.prisma.client.transactions.findMany({
+      where: {
+        household_id: householdId,
+        needs_review: true,
+        deleted_at: null,
+        status: { not: TransactionStatus.VOID },
+        kind: args.kind,
+        category_id: args.categoryId,
+        id: { not: args.excludeId },
+        // The ledger's tie rule: a Merchant wins over a Counterparty when both resolved (docs/04 §4),
+        // so the peers are matched on the same one the decision came from.
+        ...(args.merchantId !== null
+          ? { merchant_id: args.merchantId }
+          : { counterparty_id: args.counterpartyId }),
+        transaction_splits: { none: {} },
+      },
+      select: { id: true },
+    });
+
+    return rows.map((row) => row.id);
   }
 
   /** Soft-delete. Financial rows are never hard-deleted, so history stays auditable. */

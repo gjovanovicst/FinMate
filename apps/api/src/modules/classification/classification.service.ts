@@ -953,8 +953,11 @@ export class ClassificationService {
       occurredOn: fragment.occurredOn,
       description: fragment.description,
       tokens: fragment.tokens,
-      merchantId: pipeline.entityId,
-      counterpartyId: null,
+      // The **resolved** entities, not the deciding one: `pipeline.entityId` is a Merchant *or* a
+      // Counterparty depending on `decidedBy`, and putting that in `merchantId` wrote a Counterparty
+      // id into a column with a foreign key to `merchants`.
+      merchantId: pipeline.resolvedMerchantId,
+      counterpartyId: pipeline.resolvedCounterpartyId,
       needsDirectionConfirmation: fragment.needsDirectionConfirmation,
       candidates: [...pipeline.candidates],
     };

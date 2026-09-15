@@ -2142,6 +2142,37 @@ type ResolveReviewItemSuccess {
 2.3.2: it resolves every queued row sharing the same resolved entity **and** the same suggestion in one
 operation, then reports `resolvedSimilarCount`.
 
+#### 5.5.1 Implementation notes (task 2.3.2a)
+
+The **read** half is `ReviewService` in the classification module (it joins each Transaction to the
+`classification_decisions` row behind it); the **write** half is `TransactionsService.resolveReviewItem`
+on the ledger, next to `correctTransaction`, because resolving is a Transaction write and it is the
+learning loop. The resolver is on the **ledger**, because composing the queue needs both services and
+only that module can reach both (`ledger → classification` is the one-directional edge).
+
+| Design | Built | Why |
+|---|---|---|
+| `reviewQueue(filter: ReviewQueueFilterInput, sort: [ReviewQueueSortInput!])` | Plain arguments | Two enums and four scalars do not need an input object with no contract of its own. |
+| `enum ReviewItemKind { TRANSACTION RECEIPT_ITEM }` | `TRANSACTION` only | `RECEIPT_ITEM` needs the receipts module, which is not built. Declaring the arm without a producer is the empty-list problem `duplicateSuspects` avoided. |
+| `enum ReviewReason` (5 arms) | `LOW_CONFIDENCE \| UNCATEGORISED` | These are I-8's two disjuncts and the only reasons the gate can produce. `AMBIGUOUS_AMOUNT`, `RECEIPT_MISMATCH` and `OFFLINE_RECLASSIFIED` have no producer yet. |
+| `sort: [ReviewQueueSortInput!]` with `AGE \| CONFIDENCE \| AMOUNT \| OCCURRED_LOCAL_DATE` | Four **id-aligned** modes: `RECORDED_ASC` (default) / `RECORDED_DESC` / `OCCURRED_DESC` / `OCCURRED_ASC` | The cursor is a bare UUID, so a keyset page is only exact when the sort key **is** the id (a UUIDv7 is the creation order). A page boundary on a non-unique key — amount, confidence — silently repeats or skips rows, so those sorts are absent rather than approximate. |
+| `union ResolveReviewItemResult = … \| RuleConflictError \| ConflictError \| NotFoundError` | The success type directly | The resolution has already been applied by the time a proposal conflict is known, so an error arm would tell the client nothing happened — the same reasoning as `correctTransaction` (§5.3.1). |
+| `bulkResolveReviewItems` | **Not built** | `applyToSimilar` is the bulk affordance this UI uses. A second bulk path with its own conflict semantics is its own task. |
+| `dashboardDelta` | Absent | As everywhere else (§5.2.4). |
+| `ReviewQueueItem.amount` / `.occurredOn` | On the `transaction` field | The item *is* a Transaction; a second copy is a second thing that can disagree. |
+
+**Resolving an already-resolved row is a NO-OP, not a CONFLICT.** Two devices clearing the same queue
+is not an error, and the write's predicate carries `needs_review: true`, so it clears the rows that
+still need it and reports how many that was.
+
+**`applyToSimilar` matches on the resolved entity AND the suggestion**, both read *before* the write
+(the resolution is about to change them), and excludes rows of the other `kind` (I-3), rows with
+splits (I-1) and `VOID` rows. One decision produces **one** Correction: the peers are an application of
+it, not N separate answers, and N rows would inflate the calibration re-fit with duplicates of one
+fact.
+
+---
+
 ### 5.6 `updateBudget`
 
 ```graphql

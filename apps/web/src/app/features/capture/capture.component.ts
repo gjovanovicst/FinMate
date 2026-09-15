@@ -49,6 +49,7 @@ const CAPTURE_PARSE = /* GraphQL */ `
         advisory
         rationale
         merchantId
+        counterpartyId
         amountMinor
         currency
         description
@@ -173,6 +174,7 @@ interface ParseResponse {
       readonly advisory: boolean;
       readonly rationale: string;
       readonly merchantId: string | null;
+      readonly counterpartyId: string | null;
       readonly amountMinor: string | null;
       readonly currency: string | null;
       readonly description: string;
@@ -1296,6 +1298,7 @@ function toProposal(fragment: ParseResponse['captureParse']['fragments'][number]
     advisory: fragment.advisory,
     rationale: fragment.rationale,
     merchantId: fragment.merchantId,
+    counterpartyId: fragment.counterpartyId,
     alternatives: fragment.alternatives,
     // `amountMinor` crosses the wire as a string so it cannot be rounded (ADR-003); this is the one
     // place the preview converts it, and it converts straight to `bigint`.

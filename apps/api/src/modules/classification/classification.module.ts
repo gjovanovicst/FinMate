@@ -10,6 +10,7 @@ import {
 } from './ai-classifier';
 import { ClassificationResolver } from './classification.resolver';
 import { CorrectionsService } from './corrections.service';
+import { ReviewService } from './review.service';
 import { RulesResolver } from './rules.resolver';
 import { RulesService } from './rules.service';
 import {
@@ -47,6 +48,9 @@ import {
     RulesService,
     CorrectionsService,
     RulesResolver,
+    // The review queue (F-08) — the READ half. The resolver lives on the ledger, because composing
+    // the queue needs both this service and the ledger's list, and only that module can reach both.
+    ReviewService,
     // Custom scalars are registered by being provided; they are referenced by type in `@Field()`.
     // Omitting this makes Nest report `CannotDetermineInputTypeError` naming the class, which reads
     // like a decorator problem rather than a missing provider.
@@ -56,6 +60,13 @@ import {
   ],
   // Exported so the ledger (task 2.2.5's `captureCommit`) can attach a decision to the Transaction it
   // wrote and can re-classify a row that never went through a preview, without a second pipeline.
-  exports: [ClassificationService, RulesService, CorrectionsService, AI_CLASSIFIER, CALIBRATION_STORE],
+  exports: [
+    ClassificationService,
+    RulesService,
+    CorrectionsService,
+    ReviewService,
+    AI_CLASSIFIER,
+    CALIBRATION_STORE,
+  ],
 })
 export class ClassificationModule {}

@@ -800,6 +800,74 @@ describe('ClassificationService (integration)', () => {
   });
 
   // -------------------------------------------------------------------------------------------
+  // The resolved entity lands in the right field
+  // -------------------------------------------------------------------------------------------
+
+  describe('resolved entities (regression: the FK column)', () => {
+    it('puts a Counterparty that decided into counterpartyId, not merchantId', async () => {
+      // `PipelineOutcome.entityId` is a Merchant *or* a Counterparty depending on `decidedBy`, and
+      // mapping it to `merchantId` unconditionally sent a Counterparty id into a column whose foreign
+      // key points at `merchants` — so the commit that wrote it failed with an opaque FK error, and
+      // only when a Counterparty had a default category.
+      const rodaId = uuidv7();
+      await asTenant(() =>
+        prisma.client.counterparties.create({
+          data: {
+            id: rodaId,
+            household_id: householdId,
+            name: 'Roda',
+            type: 'PERSON',
+            default_category_id: foodId,
+          },
+        }),
+      );
+
+      const result = await parseInput(stubClassifier(), 'Roda 3600');
+      const fragment = result.fragments[0]!;
+
+      expect(fragment.decidedBy).toBe('COUNTERPARTY_DEFAULT');
+      expect(fragment.counterpartyId).toBe(rodaId);
+      expect(fragment.merchantId).toBeNull();
+      expect(fragment.categoryId).toBe(foodId);
+    });
+
+    it('records an entity that resolved without deciding anything', async () => {
+      // A Counterparty with no default category resolves but decides nothing, so the decision entity
+      // is null. The row used to end up with no entity at all — which is why a counterparty rule
+      // could never be learned from a capture.
+      const mikaId = uuidv7();
+      await asTenant(() =>
+        prisma.client.counterparties.create({
+          data: { id: mikaId, household_id: householdId, name: 'Mika', type: 'PERSON' },
+        }),
+      );
+
+      const fragment = (await parseInput(stubClassifier(), 'Mika 1200')).fragments[0]!;
+      expect(fragment.counterpartyId).toBe(mikaId);
+      expect(fragment.merchantId).toBeNull();
+    });
+
+    it('still puts a deciding Merchant in merchantId', async () => {
+      const tempoId = uuidv7();
+      await asTenant(() =>
+        prisma.client.merchants.create({
+          data: {
+            id: tempoId,
+            household_id: householdId,
+            name: 'Tempo',
+            default_category_id: fuelId,
+          },
+        }),
+      );
+
+      const fragment = (await parseInput(stubClassifier(), 'Tempo 2000')).fragments[0]!;
+      expect(fragment.merchantId).toBe(tempoId);
+      expect(fragment.counterpartyId).toBeNull();
+      expect(fragment.categoryId).toBe(fuelId);
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------
   // The audit trail (F-31)
   // -------------------------------------------------------------------------------------------
 

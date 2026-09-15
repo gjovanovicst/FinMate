@@ -249,8 +249,22 @@ export interface PipelineOutcome {
   readonly decidedBy: DecidedBy;
   readonly ruleId: string | null;
   readonly ruleName: string | null;
-  /** The merchant/counterparty the decision came from, when one did. */
+  /**
+   * The Merchant/Counterparty the **decision** came from, when one did. `decidedBy` says which kind
+   * it is (`MERCHANT_DEFAULT` / `COUNTERPARTY_DEFAULT`).
+   */
   readonly entityId: string | null;
+  /**
+   * The Merchant that **resolved**, whether or not it decided anything.
+   *
+   * Distinct from {@link entityId} on purpose: resolution and decision are different questions, and
+   * conflating them is how a Counterparty id ended up in `transactions.merchant_id` — a column with a
+   * foreign key to a different table. A row's resolved entities are what the ledger records; the
+   * deciding entity is what the audit trail explains.
+   */
+  readonly resolvedMerchantId: string | null;
+  /** The Counterparty that resolved, whether or not it decided anything. */
+  readonly resolvedCounterpartyId: string | null;
   readonly rationale: string;
   readonly candidates: readonly AuditCandidate[];
   readonly gate: GateDecision;
@@ -318,6 +332,19 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineOutcome
     resolveEntity(fragment.description, toNlpCandidates(input.counterparties, 'COUNTERPARTY')),
   );
 
+  /**
+   * `finalize` plus the resolved entities.
+   *
+   * The two ids are the same for every stage, so they are attached here rather than repeated in six
+   * `StageDecision` literals — a field that has to be remembered six times is a field that will be
+   * forgotten once.
+   */
+  const finish = (stage: StageDecision): PipelineOutcome => ({
+    ...finalize(input, stage),
+    resolvedMerchantId: merchant?.id ?? null,
+    resolvedCounterpartyId: counterparty?.id ?? null,
+  });
+
   // ── Stage 4: rules and keywords (docs/04 §5). Keywords are the implicit priority-1000 tier, so
   // §5.3.4's "explicit user rules always outrank keywords" is the engine's, not ours.
   const context: EvaluationContext = {
@@ -339,7 +366,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineOutcome
   ];
 
   if (ruleDecision.decidedBy === 'RULE') {
-    return finalize(input, {
+    return finish({
       decidedBy: 'RULE',
       categoryId: ruleDecision.actions.setCategoryId ?? null,
       ruleId: ruleDecision.ruleId,
@@ -355,7 +382,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineOutcome
   }
 
   if (ruleDecision.decidedBy === 'KEYWORD') {
-    return finalize(input, {
+    return finish({
       decidedBy: 'KEYWORD',
       categoryId: ruleDecision.actions.setCategoryId ?? null,
       ruleId: null,
@@ -381,7 +408,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineOutcome
   // constraint lists them and nothing else in the codebase produces them.
   const defaulted = fromEntityDefault(merchant, counterparty);
   if (defaulted !== null) {
-    return finalize(input, {
+    return finish({
       decidedBy: defaulted.decidedBy,
       categoryId: defaulted.categoryId,
       ruleId: null,
@@ -403,7 +430,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineOutcome
   if (input.ai === undefined) {
     // `RULES_KEYWORDS_ONLY`: no model was attempted, so the row is uncategorised and blocking (I-8).
     // An honest `decided_by` — never `AI` — is the point (docs/04 §9's degradation ladder).
-    return finalize(input, {
+    return finish({
       decidedBy: 'FALLBACK',
       categoryId: null,
       ruleId: null,
@@ -429,7 +456,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineOutcome
   });
 
   if (isAiUnavailable(aiResult)) {
-    return finalize(input, {
+    return finish({
       decidedBy: 'FALLBACK',
       categoryId: null,
       ruleId: null,
@@ -447,7 +474,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineOutcome
     });
   }
 
-  return finalize(input, {
+  return finish({
     decidedBy: 'AI',
     // A validated proposal has already had an out-of-list id nulled (§6.2), so this is either a real
     // category or `null` + the blocking lane (I-8).
@@ -532,6 +559,10 @@ function finalize(input: PipelineInput, stage: StageDecision): PipelineOutcome {
     ruleId: stage.ruleId,
     ruleName: stage.ruleName,
     entityId: stage.entityId,
+    // Filled in by `finish`, which is the only place that knows what resolved. Defaulting here keeps
+    // `finalize` callable on its own — and a `null` is honest for a caller that resolved nothing.
+    resolvedMerchantId: null,
+    resolvedCounterpartyId: null,
     rationale: explainDecision({
       decidedBy: stage.decidedBy,
       ruleName: stage.ruleName,

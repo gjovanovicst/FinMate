@@ -457,6 +457,26 @@ The rule itself is not the problem, and weakening rung 3 to make the shorthand r
 missing match for a wrong one. Asserted in
 `apps/api/src/modules/classification/corrections.integration.spec.ts`.
 
+#### 8.1.2 The entity a row records is the one that *resolved* (fixed in 2.3.2)
+
+`PipelineOutcome` used to carry one `entityId` — the entity a **decision** came from — and the
+fragment mapper wrote it to `transactions.merchant_id` unconditionally. Two consequences, both found
+while building the review queue:
+
+1. **A Counterparty default wrote a Counterparty id into `merchant_id`**, a column whose foreign key
+   points at `merchants`. The commit failed with an opaque FK error, and only when a Counterparty had a
+   default category.
+2. **A Counterparty that resolved but decided nothing was recorded nowhere.** The row kept no entity
+   at all, because the decision entity was `null` — so F-09's counterparty rule could never be learned
+   from a capture, which is the path that matters most.
+
+Resolution and decision are different questions, so the outcome now carries both:
+`resolvedMerchantId`/`resolvedCounterpartyId` (what the row records, and what synthesis reads) and
+`entityId`/`decidedBy` (what the audit trail explains). The preview returns the resolved pair, and the
+client **echoes it on the commit row**, because the ledger writes the row it is given and does not
+re-run resolution — a client that drops the echo leaves the entity resolved for the preview and absent
+from the row.
+
 ### 8.2 Guardrails (the user is not always right, and neither are we)
 
 - **Never auto-create rules.** Synthesis always proposes; the user confirms. (P-2, and the source
