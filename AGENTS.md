@@ -58,7 +58,7 @@ containers)** on Ubuntu 20.04 LTS / WSL2.
 pnpm dev:infra            # start Postgres/Redis/MinIO/Mailhog
 pnpm db:migrate           # apply migrations
 pnpm db:seed              # seed global merchants (add SEED_HOUSEHOLD_ID for a full household)
-nx run api:serve          # API on :3001   (see the port note below)
+nx run api:serve          # API on :3001 (pinned; see the port note below)
 nx run web:serve          # SPA on :4200, proxying /api and /graphql to the API
 pnpm lint / typecheck / test
 nx run web:build          # production bundle
@@ -142,7 +142,7 @@ pnpm typecheck
 pnpm db:migrate     # forward-only, expand/contract
 pnpm db:pull        # re-derive schema.prisma after a migration
 pnpm db:seed        # starter categories, keywords and merchants
-nx run api:serve    # API on :3001 (host port 3000 is taken in this environment)
+nx run api:serve    # API on :3001 — pinned to match the web dev proxy
 nx run web:serve    # SPA on :4200
 nx run web:build    # production bundle
 ```
@@ -219,9 +219,18 @@ A change is not done until (doc 09 §8):
 - **A custom scalar used as INPUT must be registered without a type function.** `@Scalar('Money')`,
   not `@Scalar('Money', () => Object)` — the latter makes Nest treat it as an object type and every
   input field fails with `CannotDetermineInputTypeError`.
-- **Host port 3000 is held by an unattributable process in this environment.** `/proc` is restricted
-  and `lsof`/`fuser` are absent, so the dev API is verified on 3001+. Use `/tmp/run-api.sh <port>`,
-  which frees the port and waits for the readiness line rather than a fixed sleep.
+- **The dev API runs on 3001 because the web proxy targets 3001, and `.env` says 3000 — so `api:serve`
+  PINS the port.** `apps/web/proxy.conf.json` forwards `/api` and `/graphql` to `localhost:3001`, while
+  `.env`/`.env.example` set `API_PORT=3000` (the port for a direct `node src/main.ts`, a container or CI).
+  `nx run api:serve --configuration=production` and plain `node` still honour `.env`; only the dev
+  `options.command` overrides it. **This cost real debugging time**: with the API on 3000 and the proxy
+  pointed at 3001, every request through the SPA fails as a proxy error and the sign-in page reports
+  "something went wrong" — which reads like an auth or CORS bug and is neither. If you change one
+  port, change both. (`/proc` is restricted and `lsof`/`fuser` are absent here, so use `ss -ltn` or
+  `/tmp/run-api.sh <port>`, which frees the port and waits for the readiness line rather than sleeping.)
+  A historical note said port 3000 was held by an unattributable process; the API binds 3000 fine now, so
+  that was a stale server, not a rule. Keep the pin anyway: it makes the documented dev pair independent
+  of whatever else is on 3000.
 - **TypeScript is pinned to 6.0.3, and `baseUrl` must stay.** Angular 22's compiler-cli requires
   `>=6.0 <6.1`; TS 6 deprecates `baseUrl` and node10 resolution, with `ignoreDeprecations: "6.0"`
   acknowledging it. Do NOT remove `baseUrl`: tsc stays happy without it, but

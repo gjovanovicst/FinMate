@@ -10,7 +10,7 @@
     "serve": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node --env-file=../../.env -r @swc-node/register src/main.ts",
+        "command": "API_PORT=3001 node --env-file=../../.env -r @swc-node/register src/main.ts",
         "cwd": "{projectRoot}"
       },
       "configurations": {
