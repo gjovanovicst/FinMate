@@ -9,6 +9,7 @@ import {
 } from '@finmate/domain';
 
 import { normaliseForMatching } from '../../common/text/normalise';
+import { EntityEmbeddingsService } from '../classification/entity-embeddings.service';
 import type { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MerchantsService } from '../taxonomy/merchants.service';
@@ -78,6 +79,12 @@ export interface MerchantSelectionResultView {
    * still categorise — but the wizard says so rather than claiming a suggestion it did not make.
    */
   readonly withoutCategory: readonly string[];
+  /**
+   * Entity vectors written for rung 5 (docs/04 §4), or 0 when no embedding model is configured.
+   * Reported because "0" is the difference between "nothing needed indexing" and "there is no model",
+   * and a caller should not have to guess which.
+   */
+  readonly embedded: number;
 }
 
 /** The `settings.onboarding` document. Versioned by `seedVersion` so a release can offer more. */
@@ -96,6 +103,7 @@ export class OnboardingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly merchants: MerchantsService,
+    private readonly embeddings: EntityEmbeddingsService,
   ) {}
 
   // -------------------------------------------------------------------------------------------
@@ -327,7 +335,7 @@ export class OnboardingService {
   ): Promise<MerchantSelectionResultView> {
     const wanted = dedupe(names);
     if (wanted.length === 0) {
-      return { applied: 0, alreadyOwned: 0, unresolved: [], withoutCategory: [] };
+      return { applied: 0, alreadyOwned: 0, unresolved: [], withoutCategory: [], embedded: 0 };
     }
 
     const shippedByName = new Map(SHIPPED_MERCHANTS.map((merchant) => [normaliseForMatching(merchant.name), merchant]));
@@ -399,7 +407,13 @@ export class OnboardingService {
       applied += 1;
     }
 
-    return { applied, alreadyOwned, unresolved, withoutCategory };
+    // Rung 5 needs vectors, and this is the moment the entity set changes for a new Household — so the
+    // index is built here rather than from a read path (`parse` is on a keystroke debounce). It is a
+    // no-op with no embedding model configured, which is why it can sit on the interactive path at all
+    // (ADR-021); a deployment with a model pays one batch of calls for the merchants just adopted.
+    const embedded = await this.embeddings.syncMissing(householdId);
+
+    return { applied, alreadyOwned, unresolved, withoutCategory, embedded: embedded.embedded };
   }
 
   // -------------------------------------------------------------------------------------------

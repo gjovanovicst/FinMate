@@ -93,6 +93,14 @@ export class MerchantSelectionResultModel {
       'path (usually a rename in step 1). Not an error: the category keywords still apply.',
   })
   withoutCategory!: string[];
+
+  @Field(() => Int, {
+    description:
+      'Entity vectors written for the embedding rung (docs/04 §4 rung 5). Always 0 while no local ' +
+      'embedding model is configured — rung 5 is inert, so this is a fact about the deployment ' +
+      'rather than about the merchants just adopted.',
+  })
+  embedded!: number;
 }
 
 export function toOnboardingStateModel(view: OnboardingStateView): OnboardingStateModel {
@@ -119,5 +127,6 @@ export function toMerchantSelectionResultModel(
     alreadyOwned: view.alreadyOwned,
     unresolved: [...view.unresolved],
     withoutCategory: [...view.withoutCategory],
+    embedded: view.embedded,
   };
 }

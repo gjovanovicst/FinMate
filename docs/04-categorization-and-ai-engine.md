@@ -157,6 +157,30 @@ auto-applies — 0.60 is not reached until similarity 0.625, and 0.90 is outside
 4 produces a **candidate with a confidence**, not a decision: the caller's confidence gate decides the
 lane, and no second gate belongs in front of the ladder.
 
+**Rung 5's confidence mapping** is interpolated the same way over `0.82 → 1.0`, from §4's band:
+
+```text
+t          = clamp((cosine - 0.82) / (1 - 0.82), 0, 1)
+confidence = 0.60 + t * (0.85 - 0.60)
+```
+
+Its ceiling is **0.85**, so rung 5 cannot auto-apply either — for the same reason and by the same
+argument. [ADR-021](14-decisions-and-risks.md) fixes the seam (a provider-injected, LOCAL-only,
+inert-by-default resolver) and §8.1.4 records what the implementation got wrong the first time.
+
+**Where rung 5 lives.** Rungs 1–4 are pure and in `packages/nlp`. Rung 5 is I/O, so it is an
+`EmbeddingProvider` injected at the API layer (`EMBEDDINGS`) and consumed through
+`EntityEmbeddingsService`, which owns `entity_embeddings`. Two properties are structural rather than
+incidental:
+
+- **It is consulted only when nothing cheaper matched.** The resolver is a callback the pipeline
+  `await`s *after* both lexical ladders came back empty, so a fragment a rule, a keyword or an exact
+  name already decided never costs a model call. The tests count invocations.
+- **It is inert unless a model is configured.** The provider defaults to `UNCONFIGURED_EMBEDDINGS`
+  (`model: 'none'`, `dims: 0`), and a provider whose `dims` is not 384 — the width
+  `entity_embeddings.embedding` requires — is treated as no provider at all. Both cases end the ladder
+  at rung 4, which is what the shipped build does today.
+
 **Ties** are broken deterministically: confidence descending, then the matched name/alias's length
 descending (the more specific match), then `entity.id` ascending. Ids are unique, so the order is
 total.
@@ -524,8 +548,51 @@ Two consequences worth keeping:
    weight is wrong rather than treating it as already present, so re-entering onboarding (or re-running
    `pnpm db:seed`) fixes an old tree instead of skipping it.
 
-### 8.2 Guardrails (the user is not always right, and neither are we)
+#### 8.1.4 The rung that found an entity carries its confidence (fixed in 2.3.4)
 
+Building rung 5 exposed a defect one rung earlier, and it is worth stating on its own because the two
+rungs share the code path.
+
+The resolution stage's output is a **candidate with a confidence** (§4), and the entity-default stage
+consumes the candidate. Until 2.3.4 the pipeline dropped the confidence on the way:
+`resolutionWinner` returned only the entity, so stage 3.5 wrote **every**
+`MERCHANT_DEFAULT`/`COUNTERPARTY_DEFAULT` at confidence `1.00`. An entity found by rung 4 (band
+`0.55–0.85`) or rung 5 (band `0.60–0.85`) therefore **auto-applied a category**, which is exactly what
+the paragraphs above say cannot happen:
+
+> Rung 4 produces a candidate with a confidence, not a decision: the caller's confidence gate decides
+> the lane.
+
+The fix is one wire: `ResolvedEntity` carries the rung's confidence, `fromEntityDefault` returns it,
+and stage 3.5 gates on it. Consequences, all three intended:
+
+| Was found by | Confidence a default now carries | Lane |
+|---|---|---|
+| Rung 1 exact / rung 2 normalized | `1.00` / `0.98` | auto — unchanged |
+| Rung 3 prefix | `0.90` | auto, at the boundary §4 fixes — unchanged |
+| Rung 4 trigram | `0.55–0.85` | verify (or ask, below 0.60) — **was auto** |
+| Rung 5 embedding | `0.60–0.85` | verify — new, and the reason the wire matters |
+
+`needs_review` does **not** change: it stays I-8's blocking lane (`< 0.60` or a `NULL` category), so
+these rows are still applied and usable. What changes is the number the user is shown and the number
+any lane-aware consumer reads — the 🟡 badge comes from the calibrated confidence itself.
+
+`advisory` also stays `false` for them, deliberately. §7's canonical lane table scopes advisory
+membership to `category_source = 'AI'`, and rung 5 is a model's guess about the **entity**, not about
+the **category**; the category itself is the Household's own standing preference for that entity. The
+distinction is recorded here rather than papered over: if the review queue's advisory tab (Lane B,
+unbuilt) should one day include these rows, that is a change to §7's lane table and to the queue's
+predicate, not to this wire.
+
+Two more things the task settled:
+
+- **`transactions.merchant_id` receives the resolved entity, and rung 5 resolves like any other rung.**
+  The distinction §8.1.2 draws between the entity that *resolved* and the entity that *decided* is what
+  keeps a rung-5 Counterparty out of a Merchant column.
+- **The audit blob records the cosine and the model** (`entityEmbedding`), so "why this person?" is
+  answerable after the fact instead of being an unqualified assertion.
+
+### 8.2 Guardrails (the user is not always right, and neither are we)
 - **Never auto-create rules.** Synthesis always proposes; the user confirms. (P-2, and the source
   transcript's explicit "backend decides when a correction is clear enough".)
 - **No rule from a single ambiguous correction** unless the trigger is a resolved entity — a typo'd

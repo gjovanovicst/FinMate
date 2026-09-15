@@ -23,6 +23,7 @@ import {
   type ClassifyRequest,
 } from './ai-classifier';
 import { resolveLaneThresholds, type LaneThresholds } from './confidence-gate';
+import { EntityEmbeddingsService } from './entity-embeddings.service';
 import {
   isAiUnavailable,
   runPipeline,
@@ -34,6 +35,7 @@ import {
   type PipelineCategory,
   type PipelineEntity,
   type PipelineHousehold,
+  type EmbeddingEntityCandidate,
   type PipelineOutcome,
   type PipelineRung,
 } from './classification.pipeline';
@@ -234,6 +236,7 @@ export class ClassificationService {
     @Optional()
     @Inject(AI_CLASSIFIER)
     private readonly classifier: AiClassifier = UNCONFIGURED_AI_CLASSIFIER,
+    private readonly embeddings: EntityEmbeddingsService,
     @Optional()
     @Inject(CALIBRATION_STORE)
     private readonly calibration: CalibrationStore = NO_CALIBRATION,
@@ -337,6 +340,11 @@ export class ClassificationService {
       // `undefined` is the honest signal that no model may be called: it covers both
       // `allowAi: false` and "no provider configured" without either looking like a failed call.
       ai: args.allowAi ? this.aiStage(args, args.calibration) : undefined,
+      // rung 5, likewise lazy: `undefined` when no embedding model is configured, so the pipeline
+      // ends at rung 4 exactly as it did before this task (ADR-021).
+      embeddings: this.embeddings.isAvailable()
+        ? (description: string) => this.embeddingCandidate(args.householdId, description)
+        : undefined,
       fragmentIndex: args.index,
       fragmentCount: args.count,
     });
@@ -391,6 +399,40 @@ export class ClassificationService {
   }
 
   // -------------------------------------------------------------------------------------------
+  // Rung 5 — embedding k-NN (docs/04 §4, ADR-021)
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * Ask the embedding index for the nearest of the Household's own entities.
+   *
+   * Runs **only** when rungs 1–4 found nothing (the pipeline calls it lazily), and it searches both
+   * tables because the ladder is one ordered ladder over entities rather than one per table. The
+   * winner is decided by cosine, then by docs/04 §4's tie-break — see `pickEmbeddingNeighbour`.
+   *
+   * Returns `null` for every failure mode, including "the model answered and nothing was close
+   * enough": to the pipeline these are the same answer, which is rung 6, unresolved. Anything else
+   * would make an embedding outage fail a capture, and docs/04 §9's whole point is that it must not.
+   */
+  private async embeddingCandidate(
+    householdId: string,
+    description: string,
+  ): Promise<EmbeddingEntityCandidate | null> {
+    try {
+      const outcome = await this.embeddings.embedText(householdId, description);
+      if (outcome === null) return null;
+      return outcome;
+    } catch (error: unknown) {
+      // A local model that is up enough to pass the availability check and then fails is a
+      // deployment problem. It must not take a capture down, so it degrades to rung 4 exactly like
+      // an unavailable provider does.
+      this.logger.warn(
+        `rung 5 skipped for ${householdId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+  }
+
+  // -------------------------------------------------------------------------------------------
   // The audit row (F-31)
   // -------------------------------------------------------------------------------------------
 
@@ -439,6 +481,11 @@ export class ClassificationService {
       source: pipeline.decidedBy,
       entityId: pipeline.entityId,
       rung: pipeline.rung,
+      // Rung 5's provenance, when it is what found the entity. `null` means the ladder ended at rung
+      // 4 or earlier — which is not the same as "no entity resolved", because rung 1 can resolve one
+      // without any of this. docs/04 §8.1.2 keeps resolution and decision apart; this keeps the *how*
+      // of a resolution, so "why this person?" is answerable from the row itself.
+      entityEmbedding: pipeline.embeddingEntity,
       amount: {
         amountMinor: fragment.amountMinor?.toString() ?? null,
         currency: fragment.currency,

@@ -629,6 +629,113 @@ builder (same path-rewriting problem); explicit `@Inject()` tokens on every cons
 
 ---
 
+### ADR-021 — Rung 5 embeddings are provider-injected, LOCAL-only by construction, and inert until a model is configured
+**Status:** Accepted
+
+**Context.** [04 §4](04-categorization-and-ai-engine.md#4-stage-3-entity-resolution) puts entity
+resolution on a six-rung ladder and rung 5 is *"embedding k-NN, cosine > 0.82 over the household's own
+vectors, confidence 0.60–0.85"*. It exists for a specific, documented case: the **F-09 shorthand**.
+After correcting `Dejan rođa 3600`, the next input `Dejan 2000` cannot resolve on rungs 1–4 — rung 3
+requires *every* folded token of the name, and trigram similarity of `dejan` against `dejan roda` is
+0.545, just under rung 4's 0.55 ([04 §8.1.1](04-categorization-and-ai-engine.md#811-what-synthesis-can-and-cannot-fix-task-231)).
+
+Four constraints meet here and none of them is a preference:
+
+1. **The column fixes the model family.** `entity_embeddings.embedding` is `VECTOR(384)`
+   ([03 §4](03-domain-model.md)) — a `CHECK` Postgres enforces. A 384-dimension model is not a
+   stylistic choice; a 768-dimension one fails every `INSERT` with `expected 384 dimensions`.
+2. **Entity names are personal data.** A vector built from a Household's own merchant and counterparty
+   names is `PARSE`-class egress ([08 §6](08-security-privacy-and-compliance.md)). ADR-007 allows
+   `LOCAL` or an explicit `_EU` endpoint and nothing else.
+3. **No embedding provider is configured in this build**, and an "AI" that is not there must not be
+   simulated. This is the same honesty rule as `UNCONFIGURED_AI_CLASSIFIER` (ADR-002, 04 §9).
+4. **A cheap rung must not cost anything when a cheaper rung already answered.** Rung 5 is I/O; rungs
+   1–4 are pure and in-process. A keystroke-debounced parse must not reach a model for a fragment a
+   keyword already categorised ([04 §12](04-categorization-and-ai-engine.md)).
+
+**Decision.**
+
+1. Rung 5 is reached through an **interface**, `EmbeddingProvider`, injected at the API layer under
+   the `EMBEDDINGS` token. Feature code never imports a provider.
+2. The module provides **`UNCONFIGURED_EMBEDDINGS`** (`model: 'none'`, `dims: 0`) by default, so rung 5
+   is **inert**: the ladder ends at rung 4 and every rung-5 code path is a no-op. Enabling it is a
+   one-line provider swap in `ClassificationModule`.
+3. **The interface has no `endpoint` and no `apiKey`.** Only an in-process model or one on the same
+   host can be configured, so ADR-007's residency requirement is satisfied *by construction* rather
+   than by a check somebody can skip. A remote embedding provider is not a configuration value; it is
+   an amendment to this ADR plus a consent-gated exception.
+4. **Residency of the vectors themselves** follows [08 §6](08-security-privacy-and-compliance.md):
+   `entity_embeddings` rows are Household-scoped data, are never sent to an AI provider, and are keyed
+   `(owner_type, owner_id, model)` so a model change invalidates rather than mixes vector spaces.
+5. **The width is enforced, and a mismatch is "unavailable", not "broken".** A provider whose `dims`
+   is not 384 reports itself unusable, which makes rung 5 inert — the same honest degradation as no
+   model at all, instead of a per-row `INSERT` failure on the batch sync path.
+6. **Unavailability is a value, not a throw.** A model that passes the availability check and then
+   fails degrades to rung 4 and the capture still succeeds (04 §9).
+7. **Rung 5 is lazy and last.** The pipeline consults it only when **both** the Merchant and the
+   Counterparty lexical ladders found nothing, and only when a provider is configured. A rule, a
+   keyword or an entity default never triggers an embedding call, and the tests count invocations to
+   make that structural rather than incidental.
+8. **A rung-5 hit is a candidate, not a decision.** `confidenceForCosine` maps the cosine into §4's
+   `0.60–0.85` band, and that confidence now travels with the resolved entity into the entity-default
+   stage, whose ceiling is therefore **0.85 < ADR-009's 0.90 auto-apply floor**. A semantic match can
+   never silently become the user's data. This also corrected rung 4, which had been promoted to 1.00
+   by the same missing wire ([04 §8.1.4](04-categorization-and-ai-engine.md#814-the-rung-that-found-an-entity-carries-its-confidence-fixed-in-234)).
+9. **Indexing is explicit, never on the parse path.** `syncMissing(householdId)` writes the vectors of
+   entities that have none for the current model, called where the entity set actually changes
+   (onboarding's merchant selection). `parse` never writes embeddings.
+10. **The model choice and its serving shape are deferred**, with the trigger recorded in
+    [Part 4](#part-4--decisions-deliberately-deferred) — not decided here, and not foreclosed.
+
+**Consequences.**
+- ✅ Rung 5 cannot leak: the interface has no way to name a non-local endpoint. This is a constraint,
+  so eroding it requires editing this ADR rather than flipping a config value.
+- ✅ The deployed build behaves exactly as it did before 2.3.4 — the ladder ends at rung 4 — without
+  anyone having to remember to disable anything.
+- ✅ The cost model survives: 04 §12's "~70 % of entries cost $0.00" is asserted by counting embedding
+  calls as well as AI calls.
+- ✅ The audit can answer *"why this person?"*: the decision stores the cosine and the model that
+  produced the hit.
+- ⚠️ **Rung 5 is unexercised in this build.** The tests use a hand-built fixture vector at the
+  schema's width — deliberately not a "semantic-ish" stand-in, which would clear some thresholds and
+  not others and quietly become the thing under test. So the plumbing is proven and the *semantic
+  quality* of any real model is **not**, and cannot be, established here.
+- ⚠️ Until a model is chosen, the F-09 shorthand works only through the other two documented routes:
+  an alias (what onboarding step 3 creates) or a keyword. This is unchanged from 2.3.1 and is recorded
+  in [04 §8.1.1](04-categorization-and-ai-engine.md#811-what-synthesis-can-and-cannot-fix-task-231).
+- ⚠️ `VECTOR(384)` narrows the choice to the 384-dimension multilingual family (MiniLM-L6, E5-small,
+  LaBSE-small). Wanting a different family later is a migration, not a setting.
+- ⚠️ [03 §4](03-domain-model.md) admits `owner_type = 'CATEGORY'` and nothing writes those rows:
+  category matching is the keyword tier's job. The lookup therefore queries `MERCHANT` and
+  `COUNTERPARTY` only, and the third arm of that `CHECK` is currently unused.
+- ⚠️ Vectors are a **derived cache**, not truth. They are rebuilt from `name + aliases`, so an alias
+  added after a sync is stale until `syncMissing` runs again; a stale vector can only *fail to match*,
+  because the ladder's lexical rungs still run first.
+
+**Alternatives rejected.**
+- **(a) A remote embedding API** (an OpenAI/Cohere-compatible endpoint, `_EU` or otherwise):
+  `PARSE`-class egress of household entity names for a rung that only ever produces a *candidate*,
+  at a per-entity cost, to save an in-process model. Rejected as a default; reachable later only by
+  amending this ADR with a consent-gated exception.
+- **(b) A lexeme or trigram stand-in behind the same interface, so rung 5 "works" today.** It would
+  produce plausible-looking hits, pass some thresholds and not others, and make the rung untestable in
+  the field — the exact failure mode ADR-002's honesty rule exists to prevent. A rung that reports
+  "no model" is more useful than one that pretends.
+- **(c) Bundling a JS/ONNX embedding model in the API process.** A heavy new dependency with model
+  weights to distribute and a cold-start cost — ADR-004 territory, and a deployment decision that
+  deserves its own evaluation rather than being smuggled in with the plumbing. Deferred, not refused.
+- **(d) Precomputing vectors eagerly on every entity write.** Turns a taxonomy edit into a model call
+  and a batch write, and puts I/O on paths (`parse`) that must stay cheap. `syncMissing` is called
+  where the set changes instead.
+- **(e) A free-width or per-model column** (`VECTOR` with no dimension, or one column per model): the
+  schema's fixed width is what makes `<=>` meaningful across rows, and a column per model is a
+  migration per model plus a `COALESCE` in every query.
+- **(f) Treating a rung-5 hit as certain** (the 1.00 the entity-default stage used to write): the
+  bug this ADR's decision 8 fixes. A cosine above 0.82 is evidence about a *name*, not about a
+  category, and the whole point of a confidence band is that the caller respects it.
+
+---
+
 ## Part 2 — Risk register
 
 Scored as **Likelihood (L)** and **Impact (I)** on 1–5; **Exposure = L × I**. Anything ≥ 12 gets an
@@ -656,6 +763,7 @@ owner and a checkpoint in [09](09-implementation-plan.md).
 | **R-18** | **Name decision deferred too long** (ADR-014), forcing a costly late rename | 3 | 2 | 6 | Decide by the end of Phase 3; all user-visible strings and manifests driven from one config value; no brand assets produced early | End of Phase 3 |
 | **R-19** | **Accessibility debt** makes the app unusable for a meaningful share of users and is expensive to retrofit | 3 | 3 | 9 | WCAG 2.2 AA in the Definition of Done per story, axe checks in CI, keyboard-complete desktop flows, real-device screen-reader testing in Phase 4.3 | Every story + Phase 5 |
 | **R-20** | **Data loss or silent corruption** in offline sync (duplicate or dropped captures) | 2 | 5 | **10** | Unique `(household_id, client_id)` index, idempotency keys on every write, outbox never discards a failed item, sync integration tests including replay and conflict | Phase 4.2 |
+| **R-21** | **Rung 5 (embeddings) is inert until a local model is chosen** (ADR-021), so the semantic entity match 04 §4 promises is unexercised in the shipped build and the F-09 shorthand depends on an alias | 4 | 2 | 8 | The alias route works today and is what onboarding step 3 creates; the rung is provider-injected, so enabling it is a one-line swap once a model is chosen; the plumbing is integration-tested at the schema's width | Before the first deployment that claims semantic matching; revisit with the Part 4 model decision |
 
 ### Top five by exposure
 1. **R-01 onboarding cold-start (20)** — the single biggest threat, and the one the plan spends the most disproportionate effort on.
@@ -705,5 +813,6 @@ which also records the trigger that would promote each one into a planned phase.
 | Native apps / Capacitor shell | ADR-012; PWA covers v1 | When a defined trigger in [07](07-platform-strategy-mobile-desktop.md) fires |
 | Household write-sharing UI | ADR-008; schema ready, UI deferred | v2 |
 | Fine-tuning or a self-hosted model on the hot path | ADR-010 | Only if rules + few-shot fail to reach targets |
+| **The local embedding model and its serving shape** (in-process ONNX vs. a same-host sidecar; which 384-dimension multilingual model) | ADR-021 fixes the *seam*, the width and the residency rule, but not the model — that needs weights to be chosen, distributed and measured, and rung 5 produces a candidate rather than a decision. The alias route covers F-09 meanwhile | When a deployment enables rung 5, or before beta if the shorthand without an alias proves necessary |
 | Public API / integrations | No validated demand | v2, on request |
 | Open-sourcing any component | Unclear benefit; the moat is the memory model and the data, not the code | Not planned |

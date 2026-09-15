@@ -191,6 +191,15 @@ Code-first GraphQL with custom scalars: most of these are registration problems 
   failure lands in the error banner instead of downloading a file full of JSON. Distinct from the
   async whole-household `exportData` (docs/06 §5.11), which needs the worker and is not built.
 
+- **A service that gains a dependency must be resolvable by every module that provides it — and the
+  failure is at boot, not at typecheck.** `OnboardingService` was given `EntityEmbeddingsService`
+  (task 2.3.4) without adding `ClassificationModule` to `OnboardingModule`'s imports. `typecheck` was
+  green; Nest failed to construct the provider with
+  `Nest can't resolve dependencies of the OnboardingService (PrismaService, MerchantsService, ?)`. The
+  `?` is "the dependency at index *n*", so count the constructor parameters. In a test run it is worse
+  than a failure: the suite reports **18 skipped** tests, because a spec whose module cannot compile
+  skips. When you add a provider, grep for every other module whose providers construct that service.
+
 ---
 
 ## 5. Domain: money, dates and Serbian input
@@ -334,6 +343,29 @@ docs/04 is canonical for all of this. The recurring theme is that a second copy 
   separates decisive (`strong`, weight 2.0) from corroborating (`include`, weight 1.0) words, and the writers
   **raise** an existing row whose weight is wrong rather than skipping it, so an old Household repairs itself.
   See docs/04 §8.1.3.
+
+- **A resolved entity's default category used to be written at confidence 1.00 whichever rung found the
+  entity — so a similarity guess auto-applied a category.** `resolutionWinner` returned only the entity and
+  dropped the rung's confidence, so stage 3.5 (`MERCHANT_DEFAULT`/`COUNTERPARTY_DEFAULT`) gated at `1.00` for
+  a rung-4 trigram hit (`0.55–0.85`) and a rung-5 embedding hit (`0.60–0.85`) alike. docs/04 §4 says the
+  opposite in one sentence: *"rung 4 produces a candidate with a confidence, not a decision: the caller's
+  confidence gate decides the lane."* Fixed in 2.3.4 by carrying `ResolvedEntity.confidence` into
+  `fromEntityDefault`. When you add a rung, **carry its confidence to the gate** — and assert the *band*, not
+  a flag: `needs_review` stays false here on purpose (it is I-8's blocking lane only, `< 0.60` or a `NULL`
+  category), and `advisory` stays false because docs/04 §7 scopes it to `category_source = 'AI'`. The 🟡 badge
+  the user sees is derived from the number itself (`apps/web/src/app/shared/confidence.ts`). See docs/04 §8.1.4.
+
+- **`entity_embeddings.embedding` is `VECTOR(384)`, so a test fixture's stub vector must be 384 numbers.**
+  A 64-dimension "small enough for a test" vector does not mis-compare, it fails every insert with
+  `expected 384 dimensions, not 64` — on the sync path, one row at a time, which reads like a Prisma or
+  pgvector bug. The width is a `CHECK` in docs/03 §4, not a convention; `EMBEDDING_DIMS` is the one constant
+  for it, and a provider of another width is treated as *unavailable* (rung 5 inert) rather than broken.
+
+- **Rung 5 is inert by default and that is a feature, not a missing implementation.** `EMBEDDINGS` resolves to
+  `UNCONFIGURED_EMBEDDINGS` (`model: 'none'`, `dims: 0`), so the ladder ends at rung 4 in this build, the
+  `embedded` count on `applyMerchantSelection` is honestly `0`, and no vector row is written. Do not "make it
+  work" with a lexeme stand-in behind the interface — it would clear some thresholds and not others and become
+  the thing under test instead of the plumbing (ADR-021, docs/04 §8.1.4).
 
 ---
 
@@ -484,6 +516,23 @@ Short, and load-bearing.
   `račun` in UI copy for a Receipt.
 
 - **If code and docs disagree, that is a bug in one of them.** Fix the right one and say which.
+
+- **A spec that builds a service by hand (`new SomeService(prisma, stub, store)`) breaks when a
+  constructor parameter is inserted in the middle — and it breaks as `X is not a function`, not as a
+  type error.** Nest injects by type, so the module graph survives an inserted dependency; a manual
+  `new` injects **by position**, so every later argument shifts one place and the service holds a
+  `CalibrationStore` where it expects an embeddings service. That is how 37 tests failed in 2.3.4 while
+  `typecheck` and `api:build` stayed green: `this.embeddings.isAvailable is not a function`, thrown
+  from deep inside `parse`. Prefer the module under test (`Test.createTestingModule`) over a manual
+  `new`, and when you do construct by hand, prefer one options object over positional arguments.
+
+- **`classification_decisions` has no `needs_review` column, and a test will not tell you until it
+  runs.** `needs_review` lives on `transactions` (I-8 is about the row the user sees), so a decision's
+  blocking status is *derived* from its confidence and whether a category was decided at all. `tsc`
+  catches the bad `select` (`TS2353 ... does not exist in type 'classification_decisionsSelect'`), but
+  **Vitest runs under SWC and does not typecheck**, so the mistake reaches Postgres and fails as
+  `Unknown field 'needs_review' for select statement on model 'classification_decisions'`. Assert the
+  confidence on the decision row and the flag on the transaction.
 
 ---
 

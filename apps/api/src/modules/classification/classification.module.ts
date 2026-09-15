@@ -8,6 +8,8 @@ import {
   UNCONFIGURED_AI_CLASSIFIER,
   type AiClassifier,
 } from './ai-classifier';
+import { EMBEDDINGS, UNCONFIGURED_EMBEDDINGS, type EmbeddingProvider } from './embedding-provider';
+import { EntityEmbeddingsService } from './entity-embeddings.service';
 import { ClassificationResolver } from './classification.resolver';
 import { CorrectionsService } from './corrections.service';
 import { ReviewService } from './review.service';
@@ -56,11 +58,17 @@ import {
     // like a decorator problem rather than a missing provider.
     JsonScalar,
     { provide: AI_CLASSIFIER, useValue: UNCONFIGURED_AI_CLASSIFIER satisfies AiClassifier },
+    // docs/04 §4 rung 5. Same shape and same honesty as the classifier above: no local embedding model
+    // is configured in this build, so rung 5 is INERT and the ladder ends at rung 4 (ADR-021). A real
+    // local provider is a one-line swap here; nothing else in the pipeline changes.
+    { provide: EMBEDDINGS, useValue: UNCONFIGURED_EMBEDDINGS satisfies EmbeddingProvider },
+    EntityEmbeddingsService,
     { provide: CALIBRATION_STORE, useValue: NO_CALIBRATION },
   ],
   // Exported so the ledger (task 2.2.5's `captureCommit`) can attach a decision to the Transaction it
   // wrote and can re-classify a row that never went through a preview, without a second pipeline.
   exports: [
+    EntityEmbeddingsService,
     ClassificationService,
     RulesService,
     CorrectionsService,

@@ -760,6 +760,11 @@ type MerchantSelectionResultModel {
   applied: Int!
 
   """
+  Entity vectors written for the embedding rung (docs/04 §4 rung 5). Always 0 while no local embedding model is configured — rung 5 is inert, so this is a fact about the deployment rather than about the merchants just adopted.
+  """
+  embedded: Int!
+
+  """
   Selected names that are not in the shipped catalogue. Reported, never silently dropped.
   """
   unresolved: [String!]!

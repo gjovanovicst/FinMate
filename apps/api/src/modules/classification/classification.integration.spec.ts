@@ -10,6 +10,11 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AiClassifier, ClassifyRequest } from './ai-classifier';
 import {
+  UNCONFIGURED_EMBEDDINGS,
+  type EmbeddingProvider,
+} from './embedding-provider';
+import { EntityEmbeddingsService } from './entity-embeddings.service';
+import {
   ClassificationService,
   NO_CALIBRATION,
   type CalibrationStore,
@@ -209,11 +214,26 @@ describe('ClassificationService (integration)', () => {
   function service(options: {
     readonly stub?: Stub;
     readonly calibration?: CalibrationTable;
+    /** A model for rung 5. Absent means inert, which is the deployed default (ADR-021). */
+    readonly embeddings?: EmbeddingProvider;
   } = {}): ClassificationService {
     const store: CalibrationStore = options.calibration
       ? { tableFor: () => Promise.resolve(options.calibration) }
       : NO_CALIBRATION;
-    return new ClassificationService(prisma, options.stub?.classifier ?? stubClassifier().classifier, store);
+    // The real service over the real (or absent) provider, never a stub of the service itself: a rung-5
+    // test has to exercise the same width check and the same "unavailable is a value" path the module
+    // wires. No model is the default here for the same reason it is in `ClassificationModule` — rung 5
+    // is inert unless something is configured.
+    const embeddings = new EntityEmbeddingsService(
+      prisma,
+      options.embeddings ?? UNCONFIGURED_EMBEDDINGS,
+    );
+    return new ClassificationService(
+      prisma,
+      options.stub?.classifier ?? stubClassifier().classifier,
+      embeddings,
+      store,
+    );
   }
 
   /**
@@ -391,6 +411,34 @@ describe('ClassificationService (integration)', () => {
         await prisma.client.merchants.deleteMany({ where: { id: merchantId } });
         await prisma.client.counterparties.deleteMany({ where: { id: counterpartyId } });
       });
+    });
+
+    it('does NOT auto-apply an entity that only a trigram match resolved (docs/04 §4, §8.1.4)', async () => {
+      // The same defect rung 5 exposed exists one rung earlier, and this is its coverage: rung 4's band
+      // is 0.55–0.85, so an entity default found by similarity must land in the verify lane rather than
+      // being written at 1.00. `Merkators` is a plural typo of `Merkator`: rung 3 needs the *whole*
+      // name's tokens, so it misses and `pg_trgm` similarity 0.90 resolves it on rung 4.
+      const merchantId = uuidv7();
+      await asTenant(() =>
+        prisma.client.merchants.create({
+          data: { id: merchantId, name: 'Merkator', default_category_id: foodId },
+        }),
+      );
+
+      const stub = stubClassifier();
+      const result = await parseInput(stub, 'Merkators 1500');
+      const fragment = result.fragments[0]!;
+
+      expect(stub.calls).toHaveLength(0);
+      expect(fragment.decidedBy).toBe('MERCHANT_DEFAULT');
+      expect(fragment.categoryId).toBe(foodId);
+      expect(fragment.confidence).toBeGreaterThanOrEqual(0.55);
+      expect(fragment.confidence).toBeLessThan(0.9);
+      // Applied and usable — rung 4 is a similarity hit, not an unanswered question — but no longer
+      // presented as certainty. `needsReview` is the blocking lane only (I-8).
+      expect(fragment.needsReview).toBe(false);
+
+      await asTenant(() => prisma.client.merchants.deleteMany({ where: { id: merchantId } }));
     });
 
     it('records AI only when nothing deterministic matched, and calls it exactly once per fragment', async () => {

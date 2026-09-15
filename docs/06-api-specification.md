@@ -2451,6 +2451,7 @@ type MerchantSelectionResult {
   alreadyOwned: Int!
   unresolved: [String!]!     # selected names not in the shipped catalogue
   withoutCategory: [String!]!
+  embedded: Int!             # rung-5 vectors written; 0 when no embedding model is configured (ADR-021)
 }
 
 type Query    { onboardingState: OnboardingState! }
@@ -2499,6 +2500,14 @@ keywords only at a score of **2.0**, and `category_keywords.weight` defaults to 
 seeded at the default cannot decide a single input, which is exactly what the shipped tree did until
 this task. Decisive words (a merchant's name, or the word that *is* the category) are now written at
 2.0 and corroborating ones at 1.0. See [04 §8.1.3](04-categorization-and-ai-engine.md).
+
+**`applyMerchantSelection` also indexes what it wrote (`embedded`, task 2.3.4).** Copying the
+Household's chosen merchants is the moment its entity set changes, so that is where docs/04 §4 rung 5's
+vectors are built: one `syncMissing` call, one vector per Merchant and Counterparty that has none for
+the current model. It is **not** on the parse path — a keystroke debounce must never become a batch of
+embedding writes. `embedded` says how many rows were written, and it is `0` in this build because no
+embedding model is configured, which is the honest answer rather than an error
+([ADR-021](14-decisions-and-risks.md), [04 §8.1.4](04-categorization-and-ai-engine.md#814-the-rung-that-found-an-entity-carries-its-confidence-fixed-in-234)).
 
 ---
 

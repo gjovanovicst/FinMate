@@ -56,6 +56,7 @@ import {
 
 import { applyConfidenceGate, type GateDecision, type LaneThresholds } from './confidence-gate';
 import type { PromptCategory } from './classify-prompt';
+import { confidenceForCosine } from './embedding-resolver';
 
 // ---------------------------------------------------------------------------------------------
 // Inputs the service loads from the database
@@ -168,6 +169,28 @@ export function worstRung(left: PipelineRung, right: PipelineRung): PipelineRung
   return PIPELINE_RUNGS.indexOf(left) >= PIPELINE_RUNGS.indexOf(right) ? left : right;
 }
 
+/**
+ * One entity rung 5 proposes, with everything the stages downstream need.
+ *
+ * `defaultCategoryId` is here rather than looked up later because that is what makes a rung-5 hit
+ * behave like any other resolved entity: the entity-default stage can categorise from it (docs/04 §4),
+ * which is the point of resolving `Dejan rođa` at all.
+ */
+export interface EmbeddingEntityCandidate {
+  readonly id: string;
+  readonly kind: 'MERCHANT' | 'COUNTERPARTY';
+  readonly name: string;
+  readonly defaultCategoryId: string | null;
+  /** The cosine that produced the hit, for the audit blob and the confidence band. */
+  readonly cosine: number;
+  readonly model: string;
+}
+
+/** `description` in, at most one candidate out. Implemented by the service; stubbed by tests. */
+export type EmbeddingEntityResolver = (
+  description: string,
+) => Promise<EmbeddingEntityCandidate | null>;
+
 export interface PipelineInput {
   /** One fragment, already segmented by `@finmate/nlp`. */
   readonly fragment: TransactionFragment;
@@ -185,6 +208,15 @@ export interface PipelineInput {
   readonly thresholds?: LaneThresholds;
   /** `undefined` = no model may be called at all (`allowAi: false`, or no provider configured). */
   readonly ai: AiStage | undefined;
+  /**
+   * docs/04 §4 **rung 5**, as a lazily-called callback — the same shape as {@link ai} and for the same
+   * reason: it is I/O, it must happen **only** when rungs 1–4 found nothing, and a caller that cannot
+   * reach a model passes `undefined`.
+   *
+   * It receives the fragment's description and returns at most one candidate. `null` means "no
+   * neighbour cleared the threshold", which is not an error — it is rung 6, unresolved.
+   */
+  readonly embeddings?: EmbeddingEntityResolver | undefined;
   /** In input order, for the prompt's "fragment i of n". Purely informational. */
   readonly fragmentIndex?: number;
   readonly fragmentCount?: number;
@@ -263,6 +295,20 @@ export interface PipelineOutcome {
    * deciding entity is what the audit trail explains.
    */
   readonly resolvedMerchantId: string | null;
+  /**
+   * Rung 5's provenance, or `null` when the ladder ended at rung 4 or earlier.
+   *
+   * `resolvedMerchantId`/`resolvedCounterpartyId` already say what was resolved; this says **how**, so
+   * an audit can answer "why did this row pick that person?" with "the nearest of your own names at
+   * 0.87" instead of an unqualified assertion.
+   */
+  readonly embeddingEntity: {
+    readonly id: string;
+    readonly kind: 'MERCHANT' | 'COUNTERPARTY';
+    readonly name: string;
+    readonly cosine: number;
+    readonly model: string;
+  } | null;
   /** The Counterparty that resolved, whether or not it decided anything. */
   readonly resolvedCounterpartyId: string | null;
   readonly rationale: string;
@@ -325,12 +371,42 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineOutcome
   const { fragment, household, categories, folder } = input;
 
   // ── Stage 3: entity resolution (docs/04 §4 steps 1–4). Pure; the caller loaded the candidates.
-  const merchant = resolutionWinner(
+  const lexicalMerchant = resolutionWinner(
     resolveEntity(fragment.description, toNlpCandidates(input.merchants, 'MERCHANT')),
   );
-  const counterparty = resolutionWinner(
+  const lexicalCounterparty = resolutionWinner(
     resolveEntity(fragment.description, toNlpCandidates(input.counterparties, 'COUNTERPARTY')),
   );
+
+  /**
+   * ── Rung 5: embedding k-NN (docs/04 §4), and only where rungs 1–4 found nothing.
+   *
+   * "Cheapest first, stopping when a confident hit is found" is the doc's own rule, and it is why this
+   * is `await`ed here rather than called by the caller beforehand: a fragment a rule or a keyword
+   * already handled must not cost a model call. Both directions are checked here — a lexical hit on
+   * *either* side ends the ladder, because the doc's rungs are a single ordered ladder over entities,
+   * not one ladder per table.
+   */
+  let embeddingHit: EmbeddingEntityCandidate | null = null;
+  if (lexicalMerchant === null && lexicalCounterparty === null && input.embeddings !== undefined) {
+    embeddingHit = await input.embeddings(fragment.description);
+  }
+
+  /**
+   * The rung travels with the entity, because docs/04 §4 gives every rung a confidence and says the
+   * caller's gate — never the ladder — decides the lane.
+   *
+   * This used to be lost here: `resolutionWinner` returned only the entity, so stage 3.5 below wrote
+   * every `MERCHANT_DEFAULT`/`COUNTERPARTY_DEFAULT` at confidence **1.00** however the entity had been
+   * found. A name matched on rung 4 (`0.55–0.85`) or rung 5 (`0.60–0.85`) therefore auto-applied a
+   * category at 0.90+, which is the opposite of what §4 promises ("rung 4 produces a candidate with a
+   * confidence, not a decision"; "this rung never auto-applies"). Fixed in 2.3.4 — see docs/04 §8.1.4.
+   */
+  const merchantResolution = lexicalMerchant ?? embeddingWinner(embeddingHit, 'MERCHANT');
+  const counterpartyResolution =
+    lexicalCounterparty ?? embeddingWinner(embeddingHit, 'COUNTERPARTY');
+  const merchant = merchantResolution?.entity ?? null;
+  const counterparty = counterpartyResolution?.entity ?? null;
 
   /**
    * `finalize` plus the resolved entities.
@@ -343,6 +419,19 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineOutcome
     ...finalize(input, stage),
     resolvedMerchantId: merchant?.id ?? null,
     resolvedCounterpartyId: counterparty?.id ?? null,
+    // Kept separately from the resolved pair: the pair says *what* the row records, this says that
+    // rung 5 is what found it, which is what an audit has to be able to tell apart (docs/04 §8.1.2's
+    // distinction between resolution and decision, one rung further down).
+    embeddingEntity:
+      embeddingHit === null
+        ? null
+        : {
+            id: embeddingHit.id,
+            kind: embeddingHit.kind,
+            name: embeddingHit.name,
+            cosine: embeddingHit.cosine,
+            model: embeddingHit.model,
+          },
   });
 
   // ── Stage 4: rules and keywords (docs/04 §5). Keywords are the implicit priority-1000 tier, so
@@ -406,7 +495,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineOutcome
   // intent; a default is a preference, so it sits below every rule and keyword and above the model.
   // This is also what makes `MERCHANT_DEFAULT` / `COUNTERPARTY_DEFAULT` reachable at all: the CHECK
   // constraint lists them and nothing else in the codebase produces them.
-  const defaulted = fromEntityDefault(merchant, counterparty);
+  const defaulted = fromEntityDefault(merchantResolution, counterpartyResolution);
   if (defaulted !== null) {
     return finish({
       decidedBy: defaulted.decidedBy,
@@ -415,7 +504,8 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineOutcome
       ruleName: null,
       entityId: defaulted.entity.id,
       entityName: defaulted.entity.name,
-      confidence: calibratedConfidenceFromStorage(1),
+      // The rung that resolved the entity, not a blanket 1.00 — see docs/04 §8.1.4.
+      confidence: calibratedConfidenceFromStorage(defaulted.confidence),
       rawConfidence: null,
       candidates: [...ruleLosers, ...defaulted.losers],
       rung: 'FULL_PIPELINE',
@@ -562,6 +652,7 @@ function finalize(input: PipelineInput, stage: StageDecision): PipelineOutcome {
     // Filled in by `finish`, which is the only place that knows what resolved. Defaulting here keeps
     // `finalize` callable on its own — and a `null` is honest for a caller that resolved nothing.
     resolvedMerchantId: null,
+    embeddingEntity: null,
     resolvedCounterpartyId: null,
     rationale: explainDecision({
       decidedBy: stage.decidedBy,
@@ -580,7 +671,22 @@ interface EntityDefault {
   readonly decidedBy: 'MERCHANT_DEFAULT' | 'COUNTERPARTY_DEFAULT';
   readonly categoryId: string;
   readonly entity: { id: string; name: string };
+  /** The rung's confidence for the entity that decided — §4's band, not a constant. */
+  readonly confidence: number;
   readonly losers: readonly AuditCandidate[];
+}
+
+/**
+ * An entity that resolved, plus the **rung's** confidence (docs/04 §4).
+ *
+ * The two travel together because the resolution stage's output is a *candidate*: §4 fixes a
+ * confidence per rung precisely so the caller's gate can put the result in the right lane. Dropping
+ * the confidence here is what silently promoted a trigram or embedding guess to an auto-applied
+ * category before 2.3.4 (docs/04 §8.1.4).
+ */
+interface ResolvedEntity {
+  readonly entity: EntityCandidate;
+  readonly confidence: number;
 }
 
 /**
@@ -592,26 +698,30 @@ interface EntityDefault {
  * as a losing candidate. Deterministic, documented, and visible in `candidates`.
  */
 function fromEntityDefault(
-  merchant: EntityCandidate | null,
-  counterparty: EntityCandidate | null,
+  merchant: ResolvedEntity | null,
+  counterparty: ResolvedEntity | null,
 ): EntityDefault | null {
-  if (merchant !== null && merchant.defaultCategoryId) {
+  if (merchant !== null && merchant.entity.defaultCategoryId) {
     return {
       decidedBy: 'MERCHANT_DEFAULT',
-      categoryId: merchant.defaultCategoryId,
-      entity: { id: merchant.id, name: merchant.name },
+      categoryId: merchant.entity.defaultCategoryId,
+      entity: { id: merchant.entity.id, name: merchant.entity.name },
+      // The rung's own confidence, not 1.00: an entity's standing preference is only as trustworthy
+      // as the match that found the entity (docs/04 §4, §8.1.4).
+      confidence: merchant.confidence,
       losers: [
-        ...(counterparty ? [entityCandidateAudit(counterparty, 'COUNTERPARTY_DEFAULT')] : []),
-        ...entityLosers(merchant, counterparty),
+        ...(counterparty ? [entityCandidateAudit(counterparty.entity, 'COUNTERPARTY_DEFAULT')] : []),
+        ...entityLosers(merchant.entity, counterparty?.entity ?? null),
       ],
     };
   }
-  if (counterparty !== null && counterparty.defaultCategoryId) {
+  if (counterparty !== null && counterparty.entity.defaultCategoryId) {
     return {
       decidedBy: 'COUNTERPARTY_DEFAULT',
-      categoryId: counterparty.defaultCategoryId,
-      entity: { id: counterparty.id, name: counterparty.name },
-      losers: entityLosers(merchant, counterparty),
+      categoryId: counterparty.entity.defaultCategoryId,
+      entity: { id: counterparty.entity.id, name: counterparty.entity.name },
+      confidence: counterparty.confidence,
+      losers: entityLosers(merchant?.entity ?? null, counterparty.entity),
     };
   }
   return null;
@@ -626,6 +736,17 @@ function entityLosers(
     ...(merchant ? [entityCandidateAudit(merchant, 'MERCHANT_DEFAULT')] : []),
     ...(counterparty ? [entityCandidateAudit(counterparty, 'COUNTERPARTY_DEFAULT')] : []),
   ];
+}
+
+/** A rung-5 candidate in the shape the resolution stage works with. */
+function fromEmbeddingCandidate(candidate: EmbeddingEntityCandidate): EntityCandidate {
+  return {
+    id: candidate.id,
+    kind: candidate.kind,
+    name: candidate.name,
+    aliases: [],
+    defaultCategoryId: candidate.defaultCategoryId,
+  };
 }
 
 function entityCandidateAudit(
@@ -660,8 +781,29 @@ function amountCandidates(fragment: TransactionFragment): readonly AuditCandidat
 // Mapping helpers
 // ---------------------------------------------------------------------------------------------
 
-function resolutionWinner(resolution: EntityResolutionResult): EntityCandidate | null {
-  return resolution.resolved ? resolution.entity : null;
+function resolutionWinner(resolution: EntityResolutionResult): ResolvedEntity | null {
+  if (!resolution.resolved || resolution.entity === null) return null;
+  // `packages/nlp` sets the pair together, so a `resolved` result always has a confidence; the `?? 0`
+  // is the ask lane rather than a confident number if that ever stopped being true.
+  return { entity: resolution.entity, confidence: resolution.confidence ?? 0 };
+}
+
+/**
+ * Rung 5's winner in the same shape, with its confidence from §4's embedding band.
+ *
+ * `confidenceForCosine` is imported rather than re-derived so the band has exactly one definition —
+ * and because its **ceiling is 0.85**, which is the structural reason a rung-5 hit can never
+ * auto-apply (ADR-009's 0.90 floor is out of reach by construction, ADR-021).
+ */
+function embeddingWinner(
+  embedding: EmbeddingEntityCandidate | null,
+  kind: 'MERCHANT' | 'COUNTERPARTY',
+): ResolvedEntity | null {
+  if (embedding === null || embedding.kind !== kind) return null;
+  return {
+    entity: fromEmbeddingCandidate(embedding),
+    confidence: confidenceForCosine(embedding.cosine),
+  };
 }
 
 function toNlpCandidates(
