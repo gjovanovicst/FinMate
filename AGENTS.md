@@ -301,11 +301,14 @@ A change is not done until (doc 09 §8):
   into the same sort as an implicit tier at priority 1000, so ordering on `created_at` ahead of
   specificity would let insertion time decide whether §5.3.4's "explicit rules outrank keywords"
   holds. Priority is always compared first, so specificity can never override it.
-- **`packages/domain/src/allocation.spec.ts` has one deliberately slow test and its own 30 s timeout.**
-  The exhaustive I-1 loop (5001 totals × 6 ratio sets) measures ~4.9–5.2 s under `pnpm test`, against
-  Vitest's 5000 ms default — so it failed intermittently for reasons unrelated to money. The budget is
-  declared on that `it` rather than by raising `testTimeout` globally, so a genuinely hung test
-  elsewhere still fails fast. Do not lower it or delete the comment.
+- **`packages/domain` sets `testTimeout: 30_000`, and that is load-bearing.** Its test style is
+  deliberately exhaustive over ranges rather than example-based — that is what 100 % branch coverage on
+  money math requires. Two tests are therefore multi-second: the I-1 allocation loop (5001 totals × 6
+  ratio sets) and the `instantForLocalNoon` round-trip (every day of 2026 × 5 zones). Under `pnpm test`
+  with seven projects in parallel they measured **4886–5881 ms against Vitest's 5000 ms default**, so
+  both failed intermittently, on the money path, for reasons unrelated to money. The budget is
+  package-level because the *next* exhaustive test would otherwise reintroduce the same flake. Do not
+  lower it; 30 s is only reached by a test that is genuinely hung, which still fails the run.
 - **`runWithTenant` aside, never use the outer client inside an interactive `$transaction`.** Each
   inner query then waits for a second connection from the same pool and stalls until the transaction
   times out — surfacing only as an opaque INTERNAL. Always use the `tx` the callback receives.

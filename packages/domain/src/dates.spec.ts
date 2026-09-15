@@ -40,6 +40,7 @@ function localHour(instant: Date, timeZone: string): number {
 }
 
 describe('instantForLocalNoon — round-trip', () => {
+  /** Exhaustive over a year × five zones, so it is multi-second; the package timeout covers it. */
   it('reads back as the same calendar day in every zone, for every day of 2026', () => {
     for (const timeZone of ZONES) {
       for (const date of calendarDays(2026)) {
