@@ -61,6 +61,12 @@ export const routes: Routes = [
     title: 'Transakcije',
   },
   {
+    path: 'goals',
+    canActivate: [authenticatedGuard],
+    loadComponent: () => import('./features/goals/goals.component').then((m) => m.GoalsComponent),
+    title: 'Ciljevi',
+  },
+  {
     path: 'analytics',
     canActivate: [authenticatedGuard],
     loadComponent: () =>

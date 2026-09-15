@@ -152,8 +152,8 @@ describe('AppComponent nav (mounted)', () => {
     const panel = navLinks(fixture, '.nav__more-panel a').map((link) => link.getAttribute('href'));
     expect(panel).toEqual([
       '/budgets',
-      // docs/02 §2.2's Uvid group sits between Plan and the library, in the document's own order:
-      // Analitika then Asistent.
+      '/goals',
+      // The Uvid group follows Plan, in the document's own order.
       '/analytics',
       '/assistant',
       '/accounts',
@@ -212,6 +212,7 @@ describe('AppComponent nav (mounted)', () => {
       '/capture',
       '/review',
       '/budgets',
+      '/goals',
       '/analytics',
       '/assistant',
       '/accounts',

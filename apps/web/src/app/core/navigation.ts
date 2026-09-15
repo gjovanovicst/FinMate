@@ -42,6 +42,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { path: '/capture', labelKey: 'nav.capture', icon: '➕', primary: true },
   { path: '/review', labelKey: 'nav.review', icon: '🔎', primary: true, badged: true },
   { path: '/budgets', labelKey: 'nav.budgets', icon: '🎯', primary: false },
+  // docs/02 §2.1 files goals under `Više › Plan`, beside Budgets and Recurring rules.
+  { path: '/goals', labelKey: 'nav.goals', icon: '🐖', primary: false },
   // docs/02 §2.2's **Uvid** group (Analitika, Asistent), right after Plan and before the library.
   { path: '/analytics', labelKey: 'nav.analytics', icon: '📈', primary: false },
   { path: '/assistant', labelKey: 'nav.assistant', icon: '💬', primary: false },

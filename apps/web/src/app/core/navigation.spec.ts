@@ -35,8 +35,9 @@ describe('navigation destinations', () => {
     expect(overflow).toContain('/accounts');
     expect(overflow).toEqual([
       '/budgets',
-      // docs/02 §2.2's Uvid group sits between Plan and the library, in the document's own order:
-      // Analitika then Asistent.
+      // Plan holds Budgets, Goals and Recurring rules (docs/02 §2.1); the Uvid group follows, in the
+      // document's own order: Analitika then Asistent.
+      '/goals',
       '/analytics',
       '/assistant',
       '/accounts',

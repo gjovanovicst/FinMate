@@ -604,6 +604,27 @@ and is never editable ([03 §6](03-domain-model.md), ADR-001). A goal with no `t
 progress and no rate, plus a nudge to add a date. Contributions are `goal_contributions`, not
 Transactions — stated once inline to prevent double-counting confusion.
 
+> **Build state (task 3.3.2).** `/goals` ships the card list, the create form, an inline edit of the
+> target and the deadline, the contribution form with its per-goal history, removing a contribution,
+> and archive/restore. Every figure comes from the API — `contributed`, `remaining`, `progress` and
+> `requiredPerMonth` are derived on read (docs/03 §6) — and the required monthly amount is **rendered,
+> never an input**, which is this section's own rule stated as a type: there is no field for it in the
+> create or edit form. The backend recomputes `ACHIEVED` from the contributions on every write, so a
+> card cannot read "achieved" with 0 % saved after a mistaken contribution is removed.
+>
+> **Deliberate differences from the drawing.** The contribution list shows each contribution's **note**
+> where §4.13 draws "(Kartica)"/"(Gotovina)": a contribution has no Account column (`goal_contributions`
+> carries none, and neither does the SDL), so inventing a method label would claim something nothing
+> recorded — the note is free text the user writes, and the wireframe's parenthetical is aspirational.
+> The card offers **Archive**, not delete: a soft-deleted goal takes its contribution history out of
+> view, and *Arhiviraj* is the wireframe's own action — deleting a goal stays API-only. There is no
+> Category on a goal either (the schema has none), so the wireframe's implicit "what am I saving for"
+> grouping does not exist. Amounts are read through the capture path's own `parseAmount`, so
+> `120.000` means the same thing here as everywhere else; the currency label is the Household ledger
+> currency, but the screen can only learn it from a goal the API returned and falls back to `RSD` until
+> `activeHousehold` (docs/06 §4.1) or a multi-currency ledger exists — the same gap the budgets screen
+> has. **The screen has not been looked at by a human at any width** (docs/02 §9's standing gap).
+
 ### 4.14 Recurring rules — F-16
 
 ```text
