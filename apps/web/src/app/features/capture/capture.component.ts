@@ -21,11 +21,14 @@ import {
   needsAmountChoice,
   parseLocally,
   provenanceOf,
+  summariseCommit,
+  suspectTransactionIds,
   toCommitRows,
   todayLocally,
   type CaptureLane,
   type CaptureProposal,
   type CaptureRow,
+  type CommitSummary,
 } from './capture.view';
 
 /** The preview query (docs/06 §5.1). `captureParse` is a mutation because it writes audit rows. */
@@ -66,11 +69,25 @@ const CAPTURE_COMMIT = /* GraphQL */ `
       __typename
       ... on CaptureCommitSuccessModel {
         replayed
+        reviewQueueCount
         committed {
           clientRowId
           wasReplayed
           transaction {
             id
+          }
+        }
+        duplicateSuspects {
+          clientRowId
+          transactionId
+          existingTransactionId
+          similarity
+          matchedOn
+          existingTransaction {
+            id
+            description
+            occurredLocalDate
+            amount
           }
         }
       }
@@ -85,6 +102,18 @@ const CAPTURE_COMMIT = /* GraphQL */ `
         }
       }
     }
+  }
+`;
+
+/**
+ * The undo toast's one call (docs/02 §3).
+ *
+ * It returns how many rows it actually undid rather than a boolean, so "already undone" — a second
+ * tap, or another device having got there first — is reportable instead of being presented as success.
+ */
+const UNDO_CAPTURE = /* GraphQL */ `
+  mutation UndoCapture($transactionIds: [ID!]!) {
+    undoCapture(transactionIds: $transactionIds)
   }
 `;
 
@@ -163,6 +192,19 @@ interface CommitResponse {
       readonly wasReplayed: boolean;
       readonly transaction: { readonly id: string };
     }[];
+    readonly duplicateSuspects?: readonly {
+      readonly clientRowId: string;
+      readonly transactionId: string;
+      readonly existingTransactionId: string;
+      readonly similarity: number;
+      readonly matchedOn: readonly string[];
+      readonly existingTransaction: {
+        readonly id: string;
+        readonly description: string;
+        readonly occurredLocalDate: string;
+        readonly amount: { readonly amountMinor: string; readonly currency: string };
+      };
+    }[];
     readonly code?: string;
     readonly message?: string;
     readonly rejected?: readonly {
@@ -225,6 +267,52 @@ interface RowError {
     }
     @if (saved(); as summary) {
       <p class="success" role="status">{{ summary }}</p>
+    }
+
+    @if (lastCommit(); as commit) {
+      <section class="panel panel--after" aria-live="polite">
+        @if (commit.committedIds.length > 0) {
+          <div class="after__actions">
+            <button class="btn" type="button" [disabled]="undoing()" (click)="undoAll()">
+              {{ undoing() ? i18n.t('capture.undoing') : i18n.t('capture.undo') }}
+            </button>
+            <a class="link" routerLink="/transactions">{{ i18n.t('nav.transactions') }}</a>
+          </div>
+        }
+
+        @if (commit.suspects.length > 0) {
+          <h2 class="panel__title">{{ i18n.t('capture.duplicateTitle') }}</h2>
+          <p class="panel__body">{{ i18n.t('capture.duplicateBody') }}</p>
+          <ul class="suspects">
+            @for (suspect of commit.suspects; track suspect.transactionId) {
+              <li class="suspect">
+                <div class="suspect__main">
+                  <span class="suspect__row">{{ suspect.description }}</span>
+                  <span class="suspect__existing">
+                    {{
+                      i18n.t('capture.duplicateAgainst', {
+                        description: suspect.existing.description,
+                        date: suspect.existing.occurredLocalDate
+                      })
+                    }}
+                  </span>
+                  <span class="suspect__why">{{ matchReason(suspect.matchedOn) }}</span>
+                </div>
+                <div class="suspect__actions">
+                  <button class="btn" type="button" [disabled]="undoing()" (click)="undo([suspect.transactionId])">
+                    {{ i18n.t('capture.undoOne') }}
+                  </button>
+                </div>
+              </li>
+            }
+          </ul>
+          @if (commit.suspects.length > 1) {
+            <button class="btn" type="button" [disabled]="undoing()" (click)="undoDuplicates()">
+              {{ i18n.t('capture.undoDuplicates') }}
+            </button>
+          }
+        }
+      </section>
     }
 
     @if (noAccounts()) {
@@ -493,6 +581,47 @@ interface RowError {
       .success {
         border-color: var(--color-success, #15803d);
       }
+      .panel--after {
+        border-inline-start: 3px solid var(--color-warning, #b45309);
+      }
+      .after__actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--space-3);
+        margin-block-end: var(--space-2);
+      }
+      .suspects {
+        list-style: none;
+        margin: 0 0 var(--space-2);
+        padding: 0;
+        display: grid;
+        gap: var(--space-2);
+      }
+      .suspect {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-2);
+        padding: var(--space-2);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+      }
+      .suspect__main {
+        display: grid;
+        gap: var(--space-1);
+        min-inline-size: 0;
+      }
+      .suspect__row {
+        overflow-wrap: anywhere;
+      }
+      .suspect__existing,
+      .suspect__why {
+        font-size: var(--text-xs);
+        color: var(--color-text-subtle);
+        overflow-wrap: anywhere;
+      }
       .panel {
         margin-block-end: var(--space-4);
         padding: var(--space-4);
@@ -744,6 +873,15 @@ export class CaptureComponent {
   readonly noAccounts = signal(false);
   readonly rejected = signal<readonly RowError[]>([]);
   readonly accountId = signal('');
+  /**
+   * What the last successful commit left behind (docs/06 §5.2.2, docs/02 §3).
+   *
+   * The preview is cleared on success, so the undo affordance and the duplicate chips have to be
+   * built from a snapshot taken at commit time — an undo button that reads the live preview would
+   * have nothing to act on the moment the user confirmed.
+   */
+  readonly lastCommit = signal<CommitSummary | null>(null);
+  readonly undoing = signal(false);
 
   /** The preview this draft belongs to, sent back with the commit so a stale one is refused. */
   private parseId: string | null = null;
@@ -996,19 +1134,22 @@ export class CaptureComponent {
     this.saved.set(null);
     this.rejected.set([]);
     this.rowErrors.set(new Map());
+    this.lastCommit.set(null);
   }
 
   /** One `captureCommit` call for the whole batch (docs/06 §5.2). Atomic and idempotent. */
   async commit(): Promise<void> {
-    const payload = toCommitRows(this.rows());
+    const rowsAtCommit = this.rows();
+    const payload = toCommitRows(rowsAtCommit);
     if (payload.length === 0) return;
-    const blockedBefore = blockedRows(this.rows()).length;
+    const blockedBefore = blockedRows(rowsAtCommit).length;
 
     this.busy.set(true);
     this.error.set(null);
     this.saved.set(null);
     this.rejected.set([]);
     this.rowErrors.set(new Map());
+    this.lastCommit.set(null);
 
     try {
       const response = await this.graphql.query<CommitResponse>(CAPTURE_COMMIT, {
@@ -1034,18 +1175,26 @@ export class CaptureComponent {
         return;
       }
 
-      const count = result.committed?.length ?? 0;
+      const committed = result.committed ?? [];
+      const summary = summariseCommit({
+        // The rows as they were when the user pressed Confirm, not `this.rows()` afterwards: the
+        // preview is about to be cleared, and the suspects' labels come from it.
+        rows: rowsAtCommit,
+        committed,
+        suspects: result.duplicateSuspects ?? [],
+        replayed: result.replayed === true,
+        reviewCount: blockedBefore,
+      });
+      this.lastCommit.set(summary);
+
       const replay = result.replayed === true;
-      const summary = replay
+      const head = replay
         ? this.i18n.t('capture.savedReplay')
-        : this.i18n.t('capture.saved', { count });
+        : this.i18n.t('capture.saved', { count: committed.length });
       this.saved.set(
-        // The blocked rows were counted *before* the commit cleared the batch, and they are the ones
-        // the server wrote PENDING. Saying so is the difference between "it worked" and "it worked,
-        // and two of them are waiting for you".
         blockedBefore > 0
-          ? `${summary} ${this.i18n.t('capture.savedReview', { count: blockedBefore })}`
-          : summary,
+          ? `${head} ${this.i18n.t('capture.savedReview', { count: blockedBefore })}`
+          : head,
       );
 
       // The field is cleared only on success: a failed commit must leave the user's text exactly
@@ -1058,6 +1207,70 @@ export class CaptureComponent {
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /**
+   * The undo toast's one call (docs/02 §3).
+   *
+   * Soft-deletes, so a mis-tap costs nothing durable: the row and its `classification_decisions`
+   * survive with `deleted_at` set. The summary is adjusted by what the API says it actually undid
+   * rather than by what was asked for, so a second tap (or another device getting there first)
+   * reports the truth instead of pretending.
+   */
+  async undo(transactionIds: readonly string[]): Promise<void> {
+    if (transactionIds.length === 0) return;
+
+    this.undoing.set(true);
+    this.error.set(null);
+    try {
+      const response = await this.graphql.query<{ readonly undoCapture: number }>(UNDO_CAPTURE, {
+        transactionIds,
+      });
+      const undone = response.undoCapture;
+      const summary = this.lastCommit();
+      if (summary !== null) {
+        const removed = new Set(transactionIds);
+        const next: CommitSummary = {
+          ...summary,
+          committedIds: summary.committedIds.filter((id) => !removed.has(id)),
+          suspects: summary.suspects.filter((suspect) => !removed.has(suspect.transactionId)),
+        };
+        // Everything is gone, so the toast has nothing left to offer and should not linger.
+        this.lastCommit.set(next.committedIds.length === 0 ? null : next);
+      }
+      this.saved.set(this.i18n.t('capture.undone', { count: undone }));
+    } catch (error) {
+      this.error.set(this.errors.for(error));
+    } finally {
+      this.undoing.set(false);
+    }
+  }
+
+  /** Undo just the rows that looked like duplicates. */
+  undoDuplicates(): void {
+    const summary = this.lastCommit();
+    if (summary === null) return;
+    void this.undo(suspectTransactionIds(summary.suspects));
+  }
+
+  /** The row ids the batch toast undoes. */
+  undoAll(): void {
+    const summary = this.lastCommit();
+    if (summary === null) return;
+    void this.undo(summary.committedIds);
+  }
+
+  /** A human-readable reason for the chip, from the API's `matchedOn` vocabulary. */
+  matchReason(matchedOn: readonly string[]): string {
+    const keys: Record<string, TranslationKey> = {
+      amount: 'capture.match.amount',
+      merchant: 'capture.match.merchant',
+      description: 'capture.match.description',
+      date: 'capture.match.date',
+    };
+    return matchedOn
+      .map((token) => (keys[token] ? this.i18n.t(keys[token]!) : token))
+      .join(', ');
   }
 
   /** Fragments the user removed, so their decisions are labelled rejected (docs/04 §6.4). */

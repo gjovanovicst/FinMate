@@ -28,6 +28,12 @@ import {
 import { applyConfidenceGate, resolveLaneThresholds } from '../classification/confidence-gate';
 import { TagsService } from '../taxonomy/tags.service';
 import { CaptureRejectionCode } from './capture-commit.model';
+import {
+  DUPLICATE_DATE_TOLERANCE_DAYS,
+  DUPLICATE_SUBMISSION_WINDOW_MS,
+  findDuplicateSubject,
+  type DuplicateCandidate,
+} from './duplicate-detection';
 import { transactionsToCsv } from './transactions.csv';
 import {
   CategorySource,
@@ -163,9 +169,21 @@ export interface CaptureCommittedRow {
 export interface CaptureCommitOutcome {
   readonly committed: readonly CaptureCommittedRow[];
   readonly skipped: readonly { readonly clientRowId: string; readonly reason: string }[];
+  /** docs/06 §5.2.2's advisory third mechanism. Never a refusal — the row is already written. */
+  readonly duplicateSuspects: readonly DuplicateSuspectRow[];
   readonly replayed: boolean;
   readonly cursor: string;
   readonly reviewQueueCount: number;
+}
+
+/** One just-written row that looks like a repeat of an existing Transaction. */
+export interface DuplicateSuspectRow {
+  readonly clientRowId: string;
+  readonly transactionId: string;
+  readonly existingTransactionId: string;
+  readonly existingTransaction: TransactionModel;
+  readonly similarity: number;
+  readonly matchedOn: readonly string[];
 }
 
 /**
@@ -990,6 +1008,11 @@ export class TransactionsService {
 
     committed.push(...written);
 
+    // docs/06 §5.2.2's third mechanism. Read-only and advisory: the rows are already committed, and
+    // nothing here can un-commit them. A failure to compute a suspect must therefore not fail the
+    // capture — the money is fine and a missing chip is not worth losing an entry over.
+    const duplicateSuspects = await this.findDuplicateSuspects(householdId, written);
+
     const reviewQueueCount = await this.prisma.client.transactions.count({
       where: { household_id: householdId, needs_review: true, deleted_at: null },
     });
@@ -1002,12 +1025,147 @@ export class TransactionsService {
     return {
       committed,
       skipped: [],
+      duplicateSuspects,
       // docs/06 §5.2: true only when the *whole* call was a replay. A mixed batch wrote something, so
       // it is not a replay however many of its rows were.
       replayed: committed.length > 0 && committed.every((row) => row.wasReplayed),
       cursor: cursor ?? '',
       reviewQueueCount,
     };
+  }
+
+  /**
+   * `undoCapture` — soft-delete the Transactions a commit just wrote (docs/02 §3's undo toast).
+   *
+   * **One call, and all-or-nothing.** The client holds the ids from the commit response, and undoing a
+   * toast that only half-applied would be worse than not offering it: the user would be left with two
+   * rows instead of three and no way to tell which. So the ids are validated first and the delete is
+   * one `updateMany` inside a transaction.
+   *
+   * **Soft, never hard** (docs/03 §3.4): `deleted_at` is set, the row and its audit trail survive, and
+   * a later Restore is a matter of clearing the column. Financial rows are never destroyed by a
+   * mis-tap.
+   *
+   * `household_id` is in the predicate as well as in the ids, so an id from another Household matches
+   * nothing rather than deleting someone else's row, and the count returned is the honest "how many
+   * were actually undone" rather than "how many you named".
+   */
+  async undoCapture(householdId: string, transactionIds: readonly string[]): Promise<number> {
+    const ids = [...new Set(transactionIds)];
+    if (ids.length === 0) throw new ApiError('VALIDATION_FAILED', 'Nothing to undo.');
+
+    const now = new Date();
+    return this.prisma.client.$transaction(async (tx) => {
+      const result = await tx.transactions.updateMany({
+        where: { id: { in: ids }, household_id: householdId, deleted_at: null },
+        data: { deleted_at: now, updated_at: now },
+      });
+      return result.count;
+    });
+  }
+
+  /**
+   * Find the duplicate suspects among rows a commit just wrote.
+   *
+   * **One extra query for the whole batch**, not one per row: the comparison set is bounded by the
+   * submission window, the accounts involved, the amounts involved and a ±2-day date span, so a single
+   * read returns every candidate any row could match.
+   *
+   * The just-written rows are *inside* that set, which is deliberate — two identical rows in one batch
+   * are the clearest duplicate there is, and excluding them would miss exactly the mistake a bulk
+   * entry makes. `findDuplicateSubject` never matches a row against itself.
+   */
+  private async findDuplicateSuspects(
+    householdId: string,
+    written: readonly CaptureCommittedRow[],
+  ): Promise<DuplicateSuspectRow[]> {
+    const subjects = written.filter((row) => !row.wasReplayed);
+    if (subjects.length === 0) return [];
+
+    const oldest = Math.min(...subjects.map((row) => row.transaction.createdAt.getTime()));
+    const days = subjects.map((row) => row.transaction.occurredLocalDate);
+    const pad = (day: string, by: number): Date => {
+      const shifted = new Date(`${day}T00:00:00.000Z`);
+      shifted.setUTCDate(shifted.getUTCDate() + by);
+      return shifted;
+    };
+    const sortedDays = [...days].sort();
+
+    const candidates = await this.prisma.client.transactions.findMany({
+      where: {
+        household_id: householdId,
+        deleted_at: null,
+        // `<> VOID`, not `= CONFIRMED` — a deliberate correction to docs/06 §5.2.2, recorded there.
+        //
+        // The spec said `CONFIRMED`, and taken literally that makes this mechanism unreachable for
+        // exactly the household that needs it most: with no keywords, no rules and no AI provider
+        // (F-13's cold start, and every fresh signup today) *every* captured row is written PENDING,
+        // so there would never be a candidate and a user could type `Lidl 2000` twice in a row with no
+        // warning at all. Status is not what makes a row a duplicate — the user's two keystrokes are —
+        // and a PENDING row is still money the user recorded (I-7 excludes it from derived figures, not
+        // from the ledger's own history).
+        //
+        // VOID stays excluded: the user has said that row never happened, so resemblance to it is not
+        // a reason to warn about anything.
+        status: { not: TransactionStatus.VOID },
+        account_id: { in: [...new Set(subjects.map((row) => row.transaction.accountId))] },
+        kind: { in: [...new Set(subjects.map((row) => row.transaction.kind))] },
+        amount_minor: { in: [...new Set(subjects.map((row) => row.transaction.amount.amountMinor))] },
+        created_at: { gte: new Date(oldest - DUPLICATE_SUBMISSION_WINDOW_MS) },
+        occurred_local_date: {
+          gte: pad(sortedDays[0]!, -DUPLICATE_DATE_TOLERANCE_DAYS),
+          lte: pad(sortedDays[sortedDays.length - 1]!, DUPLICATE_DATE_TOLERANCE_DAYS),
+        },
+      },
+      include: { transaction_splits: true, transaction_tags: { include: { tags: true } } },
+    });
+
+    const pool: DuplicateCandidate[] = candidates.map((row) => ({
+      id: row.id,
+      accountId: row.account_id,
+      kind: row.kind,
+      amountMinor: row.amount_minor,
+      occurredLocalDate: row.occurred_local_date.toISOString().slice(0, 10),
+      description: row.description,
+      merchantId: row.merchant_id,
+      createdAt: row.created_at,
+    }));
+    const byId = new Map(candidates.map((row) => [row.id, row]));
+
+    const suspects: DuplicateSuspectRow[] = [];
+    for (const row of subjects) {
+      const transaction = row.transaction;
+      const match = findDuplicateSubject({
+        subject: {
+          transactionId: transaction.id,
+          accountId: transaction.accountId,
+          kind: transaction.kind,
+          amountMinor: transaction.amount.amountMinor,
+          occurredLocalDate: transaction.occurredLocalDate,
+          // The stored description, not the user's draft: they may have edited it after the preview,
+          // and the row is what future comparisons will see.
+          description: transaction.description,
+          merchantId: transaction.merchantId,
+          createdAt: transaction.createdAt,
+        },
+        candidates: pool,
+      });
+
+      if (match === null) continue;
+      const existing = byId.get(match.existingTransactionId);
+      if (existing === undefined) continue;
+
+      suspects.push({
+        clientRowId: row.clientRowId,
+        transactionId: transaction.id,
+        existingTransactionId: existing.id,
+        existingTransaction: this.toModel(existing),
+        similarity: match.similarity,
+        matchedOn: match.matchedOn,
+      });
+    }
+
+    return suspects;
   }
 
   /**

@@ -1859,12 +1859,40 @@ shipped:
 | **Duplicate suspect** | computed | 60-second window (configurable) | *User-intent dedupe.* Two **genuinely different** submissions of `Lidl 2000`. Not blocked — flagged. |
 
 Duplicate-suspect matching rules — a row is a suspect when **all** of the following hold against an
-existing `CONFIRMED`, non-deleted transaction:
+existing non-deleted transaction that is **not `VOID`**:
 
 1. same `household_id` (implicit) and same `account_id`;
 2. same `kind` and identical `amount_minor`;
 3. `occurred_local_date` within ±2 days;
 4. normalised `description` trigram similarity ≥ 0.85 **or** identical resolved `merchant_id`.
+
+> **Corrections and clarifications (task 2.2.5).** Three things were ambiguous or wrong when the
+> mechanism was built, and the implementation is the record of how they were resolved.
+>
+> **1. `CONFIRMED` → non-`VOID`.** Rule 0 originally read *"an existing `CONFIRMED`, non-deleted
+> transaction"*. Taken literally that makes the whole mechanism unreachable for the household that
+> needs it most: with no keywords, no rules and no AI provider — F-13's cold start, and every fresh
+> signup today — *every* captured row is written `PENDING`, so no candidate would ever exist and a
+> user could type `Lidl 2000` twice in a row with no warning at all. Status is not what makes a row a
+> duplicate; the user's two submissions are. `VOID` stays excluded, because the user has said that row
+> never happened, and `deleted_at IS NOT NULL` stays excluded for the same reason.
+>
+> **2. Two windows, not one.** The table above says "60-second window (configurable)" while rule 3
+> says ±2 days, and [02 §3](02-ux-flows-and-screens.md) says the same `occurred_local_date` "within
+> 5 minutes". These answer two different questions and both survive: the **submission** window bounds
+> how long ago the *existing* row was created (`created_at`), and the **date tolerance** bounds how far
+> apart the rows claim the money moved (`occurred_local_date`). The submission window is **5 minutes**
+> — the UX-facing number, which strictly contains the 60-second one — and it is only safe to be
+> generous *because* the mechanism never blocks a row. A blocking version would have to take the
+> tighter window. The three numbers live in `duplicate-detection.ts` as named constants so a later
+> settings task can make them per-household without touching the logic.
+>
+> **3. Symmetric, per-row reporting.** Two identical rows in one batch are reported from **both**
+> sides: each names the other. That is rule 1's *"a row is a suspect when…"* applied literally, and it
+> avoids asserting which of the two the user "meant", which the ledger cannot know.
+>
+> `duplicateSuspects` is present and is `[]` when the check ran and found nothing — the two are
+> distinguishable because the check always runs on a commit that wrote something.
 
 Behaviour on a suspect: the row **is written** (the user may legitimately buy the same thing twice), the
 payload lists it in `duplicateSuspects`, and the UI offers a one-tap undo. It is never a hard rejection:
@@ -1872,9 +1900,13 @@ blocking a legitimate second purchase is a worse failure than showing an unneces
 ago — undo?" chip, and [01 §6](01-product-requirements.md) says *"I am warned … rather than silently
 creating it"*, not *"I am prevented"*.
 
-> **Build state (task 2.2.4).** The first two mechanisms are implemented. The duplicate-suspect
-> mechanism is **task 2.2.5** and is deliberately absent rather than returning an empty list; see
-> [§5.2.4](#524-implementation-deviations-task-224).
+The undo is one call for the whole batch, so a toast cannot half-apply:
+
+```graphql
+# Soft-deletes; never a hard delete (03 §3.4). Ids outside this Household match nothing.
+# Returns how many were actually undone, so "already undone" is reportable rather than assumed.
+undoCapture(transactionIds: [UUID!]!): Int!
+```
 
 ```graphql
 type DuplicateSuspect {
@@ -1882,8 +1914,8 @@ type DuplicateSuspect {
   transactionId: UUID!               # the row just written
   existingTransactionId: UUID!
   existingTransaction: Transaction!
-  similarity: Float!
-  matchedOn: [String!]!              # ["amount","merchant","date"]
+  similarity: Float!                 # folded-description trigram similarity, reported even for a merchant match
+  matchedOn: [String!]!              # ["amount","description","date"] — amount and date are always present
 }
 ```
 
@@ -1904,7 +1936,7 @@ type DashboardDelta {
 }
 ```
 
-#### 5.2.4 Implementation deviations (task 2.2.4)
+#### 5.2.4 Implementation deviations (tasks 2.2.4–2.2.5)
 
 The write half shipped in `apps/api/src/modules/ledger/transactions.service.ts`
 (`captureCommit`), with the GraphQL surface in `capture-commit.model.ts` and the mutation on
@@ -1915,12 +1947,13 @@ The write half shipped in `apps/api/src/modules/ledger/transactions.service.ts`
 | `union CaptureCommitResult = CaptureCommitSuccess \| CaptureCommitRejected \| ConflictError \| RateLimitedError` | Two arms: `CaptureCommitSuccessModel \| CaptureCommitRejectedModel` | `CONFLICT` and `RATE_LIMITED` already travel as typed GraphQL errors on `extensions.code` (`ApiError` → `AllExceptionsFilter`), which every client branches on to refresh a session. A second representation of the same code in the same schema would be two sources of truth for one contract. A **row** rejection is different in kind — a successful round trip carrying per-row diagnostics — so it stays a union arm. |
 | `code: ErrorCode!` | `code: CaptureRejectionCode!` (`VALIDATION_FAILED`, `NOT_FOUND`, `CONFLICT`) | §3.1 declares no global `ErrorCode` enum, so `ErrorCode` was an undeclared type. The enum is scoped to the field that uses it rather than committing the schema to a global error enum here. |
 | `type CaptureCommitSuccess` | `type CaptureCommitSuccessModel` | Every GraphQL object type in this build carries the `Model` suffix (`TransactionModel`, `ProposalModel`, …). Renaming one type would make the schema inconsistent with itself. |
-| `duplicateSuspects: [DuplicateSuspect!]!` | **Not built** | Task 2.2.5. Publishing the field now would return an empty list for both "checked and found none" and "never checked" — different facts that a client cannot tell apart. |
+| `duplicateSuspects: [DuplicateSuspect!]!` | **Built** (task 2.2.5) | See §5.2.2's corrections: the comparison is against non-`VOID` rows, and the submission window is 5 minutes. |
 | `dashboardDelta: DashboardDelta!` | **Not built**; `reviewQueueCount: Int!` and `cursor: ID!` are on the success payload | §5.2.3's delta is a caching optimisation for a client with a normalised store. This client refetches `dashboard`, which already exists as one round trip, on a screen the user is leaving. `reviewQueueCount` is the one value capture itself changes and is cheap to compute. |
 | `occurredOn: Date` | `occurredOn: LocalDate` | The codebase's calendar-day scalar; `Date` here would be an instant and would reintroduce the timezone bug I-2 exists to prevent. |
 | row input has no `splits` | confirmed | A capture row is one category; a divided Transaction is edited as parts (ADR-015, I-1). |
 | `confirmDespiteLowConfidence` writes `CONFIRMED` | also clears `needs_review` | I-8's "unless a user explicitly cleared the flag". Writing `CONFIRMED` while leaving the flag set would keep the row in the queue the user just emptied. It cannot rescue a `null` category: an uncategorised Transaction is an unanswered question, not a low-confidence answer. |
 | `discardProposalIds` | marks the decision `wasAccepted: false` with `transaction_id` still `null` | The only durable evidence that a proposal was shown and rejected rather than never generated — the negative half of §6.4's `(raw_confidence, was_accepted)` pair. |
+| undo is a client-side loop over `deleteTransaction` | `undoCapture(transactionIds: [UUID!]!): Int!` — one call, one transaction | docs/02 §3 says one call, and a toast that only half-applied would leave the user unable to tell which rows survived. It returns the count actually undone, so "already undone" is reportable rather than assumed. **The `audit_log` entry docs/02 §3 promises is not written**: the `AuditInterceptor` in [06 §3](#3-the-guard-chain) is a Phase 5 item ([08 §10.3](08-security-privacy-and-compliance.md#103-tamper-resistance) puts hash chaining there too), and writing `audit_log` rows without the chain would be half of a tamper-evidence feature. The deletion is still soft, so the rows and their `classification_decisions` survive for a later Restore. |
 
 Two behaviours worth stating because they are not visible in the SDL:
 

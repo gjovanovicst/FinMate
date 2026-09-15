@@ -363,6 +363,14 @@ export class TransactionsResolver {
           };
         }),
         skipped: [...outcome.skipped],
+        duplicateSuspects: outcome.duplicateSuspects.map((suspect) => ({
+          clientRowId: suspect.clientRowId,
+          transactionId: suspect.transactionId,
+          existingTransactionId: suspect.existingTransactionId,
+          existingTransaction: suspect.existingTransaction,
+          similarity: suspect.similarity,
+          matchedOn: [...suspect.matchedOn],
+        })),
         replayed: outcome.replayed,
         cursor: outcome.cursor,
         reviewQueueCount: outcome.reviewQueueCount,
@@ -386,6 +394,21 @@ export class TransactionsResolver {
       }
       throw error;
     }
+  }
+
+  @Mutation(() => Int, {
+    description:
+      'Soft-delete the Transactions a capture just wrote — docs/02 §3\'s undo toast, in ONE call and ' +
+      'all-or-nothing, because a toast that only half-applied would leave the user unable to tell ' +
+      'which rows survived. Returns how many were actually undone. Never a hard delete: ' +
+      '`deleted_at` is set and the row and its audit trail survive (docs/03 §3.4). Ids outside this ' +
+      'Household match nothing rather than deleting another Household\'s rows.',
+  })
+  async undoCapture(
+    @Args('transactionIds', { type: () => [ID] }) transactionIds: string[],
+    @CurrentHouseholdId() householdId: string,
+  ): Promise<number> {
+    return this.transactionsService.undoCapture(householdId, transactionIds);
   }
 
   @Query(() => [ProposedSplit], {

@@ -15,6 +15,8 @@ import {
   needsAmountChoice,
   parseLocally,
   provenanceOf,
+  summariseCommit,
+  suspectTransactionIds,
   toCommitRows,
   type CaptureProposal,
   type CaptureRow,
@@ -256,5 +258,110 @@ describe('provenanceOf', () => {
 
     const changed: CaptureRow[] = [{ ...classified[0]!, categoryId: 'cat-fuel' }];
     expect(provenanceOf(changed[0]!)).toBe('USER');
+  });
+});
+
+describe('summariseCommit', () => {
+  const existing = {
+    id: 'tx-old',
+    description: 'Lidl',
+    occurredLocalDate: '2026-09-14',
+    amount: { amountMinor: '200000', currency: 'RSD' },
+  };
+
+  it('joins a suspect back to the row the user typed', () => {
+    const rows = parse('Lidl 2000, gorivo 3500');
+    const summary = summariseCommit({
+      rows,
+      committed: [
+        { clientRowId: rows[0]!.clientRowId, transaction: { id: 'tx-new' }, wasReplayed: false },
+        { clientRowId: rows[1]!.clientRowId, transaction: { id: 'tx-other' }, wasReplayed: false },
+      ],
+      suspects: [
+        {
+          clientRowId: rows[0]!.clientRowId,
+          transactionId: 'tx-new',
+          existingTransaction: existing,
+          similarity: 1,
+          matchedOn: ['amount', 'description', 'date'],
+        },
+      ],
+      replayed: false,
+      reviewCount: 0,
+    });
+
+    expect(summary.committedIds).toEqual(['tx-new', 'tx-other']);
+    expect(summary.committedCount).toBe(2);
+    expect(summary.suspects).toHaveLength(1);
+    // The description comes from the ROW, not from the row the user is being warned about — the
+    // chip has to name what they just typed or it cannot be acted on.
+    expect(summary.suspects[0]!.description).toBe('Lidl 2000');
+    expect(summary.suspects[0]!.existing.id).toBe('tx-old');
+  });
+
+  it('still reports a suspect whose row cannot be found', () => {
+    const summary = summariseCommit({
+      rows: [],
+      committed: [],
+      suspects: [
+        {
+          clientRowId: 'gone',
+          transactionId: 'tx-new',
+          existingTransaction: existing,
+          similarity: 0.9,
+          matchedOn: ['amount', 'date'],
+        },
+      ],
+      replayed: false,
+      reviewCount: 0,
+    });
+
+    // Dropping it would silently hide a duplicate the API took the trouble to report.
+    expect(summary.suspects).toHaveLength(1);
+    expect(summary.suspects[0]!.description).toBe('Lidl');
+  });
+
+  it('carries the replay flag and the review count through', () => {
+    const summary = summariseCommit({
+      rows: [],
+      committed: [{ clientRowId: 'a', transaction: { id: 'tx-1' }, wasReplayed: true }],
+      suspects: [],
+      replayed: true,
+      reviewCount: 2,
+    });
+
+    expect(summary.replayed).toBe(true);
+    expect(summary.reviewCount).toBe(2);
+    expect(summary.suspects).toEqual([]);
+  });
+});
+
+describe('suspectTransactionIds', () => {
+  it('names the rows just written, never the earlier row they resemble, and never twice', () => {
+    const suspects = [
+      {
+        clientRowId: 'a',
+        transactionId: 'tx-1',
+        description: 'Lidl 2000',
+        existing: {} as never,
+        similarity: 1,
+        matchedOn: [] as string[],
+      },
+      // The symmetric second half of an intra-batch duplicate: same pair, other direction.
+      {
+        clientRowId: 'b',
+        transactionId: 'tx-2',
+        description: 'Lidl 2000',
+        existing: {} as never,
+        similarity: 1,
+        matchedOn: [] as string[],
+      },
+    ];
+
+    // Two identical rows in one batch produce two suspects naming the same two ids; an undo that
+    // counted them naively would report four.
+    expect(suspectTransactionIds(suspects)).toEqual(['tx-1', 'tx-2']);
+    expect(suspectTransactionIds([suspects[0]!, suspects[0]!])).toEqual(['tx-1']);
+    expect(suspectTransactionIds([])).toEqual([]);
   });
 });

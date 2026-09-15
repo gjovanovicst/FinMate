@@ -311,3 +311,99 @@ export function provenanceOf(row: CaptureRow): string {
   if (row.categoryId !== null && row.categoryId !== (row.proposal?.categoryId ?? null)) return 'USER';
   return row.proposal?.decidedBy ?? 'NONE';
 }
+
+/** The existing Transaction a suspect points at, as the payload returns it. */
+export interface ExistingTransactionView {
+  readonly id: string;
+  readonly description: string;
+  readonly occurredLocalDate: string;
+  readonly amount: { readonly amountMinor: string; readonly currency: string };
+}
+
+/** One duplicate suspect, joined to the row that produced it (docs/06 §5.2.2). */
+export interface CommitSuspect {
+  readonly clientRowId: string;
+  /** The Transaction just written — what a one-tap undo would remove. */
+  readonly transactionId: string;
+  /** The row's description, carried over because the field is cleared on a successful commit. */
+  readonly description: string;
+  readonly existing: ExistingTransactionView;
+  readonly similarity: number;
+  readonly matchedOn: readonly string[];
+}
+
+/**
+ * What a successful commit left behind.
+ *
+ * The preview is cleared on success (the user has confirmed it), so everything the post-commit
+ * affordances need — the new ids for undo, and the suspects' descriptions — has to be captured
+ * **before** the rows go away. Reconstructing it from an empty preview is how an undo button ends up
+ * with nothing to act on.
+ */
+export interface CommitSummary {
+  /** Every Transaction this call wrote or replayed, in input order. */
+  readonly committedIds: readonly string[];
+  readonly committedCount: number;
+  /** docs/06 §5.2: true only when the whole call was an idempotent replay. */
+  readonly replayed: boolean;
+  /** Rows written `PENDING` by the gate — the ones the toast should mention. */
+  readonly reviewCount: number;
+  readonly suspects: readonly CommitSuspect[];
+}
+
+/**
+ * Build the post-commit summary from the rows that were on screen and the response.
+ *
+ * Pure, and that is the point: the joining of a suspect back to *the row the user typed* is the part
+ * that can silently regress (a wrong `clientRowId` shows the wrong description against the wrong
+ * amount), and it is not observable from a rendered component without a full round trip.
+ */
+export function summariseCommit(args: {
+  readonly rows: readonly CaptureRow[];
+  readonly committed: readonly {
+    readonly clientRowId: string;
+    readonly transaction: { readonly id: string };
+    readonly wasReplayed: boolean;
+  }[];
+  readonly suspects: readonly {
+    readonly clientRowId: string;
+    readonly transactionId: string;
+    readonly existingTransaction: ExistingTransactionView;
+    readonly similarity: number;
+    readonly matchedOn: readonly string[];
+  }[];
+  readonly replayed: boolean;
+  readonly reviewCount: number;
+}): CommitSummary {
+  const byClientRowId = new Map(args.rows.map((row) => [row.clientRowId, row]));
+
+  return {
+    committedIds: args.committed.map((row) => row.transaction.id),
+    committedCount: args.committed.length,
+    replayed: args.replayed,
+    reviewCount: args.reviewCount,
+    suspects: args.suspects.map((suspect) => ({
+      clientRowId: suspect.clientRowId,
+      transactionId: suspect.transactionId,
+      // A suspect whose row cannot be found still renders, with the earlier row's description as the
+      // label: dropping it would silently hide a duplicate the API took the trouble to report.
+      description:
+        byClientRowId.get(suspect.clientRowId)?.rawText ?? suspect.existingTransaction.description,
+      existing: suspect.existingTransaction,
+      similarity: suspect.similarity,
+      matchedOn: [...suspect.matchedOn],
+    })),
+  };
+}
+
+/**
+ * The Transactions an "undo the duplicates" action should remove: the rows just written that look
+ * like repeats, never the earlier row they resemble.
+ *
+ * Deduplicated, because two identical rows in one batch are reported from both sides and the pair
+ * names the same two Transactions twice — without this the undo would name one id twice and report a
+ * count that does not match what it did.
+ */
+export function suspectTransactionIds(suspects: readonly CommitSuspect[]): readonly string[] {
+  return [...new Set(suspects.map((suspect) => suspect.transactionId))];
+}

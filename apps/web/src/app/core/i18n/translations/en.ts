@@ -496,6 +496,19 @@ export const en = {
     'One of the rows could not be accepted, so none of them were. Fix the ones marked below and try again.',
   'capture.rowError': '{field}: {message}',
   'capture.clear': 'Clear',
+  'capture.undo': 'Undo',
+  'capture.undoing': 'Undoing…',
+  'capture.undone': 'Undone: {count}.',
+  'capture.undoOne': 'Undo this row',
+  'capture.undoDuplicates': 'Undo the duplicates',
+  'capture.duplicateTitle': 'Looks like a duplicate',
+  'capture.duplicateBody':
+    'These are saved — you may well have bought the same thing twice. Undo if you did not.',
+  'capture.duplicateAgainst': 'same as “{description}” on {date}',
+  'capture.match.amount': 'same amount',
+  'capture.match.merchant': 'same merchant',
+  'capture.match.description': 'similar description',
+  'capture.match.date': 'nearby date',
 
   // ---- API error codes (docs/06 §10) ----
   // The server returns a stable CODE and a safe English message; the client localises it. That

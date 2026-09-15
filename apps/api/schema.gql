@@ -250,6 +250,11 @@ type CaptureCommitSuccessModel {
   cursor: ID!
 
   """
+  Rows that look like a repeat of an existing Transaction (docs/06 §5.2.2). Empty means "checked and found none": the check always runs on a commit that wrote something.
+  """
+  duplicateSuspects: [DuplicateSuspectModel!]!
+
+  """
   True when the whole request was an idempotent replay — nothing new was written.
   """
   replayed: Boolean!
@@ -260,7 +265,7 @@ type CaptureCommitSuccessModel {
   reviewQueueCount: Int!
 
   """
-  Rows neither written nor replayed nor rejected. No producer yet: every row is one of the three, and the field is declared so 2.2.5 can introduce one without a schema change.
+  Rows neither written nor replayed nor rejected. No producer yet: every row is one of the three, and the field is declared so a later task can introduce one without a schema change.
   """
   skipped: [SkippedRowModel!]!
 }
@@ -546,6 +551,31 @@ enum DegradationRung {
 }
 
 """
+A just-written row that looks like a repeat of an existing Transaction (docs/06 §5.2.2). The advisory third mechanism: the row IS written, because the user may legitimately have bought the same thing twice. Blocking a real second purchase is a worse failure than showing an unwanted chip, so this never refuses anything — it only tells the client to offer an undo.
+"""
+type DuplicateSuspectModel {
+  """The row of THIS commit that looks like a repeat."""
+  clientRowId: String!
+
+  """The earlier Transaction it resembles."""
+  existingTransaction: TransactionModel!
+  existingTransactionId: ID!
+
+  """
+  Which rules matched: `amount`, `date`, and `merchant` and/or `description` (docs/06 §5.2.2). `amount` and `date` are always present — they are hard requirements.
+  """
+  matchedOn: [String!]!
+
+  """
+  Folded-description trigram similarity, `0..1`. Reported honestly even for a merchant match, where the two baskets may be nothing alike — that is the case worth a glance.
+  """
+  similarity: Float!
+
+  """The Transaction just written — what an undo would remove."""
+  transactionId: ID!
+}
+
+"""
 Direction as the parser read it. `UNKNOWN` means no direction signal at all, and `needsDirectionConfirmation` marks a refund/storno word where the sign must be asked about rather than guessed (docs/04 §3.1).
 """
 enum FragmentKind {
@@ -808,6 +838,11 @@ type Mutation {
     aliases: [String!]!
     merchantId: ID!
   ): MerchantModel!
+
+  """
+  Soft-delete the Transactions a capture just wrote — docs/02 §3's undo toast, in ONE call and all-or-nothing, because a toast that only half-applied would leave the user unable to tell which rows survived. Returns how many were actually undone. Never a hard delete: `deleted_at` is set and the row and its audit trail survive (docs/03 §3.4). Ids outside this Household match nothing rather than deleting another Household's rows.
+  """
+  undoCapture(transactionIds: [ID!]!): Int!
   updateCategory(
     aiDescription: String
     color: String

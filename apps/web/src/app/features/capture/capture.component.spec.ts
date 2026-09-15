@@ -98,6 +98,7 @@ function stubClient(overrides: Record<string, unknown> = {}) {
     if (document.includes('CaptureAccounts')) return Promise.resolve(ACCOUNTS);
     if (document.includes('CaptureCategories')) return Promise.resolve(CATEGORIES);
     if (document.includes('CaptureParse')) return Promise.resolve(PARSE);
+    if (document.includes('UndoCapture')) return Promise.resolve({ undoCapture: 1 });
     return Promise.resolve({
       captureCommit: {
         __typename: 'CaptureCommitSuccessModel',
@@ -109,6 +110,33 @@ function stubClient(overrides: Record<string, unknown> = {}) {
     });
   });
   return { client: { query, ...overrides } as unknown as GraphqlClient, query };
+}
+
+/** The commit response for a call whose single row looked like a duplicate. */
+function duplicateCommitResponse() {
+  return {
+    captureCommit: {
+      __typename: 'CaptureCommitSuccessModel',
+      replayed: false,
+      reviewQueueCount: 0,
+      committed: [{ clientRowId: 'row-1', wasReplayed: false, transaction: { id: 'tx-new' } }],
+      duplicateSuspects: [
+        {
+          clientRowId: 'row-1',
+          transactionId: 'tx-new',
+          existingTransactionId: 'tx-old',
+          similarity: 1,
+          matchedOn: ['amount', 'description', 'date'],
+          existingTransaction: {
+            id: 'tx-old',
+            description: 'Lidl',
+            occurredLocalDate: '2026-09-14',
+            amount: { amountMinor: '200000', currency: 'RSD' },
+          },
+        },
+      ],
+    },
+  };
 }
 
 async function mount(client: GraphqlClient): Promise<{
@@ -243,5 +271,58 @@ describe('CaptureComponent (mounted)', () => {
     expect(component.text()).toBe('');
     expect(component.rows()).toHaveLength(0);
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Added 1.');
+  });
+
+  it('shows the duplicate chip against the row the user typed, and undoes it in one call', async () => {
+    const client = stubClient();
+    (client.query as ReturnType<typeof vi.fn>).mockImplementation((document: string) => {
+      if (document.includes('CaptureAccounts')) return Promise.resolve(ACCOUNTS);
+      if (document.includes('CaptureCategories')) return Promise.resolve(CATEGORIES);
+      if (document.includes('CaptureParse')) return Promise.resolve(PARSE);
+      if (document.includes('UndoCapture')) return Promise.resolve({ undoCapture: 1 });
+      return Promise.resolve(duplicateCommitResponse());
+    });
+
+    const { fixture, component } = await mount(client.client);
+    component.onInput('Lidl 2000');
+    fixture.detectChanges();
+    await component.commit();
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('Looks like a duplicate');
+    // The chip names what the user just typed, and what it resembles — the preview is gone by now,
+    // so both have to come from the summary.
+    expect(text).toContain('Lidl 2000');
+    expect(text).toContain('Lidl');
+    expect(text).toContain('same amount');
+
+    await component.undoDuplicates();
+    fixture.detectChanges();
+
+    const undoCall = (client.query as ReturnType<typeof vi.fn>).mock.calls.find((call) =>
+      String(call[0]).includes('UndoCapture'),
+    );
+    expect(undoCall?.[1]).toEqual({ transactionIds: ['tx-new'] });
+    // The panel is gone: there is nothing left to undo, so it must not linger offering it.
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Looks like a duplicate');
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Undone: 1.');
+  });
+
+  it('undoes the whole batch from the toast', async () => {
+    const client = stubClient();
+    const { fixture, component } = await mount(client.client);
+    component.onInput('Lidl 2000');
+    fixture.detectChanges();
+    await component.commit();
+    fixture.detectChanges();
+
+    await component.undoAll();
+    fixture.detectChanges();
+
+    const undoCall = (client.query as ReturnType<typeof vi.fn>).mock.calls.find((call) =>
+      String(call[0]).includes('UndoCapture'),
+    );
+    expect(undoCall?.[1]).toEqual({ transactionIds: ['tx-1'] });
   });
 });

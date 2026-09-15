@@ -498,6 +498,19 @@ export const srLatn: Record<keyof typeof en, string> = {
     'Jedan red nije mogao da se prihvati, pa nijedan nije. Ispravi označene i pokušaj ponovo.',
   'capture.rowError': '{field}: {message}',
   'capture.clear': 'Očisti',
+  'capture.undo': 'Poništi',
+  'capture.undoing': 'Poništavam…',
+  'capture.undone': 'Poništeno: {count}.',
+  'capture.undoOne': 'Poništi ovaj red',
+  'capture.undoDuplicates': 'Poništi duplikate',
+  'capture.duplicateTitle': 'Izgleda kao duplikat',
+  'capture.duplicateBody':
+    'Ovi redovi su sačuvani — možda si stvarno dvaput kupio istu stvar. Poništi ako nisi.',
+  'capture.duplicateAgainst': 'isto kao „{description}” dana {date}',
+  'capture.match.amount': 'isti iznos',
+  'capture.match.merchant': 'isti prodavac',
+  'capture.match.description': 'sličan opis',
+  'capture.match.date': 'blizak datum',
 
   // ---- API error codes ----
   'error.UNAUTHENTICATED': 'Pogrešan email ili lozinka.',

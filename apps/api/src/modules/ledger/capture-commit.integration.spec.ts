@@ -685,6 +685,224 @@ describe('TransactionsService.captureCommit (integration)', () => {
   });
 
   // -------------------------------------------------------------------------------------------
+  // docs/06 §5.2.2 — the advisory third mechanism
+  // -------------------------------------------------------------------------------------------
+
+  describe('duplicate suspects', () => {
+    it('flags a row that repeats the one just written, and still writes it', async () => {
+      const description = `Lidl ${uuidv7()}`;
+      const first = await commit({ rows: [row({ description })] });
+
+      const second = await commit({ rows: [row({ description })] });
+
+      // The row IS written — the user may legitimately have bought the same thing twice, and 01 §6
+      // says "warned", not "prevented".
+      expect(second.committed).toHaveLength(1);
+      expect(second.duplicateSuspects).toHaveLength(1);
+
+      const suspect = second.duplicateSuspects[0]!;
+      expect(suspect.clientRowId).toBe(second.committed[0]!.clientRowId);
+      expect(suspect.transactionId).toBe(second.committed[0]!.transaction.id);
+      expect(suspect.existingTransactionId).toBe(first.committed[0]!.transaction.id);
+      expect(suspect.similarity).toBe(1);
+      expect(suspect.matchedOn).toEqual(['amount', 'description', 'date']);
+    });
+
+    it('flags two identical rows inside ONE batch, symmetrically', async () => {
+      // The clearest duplicate there is, and the one a bulk entry actually produces.
+      const description = `Lidl maxi ${uuidv7()}`;
+      const outcome = await commit({
+        rows: [row({ description }), row({ description })],
+      });
+
+      expect(outcome.committed).toHaveLength(2);
+      // Per-row semantics, so the pair is reported from both sides: each row names the other. That is
+      // the spec's rule applied literally ("a ROW is a suspect when…"), and it is also the honest
+      // presentation — picking one as "the original" would assert which of the two the user meant,
+      // which the ledger has no way to know.
+      expect(outcome.duplicateSuspects).toHaveLength(2);
+      const [first, second] = outcome.committed;
+      expect(outcome.duplicateSuspects[0]!.transactionId).toBe(first!.transaction.id);
+      expect(outcome.duplicateSuspects[0]!.existingTransactionId).toBe(second!.transaction.id);
+      expect(outcome.duplicateSuspects[1]!.transactionId).toBe(second!.transaction.id);
+      expect(outcome.duplicateSuspects[1]!.existingTransactionId).toBe(first!.transaction.id);
+    });
+
+    it('matches on a resolved merchant even when the descriptions differ', async () => {
+      const merchantId = uuidv7();
+      await asTenant(() =>
+        prisma.client.merchants.create({
+          data: { id: merchantId, household_id: householdId, name: `Prodavac ${merchantId.slice(0, 8)}` },
+        }),
+      );
+
+      await commit({ rows: [row({ description: 'korpa 1', merchantId })] });
+      const second = await commit({ rows: [row({ description: 'korpa 2', merchantId })] });
+
+      expect(second.duplicateSuspects).toHaveLength(1);
+      expect(second.duplicateSuspects[0]!.matchedOn).toContain('merchant');
+      // Reported honestly: a merchant match with unlike baskets is the weak case.
+      expect(second.duplicateSuspects[0]!.similarity).toBeLessThan(0.85);
+    });
+
+    it('never flags on amount alone', async () => {
+      await commit({ rows: [row({ description: 'Lidl' })] });
+      const second = await commit({ rows: [row({ description: 'Gorivo' })] });
+      expect(second.duplicateSuspects).toHaveLength(0);
+    });
+
+    it('never flags a row in a different account or the other direction', async () => {
+      const secondAccount = uuidv7();
+      await asTenant(() =>
+        prisma.client.accounts.create({
+          data: { id: secondAccount, household_id: householdId, name: 'Keš', kind: 'CASH', currency: 'RSD' },
+        }),
+      );
+
+      await commit({ rows: [row({ description: 'Lidl mesec' })] });
+      const otherAccount = await commit({
+        rows: [row({ description: 'Lidl mesec', accountId: secondAccount })],
+      });
+      const otherKind = await commit({
+        rows: [row({ description: 'Lidl mesec', kind: TransactionKind.INCOME })],
+      });
+
+      expect(otherAccount.duplicateSuspects).toHaveLength(0);
+      expect(otherKind.duplicateSuspects).toHaveLength(0);
+    });
+
+    it('flags against a PENDING row too, because it is still a row the user entered', async () => {
+      // The correction to docs/06 §5.2.2. With no keywords, rules or AI provider — every fresh
+      // signup, and F-13's cold start — every captured row is PENDING. A `CONFIRMED`-only comparison
+      // would make this mechanism unreachable for exactly those households, and a user could type
+      // `Lidl 2000` twice with no warning at all.
+      const description = `Nepoznato ${uuidv7()}`;
+      const pendingProposal = await proposal({ categoryId: null, confidence: 0.99, rawInput: description });
+      const pending = await commit({ rows: [row({ description, acceptedProposalId: pendingProposal })] });
+      expect(pending.committed[0]!.transaction.status).toBe(TransactionStatus.PENDING);
+
+      const second = await commit({ rows: [row({ description })] });
+      expect(second.duplicateSuspects).toHaveLength(1);
+      expect(second.duplicateSuspects[0]!.existingTransactionId).toBe(
+        pending.committed[0]!.transaction.id,
+      );
+    });
+
+    it('never flags against a VOID row, which the user has said never happened', async () => {
+      const description = `Ponistena ${uuidv7()}`;
+      const first = await commit({ rows: [row({ description })] });
+      await asTenant(() =>
+        transactions.update(householdId, first.committed[0]!.transaction.id, {
+          version: first.committed[0]!.transaction.version,
+          status: TransactionStatus.VOID,
+        }),
+      );
+
+      const second = await commit({ rows: [row({ description })] });
+      expect(second.duplicateSuspects).toHaveLength(0);
+    });
+
+    it('returns an empty list — not an absent one — when it checked and found nothing', async () => {
+      const outcome = await commit({ rows: [row({ description: `Jedinstveno ${uuidv7()}` })] });
+      expect(outcome.duplicateSuspects).toEqual([]);
+    });
+
+    it('does not treat a replay as a new duplicate', async () => {
+      const description = `Replay ${uuidv7()}`;
+      const key = `dup-replay-${uuidv7()}`;
+      await commit({ rows: [row({ description, idempotencyKey: key })] });
+
+      const replay = await commit({ rows: [row({ description, idempotencyKey: key })] });
+
+      expect(replay.replayed).toBe(true);
+      // Nothing was written, so there is nothing that could be a duplicate of anything.
+      expect(replay.duplicateSuspects).toHaveLength(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // docs/02 §3 — the undo toast
+  // -------------------------------------------------------------------------------------------
+
+  describe('undoCapture', () => {
+    it('soft-deletes the named rows and leaves the rest alone', async () => {
+      const keep = await commit({ rows: [row({ description: `Ostaje ${uuidv7()}` })] });
+      const undo = await commit({
+        rows: [row({ description: `Ponisti ${uuidv7()}` }), row({ description: `Ponisti2 ${uuidv7()}` })],
+      });
+
+      const undone = await asTenant(() =>
+        transactions.undoCapture(householdId, undo.committed.map((entry) => entry.transaction.id)),
+      );
+
+      expect(undone).toBe(2);
+      const live = await asTenant(() =>
+        prisma.client.transactions.findMany({
+          where: { household_id: householdId, deleted_at: null },
+          select: { id: true },
+        }),
+      );
+      const liveIds = live.map((entry) => entry.id);
+      expect(liveIds).toContain(keep.committed[0]!.transaction.id);
+      expect(liveIds).not.toContain(undo.committed[0]!.transaction.id);
+
+      // Soft, never hard: the row is still there for a later Restore (docs/03 §3.4).
+      const stillStored = await asTenant(() =>
+        prisma.client.transactions.findFirst({ where: { id: undo.committed[0]!.transaction.id } }),
+      );
+      expect(stillStored).not.toBeNull();
+      expect(stillStored!.deleted_at).not.toBeNull();
+    });
+
+    it('counts only what it actually undid, and cannot touch another Household', async () => {
+      const mine = await commit({ rows: [row({ description: `Moje ${uuidv7()}` })] });
+
+      const foreign = uuidv7();
+      await runWithTenant(otherContext, () =>
+        prisma.client.transactions.create({
+          data: {
+            id: foreign,
+            household_id: otherHouseholdId,
+            account_id: otherAccountId,
+            kind: 'EXPENSE',
+            amount_minor: 100n,
+            currency: 'RSD',
+            description: 'Tudje',
+            occurred_at: new Date(),
+            occurred_local_date: new Date('2026-09-14T00:00:00.000Z'),
+            source: 'MANUAL',
+          },
+        }),
+      );
+
+      // One real id, one foreign id, one that does not exist: the count is the honest number.
+      const undone = await asTenant(() =>
+        transactions.undoCapture(householdId, [mine.committed[0]!.transaction.id, foreign, uuidv7()]),
+      );
+      expect(undone).toBe(1);
+
+      const foreignRow = await runWithTenant(otherContext, () =>
+        prisma.client.transactions.findFirst({ where: { id: foreign } }),
+      );
+      expect(foreignRow!.deleted_at).toBeNull();
+    });
+
+    it('is idempotent: undoing twice reports zero the second time', async () => {
+      const outcome = await commit({ rows: [row({ description: `Dvaput ${uuidv7()}` })] });
+      const ids = [outcome.committed[0]!.transaction.id];
+
+      expect(await asTenant(() => transactions.undoCapture(householdId, ids))).toBe(1);
+      expect(await asTenant(() => transactions.undoCapture(householdId, ids))).toBe(0);
+    });
+
+    it('refuses an empty id list rather than silently doing nothing', async () => {
+      await expect(asTenant(() => transactions.undoCapture(householdId, []))).rejects.toThrow(
+        /nothing to undo/i,
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------
   // Return shape
   // -------------------------------------------------------------------------------------------
 

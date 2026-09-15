@@ -1,4 +1,4 @@
-import { Field, ID, InputType, Int, ObjectType, createUnionType, registerEnumType } from '@nestjs/graphql';
+import { Field, Float, ID, InputType, Int, ObjectType, createUnionType, registerEnumType } from '@nestjs/graphql';
 
 import { MoneyScalar } from '../../graphql/scalars/money.scalar';
 import { LocalDateScalar } from '../../graphql/scalars/uuid.scalar';
@@ -19,13 +19,13 @@ import { TransactionKind, TransactionModel } from './transaction.model';
  * *rows* is different in kind — it is a successful round trip carrying per-row diagnostics — so it
  * stays a union member.
  *
- * ## Why `duplicateSuspects` and `dashboardDelta` are absent
+ * ## Why `dashboardDelta` is absent
  *
- * §5.2 declares both on `CaptureCommitSuccess`. Neither is built here: duplicate-suspect detection is
- * task 2.2.5, and §5.2.3's `DashboardDelta` is a caching optimisation for a client with a normalised
- * store — this client refetches `dashboard`, which already exists as one round trip. Publishing the
- * fields now would mean returning an empty list for "checked and found none" and for "never checked",
- * which are different facts. They are added with their producers. Recorded in docs/06 §5.2.
+ * §5.2 declares it on `CaptureCommitSuccess`. It is not built: §5.2.3's delta is a caching
+ * optimisation for a client with a normalised store, and this client refetches `dashboard`, which
+ * already exists as one round trip on a screen the user is leaving. `reviewQueueCount` and `cursor`
+ * — the two values a commit actually changes on the hottest path — *are* returned. Adding the rest
+ * later is additive. Recorded in docs/06 §5.2.4 alongside the union and naming deviations.
  */
 
 /** `ErrorCode` values a commit can produce, mirroring the `ApiErrorCode` union. */
@@ -230,6 +230,41 @@ export class RejectedRowModel {
 
 @ObjectType({
   description:
+    'A just-written row that looks like a repeat of an existing Transaction (docs/06 §5.2.2). The ' +
+    'advisory third mechanism: the row IS written, because the user may legitimately have bought the ' +
+    'same thing twice. Blocking a real second purchase is a worse failure than showing an unwanted ' +
+    'chip, so this never refuses anything — it only tells the client to offer an undo.',
+})
+export class DuplicateSuspectModel {
+  @Field(() => String, { description: 'The row of THIS commit that looks like a repeat.' })
+  clientRowId!: string;
+
+  @Field(() => ID, { description: 'The Transaction just written — what an undo would remove.' })
+  transactionId!: string;
+
+  @Field(() => ID)
+  existingTransactionId!: string;
+
+  @Field(() => TransactionModel, { description: 'The earlier Transaction it resembles.' })
+  existingTransaction!: TransactionModel;
+
+  @Field(() => Float, {
+    description:
+      'Folded-description trigram similarity, `0..1`. Reported honestly even for a merchant match, ' +
+      'where the two baskets may be nothing alike — that is the case worth a glance.',
+  })
+  similarity!: number;
+
+  @Field(() => [String], {
+    description:
+      'Which rules matched: `amount`, `date`, and `merchant` and/or `description` ' +
+      '(docs/06 §5.2.2). `amount` and `date` are always present — they are hard requirements.',
+  })
+  matchedOn!: string[];
+}
+
+@ObjectType({
+  description:
     'Every row was written (or replayed). One low-confidence row never blocks the batch — it is ' +
     'stored PENDING and enters the review queue (docs/06 §5.2.1, F-06).',
 })
@@ -240,9 +275,16 @@ export class CaptureCommitSuccessModel {
   @Field(() => [SkippedRowModel], {
     description:
       'Rows neither written nor replayed nor rejected. No producer yet: every row is one of the ' +
-      'three, and the field is declared so 2.2.5 can introduce one without a schema change.',
+      'three, and the field is declared so a later task can introduce one without a schema change.',
   })
   skipped!: SkippedRowModel[];
+
+  @Field(() => [DuplicateSuspectModel], {
+    description:
+      'Rows that look like a repeat of an existing Transaction (docs/06 §5.2.2). Empty means ' +
+      '"checked and found none": the check always runs on a commit that wrote something.',
+  })
+  duplicateSuspects!: DuplicateSuspectModel[];
 
   @Field(() => Boolean, {
     description: 'True when the whole request was an idempotent replay — nothing new was written.',
