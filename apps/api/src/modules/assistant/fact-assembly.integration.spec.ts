@@ -9,6 +9,8 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountsModule } from '../accounts/accounts.module';
 import { BudgetingModule } from '../budgeting/budgeting.module';
+import { LedgerModule } from '../ledger/ledger.module';
+import { TaxonomyModule } from '../taxonomy/taxonomy.module';
 import { ASSISTANT_INTENTS, INTENT_TEMPLATES, type AssistantIntent } from './assistant-intents';
 import { FactAssemblyService } from './fact-assembly.service';
 import {
@@ -106,7 +108,14 @@ describe('fact assembly (integration)', () => {
 
   beforeAll(async () => {
     moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot(), PrismaModule, AccountsModule, BudgetingModule],
+      imports: [
+        ConfigModule.forRoot(),
+        PrismaModule,
+        AccountsModule,
+        BudgetingModule,
+        LedgerModule,
+        TaxonomyModule,
+      ],
       providers: [FactAssemblyService],
     }).compile();
     prisma = moduleRef.get(PrismaService);
@@ -376,9 +385,20 @@ describe('fact assembly (integration)', () => {
     expect(result.facts.rows).toHaveLength(2);
   });
 
-  it('names the top Merchants', async () => {
+  it('names the top Merchants, full amounts and unresolved descriptions included', async () => {
     const result = await assemble(planFor('TOP_MERCHANTS'));
-    expect(result.facts.rows.map((row) => [row.label, row.value])).toEqual([['Lidl', '2245000']]);
+
+    // Lidl carries the **whole** 22.450 basket even though I-1 files that money under two Categories
+    // (docs/06 §4.3: a split receipt was still paid to Lidl in full). The 20.000 rent and the 4.200
+    // fuel row have no Merchant, so they are ranked under their own description rather than dropped —
+    // before 3.3.1 the `merchant_id: { not: null }` filter hid both.
+    expect(result.facts.rows.map((row) => [row.label, row.value])).toEqual([
+      ['Lidl', '2245000'],
+      ['Kirija', '2000000'],
+      ['NIS', '420000'],
+    ]);
+    expect(result.facts.rows[0]?.merchantId).toBe(lidlId);
+    expect(result.facts.rows[1]?.merchantId).toBeUndefined();
   });
 
   it('reports the largest transactions by amount, and the count includes both kinds', async () => {

@@ -398,6 +398,28 @@ export class MerchantsService {
   }
 
   /**
+   * Display names for a set of Merchant ids, in one query.
+   *
+   * **Deliberately not filtered by Household.** `merchants` is globally readable (docs/03 §4), and the
+   * ids a caller passes come from its own ledger rows — which may legitimately point at a global seed
+   * row. A caller that filtered by `household_id` would render those merchants as an em dash, which is
+   * exactly the bug docs/02 §4.1's known gap describes one layer down.
+   *
+   * Used by the assistant's top-merchants fact and by analytics (docs/06 §4.3's `displayName`), so the
+   * two surfaces cannot disagree about what a Merchant is called.
+   */
+  async displayNames(ids: readonly string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+
+    const rows = await this.prisma.client.merchants.findMany({
+      where: { id: { in: [...ids] } },
+      select: { id: true, name: true },
+    });
+
+    return new Map(rows.map((row) => [row.id, row.name]));
+  }
+
+  /**
    * Breadcrumbs for the default Categories a page of Merchants points at.
    *
    * Loaded once per request rather than per row, and only when something actually has a default: a

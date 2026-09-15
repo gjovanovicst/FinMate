@@ -78,6 +78,18 @@ export {
 } from './budget';
 
 export {
+  TIME_BUCKETS,
+  bucketKey,
+  bucketRanges,
+  changeRatio,
+  previousMonthRange,
+  shareOfTotal,
+  type BucketRange,
+  type DateRange,
+  type TimeBucket,
+} from './analytics';
+
+export {
   DEFAULT_CAP_PERCENT,
   proposeSavings,
   type SavingsCandidate,

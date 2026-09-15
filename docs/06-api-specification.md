@@ -1388,48 +1388,104 @@ the page is fetched first and filtered afterwards. Nothing on the 2.3.2b screen 
 whose "nothing matches" can be false is worse than no control. Pushing either predicate into the
 ledger's `list` (or paging until the page is full) is the prerequisite for a filter UI.
 
-### 4.3 Analytics
+### 4.3 Analytics (task 3.3.1)
 
 ```graphql
-input DateRangeInput { start: Date! end: Date! }     # inclusive, household-local
-
-enum TimeBucket { DAY WEEK MONTH QUARTER }
+input DateRangeInput { start: LocalDate! end: LocalDate! }   # inclusive, Household-local days
+enum TimeBucket { DAY WEEK MONTH QUARTER }                   # derived from @finmate/domain's TIME_BUCKETS
 
 type SpendBucket {
-  bucketStart: Date!
-  bucketEnd: Date!
+  bucketStart: LocalDate!
+  bucketEnd: LocalDate!
   expenseTotal: Money!
   incomeTotal: Money!
   transactionCount: Int!
 }
 
 type CashflowBucket {
-  bucketStart: Date!
+  bucketStart: LocalDate!
   income: Money!
   expense: Money!
-  net: Money!
+  net: Balance!              # SIGNED — a month can pay out more than it takes in
 }
 
 type MerchantSpend {
   merchantId: UUID
-  displayName: String!               # merchant name, or the raw description when unresolved
-  total: Money!
+  displayName: String!       # merchant name, or the raw description when unresolved
+  total: Money!              # the WHOLE Transaction, splits included
   transactionCount: Int!
 }
 
+type CategorySpend {
+  categoryId: UUID           # null is the uncategorised bucket
+  category: Category
+  periodStart: LocalDate!
+  periodEnd: LocalDate!
+  total: Money!
+  transactionCount: Int!
+  shareOfTotal: Float!
+  priorPeriodTotal: Money
+  changeRatio: Float         # null when there is no basis for a comparison
+  isSubtreeAggregate: Boolean!
+}
+
 type MonthComparison {
-  period: String!
-  compareTo: String!
+  period: String!            # YYYY-MM
+  compareTo: String!         # YYYY-MM
   total: Money!
   compareTotal: Money!
-  delta: Money!
+  delta: Balance!            # SIGNED
   deltaRatio: Float
-  categories: [CategorySpend!]!       # each with priorPeriodTotal + changeRatio populated
+  categories: [CategorySpend!]!   # each with priorPeriodTotal + changeRatio populated
+}
+
+type Query {
+  spendByCategory(range: DateRangeInput!, accountIds: [UUID!], includeSubcategories: Boolean = true): [CategorySpend!]!
+  spendOverTime(range: DateRangeInput!, bucket: TimeBucket!, categoryIds: [UUID!]): [SpendBucket!]!
+  topMerchants(range: DateRangeInput!, limit: Int = 10): [MerchantSpend!]!
+  monthComparison(period: String!, compareTo: String): MonthComparison!
+  cashflow(range: DateRangeInput!, bucket: TimeBucket!): [CashflowBucket!]!
 }
 ```
 
 Aggregations run over `CONFIRMED`, non-deleted transactions only (I-7). Every response includes the
 range it was computed over; there is no "guess what period this is" behaviour anywhere in the schema.
+The generated SDL names the object types with the repo's `Model` suffix (`CategorySpendModel` and so
+on); the sketch above uses the document's own shorthand.
+
+**Splits (I-1, ADR-015).** Every figure comes from `SpendReadModel`, the one split-aware aggregate, so
+analytics, the budget tile and the assistant cannot disagree about what a Category cost (§5.13).
+
+- `spendByCategory` returns **every Category with spend plus every ancestor that aggregates it**, so a
+  client can draw a tree. A flat chart reads the **roots** (a root's figure covers its subtree, and the
+  roots partition the categorised spend) or asks for `includeSubcategories: false`, which returns only
+  the Categories carrying spend of their own.
+- The money that landed in **no** Category is a row with `categoryId: null` and `category: null`, and
+  `shareOfTotal` is each row over the range's **whole** confirmed expense — so the leaf rows' shares add
+  up to 1 *including* the uncategorised bucket. Omitting it would let a Household with 30 %
+  uncategorised spend see shares describing only the other 70 %.
+- `changeRatio` is **`null` when there is nothing to compare against** — no baseline spend at all, or a
+  baseline of zero (an infinite increase is not a ratio). docs/02 §4.15 renders that as *nema osnova za
+  poređenje*. `-1` is a real value: the Category fell by 100 %.
+- `topMerchants` counts a split receipt under the shop that was paid, in full. A row whose Merchant was
+  never resolved is listed under its raw description rather than dropped.
+- `spendOverTime`'s `categoryIds` is a **subtree** scope (the ids given plus every descendant): a parent
+  Category with no spending of its own is the normal case, and a series that answered zero for it would
+  contradict the bar beside it. A split lands in its parent's bucket, on the parent's day and kind.
+- `transactionCount` is the number of contributing Transactions: for a leaf Category that is exact, and
+  for a subtree aggregate it is a **sum over the descendants**, so one receipt split across two children
+  of the same parent counts once in each. A distinct-count-per-node query is not worth its cost for a
+  chart that shows money.
+- `monthComparison` accepts `period` as `YYYY-MM` (the format was unstated before 3.3.1); `compareTo`
+  defaults to the month before. Both months are rolled up exactly as `spendByCategory` rolls up, and a
+  Category that had spend **only** in the baseline month is present with `total: 0` and a ratio of `-1`
+  rather than being dropped — disappearing is the most interesting thing a Category can do.
+
+**Two corrections to this document, both forced by the type system rather than chosen.** `delta` and
+`net` were written as `Money`, which is *non-negative by contract* (ADR-003): a deficit month or a
+lower-spending month would have been unserialisable. They are `Balance`, the signed scalar that exists
+for exactly this. And the ranges were written as `Date`; the schema has no `Date` scalar — a Household
+day is `LocalDate` (docs/03 §3.2), which is why a range cannot be timezone-shifted by a client.
 
 ### 4.4 Assistant
 
@@ -2574,11 +2630,16 @@ generator.
 **Two facts the generators do not yet see, recorded rather than hidden.** `committedMinor` is `0n` for
 every budget: per-budget committed charges need the recurring rules of 3.3.3, and the Household-level
 `reserved` figure belongs to the Household budget scope, so the pace insight is currently a **pace-only**
-projection for a category budget. And the trend and unusual-spend facts are built from **direct**
-Transaction rows, not splits: `BudgetsService.spendIn` is split-aware, so a budget's `spent` includes
-splits, but a `UNUSUAL_SPEND` candidate is a transaction and comparing a direct purchase against a
-split's portion would compare two different things. A split-aware category trend belongs with 3.3.1's
-analytics.
+projection for a category budget. And an `UNUSUAL_SPEND` candidate is still a **direct** Transaction
+row: comparing a whole purchase against a split's *portion* would compare two different things, so the
+check reads `SpendReadModel.directExpenseRows` on purpose rather than the split-aware aggregate.
+
+**Reconciled in 3.3.1.** The category **trend** baseline is no longer built from direct rows: it reads
+`SpendReadModel.byCategory`, the same split-aware aggregate the budget tile and the assistant use
+(`LedgerModule` supplies it, §5.1). `BudgetsService.spendIn` remains a **third** split-aware
+implementation, deliberately left alone in this task; the analytics integration spec asserts that all
+three paths return the same figure for the same Category and a split-containing month, so a future
+drift between them fails a test rather than reaching a screen.
 
 **One more defect found while wiring this.** Providing the same custom scalar in two feature modules
 gives the schema two types named `JSON` and **fails at boot** with
@@ -3536,7 +3597,7 @@ per-household key (not per-user) is correct here because a household shares a pl
 | `AUTH_WRITE` | `signUp`, `logIn`, `requestPasswordReset`, `resetPassword` | `10/min` per IP, `60/hour` per email | Credential-stuffing and enumeration defence |
 | `TOKEN_REFRESH` | `refreshSession` | `60/hour` per session family | Rotate aggressively, but stop a runaway refresh loop |
 | `READ_STANDARD` | list/detail queries | `600/min` | Generous; the dashboard is one query, not ten |
-| `READ_ANALYTICS` | `spendOverTime`, `monthComparison`, `cashflow`, `topMerchants` | `120/min` | Expensive aggregates |
+| `READ_ANALYTICS` | `spendByCategory`, `spendOverTime`, `monthComparison`, `cashflow`, `topMerchants` | `120/min` | Expensive aggregates. `spendByCategory` was missing from this row until 3.3.1 — it is the most expensive of the five (a Category read plus the tree), and a limit that skipped it would not limit anything |
 | `CAPTURE_PARSE` | `captureParse` | `120/min` burst `10/10s` | Debounced typing; the burst cap stops a paste-loop from being a cost event |
 | `WRITE_STANDARD` | CRUD mutations | `300/min` | Offline flush must not be throttled into failure |
 | `WRITE_BULK` | `captureCommit`, `bulkUpdateTransactions`, `bulkResolveReviewItems`, `materialiseRecurring` | `30/min`, max 50 rows per call | Bounded write amplification |

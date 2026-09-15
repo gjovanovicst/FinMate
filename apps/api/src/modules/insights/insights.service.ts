@@ -14,7 +14,6 @@ import {
   type BudgetPaceFact,
   type CategoryTrendFact,
   type LocalDate,
-  type PeriodSpend,
   type UnusualSpendFact,
 } from '@finmate/domain';
 
@@ -22,6 +21,7 @@ import type { CursorPage } from '../../graphql/pagination';
 import { normalisePageSize } from '../../graphql/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BudgetsService } from '../budgeting/budgets.service';
+import { SpendReadModel, type CategorySpendRow } from '../ledger/spend-read-model';
 
 /**
  * Insight generation and the insight feed — docs/01 §6 (F-20, F-22), docs/06 §4.1/§5.10/§5.13.
@@ -40,13 +40,17 @@ import { BudgetsService } from '../budgeting/budgets.service';
  * getting this wrong (a daily job that fans out to hundreds of aggregate queries) is a job that
  * cannot run per household. The cap is explicit rather than silent.
  *
- * ## What is deliberately not loaded
+ * ## Splits: reconciled in 3.3.1
  *
- * **Split rows.** `BudgetsService.spendIn` includes them, so a budget's `spent` is split-aware, but a
- * `UNUSUAL_SPEND` candidate is a *transaction*: comparing a direct purchase against a split's portion
- * would compare two different things. Splits are therefore excluded from the unusual-spend history and
- * from the category trend baseline, and that is recorded as a known gap in docs/06 §5.13 rather than
- * hidden — 3.3.1's analytics work is where a split-aware trend belongs.
+ * The **category trends** are split-aware, through `SpendReadModel` — the same aggregate the budget
+ * tile, the analytics queries and the assistant use. Before that, a Household whose groceries arrived
+ * as one split receipt saw a budget tile and an insight that disagreed (docs/06 §5.13), and the fix was
+ * to stop counting in a fourth place rather than to make the fourth place clever.
+ *
+ * **Unusual spend still reads direct rows**, deliberately: a `UNUSUAL_SPEND` candidate is a
+ * *transaction*, and comparing a purchase against a split's portion would compare two different
+ * things. `SpendReadModel.directExpenseRows` is that read, so the distinction is one method call
+ * rather than one query shape.
  *
  * @module apps/api/src/modules/insights
  */
@@ -94,6 +98,7 @@ export class InsightsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly budgets: BudgetsService,
+    private readonly spend: SpendReadModel,
   ) {}
 
   // -------------------------------------------------------------------------------------------
@@ -114,7 +119,12 @@ export class InsightsService {
     const today = (asOf ?? todayIn(zone)) as LocalDate;
     const period = monthPeriod(today);
 
-    const [budgets, categoryNames, rows, existing] = await Promise.all([
+    // The trend baseline is the three **complete** months before this one, and each is read through
+    // the split-aware read model — the same aggregate the budget tile and the analytics queries use
+    // (docs/06 §5.13).
+    const baselines = [3, 2, 1].map((months) => monthPeriod(addMonths(period.start, -months)));
+
+    const [budgets, categoryNames, rows, existing, currentSpend, ...baselineSpend] = await Promise.all([
       this.budgets.list(householdId, today),
       this.categoryNames(householdId),
       this.transactionRows(householdId, addMonths(period.start, -3), period.end),
@@ -122,11 +132,19 @@ export class InsightsService {
         where: { household_id: householdId, period_start: this.date(period.start) },
         select: { payload: true },
       }),
+      this.spend.byCategory(householdId, { from: period.start, to: period.end }, { kind: 'EXPENSE' }),
+      ...baselines.map((month) =>
+        this.spend.byCategory(householdId, { from: month.start, to: month.end }, { kind: 'EXPENSE' }),
+      ),
     ]);
 
     const currency = await this.ledgerCurrency(householdId);
     const drafts = generateInsights(
-      this.buildFacts(budgets, currency, today, period, categoryNames, rows),
+      this.buildFacts(budgets, currency, today, period, categoryNames, rows, {
+        current: currentSpend,
+        baselines: baselineSpend,
+        baselineStarts: baselines.map((month) => month.start),
+      }),
     );
 
     const recorded = new Set(
@@ -236,6 +254,11 @@ export class InsightsService {
     period: { start: LocalDate; end: LocalDate },
     paths: ReadonlyMap<string, string>,
     rows: readonly TransactionRow[],
+    trend: {
+      readonly current: readonly CategorySpendRow[];
+      readonly baselines: readonly (readonly CategorySpendRow[])[];
+      readonly baselineStarts: readonly LocalDate[];
+    },
   ): {
     budgets: readonly BudgetPaceFact[];
     categories: readonly CategoryTrendFact[];
@@ -276,38 +299,33 @@ export class InsightsService {
         };
       });
 
-    // ---- categories: current period + the three complete periods before it.
-    const baselineStarts = [3, 2, 1].map((months) => monthPeriod(addMonths(period.start, -months)));
-    const byCategory = new Map<string, { current: bigint; baseline: PeriodSpend[] }>();
-    for (const row of rows) {
-      if (row.category_id === null) continue;
-      const bucket = byCategory.get(row.category_id) ?? {
-        current: 0n,
-        baseline: baselineStarts.map((month) => ({ periodStart: month.start, spentMinor: 0n })),
-      };
-      const day = this.iso(row.occurred_local_date);
-      if (day >= period.start && day <= period.end) {
-        bucket.current += row.amount_minor;
-      } else {
-        const index = baselineStarts.findIndex((month) => day >= month.start && day <= month.end);
-        const target = index === -1 ? undefined : bucket.baseline[index];
-        if (target !== undefined) {
-          bucket.baseline[index] = { periodStart: target.periodStart, spentMinor: target.spentMinor + row.amount_minor };
-        }
+    // ---- categories: current period + the three complete periods before it, splits included.
+    //
+    // A Category with spend in any of the four periods becomes a trend fact; one with spend in none of
+    // them is not a trend, it is an absence.
+    const baselineByPeriod = new Map<string, bigint>();
+    for (const [index, totals] of trend.baselines.entries()) {
+      for (const row of totals) {
+        baselineByPeriod.set(`${index}:${row.categoryId}`, row.minor);
       }
-      byCategory.set(row.category_id, bucket);
     }
 
-    const trendFacts: CategoryTrendFact[] = [...byCategory.entries()]
-      .filter(([categoryId]) => paths.has(categoryId))
-      .map(([categoryId, bucket]) => ({
+    const currentByCategory = new Map(trend.current.map((row) => [row.categoryId, row.minor]));
+    const categoryIds = new Set([...currentByCategory.keys(), ...trend.baselines.flatMap((totals) => totals.map((row) => row.categoryId))]);
+
+    const trendFacts: CategoryTrendFact[] = [...categoryIds]
+      .filter((categoryId) => paths.has(categoryId))
+      .map((categoryId) => ({
         categoryId,
         categoryPath: (paths.get(categoryId) ?? '').split(' / '),
         currency,
         periodStart: period.start,
         periodEnd: period.end,
-        currentMinor: bucket.current,
-        baseline: bucket.baseline,
+        currentMinor: currentByCategory.get(categoryId) ?? 0n,
+        baseline: trend.baselineStarts.map((start, index) => ({
+          periodStart: start,
+          spentMinor: baselineByPeriod.get(`${index}:${categoryId}`) ?? 0n,
+        })),
         // The generators decide what to do with this; the service only reports the fact.
         periodComplete: today >= period.end,
       }));
@@ -347,7 +365,13 @@ export class InsightsService {
     return { budgets: budgetFacts, categories: trendFacts, unusual: unusualFacts };
   }
 
-  /** Confirmed, non-deleted EXPENSE rows in the window, with their category. Capped, loudly. */
+  /**
+   * Confirmed, non-deleted EXPENSE rows in the window, with their category. Capped, loudly.
+   *
+   * Only the **unusual-spend** check reads this: it compares one purchase against its Category's
+   * history, and a split's portion is not a purchase. Category trends go through
+   * `SpendReadModel.byCategory` (docs/06 §5.13).
+   */
   private async transactionRows(
     householdId: string,
     from: LocalDate,

@@ -11,6 +11,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountsModule } from '../accounts/accounts.module';
 import { BudgetingModule } from '../budgeting/budgeting.module';
+import { LedgerModule } from '../ledger/ledger.module';
 import { TaxonomyModule } from '../taxonomy/taxonomy.module';
 import { NARRATOR, type AssistantNarrator, type NarrateOutcome, type NarrateRequest } from './assistant-narrator';
 import { SUGGESTED_QUESTIONS } from './assistant-intents';
@@ -111,7 +112,14 @@ describe('the assistant (integration)', () => {
 
   beforeAll(async () => {
     moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot(), PrismaModule, AccountsModule, BudgetingModule, TaxonomyModule],
+      imports: [
+        ConfigModule.forRoot(),
+        PrismaModule,
+        AccountsModule,
+        BudgetingModule,
+        LedgerModule,
+        TaxonomyModule,
+      ],
       providers: [
         FactAssemblyService,
         AssistantService,

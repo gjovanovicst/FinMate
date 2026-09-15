@@ -14,6 +14,8 @@ import { CONFIG, type AppConfig } from '../../config/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { BudgetsService } from '../budgeting/budgets.service';
+import { MerchantsService } from '../taxonomy/merchants.service';
+import { SpendReadModel, type SpendScope } from '../ledger/spend-read-model';
 import type { AssistantIntent } from './assistant-intents';
 import { isRunnable, missingSlots, type Plan } from './query-planner';
 
@@ -34,13 +36,13 @@ import { isRunnable, missingSlots, type Plan } from './query-planner';
  * being absent, because "we do not have goals yet" and "somebody forgot to write the builder" must not
  * look the same from the outside.
  *
- * ## Splits are included, and that is a deliberate difference from the insight feed
+ * ## Splits are included, and every aggregate comes from one place
  *
  * A Transaction with splits contributes each split's amount to its own Category (invariant I-1), and
  * `BudgetsService.spendIn` is split-aware for exactly that reason. The assistant's category figures
- * therefore match the **budget tile** the user is looking at. The insight generators (3.1.1) count
- * direct rows only, which is recorded as a gap: those two must be made to agree, and 3.3.1's analytics
- * work is where the split-aware aggregate belongs.
+ * therefore match the **budget tile** the user is looking at. As of 3.3.1 the aggregation itself is
+ * {@link SpendReadModel}'s, shared with the analytics queries and the insight trends, so the assistant
+ * cannot drift from the screen beside it (docs/06 §5.13).
  *
  * @module apps/api/src/modules/assistant
  */
@@ -114,14 +116,6 @@ interface Built {
   readonly period?: { readonly start: LocalDate; readonly end: LocalDate };
 }
 
-/** A scope a spend aggregate can carry. Every field is a resolved slot, never free text. */
-interface SpendScope {
-  readonly categoryIds?: readonly string[];
-  readonly merchantId?: string;
-  readonly accountId?: string;
-  readonly tagId?: string;
-}
-
 const MAX_ROWS = 50;
 
 @Injectable()
@@ -133,6 +127,8 @@ export class FactAssemblyService {
     private readonly prisma: PrismaService,
     private readonly budgets: BudgetsService,
     private readonly accounts: AccountsService,
+    private readonly spendModel: SpendReadModel,
+    private readonly merchants: MerchantsService,
     @Inject(CONFIG) config: AppConfig,
   ) {
     // The catalogue's primary language is English; money is rendered in the Serbian locale by
@@ -262,65 +258,18 @@ export class FactAssemblyService {
   // -------------------------------------------------------------------------------------------
 
   /**
-   * Sum over the scope, **including splits**.
+   * Sum over the scope, **including splits** — {@link SpendReadModel.total} does the arithmetic.
    *
-   * Two aggregates rather than one because a split lives in `transaction_splits` and carries its own
-   * `category_id`; the count is a **transaction** count (a row with three splits in the same category is
-   * one transaction), which is what docs/06 §8.3 requires provenance to report.
+   * The count is a **transaction** count, not a count of contributions: a receipt split across three
+   * Categories is one transaction, which is what docs/06 §8.3 requires provenance to report. The read
+   * model returns exactly that, so nothing about I-7 or I-1 is re-decided here.
    */
   private async spend(context: Context, scope: SpendScope, kind: 'EXPENSE' | 'INCOME'): Promise<Built> {
-    const base = {
-      household_id: context.householdId,
-      deleted_at: null,
-      status: 'CONFIRMED' as const, // I-7: PENDING never contributes
+    const totals = await this.spendModel.total(context.householdId, this.window(context), {
+      ...scope,
       kind,
-      occurred_local_date: { gte: this.date(context.period.start), lte: this.date(context.period.end) },
-      ...(scope.accountId !== undefined ? { account_id: scope.accountId } : {}),
-      ...(scope.merchantId !== undefined ? { merchant_id: scope.merchantId } : {}),
-    };
-    const categoryIds = scope.categoryIds === undefined ? undefined : [...scope.categoryIds];
-    const tagFilter = scope.tagId === undefined ? {} : { transaction_tags: { some: { tag_id: scope.tagId } } };
-
-    const direct = await this.prisma.client.transactions.aggregate({
-      where: {
-        ...base,
-        ...tagFilter,
-        ...(categoryIds !== undefined && categoryIds.length > 0 ? { category_id: { in: categoryIds } } : {}),
-      },
-      _sum: { amount_minor: true },
     });
-
-    const splitSum =
-      categoryIds === undefined || categoryIds.length === 0
-        ? 0n
-        : (
-            await this.prisma.client.transaction_splits.aggregate({
-              where: {
-                household_id: context.householdId,
-                category_id: { in: categoryIds },
-                transactions: base,
-              },
-              _sum: { amount_minor: true },
-            })
-          )._sum.amount_minor ?? 0n;
-
-    const count = await this.prisma.client.transactions.count({
-      where: {
-        ...base,
-        ...tagFilter,
-        ...(categoryIds !== undefined && categoryIds.length > 0
-          ? {
-              OR: [
-                { category_id: { in: categoryIds } },
-                { transaction_splits: { some: { category_id: { in: categoryIds } } } },
-              ],
-            }
-          : {}),
-      },
-    });
-
-    const totalMinor = (direct._sum.amount_minor ?? 0n) + splitSum;
-    const formatted = this.format(totalMinor, context.currency);
+    const formatted = this.format(totals.minor, context.currency);
     const label = kind === 'INCOME' ? 'Income' : 'Spending';
 
     return {
@@ -328,7 +277,7 @@ export class FactAssemblyService {
       totals: [
         {
           label,
-          money: { amountMinor: totalMinor.toString(), currency: context.currency },
+          money: { amountMinor: totals.minor.toString(), currency: context.currency },
           formatted,
         },
       ],
@@ -337,7 +286,7 @@ export class FactAssemblyService {
         headline: formatted,
         currency: context.currency,
       },
-      transactionCount: count,
+      transactionCount: totals.transactionCount,
       filters: this.filtersOf(context, scope, kind),
     };
   }
@@ -387,9 +336,11 @@ export class FactAssemblyService {
     const proposal = proposeSavings({
       targetMinor,
       currency: context.currency,
-      candidates: [...spend.totals.entries()]
-        .filter(([categoryId]) => !spend.incomeIds.has(categoryId))
-        .map(([categoryId, spentMinor]) => ({ categoryId, spentMinor })),
+      // `kind: 'EXPENSE'` already excludes every INCOME Category, so there is nothing left to filter.
+      candidates: [...spend.totals.entries()].map(([categoryId, spentMinor]) => ({
+        categoryId,
+        spentMinor,
+      })),
     });
 
     const rows = proposal.lines.map((line) => ({
@@ -441,7 +392,9 @@ export class FactAssemblyService {
    * Confirmed spend per Category in the period, splits included (I-1, ADR-015).
    *
    * Shared by the ranked view and the savings proposal so the two can never disagree about what a
-   * Category spent — the failure mode being a plan built on figures the screen contradicts.
+   * Category spent — the failure mode being a plan built on figures the screen contradicts. Only the
+   * aggregation moved to {@link SpendReadModel}; the Category tree stays here because a label is a
+   * taxonomy concern, and the money is not.
    */
   private async categorySpend(
     context: Context,
@@ -449,89 +402,49 @@ export class FactAssemblyService {
   ): Promise<{
     readonly totals: ReadonlyMap<string, bigint>;
     readonly byId: ReadonlyMap<string, { name: string; parent_id: string | null }>;
-    readonly incomeIds: ReadonlySet<string>;
     readonly transactionCount: number;
   }> {
-    const [direct, split, categories] = await Promise.all([
-      this.prisma.client.transactions.groupBy({
-        by: ['category_id'],
-        where: {
-          household_id: context.householdId,
-          deleted_at: null,
-          status: 'CONFIRMED',
-          kind,
-          category_id: { not: null },
-          occurred_local_date: this.range(context),
-        },
-        _sum: { amount_minor: true },
-        _count: { _all: true },
-      }),
-      this.prisma.client.transaction_splits.groupBy({
-        by: ['category_id'],
-        where: {
-          household_id: context.householdId,
-          transactions: {
-            deleted_at: null,
-            status: 'CONFIRMED',
-            kind,
-            occurred_local_date: this.range(context),
-          },
-        },
-        _sum: { amount_minor: true },
-      }),
+    const [rows, categories] = await Promise.all([
+      this.spendModel.byCategory(context.householdId, this.window(context), { kind }),
       this.prisma.client.categories.findMany({
         where: { household_id: context.householdId, deleted_at: null },
-        select: { id: true, name: true, parent_id: true, kind: true },
+        select: { id: true, name: true, parent_id: true },
       }),
     ]);
 
-    const byId = new Map(categories.map((row) => [row.id, row]));
-    const incomeIds = new Set(
-      categories.filter((row) => row.kind === 'INCOME').map((row) => row.id),
-    );
-    const totals = new Map<string, bigint>();
-    let transactionCount = 0;
-    for (const row of direct) {
-      if (row.category_id === null) continue;
-      totals.set(row.category_id, (totals.get(row.category_id) ?? 0n) + (row._sum.amount_minor ?? 0n));
-      transactionCount += row._count._all;
-    }
-    for (const row of split) {
-      totals.set(row.category_id, (totals.get(row.category_id) ?? 0n) + (row._sum.amount_minor ?? 0n));
-    }
-
-    return { totals, byId, incomeIds, transactionCount };
+    return {
+      totals: new Map(rows.map((row) => [row.categoryId, row.minor])),
+      byId: new Map(categories.map((row) => [row.id, row])),
+      transactionCount: rows.reduce((sum, row) => sum + row.transactionCount, 0),
+    };
   }
 
-  /** The N merchants with the most spend. Splits carry no Merchant, so this is direct spend only. */
+  /**
+   * The N merchants with the most spend.
+   *
+   * **The full Transaction amount, not the un-split part**: a split receipt paid to Lidl was paid to
+   * Lidl in full, which is docs/06 §4.3's rule and is implemented once in
+   * {@link SpendReadModel.byMerchant}. A row whose Merchant was never resolved is listed under its raw
+   * description instead of being dropped — hiding it would quietly understate the list the user is
+   * looking at (before 3.3.1 this query filtered `merchant_id: { not: null }`).
+   */
   private async topMerchants(context: Context, kind: 'EXPENSE' | 'INCOME'): Promise<Built> {
-    const grouped = await this.prisma.client.transactions.groupBy({
-      by: ['merchant_id'],
-      where: {
-        household_id: context.householdId,
-        deleted_at: null,
-        status: 'CONFIRMED',
-        kind,
-        merchant_id: { not: null },
-        occurred_local_date: this.range(context),
-      },
-      _sum: { amount_minor: true },
-      _count: { _all: true },
-      orderBy: { _sum: { amount_minor: 'desc' } },
-      take: Math.min(context.plan.slots.limit ?? 10, MAX_ROWS),
+    const grouped = await this.spendModel.byMerchant(context.householdId, this.window(context), {
+      kind,
+      limit: Math.min(context.plan.slots.limit ?? 10, MAX_ROWS),
     });
 
-    const retailers = await this.prisma.client.merchants.findMany({
-      where: { id: { in: grouped.map((row) => row.merchant_id).filter((id): id is string => id !== null) } },
-      select: { id: true, name: true },
-    });
-    const nameById = new Map(retailers.map((row) => [row.id, row.name]));
+    // One implementation of "what is this Merchant called", owned by the module that owns the table
+    // (the analytics `displayName` reads the same method), so the two surfaces cannot disagree.
+    const names = await this.merchants.displayNames(
+      grouped.map((row) => row.merchantId).filter((id): id is string => id !== null),
+    );
 
     const rows = grouped.map((row) => ({
-      label: nameById.get(row.merchant_id ?? '') ?? '—',
-      value: (row._sum.amount_minor ?? 0n).toString(),
-      formatted: this.format(row._sum.amount_minor ?? 0n, context.currency),
-      ...(row.merchant_id === null ? {} : { merchantId: row.merchant_id }),
+      label: row.merchantId === null ? (row.description ?? '—') : (names.get(row.merchantId) ?? '—'),
+      value: row.minor.toString(),
+      formatted: this.format(row.minor, context.currency),
+      ...(row.merchantId === null ? {} : { merchantId: row.merchantId }),
     }));
 
     return {
@@ -542,7 +455,7 @@ export class FactAssemblyService {
         headline: rows[0]?.formatted ?? this.format(0n, context.currency),
         topLabel: rows[0]?.label ?? '',
       },
-      transactionCount: grouped.reduce((sum, row) => sum + row._count._all, 0),
+      transactionCount: grouped.reduce((sum, row) => sum + row.transactionCount, 0),
       filters: { kind },
     };
   }
@@ -1029,6 +942,11 @@ export class FactAssemblyService {
 
   private range(context: Context): { gte: Date; lte: Date } {
     return { gte: this.date(context.period.start), lte: this.date(context.period.end) };
+  }
+
+  /** The plan's period as the read model's inclusive window. */
+  private window(context: Context): { from: LocalDate; to: LocalDate } {
+    return { from: context.period.start, to: context.period.end };
   }
 
   /** The provenance range for a **state** figure (a balance, the review queue): true as of today. */

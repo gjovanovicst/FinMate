@@ -8,6 +8,7 @@ import { ConfigModule } from './config/config.module';
 import { GraphqlModule } from './graphql/graphql.module';
 import { HealthController } from './health/health.controller';
 import { AccountsModule } from './modules/accounts/accounts.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AssistantModule } from './modules/assistant/assistant.module';
 import { BudgetingModule } from './modules/budgeting/budgeting.module';
 import { ClassificationModule } from './modules/classification/classification.module';
@@ -44,8 +45,11 @@ import { PrismaModule } from './prisma/prisma.module';
     InsightsModule,
     // Alerts and notifications (F-22). Imports `insights` — one direction only, per docs/05 §3.
     NotificationsModule,
-    // The assistant (F-23). Fact assembly only so far: docs/06 §8's `assistantAnswer` needs 3.2.3's
-    // narrator and template fallback before it can be published without inventing `answerText`.
+    // Analytics (F-20). Reads `SpendReadModel` rather than aggregating again, so the chart and the
+    // budget tile beside it are the same arithmetic (docs/06 §5.13).
+    AnalyticsModule,
+    // The assistant (F-23). Planner → fact assembly → narration, with the template fallback when no
+    // provider is configured (docs/06 §8).
     AssistantModule,
   ],
   controllers: [HealthController],

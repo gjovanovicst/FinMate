@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { GraphqlScalarsModule } from '../../graphql/scalars/scalars.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { BudgetingModule } from '../budgeting/budgeting.module';
+import { LedgerModule } from '../ledger/ledger.module';
 import { InsightsResolver } from './insights.resolver';
 import { InsightsService } from './insights.service';
 
@@ -11,7 +12,9 @@ import { InsightsService } from './insights.service';
  *
  * It composes rather than duplicates: `BudgetingModule` owns consumption, safe-to-spend and the
  * month-end projection, and this module reads those figures for the pace insight instead of writing a
- * second spend query. The generators themselves are in `@finmate/domain`, so what lands in `insights`
+ * second spend query. `LedgerModule` supplies `SpendReadModel`, which is where a split-aware category
+ * total lives — the trend baseline used to count direct rows only, and that is the divergence 3.3.1
+ * reconciled (docs/06 §5.13). The generators themselves are in `@finmate/domain`, so what lands in `insights`
  * is arithmetic the domain package already tests.
  *
  * `GraphqlScalarsModule` supplies `JSON`: a custom scalar must be reachable as a provider or Nest
@@ -19,7 +22,7 @@ import { InsightsService } from './insights.service';
  * (docs/15 §4).
  */
 @Module({
-  imports: [PrismaModule, BudgetingModule, GraphqlScalarsModule],
+  imports: [PrismaModule, BudgetingModule, LedgerModule, GraphqlScalarsModule],
   providers: [InsightsService, InsightsResolver],
   exports: [InsightsService],
 })

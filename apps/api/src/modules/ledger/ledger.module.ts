@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ClassificationModule } from '../classification/classification.module';
 import { TaxonomyModule } from '../taxonomy/taxonomy.module';
 import { ReviewResolver } from './review.resolver';
+import { SpendReadModel } from './spend-read-model';
 import { TransactionsExportController } from './transactions-export.controller';
 import { TransactionsResolver } from './transactions.resolver';
 import { TransactionsService } from './transactions.service';
@@ -26,7 +27,10 @@ import { TransactionsService } from './transactions.service';
 @Module({
   imports: [TaxonomyModule, ClassificationModule],
   controllers: [TransactionsExportController],
-  providers: [TransactionsResolver, TransactionsService, ReviewResolver],
-  exports: [TransactionsService],
+  providers: [TransactionsResolver, TransactionsService, ReviewResolver, SpendReadModel],
+  // `SpendReadModel` is exported because **every** consumer of a spend total must use it: analytics,
+  // insights and the assistant. A second split-aware sum is how two screens start disagreeing about
+  // the same Category (docs/06 §5.13).
+  exports: [TransactionsService, SpendReadModel],
 })
 export class LedgerModule {}

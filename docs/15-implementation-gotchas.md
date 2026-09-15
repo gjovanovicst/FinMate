@@ -295,6 +295,58 @@ The rules the domain exists to keep (ADR-003, ADR-016, I-1, I-2).
 - **Offline capture is idempotent** via client-generated `client_id` + `idempotency_key`. Never
   "check then insert" — rely on the unique index. *(ADR-016)*
 
+- **An unscoped spend total must not add `transaction_splits` to whole Transactions.** A split
+  Transaction carries the **full** `amount_minor` — its splits partition it, they do not sit beside it —
+  so `SUM(transactions.amount_minor) + SUM(transaction_splits.amount_minor)` over the same window
+  counts the split portion **twice**. The symptom is a total that is exactly one receipt too high: a
+  2 245,00 basket answered as 4 490,00, and an unscoped number wrong while every per-Category figure
+  beside it was right (those two sets *are* disjoint — I-1 makes a split Transaction's own `category_id`
+  null). Splits are added **only** when the scope names Categories. Found in 3.3.1 when the assistant's
+  fact assembly moved onto `SpendReadModel.total`; the read model's own spec now asserts the identity
+  `uncategorised + Σ byCategory === total`.
+
+- **A split's predicate belongs on its parent, not on `transaction_splits`.** A Tag lives in
+  `transaction_tags`, which is parent-scoped and has no `household_id`, so filtering
+  `transaction_splits` by `{ transaction_tags: { some: … } }` is an **unknown argument** — and because
+  the where-clause is built by a helper whose return type is inferred, `tsc` stays green and Prisma
+  fails only when that path runs. Everything that belongs to the Transaction (kind, account, merchant,
+  tag, date, status) goes inside `transactions: { … }`; only `category_id` and `household_id` sit on the
+  split itself.
+
+- **A per-Category count is a count of contributions, and a Category whose spend arrived only as a
+  split used to report `0`.** `byCategory`'s direct branch counts rows, and its split branch originally
+  added money while leaving the count alone ("the direct count already counted this Transaction once")
+  — which is false, because a split Transaction is never in a Category's direct group (I-1). A
+  supermarket row therefore read *0 transactions, 17.450,00 spent*. The split rows are now read and
+  counted as **distinct `transaction_id`s** (there is no unique key on
+  `(transaction_id, category_id)`, so `_count._all` would have double-counted a duplicated split). The
+  rollup then sums those counts, so a **subtree** figure is a sum of contributions: one receipt split
+  across two children of the same parent counts twice under the parent. That is documented on the field
+  rather than fixed, because a distinct count per node needs a query per node.
+
+- **A `categoryIds` scope does not expand a parent into its children — the caller must.** The read
+  model scopes by the ids it is given, and a parent Category with no spending of its own is the normal
+  case, so `spendOverTime(categoryIds: [root])` silently answers **zero** for a Category whose children
+  hold all the money. 3.3.1's analytics spec found it on the first run. Analytics expands the subtree
+  itself (`withDescendants`, a fixpoint over the parent links) before calling the read model, which is
+  also what the assistant's planner does; anything new that takes a Category id has to do the same or
+  it will report a plausible zero.
+
+- **A derived difference is a `Balance`, never a `Money`.** `Money` is non-negative by contract
+  (ADR-003) because a Transaction's direction lives in `kind`, but `monthComparison.delta` and
+  `cashflow.net` are *sums of many movements* and are routinely negative — a month that spent less than
+  its baseline, or one that paid out more than it took in. docs/06 §4.3 wrote both as `Money`, which
+  cannot be serialised at all: the domain's `money()` helper rejects a negative amount, so the first
+  deficit month is an INTERNAL rather than a number. They are `Balance` (write-only on the wire, since a
+  client must never supply one).
+
+- **A docs SDL sketch omits the `Model` suffix that code-first NestJS adds.** The documents write
+  `type CategorySpend`, `type Budget`, `type Insight`; `apps/api/schema.gql` has `CategorySpendModel`,
+  `BudgetModel`, `InsightModel`, because Nest names an `@ObjectType()` after its **class**. Renaming the
+  class to match the document renames the type on the wire and breaks every client query — the document
+  is the shorthand, the generated schema is the contract.
+
+
 ---
 
 ## 6. Classification, rules and the learning loop

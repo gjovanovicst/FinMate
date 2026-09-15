@@ -4,6 +4,7 @@ import { GraphqlScalarsModule } from '../../graphql/scalars/scalars.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { AccountsModule } from '../accounts/accounts.module';
 import { BudgetingModule } from '../budgeting/budgeting.module';
+import { LedgerModule } from '../ledger/ledger.module';
 import { TaxonomyModule } from '../taxonomy/taxonomy.module';
 import { NARRATOR, UNCONFIGURED_NARRATOR, type AssistantNarrator } from './assistant-narrator';
 import { AssistantResolver } from './assistant.resolver';
@@ -22,7 +23,10 @@ import { FactAssemblyService } from './fact-assembly.service';
  * ## Why it imports rather than recomputes
  *
  * `AccountsModule` and `BudgetingModule` because a balance (I-4) and budget consumption (I-5,
- * ADR-015) are arithmetic that already exists in exactly one place. `TaxonomyModule` for the
+ * ADR-015) are arithmetic that already exists in exactly one place. `LedgerModule` supplies
+ * `SpendReadModel`, the split-aware aggregate the assistant shares with analytics and the insight
+ * trends since 3.3.1 — a second copy of I-1/I-7 in this module is exactly what that removed.
+ * `TaxonomyModule` for the
  * Household's own vocabulary, which the planner matches a question's names against — a second copy of
  * that vocabulary is how `Lidl` stops resolving after somebody renames the Merchant.
  *
@@ -44,7 +48,14 @@ import { FactAssemblyService } from './fact-assembly.service';
  * @module apps/api/src/modules/assistant
  */
 @Module({
-  imports: [PrismaModule, GraphqlScalarsModule, AccountsModule, BudgetingModule, TaxonomyModule],
+  imports: [
+    PrismaModule,
+    GraphqlScalarsModule,
+    AccountsModule,
+    BudgetingModule,
+    LedgerModule,
+    TaxonomyModule,
+  ],
   providers: [
     FactAssemblyService,
     AssistantService,

@@ -469,6 +469,18 @@ enum CaptureRejectionCode {
   VALIDATION_FAILED
 }
 
+"""
+One bucket of the cashflow series: what came in, what went out, what is left.
+"""
+type CashflowBucketModel {
+  bucketStart: LocalDate!
+  expense: Money!
+  income: Money!
+
+  """income − expense. **Signed**: negative is a deficit month."""
+  net: Balance!
+}
+
 type CategoryKeywordModel {
   id: String!
   keyword: String!
@@ -528,6 +540,44 @@ enum CategorySource {
   IMPORT
   RULE
   USER
+}
+
+"""
+One Category’s spend in a range. With `includeSubcategories` the figure of a Category that has children includes them, and `isSubtreeAggregate` says so.
+"""
+type CategorySpendModel {
+  category: CategoryModel
+
+  """
+  Null for the uncategorised bucket — money that landed in no Category (I-12 aside).
+  """
+  categoryId: UUID
+
+  """
+  Change against `priorPeriodTotal`, or **null when there is nothing to compare against** — no prior spend at all, or a prior of zero. docs/02 §4.15 renders that as “nema osnova za poređenje”.
+  """
+  changeRatio: Float
+
+  """
+  True when this row’s figures include spend filed under a descendant Category.
+  """
+  isSubtreeAggregate: Boolean!
+  periodEnd: LocalDate!
+  periodStart: LocalDate!
+
+  """Only `monthComparison` populates this; null everywhere else."""
+  priorPeriodTotal: Money
+
+  """
+  This row’s share of the range’s confirmed expense, 0 when the range has none.
+  """
+  shareOfTotal: Float!
+  total: Money!
+
+  """
+  Transactions that contributed to this Category, across the subtree when it is an aggregate. One Transaction split across two Categories counts once in each, so a parent’s figure is a sum of contributions rather than a distinct count of Transactions.
+  """
+  transactionCount: Int!
 }
 
 """
@@ -784,6 +834,14 @@ type DashboardModel {
 }
 
 """
+An inclusive range of the Household’s own days. Both ends are days, never instants.
+"""
+input DateRangeInput {
+  end: LocalDate!
+  start: LocalDate!
+}
+
+"""
 A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
 """
 scalar DateTime
@@ -1020,10 +1078,45 @@ type MerchantSelectionResultModel {
   withoutCategory: [String!]!
 }
 
+type MerchantSpendModel {
+  """
+  The Merchant’s name, or the raw description when it was never resolved (docs/06 §4.3).
+  """
+  displayName: String!
+
+  """Null when the Transaction’s Merchant was never resolved."""
+  merchantId: UUID
+
+  """
+  The full Transaction amount, splits included: a receipt paid to Lidl was paid to Lidl in full.
+  """
+  total: Money!
+  transactionCount: Int!
+}
+
 """
 Money as integer minor units plus an ISO-4217 currency. amountMinor is a string to avoid losing precision beyond Number.MAX_SAFE_INTEGER (ADR-003). Always non-negative.
 """
 scalar Money
+
+type MonthComparisonModel {
+  """
+  Every Category with spend in either month, biggest current spend first. A Category that fell to zero is present with a total of 0 and a ratio of −1 rather than being dropped.
+  """
+  categories: [CategorySpendModel!]!
+
+  """The `YYYY-MM` month they are compared against."""
+  compareTo: String!
+  compareTotal: Money!
+
+  """total − compareTotal. **Signed**."""
+  delta: Balance!
+  deltaRatio: Float
+
+  """The `YYYY-MM` month the figures are for."""
+  period: String!
+  total: Money!
+}
 
 type Mutation {
   """
@@ -1636,6 +1729,11 @@ type Query {
   budgets(today: LocalDate): [BudgetModel!]!
 
   """
+  What came in, what went out and the signed net, per bucket, over a range.
+  """
+  cashflow(bucket: TimeBucket!, range: DateRangeInput!): [CashflowBucketModel!]!
+
+  """
   The Household category tree, flat, each node carrying its depth and breadcrumb. Ordered by sortOrder then name.
   """
   categories(kind: CategoryKind): [CategoryModel!]!
@@ -1690,6 +1788,11 @@ type Query {
   ): MerchantConnection!
 
   """
+  One month against another (`YYYY-MM`; `compareTo` defaults to the month before). Each Category carries its baseline figure and a change ratio that is **null when there is nothing to compare against**, which docs/02 §4.15 renders as “nema osnova za poređenje”.
+  """
+  monthComparison(compareTo: String, period: String!): MonthComparisonModel!
+
+  """
   The Household notification preferences, stored in `households.settings.notifications` (docs/06 §5.14). A malformed or absent document falls back per field, never to an error.
   """
   notificationPreferences: NotificationPreferencesModel!
@@ -1739,12 +1842,27 @@ type Query {
   Every rule of this Household, active or not, ordered as the engine evaluates them (`priority ASC`, then newest first). `conflictsWith` is computed by running the real engine on an input each rule matches, so it cannot disagree with what the pipeline will do.
   """
   rules: [RuleModel!]!
+
+  """
+  Spend per Category over an inclusive range, biggest first, splits included (invariants I-1, I-7). With `includeSubcategories` a Category that has children carries their spend too and `isSubtreeAggregate` says so; the money in no Category is a row with a null `categoryId`, so the leaf rows’ shares add up to the whole range.
+  """
+  spendByCategory(accountIds: [UUID!], includeSubcategories: Boolean = true, range: DateRangeInput!): [CategorySpendModel!]!
+
+  """
+  The spend series over a range, one row per bucket — empty buckets included, so a month with no spending draws a zero rather than a gap. `categoryIds` scopes the series to those Categories’ subtree money, splits included, on the day the receipt was paid.
+  """
+  spendOverTime(bucket: TimeBucket!, categoryIds: [UUID!], range: DateRangeInput!): [SpendBucketModel!]!
   tag(id: ID!): TagModel
 
   """
   Every Tag in the Household, name-ordered. Not paginated: the transaction editor needs the whole set to render a chip picker, and a Household has tens of Tags rather than thousands.
   """
   tags: [TagModel!]!
+
+  """
+  The biggest Merchants of a range, full Transaction amounts (a split receipt counts under the shop that was paid). A Merchant that was never resolved is listed under its raw description.
+  """
+  topMerchants(limit: Int = 10, range: DateRangeInput!): [MerchantSpendModel!]!
   transaction(id: ID!): TransactionModel!
 
   """Transactions, newest first, keyset-paginated on the UUIDv7 id."""
@@ -2036,6 +2154,23 @@ type SkippedRowModel {
 }
 
 """
+One bucket of the spend series. Every bucket of the range is present, empty ones included.
+"""
+type SpendBucketModel {
+  bucketEnd: LocalDate!
+  bucketStart: LocalDate!
+
+  """Confirmed expense only (I-3, I-7)."""
+  expenseTotal: Money!
+  incomeTotal: Money!
+
+  """
+  Transactions in the bucket. A split Transaction is counted once, on its parent’s day (I-1).
+  """
+  transactionCount: Int!
+}
+
+"""
 One portion of a split. The amounts across all splits must sum EXACTLY to the transaction amount (invariant I-1).
 """
 input SplitInput {
@@ -2086,6 +2221,16 @@ type TagModel {
   Non-deleted Transactions in this Household carrying this Tag. Counted through the parent Transaction, because `transaction_tags` carries no `household_id` of its own.
   """
   transactionCount: Float!
+}
+
+"""
+How the range is divided. DAY, ISO WEEK, calendar MONTH, calendar QUARTER — the boundaries come from @finmate/domain, which is also what labels the axis (docs/06 §4.3).
+"""
+enum TimeBucket {
+  DAY
+  MONTH
+  QUARTER
+  WEEK
 }
 
 type TransactionConnection {
