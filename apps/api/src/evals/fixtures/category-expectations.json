@@ -1,5 +1,4 @@
 {
-  "$schema": "./category-expectations.schema.md",
   "_note": [
     "Hand-labelled category ground truth for the Phase 2 evaluation harness (docs/10 §5.1, docs/04 §11).",
     "The KEY is a fragment `description` exactly as `@finmate/nlp` extracts it from the v1 golden",
