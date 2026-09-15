@@ -29,8 +29,8 @@
  * amount is "is this a non-negative integer string", and a `number` is refused outright.
  *
  * **Raw confidence is returned as-is.** Calibration (§6.4) happens against observed outcomes per
- * `(task, model, prompt_version)` and needs the *raw* value; the gate is applied by the caller
- * (ADR-009).
+ * `(task, model, prompt_version)` and needs the *raw* value; the gate is applied to the calibrated
+ * one by the caller (ADR-009) — see `./calibration`.
  *
  * @module @finmate/ai
  */
@@ -44,6 +44,14 @@ import type {
 
 /** docs/04 §6.2's cap on the one-line rationale. */
 export const MAX_RATIONALE_CHARS = 140;
+
+/**
+ * docs/04 §6.2's alternatives are the **top 2–3** (docs/06 §"design rules" 3), so at most three.
+ *
+ * `CLASSIFY_SCHEMA` already carries `maxItems: 3` for providers that honour it; this is the runtime
+ * cap, because a `json_object` provider, a replay or a cache may not.
+ */
+export const MAX_ALTERNATIVES = 3;
 
 /** docs/08 §6.9 defence 11's instruction-like patterns, monitored rather than obeyed. */
 export const INJECTION_PATTERNS: readonly RegExp[] = [
@@ -98,7 +106,11 @@ export function validateClassifyProposal(
     .map((alternative) => ({
       categoryId: alternative.categoryId,
       confidence: clampConfidence(alternative.confidence),
-    }));
+    }))
+    // "Top 2–3" is a ranking by confidence, so the cap keeps the three highest. The sort is stable,
+    // so a provider that already ranked them keeps its own order for equal confidences.
+    .sort((left, right) => right.confidence - left.confidence)
+    .slice(0, MAX_ALTERNATIVES);
 
   const proposal: ClassifyProposal = {
     categoryId,

@@ -11,7 +11,8 @@
  *  - Routing is **LOCAL or EEA-endpoint only** for PARSE/CLASSIFY/NARRATE/OCR. An endpoint without
  *    an explicit `_EU` suffix is a GDPR Chapter V transfer and needs recorded consent.
  *
- * Implemented in Phase 2 task 2.2.1.
+ * Implemented in Phase 2 tasks 2.2.1 (provider abstraction) and 2.2.2 (structured-output validation
+ * and confidence calibration).
  *
  * ## How to use it
  *
@@ -43,7 +44,7 @@
  * - **No vendor SDK.** AGENTS.md rule 9: a new dependency needs an ADR, and an SDK would drag
  *   vendor-shaped types into the one package whose job is to treat providers symmetrically.
  * - **No prompt content.** This is the transport layer; the §6.3 template is rendered by the caller
- *   (task 2.2.2), which passes the `prompt_template_id` + `version` this package echoes back.
+ *   (task 2.2.3), which passes the `prompt_template_id` + `version` this package echoes back.
  *
  * @module @finmate/ai
  */
@@ -187,6 +188,7 @@ export {
 
 export {
   INJECTION_PATTERNS,
+  MAX_ALTERNATIVES,
   MAX_NEEDS_USER_INPUT,
   MAX_RATIONALE_CHARS,
   calendarDay,
@@ -200,6 +202,40 @@ export {
   validateExtracted,
   type ValidatedClassify,
 } from './validation';
+
+// --- confidence calibration ---------------------------------------------------------------------
+
+export {
+  AUTO_APPLY_MIN,
+  CALIBRATION_MAP_VERSION,
+  DEFAULT_LANE_THRESHOLDS,
+  MIN_CALIBRATION_SAMPLES,
+  SHRINK_FACTOR,
+  VERIFY_MIN,
+  applyCalibrationMap,
+  asRawConfidence,
+  buildCalibrationTable,
+  calibratedConfidenceFromStorage,
+  calibrate,
+  calibrationKeyFromPrompt,
+  calibrationKeyId,
+  fitCalibrationMap,
+  isValidCalibrationMap,
+  laneFor,
+  needsReview,
+  parseCalibrationMap,
+  shrinkCalibrationMap,
+  type CalibratedConfidence,
+  type CalibrationKey,
+  type CalibrationMap,
+  type CalibrationPoint,
+  type CalibrationSample,
+  type CalibrationStrategy,
+  type CalibrationTable,
+  type ConfidenceLane,
+  type LaneThresholds,
+  type RawConfidence,
+} from './calibration';
 
 // --- adapters -----------------------------------------------------------------------------------
 

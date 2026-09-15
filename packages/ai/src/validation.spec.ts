@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ClassifyProposal } from './provider';
 import {
+  MAX_ALTERNATIVES,
   MAX_NEEDS_USER_INPUT,
   MAX_RATIONALE_CHARS,
   calendarDay,
@@ -81,6 +82,29 @@ describe('the closed category list', () => {
       ALLOWED,
     );
     expect(validated.proposal.alternatives).toEqual([]);
+  });
+
+  it('caps alternatives at the documented top 2–3, highest confidence first', () => {
+    const validated = validateClassifyProposal(
+      proposal({
+        alternatives: [
+          { categoryId: 'c-02', confidence: 0.4 },
+          { categoryId: 'c-17', confidence: 0.7 },
+          { categoryId: 'c-01', confidence: 0.2 },
+          { categoryId: 'c-99', confidence: 0.95 }, // outside the list, so not a candidate
+          { categoryId: 'c-02', confidence: 0.1 },
+        ],
+      }),
+      ALLOWED,
+    );
+    // The out-of-list entry is dropped *before* the cap, so a hallucinated id cannot push a real
+    // alternative out of the top three.
+    expect(validated.proposal.alternatives).toEqual([
+      { categoryId: 'c-17', confidence: 0.7 },
+      { categoryId: 'c-02', confidence: 0.4 },
+      { categoryId: 'c-01', confidence: 0.2 },
+    ]);
+    expect(MAX_ALTERNATIVES).toBe(3);
   });
 });
 
