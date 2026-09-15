@@ -264,6 +264,35 @@ Scenario: Determinism and re-runs
   And a re-run for the same period writes nothing new for a condition already recorded
 ```
 
+#### F-22 delivery — channel-aware copy (task 3.1.3)
+
+docs/08 threat **T-09** (*"notification content on a lock screen discloses amounts or third-party
+names"*) fixes the copy, and it is a **per-channel** rule, not a wording preference:
+
+```gherkin
+Scenario: A lock-screen-safe payload
+  Given any insight and any channel that is not IN_APP
+  Then its title and body contain no digit at all
+  And they contain no Merchant or Counterparty name
+  And the body names the user's own category and asks them to open the app
+  And an IN_APP row carries the full figures, because the app is behind authentication
+
+Scenario: Preferences decide what is delivered
+  Given the Household notification preferences in households.settings.notifications
+  Then a rule's channels are intersected with them and never widened
+  And the preference quiet hours apply to a rule that states none of its own
+  And a malformed or absent document falls back per field, never to an error
+
+Scenario: Dispatch delivers what is due
+  Given a QUEUED notification
+  When the dispatch job runs
+  Then quiet hours are re-checked at that moment, not trusted from when the row was written
+  And an IN_APP row becomes SENT because the row is the delivery
+  And an EMAIL row is sent over SMTP
+  And a push row stays QUEUED, because this build cannot deliver it
+  And a delivery failure is recorded FAILED rather than retried forever
+```
+
 #### F-22 alerts — the evaluator's rules (task 3.1.2)
 
 Canonical for `packages/domain/src/alerts.ts` (docs/05 §9's pipeline). An alert is a **decision**, not

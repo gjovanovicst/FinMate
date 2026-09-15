@@ -7,7 +7,9 @@ import { runWithTenant, type TenantContext } from '../../common/tenancy/tenant-c
 import { ConfigModule } from '../../config/config.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuthModule } from '../auth/auth.module';
 import { BudgetingModule } from '../budgeting/budgeting.module';
+import { MailService } from '../mail/mail.service';
 import { InsightsModule } from '../insights/insights.module';
 import { NotificationsModule } from './notifications.module';
 import { NotificationsService } from './notifications.service';
@@ -25,6 +27,21 @@ describe('notifications (integration)', () => {
   let moduleRef: TestingModule;
   let prisma: PrismaService;
   let notifications: NotificationsService;
+
+  /**
+   * A stand-in for SMTP.
+   *
+   * The suite is not testing nodemailer or Mailhog, and a real socket would make it flaky; what it
+   * *is* testing is that dispatch hands the row to the mailer with the lock-screen-safe copy. So the
+   * stub records what it was given.
+   */
+  const sentMail: { to: string; subject: string; text: string }[] = [];
+  const mailStub = {
+    sendNotification: (to: string, subject: string, text: string): Promise<void> => {
+      sentMail.push({ to, subject, text });
+      return Promise.resolve();
+    },
+  };
 
   const householdId = uuidv7();
   const otherHouseholdId = uuidv7();
@@ -83,8 +100,20 @@ describe('notifications (integration)', () => {
 
   beforeAll(async () => {
     moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot(), PrismaModule, BudgetingModule, InsightsModule, NotificationsModule],
-    }).compile();
+      // `AuthModule` is in the graph because it is `@Global` and provides `MailService` — the same
+      // reason `AppModule` imports it. The real transport is replaced below: CI has no Mailhog.
+      imports: [
+        ConfigModule.forRoot(),
+        PrismaModule,
+        AuthModule,
+        BudgetingModule,
+        InsightsModule,
+        NotificationsModule,
+      ],
+    })
+      .overrideProvider(MailService)
+      .useValue(mailStub)
+      .compile();
     prisma = moduleRef.get(PrismaService);
     notifications = moduleRef.get(NotificationsService);
 
@@ -312,6 +341,137 @@ describe('notifications (integration)', () => {
     );
     expect(critical).not.toBeNull();
     expect(critical?.title).toContain('Budget overrun');
+  });
+
+  it('keeps every non-in-app body free of figures (T-09), and the in-app body full', async () => {
+    const [rule] = await asTenant(() => notifications.alerts(householdId));
+    await asTenant(() =>
+      notifications.updateRule(householdId, { id: rule!.id, channels: ['IN_APP', 'EMAIL'] }),
+    );
+    // The preference must accept EMAIL too, or the row is never written at all.
+    await asTenant(() => notifications.updatePreferences(householdId, { channels: ['IN_APP', 'EMAIL'] }));
+    await budgetFor('2027-01-01');
+    await spend(foodId, 12_000n, '2027-01-05');
+    await asTenant(() => notifications.run(householdId, userId, '2027-01-20' as LocalDate));
+
+    const rows = await asTenant(() =>
+      prisma.client.notifications.findMany({
+        where: { household_id: householdId, dedupe_key: { startsWith: 'BUDGET_PACE:2027-01-01' } },
+      }),
+    );
+    const inApp = rows.find((row) => row.channel === 'IN_APP');
+    const email = rows.find((row) => row.channel === 'EMAIL');
+    expect(inApp).toBeDefined();
+    expect(email).toBeDefined();
+    // In-app carries the figures…
+    expect(/\d/.test(inApp!.body)).toBe(true);
+    // …and the channel that lands on a lock screen carries none, by the only test that survives a
+    // new generator: no digit at all (docs/08 T-09).
+    expect(/\d/.test(email!.title)).toBe(false);
+    expect(/\d/.test(email!.body)).toBe(false);
+  });
+
+  it('stores preferences in households.settings and honours them', async () => {
+    const updated = await asTenant(() =>
+      notifications.updatePreferences(householdId, {
+        channels: ['IN_APP'],
+        quietHours: { start: '21:00', end: '08:00' },
+        positiveFeedback: false,
+        locale: 'sr-Latn',
+      }),
+    );
+    expect(updated.quietHours).toEqual({ start: '21:00', end: '08:00' });
+    expect(updated.positiveFeedback).toBe(false);
+
+    // Read back through the same path the resolver uses.
+    expect(await asTenant(() => notifications.preferences(householdId))).toEqual(updated);
+
+    // The write must not clobber the other keys in the settings document.
+    const household = await asTenant(() =>
+      prisma.client.households.findFirst({ where: { id: householdId }, select: { settings: true } }),
+    );
+    const settings = household?.settings as Record<string, unknown>;
+    expect(settings['notifications']).toEqual(updated);
+
+    // And the evaluator sees them: EMAIL is refused by the preference even when the rule allows it.
+    const [rule] = await asTenant(() => notifications.alerts(householdId));
+    await asTenant(() =>
+      notifications.updateRule(householdId, { id: rule!.id, channels: ['IN_APP', 'EMAIL'] }),
+    );
+    await budgetFor('2027-02-01');
+    await spend(foodId, 12_000n, '2027-02-05');
+    await asTenant(() => notifications.run(householdId, userId, '2027-02-20' as LocalDate));
+    const february = await asTenant(() =>
+      prisma.client.notifications.findMany({
+        where: { household_id: householdId, dedupe_key: { startsWith: 'BUDGET_PACE:2027-02-01' } },
+      }),
+    );
+    expect(february.map((row) => row.channel)).toEqual(['IN_APP']);
+
+    await asTenant(() => notifications.updatePreferences(householdId, { quietHours: null }));
+  });
+
+  it('dispatches what is due: in-app becomes SENT, email goes out, push stays queued', async () => {
+    // A quiet-hours window covering now, so the run writes QUEUED rows rather than SENT ones.
+    const hour = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Belgrade',
+      hour: '2-digit',
+      hour12: false,
+    }).format(new Date());
+    const next = String((Number(hour) + 1) % 24).padStart(2, '0');
+    await asTenant(() =>
+      notifications.updatePreferences(householdId, {
+        channels: ['IN_APP', 'EMAIL', 'WEB_PUSH'],
+        quietHours: { start: `${hour}:00`, end: `${next}:00` },
+      }),
+    );
+    const [rule] = await asTenant(() => notifications.alerts(householdId));
+    await asTenant(() =>
+      notifications.updateRule(householdId, {
+        id: rule!.id,
+        isActive: true,
+        channels: ['IN_APP', 'EMAIL', 'WEB_PUSH'],
+      }),
+    );
+    await budgetFor('2027-03-01');
+    await spend(foodId, 12_000n, '2027-03-05');
+    const run = await asTenant(() => notifications.run(householdId, userId, '2027-03-20' as LocalDate));
+    expect(run.queued).toBeGreaterThan(0);
+
+    // Still inside the window: the drain defers everything.
+    const deferred = await asTenant(() => notifications.dispatch(householdId));
+    expect(deferred.deferred).toBeGreaterThan(0);
+    expect(deferred.sent).toBe(0);
+
+    // Window over.
+    await asTenant(() => notifications.updatePreferences(householdId, { quietHours: null }));
+    const pass = await asTenant(() => notifications.dispatch(householdId));
+    expect(pass.sent).toBeGreaterThan(0);
+    expect(pass.skipped).toBeGreaterThan(0);
+
+    const rows = await asTenant(() =>
+      prisma.client.notifications.findMany({
+        where: { household_id: householdId, dedupe_key: { startsWith: 'BUDGET_PACE:2027-03-01' } },
+      }),
+    );
+    const byChannel = new Map(rows.map((row) => [row.channel, row]));
+    expect(byChannel.get('IN_APP')?.status).toBe('SENT');
+    expect(byChannel.get('IN_APP')?.sent_at).not.toBeNull();
+    // EMAIL is handed to the mailer, with the lock-screen-safe copy (T-09) and the owner's address.
+    expect(byChannel.get('EMAIL')?.status).toBe('SENT');
+    const mailed = sentMail.find((entry) => entry.subject === byChannel.get('EMAIL')?.title);
+    expect(mailed).toBeDefined();
+    expect(/\d/.test(mailed!.text)).toBe(false);
+    expect(mailed!.to).toContain('@');
+    // Push cannot be delivered by this build: left QUEUED, which is the honest state.
+    expect(byChannel.get('WEB_PUSH')?.status).toBe('QUEUED');
+
+    // Idempotent as far as sending goes: nothing is delivered twice. Push rows are still *considered*
+    // on every pass — they stay QUEUED until Phase 4 can deliver them — which is why `skipped`, not
+    // `considered`, is the count that returns to zero.
+    const again = await asTenant(() => notifications.dispatch(householdId));
+    expect(again.sent).toBe(0);
+    expect(again.skipped).toBeGreaterThan(0);
   });
 
   it('pages, filters and counts unread; marking read reports the new count', async () => {

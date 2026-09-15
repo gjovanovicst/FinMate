@@ -5,9 +5,12 @@ import type { TenantContext } from '../../common/tenancy/tenant-context';
 import { toConnection } from '../../graphql/pagination';
 import {
   AlertRuleInput,
+  NotificationPreferencesInput,
+  NotificationPreferencesModel,
   AlertRuleModel,
   AlertRuleUpdateInput,
   AlertRunModel,
+  AlertDispatchModel,
   NotificationConnection,
   NotificationModel,
   NotificationPageArgs,
@@ -158,7 +161,62 @@ export class NotificationsResolver {
     return this.notificationsService.markAllRead(householdId, tenant.userId);
   }
 
+  // ---- preferences --------------------------------------------------------------------------
+
+  @Query(() => NotificationPreferencesModel, {
+    description:
+      'The Household notification preferences, stored in `households.settings.notifications` ' +
+      '(docs/06 §5.14). A malformed or absent document falls back per field, never to an error.',
+  })
+  async notificationPreferences(
+    @CurrentHouseholdId() householdId: string,
+  ): Promise<NotificationPreferencesModel> {
+    const preferences = await this.notificationsService.preferences(householdId);
+    return {
+      channels: preferences.channels as NotificationPreferencesModel['channels'],
+      quietHours: preferences.quietHours as Record<string, unknown> | null,
+      positiveFeedback: preferences.positiveFeedback,
+      locale: preferences.locale,
+    };
+  }
+
+  @Mutation(() => NotificationPreferencesModel, {
+    description: 'Merge the given fields into the stored preferences; omitted fields are unchanged.',
+  })
+  async updateNotificationPreferences(
+    @CurrentHouseholdId() householdId: string,
+    @Args('input') input: NotificationPreferencesInput,
+  ): Promise<NotificationPreferencesModel> {
+    const preferences = await this.notificationsService.updatePreferences(householdId, {
+      ...(input.channels !== undefined
+        ? { channels: input.channels as NotificationPreferencesModel['channels'] }
+        : {}),
+      ...(input.quietHours !== undefined
+        ? { quietHours: input.quietHours as { start: string; end: string } | null }
+        : {}),
+      ...(input.positiveFeedback !== undefined ? { positiveFeedback: input.positiveFeedback } : {}),
+      ...(input.locale !== undefined ? { locale: input.locale } : {}),
+    });
+    return {
+      channels: preferences.channels as NotificationPreferencesModel['channels'],
+      quietHours: preferences.quietHours as Record<string, unknown> | null,
+      positiveFeedback: preferences.positiveFeedback,
+      locale: preferences.locale,
+    };
+  }
+
   // ---- evaluation ---------------------------------------------------------------------------
+
+  @Mutation(() => AlertDispatchModel, {
+    description:
+      'The `notifications.dispatch` job (docs/05 §8): deliver what is queued and due — quiet hours ' +
+      're-checked at dispatch time. `IN_APP` rows become SENT (the row is the delivery); `EMAIL` goes ' +
+      'through SMTP; push channels stay QUEUED because this build cannot deliver them (Phase 4).',
+  })
+  async dispatchNotifications(@CurrentHouseholdId() householdId: string): Promise<AlertDispatchModel> {
+    const result = await this.notificationsService.dispatch(householdId);
+    return { ...result };
+  }
 
   @Mutation(() => AlertRunModel, {
     description:

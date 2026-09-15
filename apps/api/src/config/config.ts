@@ -29,6 +29,15 @@ export const envSchema = z
 
     /** Base URL used to build links in outbound email. */
     APP_BASE_URL: z.string().default('http://localhost:4200'),
+    /**
+     * The product name, used in outbound copy (notifications, email).
+     *
+     * `FinMate` is a **working title that is already taken** (ADR-014) and the rule is that no brand
+     * string is hardcoded — so it comes from here. ⚠️ The web has the same string as the `app.name` i18n
+     * key, which makes this a second source of truth until a shared constant lands; when the name is
+     * decided (Q-1), both places change in one commit.
+     */
+    APP_NAME: z.string().default('FinMate'),
     SMTP_URL: z.string().optional(),
 
     /** Login throttling (docs/08 §3 — credential stuffing is threat T-02). */

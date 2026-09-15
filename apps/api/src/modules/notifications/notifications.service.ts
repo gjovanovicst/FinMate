@@ -1,25 +1,32 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 
 import {
   alertKindForInsight,
   evaluateAlerts,
-  money,
-  toMajorString,
+  isQuietHour,
   uuidv7,
   type AlertCandidate,
-  type AlertDecision,
   type AlertRuleFact,
-  type CurrencyCode,
   type NotificationChannel,
   type NotificationStatus,
   type QuietHours,
 } from '@finmate/domain';
 
+import { CONFIG, type AppConfig } from '../../config/config';
 import { Prisma } from '../../generated/prisma/client';
 import type { CursorPage } from '../../graphql/pagination';
 import { normalisePageSize } from '../../graphql/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { InsightsService } from '../insights/insights.service';
+import { composeNotification } from './notification-copy';
+import {
+  effectiveChannels,
+  effectiveQuietHours,
+  parseNotificationPreferences,
+  serialiseNotificationPreferences,
+  type NotificationPreferences,
+} from './notification-preferences';
 
 /**
  * Alerts and notifications — docs/05 §9's pipeline, docs/06 §5.14.
@@ -70,6 +77,16 @@ export interface NotificationView {
   readonly createdAt: Date;
 }
 
+export interface DispatchResult {
+  readonly considered: number;
+  readonly sent: number;
+  readonly failed: number;
+  /** Held because the user's quiet hours are on right now. */
+  readonly deferred: number;
+  /** Channels this build cannot deliver yet (push), left `QUEUED` rather than marked sent. */
+  readonly skipped: number;
+}
+
 export interface AlertRunResult {
   readonly insightsCreated: number;
   readonly notificationsCreated: number;
@@ -107,6 +124,9 @@ function quietHoursValue(value: Record<string, unknown> | null | undefined): Pri
  * actually on and `PATCH`ing a rule edits the thing that decides. `BUDGET_THRESHOLD` and
  * `RECURRING_DUE`/`GOAL_REACHED` are absent because nothing produces them yet.
  */
+/** How many queued rows one drain pass handles. The job runs every minute (docs/05 §8). */
+export const DISPATCH_BATCH = 200;
+
 export const DEFAULT_ALERT_RULES: readonly AlertRuleInputShape[] = [
   { kind: 'PACE_OVERRUN', threshold: {}, channels: ['IN_APP'], isActive: true },
   { kind: 'UNUSUAL_SPEND', threshold: {}, channels: ['IN_APP'], isActive: true },
@@ -117,6 +137,8 @@ export class NotificationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly insights: InsightsService,
+    private readonly mail: MailService,
+    @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
   // -------------------------------------------------------------------------------------------
@@ -193,7 +215,7 @@ export class NotificationsService {
     const generated = await this.insights.generate(householdId, asOf);
     await this.ensureDefaultRules(householdId);
 
-    const [insights, rules, notifications, localTime] = await Promise.all([
+    const [insights, rules, notifications, localTime, preferences] = await Promise.all([
       this.insights.list(householdId, { includeDismissed: true }, 200),
       this.alerts(householdId),
       this.prisma.client.notifications.findMany({
@@ -201,6 +223,7 @@ export class NotificationsService {
         select: { dedupe_key: true, created_at: true },
       }),
       this.localTime(householdId),
+      this.preferences(householdId),
     ]);
 
     const candidates: AlertCandidate[] = [];
@@ -225,13 +248,11 @@ export class NotificationsService {
     const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const decisions = evaluateAlerts({
       candidates,
-      rules: rules.map((rule) => this.toRuleFact(rule)),
+      rules: rules.map((rule) => this.toRuleFact(rule, preferences)),
       localTime,
       sentDedupeKeys: new Set(notifications.map((row) => row.dedupe_key)),
       sentInLastDay: notifications.filter((row) => row.created_at >= dayAgo).length,
-      // Preferences have no store yet (docs/06 §5.14); positive feedback is on by default, which is
-      // F-22's stated intent.
-      positiveFeedback: true,
+      positiveFeedback: preferences.positiveFeedback,
     });
 
     let created = 0;
@@ -240,7 +261,12 @@ export class NotificationsService {
       const insight = insightById.get(decision.insightId);
       const dedupeKey = dedupeKeyByInsight.get(decision.insightId);
       if (insight === undefined || dedupeKey === undefined) continue;
-      const copy = this.compose(decision, insight);
+      const copy = composeNotification(
+        insight.kind,
+        insight.payload,
+        decision.channel,
+        this.config.APP_NAME,
+      );
       // The evaluator's `SENT` means "deliverable". Only `IN_APP` can actually be delivered in this
       // build — email/push is 3.1.3 — so a non-in-app row is stored `QUEUED` rather than claiming a
       // delivery that has not happened.
@@ -299,6 +325,135 @@ export class NotificationsService {
         },
       });
     }
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Dispatch
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * `notifications.dispatch` — docs/05 §8, every minute.
+   *
+   * Drains what is deliverable **now**: the row exists (`QUEUED`), the user's window has ended, and the
+   * channel can actually be delivered by this build.
+   *
+   * | Channel | What "delivered" means here |
+   * |---|---|
+   * | `IN_APP` | The row is the delivery: `SENT`, `sent_at = now`. The centre and the badge read it. |
+   * | `EMAIL` | Sent through `MailService` (Mailhog in development). A failure sets `FAILED` — never a retry loop, because the row records that we tried. |
+   * | `PUSH` / `WEB_PUSH` | **Not dispatched.** The browser subscription store and the service worker are Phase 4 (docs/09 §6), and there is no push dependency to send with. The rows stay `QUEUED`, which is the honest state, and `skipped` says how many. |
+   *
+   * The recipient is the Household's **owner**: v1 has exactly one Member (F-29 is a `Won't`), so the
+   * `user_id` on the row is already the only candidate, and resolving "members who want this" is a
+   * question the sharing UI has to answer anyway.
+   */
+  async dispatch(householdId: string): Promise<DispatchResult> {
+    const preferences = await this.preferences(householdId);
+    const localTime = await this.localTime(householdId);
+    const queued = await this.prisma.client.notifications.findMany({
+      where: { household_id: householdId, status: 'QUEUED' },
+      orderBy: { id: 'asc' },
+      take: DISPATCH_BATCH,
+    });
+
+    const owner = await this.prisma.client.households.findFirst({
+      where: { id: householdId },
+      select: { owner_user_id: true, users: { select: { email: true } } },
+    });
+
+    let sent = 0;
+    let failed = 0;
+    let deferred = 0;
+    let skipped = 0;
+
+    for (const row of queued) {
+      // Quiet hours are re-checked at dispatch time, not trusted from when the row was written: the
+      // window is a clock, and the row may have waited hours for it to end.
+      if (this.inQuietHours(localTime, preferences.quietHours)) {
+        deferred += 1;
+        continue;
+      }
+      if (row.channel === 'PUSH' || row.channel === 'WEB_PUSH') {
+        skipped += 1;
+        continue;
+      }
+
+      try {
+        if (row.channel === 'EMAIL') {
+          if (owner?.users?.email === undefined) {
+            skipped += 1;
+            continue;
+          }
+          await this.mail.sendNotification(owner.users.email, row.title, row.body);
+        }
+        await this.prisma.client.notifications.updateMany({
+          where: { id: row.id, status: 'QUEUED' },
+          data: { status: 'SENT', sent_at: new Date() },
+        });
+        sent += 1;
+      } catch {
+        // A failed delivery is recorded, not retried forever: the status is the honest report, and
+        // `runAlerts` will not recreate the condition because the dedupe key is spent.
+        await this.prisma.client.notifications.updateMany({
+          where: { id: row.id },
+          data: { status: 'FAILED' },
+        });
+        failed += 1;
+      }
+    }
+
+    return { sent, failed, deferred, skipped, considered: queued.length };
+  }
+
+  /** The window that governs dispatch: the Household preference (rules are re-read at generation). */
+  private inQuietHours(localTime: string, quietHours: QuietHours | null): boolean {
+    if (quietHours === null) return false;
+    return isQuietHour(localTime, quietHours);
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Preferences
+  // -------------------------------------------------------------------------------------------
+
+  /** docs/06 §3.2: `households.settings.notifications`, with per-field fallback (docs/06 §5.14). */
+  async preferences(householdId: string): Promise<NotificationPreferences> {
+    const household = await this.prisma.client.households.findFirst({
+      where: { id: householdId },
+      select: { settings: true },
+    });
+    const settings = (household?.settings ?? {}) as Record<string, unknown>;
+    return parseNotificationPreferences(settings['notifications']);
+  }
+
+  async updatePreferences(
+    householdId: string,
+    input: {
+      readonly channels?: readonly NotificationChannel[];
+      readonly quietHours?: QuietHours | null;
+      readonly positiveFeedback?: boolean;
+      readonly locale?: string | null;
+    },
+  ): Promise<NotificationPreferences> {
+    const current = await this.preferences(householdId);
+    const next = serialiseNotificationPreferences({
+      channels: input.channels ?? current.channels,
+      quietHours: input.quietHours === undefined ? current.quietHours : input.quietHours,
+      positiveFeedback: input.positiveFeedback ?? current.positiveFeedback,
+      locale: input.locale === undefined ? current.locale : input.locale,
+    });
+
+    const household = await this.prisma.client.households.findFirst({
+      where: { id: householdId },
+      select: { settings: true },
+    });
+    const settings = (household?.settings ?? {}) as Record<string, unknown>;
+    // Read-modify-write of one JSONB key: the other keys (onboarding progress, AI thresholds) must
+    // survive, which is why the document is merged rather than replaced.
+    await this.prisma.client.households.updateMany({
+      where: { id: householdId },
+      data: { settings: { ...settings, notifications: next } as Prisma.InputJsonValue },
+    });
+    return parseNotificationPreferences(next);
   }
 
   // -------------------------------------------------------------------------------------------
@@ -372,61 +527,6 @@ export class NotificationsService {
   // Copy and small helpers
   // -------------------------------------------------------------------------------------------
 
-  /**
-   * Compose the notification text from the insight's payload.
-   *
-   * Every numeral comes from the payload the generators wrote (ADR-001) — this function formats and
-   * never computes. English only, see the module docs.
-   */
-  compose(
-    decision: AlertDecision,
-    insight: { readonly kind: string; readonly payload: Record<string, unknown> },
-  ): { title: string; body: string } {
-    const payload = insight.payload;
-    const currency = typeof payload['currency'] === 'string' ? payload['currency'] : 'RSD';
-    const amount = (key: string): string => {
-      const raw = payload[key];
-      if (typeof raw !== 'string') return '—';
-      return toMajorString(money(BigInt(raw), currency as CurrencyCode));
-    };
-    const subject = typeof payload['categoryPath'] === 'string' ? payload['categoryPath'] : null;
-
-    switch (insight.kind) {
-      case 'BUDGET_PACE':
-        return {
-          title: subject === null ? 'Budget overrun ahead' : `Budget overrun ahead: ${subject}`,
-          body:
-            `Projected ${amount('projectedTotalMinor')} against a ${amount('limitMinor')} limit — ` +
-            `${amount('projectedOverrunMinor')} over.`,
-        };
-      case 'CATEGORY_SPIKE':
-        return {
-          title: `Spending spike: ${subject ?? 'a category'}`,
-          body:
-            `${amount('currentMinor')} so far, against a usual ${amount('baselineMeanMinor')} ` +
-            `(${String(payload['multiple'] ?? '—')}×).`,
-        };
-      case 'UNUSUAL_SPEND':
-        return {
-          title: `Unusual amount: ${subject ?? 'a category'}`,
-          body:
-            `${amount('amountMinor')} is ${String(payload['multiple'] ?? '—')}× the usual ` +
-            `${amount('medianMinor')} here.`,
-        };
-      case 'POSITIVE_TREND':
-        return {
-          title: `Good news: ${subject ?? 'a category'}`,
-          body: `${amount('savedMinor')} less than usual this month.`,
-        };
-      default:
-        // A kind added to the vocabulary but not to this switch must still produce a usable row.
-        return {
-          title: `Insight: ${insight.kind}`,
-          body: `${decision.alertKind} — ${amount('currentMinor')}`,
-        };
-    }
-  }
-
   private async timeZoneFor(householdId: string): Promise<string> {
     const household = await this.prisma.client.households.findFirst({
       where: { id: householdId },
@@ -469,12 +569,14 @@ export class NotificationsService {
     };
   }
 
-  private toRuleFact(rule: AlertRuleView): AlertRuleFact {
+  private toRuleFact(rule: AlertRuleView, preferences: NotificationPreferences): AlertRuleFact {
     return {
       id: rule.id,
       kind: rule.kind as AlertRuleFact['kind'],
-      channels: rule.channels as readonly NotificationChannel[],
-      quietHours: this.toQuietHours(rule.quietHours),
+      // Both are the *effective* values: a rule states what it wants, the preference states what the
+      // user accepts, and intersection is the only combination that cannot over-deliver.
+      channels: effectiveChannels(rule.channels as readonly NotificationChannel[], preferences),
+      quietHours: effectiveQuietHours(this.toQuietHours(rule.quietHours), preferences),
       isActive: rule.isActive,
     };
   }

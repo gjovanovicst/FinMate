@@ -191,6 +191,16 @@ Code-first GraphQL with custom scalars: most of these are registration problems 
   failure lands in the error banner instead of downloading a file full of JSON. Distinct from the
   async whole-household `exportData` (docs/06 §5.11), which needs the worker and is not built.
 
+- **Inserting a method above a decorated one steals its decorator, and nothing catches it but a live
+  call.** Adding `dispatchNotifications` immediately above the existing `runAlerts` in a resolver put
+  the new method *between* `runAlerts`'s `@Mutation(...)` and the method it described, so
+  `dispatchNotifications` got that decorator (and its description) and `runAlerts` lost its own —
+  disappearing from the schema entirely. `typecheck`, `lint` and every unit test stayed green; the
+  failure surfaced when a client asked for a field the schema no longer had
+  (`Cannot query field "runAlerts" on type Mutation`). After inserting a method into a decorated
+  class, check the **decorator count** and re-read the generated `schema.gql` — a field silently
+  vanishing is the one regression no test in this repo asserts.
+
 - **A monthly Budget is one row per scope, and `period_start` does not roll forward by itself.**
   `budgets_unique_scope` is unique on the Household/category scope, not on the period, so a Household
   that has not touched its budget this month still has a row anchored in an **earlier** month — and

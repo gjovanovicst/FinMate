@@ -158,6 +158,65 @@ export class AlertRuleUpdateInput {
   isActive?: boolean;
 }
 
+/** What one dispatch pass did — the number the "why has nothing arrived?" question needs. */
+@ObjectType()
+export class AlertDispatchModel {
+  @Field(() => Int, { description: 'Queued rows this pass looked at.' })
+  considered!: number;
+
+  @Field(() => Int)
+  sent!: number;
+
+  @Field(() => Int)
+  failed!: number;
+
+  @Field(() => Int, { description: "Held: quiet hours are on right now, so it waits." })
+  deferred!: number;
+
+  @Field(() => Int, {
+    description: 'Push channels this build cannot deliver yet; the rows stay QUEUED.',
+  })
+  skipped!: number;
+}
+
+@ObjectType()
+export class NotificationPreferencesModel {
+  @Field(() => [NotificationChannelEnum], {
+    description: 'Channels the user accepts at all. A rule may name others; they are not delivered.',
+  })
+  channels!: NotificationChannelEnum[];
+
+  @Field(() => JsonScalar, {
+    nullable: true,
+    description: 'Applied to a rule that has none of its own. `null` disables quiet hours.',
+  })
+  quietHours!: Record<string, unknown> | null;
+
+  @Field(() => Boolean)
+  positiveFeedback!: boolean;
+
+  @Field(() => String, {
+    nullable: true,
+    description: 'Recorded now, honoured when server-side copy is localised (docs/06 §5.14).',
+  })
+  locale!: string | null;
+}
+
+@InputType()
+export class NotificationPreferencesInput {
+  @Field(() => [NotificationChannelEnum], { nullable: true })
+  channels?: NotificationChannelEnum[];
+
+  @Field(() => JsonScalar, { nullable: true })
+  quietHours?: Record<string, unknown> | null;
+
+  @Field(() => Boolean, { nullable: true })
+  positiveFeedback?: boolean;
+
+  @Field(() => String, { nullable: true })
+  locale?: string | null;
+}
+
 @ArgsType()
 export class NotificationPageArgs {
   @Field(() => Boolean, { nullable: true, defaultValue: false })

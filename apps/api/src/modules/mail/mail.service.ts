@@ -55,6 +55,18 @@ export class MailService {
     );
   }
 
+  /**
+   * A notification (F-22). The body is composed by the notifications module and is already
+   * **lock-screen safe** for this channel (docs/08 T-09): no amounts, no entity names — an email lands
+   * on a phone's lock screen just as a push does.
+   *
+   * Plain text, like the two above: HTML notification templates are the notification-centre work
+   * (docs/05 §9), and a mail we can read in Mailhog is what the dispatch path needs today.
+   */
+  async sendNotification(to: string, subject: string, text: string): Promise<void> {
+    await this.send(to, subject, text);
+  }
+
   private async send(to: string, subject: string, text: string): Promise<void> {
     if (!this.transporter) {
       // Deliberately logs the body in development so the flow is testable without SMTP. This must

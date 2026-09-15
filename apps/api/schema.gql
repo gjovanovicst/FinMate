@@ -47,6 +47,19 @@ enum AccountKind {
   OTHER
 }
 
+type AlertDispatchModel {
+  """Queued rows this pass looked at."""
+  considered: Int!
+
+  """Held: quiet hours are on right now, so it waits."""
+  deferred: Int!
+  failed: Int!
+  sent: Int!
+
+  """Push channels this build cannot deliver yet; the rows stay QUEUED."""
+  skipped: Int!
+}
+
 input AlertRuleInput {
   channels: [NotificationChannel!]
   isActive: Boolean = true
@@ -1113,6 +1126,11 @@ type Mutation {
   dismissInsight(id: String!): InsightModel
 
   """
+  The `notifications.dispatch` job (docs/05 §8): deliver what is queued and due — quiet hours re-checked at dispatch time. `IN_APP` rows become SENT (the row is the delivery); `EMAIL` goes through SMTP; push channels stay QUEUED because this build cannot deliver them (Phase 4).
+  """
+  dispatchNotifications: AlertDispatchModel!
+
+  """
   Run the deterministic generators for one period. Idempotent per condition and period, so it is safe to call repeatedly; the `insights.generate` job calls the same service method.
   """
   generateInsights(
@@ -1218,6 +1236,11 @@ type Mutation {
   Editing a shipped merchant creates a Household-owned copy and moves this Household’s references onto it, so the platform catalogue is never mutated (seeds are copy-on-write).
   """
   updateMerchant(aiHint: String, defaultCategoryId: ID, id: ID!, name: String): MerchantModel!
+
+  """
+  Merge the given fields into the stored preferences; omitted fields are unchanged.
+  """
+  updateNotificationPreferences(input: NotificationPreferencesInput!): NotificationPreferencesModel!
   updateRule(actions: JSON, conditions: JSON, id: ID!, isActive: Boolean, name: String, priority: Int, stopOnMatch: Boolean): RuleModel!
   updateTag(color: String, id: ID!, name: String): TagModel!
   updateTransaction(
@@ -1302,6 +1325,31 @@ type NotificationModel {
 type NotificationModelEdge {
   cursor: String!
   node: NotificationModel!
+}
+
+input NotificationPreferencesInput {
+  channels: [NotificationChannel!]
+  locale: String
+  positiveFeedback: Boolean
+  quietHours: JSON
+}
+
+type NotificationPreferencesModel {
+  """
+  Channels the user accepts at all. A rule may name others; they are not delivered.
+  """
+  channels: [NotificationChannel!]!
+
+  """
+  Recorded now, honoured when server-side copy is localised (docs/06 §5.14).
+  """
+  locale: String
+  positiveFeedback: Boolean!
+
+  """
+  Applied to a rule that has none of its own. `null` disables quiet hours.
+  """
+  quietHours: JSON
 }
 
 type NotificationReadModel {
@@ -1493,6 +1541,11 @@ type Query {
     """Substring match on the name."""
     search: String
   ): MerchantConnection!
+
+  """
+  The Household notification preferences, stored in `households.settings.notifications` (docs/06 §5.14). A malformed or absent document falls back per field, never to an error.
+  """
+  notificationPreferences: NotificationPreferencesModel!
 
   """The notification centre, newest first, keyset-paged on the UUIDv7 id."""
   notifications(
