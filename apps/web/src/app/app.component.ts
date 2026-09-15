@@ -54,23 +54,6 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
             </ul>
           }
 
-          <!-- docs/02 §2.2 draws 🔔 in the header on both layouts, and it is the **only** entry to the
-               notification centre: listing it here *and* in NAV_ITEMS put two "Obaveštenja" rows in
-               the sidebar. It is not one of the five destinations, so the bottom bar still has five
-               slots and the review queue is still the only badged destination. -->
-          <a
-            class="nav__bell"
-            routerLink="/notifications"
-            routerLinkActive="nav__link--active"
-            [attr.aria-label]="bellName() ?? i18n.t('notifications.bell')"
-          >
-            <span class="nav__icon" aria-hidden="true">🔔</span>
-            <span class="nav__label">{{ i18n.t('notifications.bell') }}</span>
-            @if (bellBadge() !== '') {
-              <span class="nav__badge">{{ bellBadge() }}</span>
-            }
-          </a>
-
           <ul class="nav__list">
             @for (item of items; track item.path) {
               <li class="nav__item" [class.nav__item--overflow]="!item.primary">
@@ -112,20 +95,46 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
         </nav>
       }
 
-      <!-- The nav's own grid row must collapse with it, or the wizard sits under an empty band. -->
+      @if (isAuthenticated()) {
+        <!-- docs/02 §2.2: the header carries the notification bell, the settings entry and the
+             account menu on both layouts. It is the *only* entry to the notification centre — a
+             second one in the nav put "Obaveštenja" in the sidebar twice. The nav below is
+             destinations only. -->
+        <header class="topbar">
+          <span class="topbar__role">{{ roleLabel() }}</span>
+
+          <div class="topbar__actions">
+            <fm-language-switcher />
+
+            <a
+              class="topbar__button"
+              routerLink="/notifications"
+              routerLinkActive="topbar__button--active"
+              [attr.aria-label]="bellName() ?? i18n.t('notifications.bell')"
+            >
+              <span class="topbar__icon" aria-hidden="true">
+                🔔
+                @if (bellBadge() !== '') {
+                  <span class="topbar__badge">{{ bellBadge() }}</span>
+                }
+              </span>
+            </a>
+
+            <button
+              type="button"
+              class="topbar__signout"
+              (click)="signOut()"
+              [disabled]="signingOut()"
+            >
+              {{ signingOut() ? i18n.t('session.signingOut') : i18n.t('session.signOut') }}
+            </button>
+          </div>
+        </header>
+      }
+
       <main id="main" class="content" tabindex="-1">
         <router-outlet />
       </main>
-
-      @if (isAuthenticated()) {
-        <footer class="session">
-          <fm-language-switcher />
-          <span class="session__role">{{ roleLabel() }}</span>
-          <button type="button" class="session__signout" (click)="signOut()" [disabled]="signingOut()">
-            {{ signingOut() ? i18n.t('session.signingOut') : i18n.t('session.signOut') }}
-          </button>
-        </footer>
-      }
     </div>
   `,
   styles: [
@@ -158,9 +167,13 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
         min-block-size: 100dvh;
       }
 
-      /* ---- authenticated layout: bottom nav on compact, sidebar from 1024px ---- */
+      /* ---- authenticated layout ---- */
       .shell--authenticated {
-        grid-template-rows: 1fr auto;
+        grid-template-areas:
+          'topbar'
+          'content'
+          'nav';
+        grid-template-rows: auto 1fr auto;
       }
 
       .content {
@@ -220,23 +233,6 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
       /* docs/02 section 2.3: hidden at 0 (the span is not rendered), the literal count up to nine,
          then "9+" above. Positioned against the glyph so the label underneath never shifts when the
          count appears. */
-      /* Compact: a slim, count-only row above the five destinations, so the thumb zone is unchanged.
-         Wide: the icon plus its label, matching the destinations below it. */
-      .nav__bell {
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        gap: 0.4rem;
-        padding: var(--space-1) var(--space-3);
-        min-inline-size: 0;
-        text-decoration: none;
-        color: var(--color-text-muted);
-        font-size: var(--text-xs);
-      }
-      .nav__bell .nav__label {
-        display: none;
-      }
-
       .nav__badge {
         position: absolute;
         inset-block-start: -0.35rem;
@@ -293,28 +289,80 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
         position: relative;
       }
 
-      .session {
-        order: 3;
+      .topbar {
+        grid-area: topbar;
         display: flex;
         align-items: center;
+        /* Wrapping, never a fixed width: at 320 px the three controls would otherwise push the bar
+           into horizontal scroll (docs/02 §9). */
+        flex-wrap: wrap;
         justify-content: space-between;
-        gap: var(--space-3);
+        gap: var(--space-2) var(--space-3);
         padding: var(--space-2) var(--space-4);
         background: var(--color-surface);
-        border-block-start: 1px solid var(--color-border);
+        border-block-end: 1px solid var(--color-border);
         font-size: var(--text-xs);
         color: var(--color-text-subtle);
       }
-      .session__signout {
+      /* The role is a label, not a control: it goes first on a wide bar and is dropped on compact,
+         where every pixel of the bar is one of the three things a thumb reaches for. */
+      .topbar__role {
+        display: none;
+      }
+      .topbar__actions {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        margin-inline-start: auto;
+        min-inline-size: 0;
+      }
+      .topbar__button {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-inline-size: 2.25rem;
+        min-block-size: 2.25rem;
+        border-radius: var(--radius-sm);
+        color: var(--color-text-muted);
+        text-decoration: none;
+      }
+      .topbar__button:hover,
+      .topbar__button--active {
+        background: var(--color-surface-alt, rgba(0 0 0 / 0.04));
+        color: var(--color-text);
+      }
+      .topbar__icon {
+        position: relative;
+        font-size: 1.15rem;
+        line-height: 1;
+      }
+      /* Same rule as the nav badge (docs/02 §2.3): the span is not rendered at zero, so the glyph
+         never shifts when the count appears. */
+      .topbar__badge {
+        position: absolute;
+        inset-block-start: -0.3rem;
+        inset-inline-start: 0.9rem;
+        min-inline-size: 1.1rem;
+        padding: 0 0.25rem;
+        font-size: 0.65rem;
+        line-height: 1.1rem;
+        text-align: center;
+        color: var(--color-primary-contrast);
+        background: var(--color-danger);
+        border-radius: var(--radius-lg);
+      }
+      .topbar__signout {
         background: none;
         border: 1px solid var(--color-border);
         border-radius: var(--radius-sm);
         color: var(--color-text-muted);
         padding: var(--space-1) var(--space-3);
         font: inherit;
+        font-size: var(--text-xs);
         cursor: pointer;
       }
-      .session__signout:hover:not(:disabled) {
+      .topbar__signout:hover:not(:disabled) {
         color: var(--color-text);
         border-color: var(--color-text-muted);
       }
@@ -327,10 +375,14 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
       @media (min-width: 1024px) {
         .shell--authenticated {
           grid-template-columns: 240px 1fr;
-          grid-template-rows: 1fr auto;
+          grid-template-rows: auto 1fr;
           grid-template-areas:
-            'nav content'
-            'nav session';
+            'nav topbar'
+            'nav content';
+        }
+        /* On a wide bar there is room for the role label, so it comes back. */
+        .topbar__role {
+          display: inline;
         }
         .nav {
           grid-area: nav;
@@ -346,14 +398,6 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
         .nav__more-panel {
           display: none;
         }
-        .nav__bell {
-          justify-content: flex-start;
-          padding-block-end: var(--space-3);
-        }
-        .nav__bell .nav__label {
-          display: inline;
-        }
-
         .nav__list {
           flex-direction: column;
           gap: var(--space-1);

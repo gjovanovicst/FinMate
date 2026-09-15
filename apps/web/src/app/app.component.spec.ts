@@ -89,14 +89,26 @@ function reviewLink(fixture: { nativeElement: unknown }): HTMLAnchorElement {
 }
 
 describe('AppComponent nav (mounted)', () => {
-  it('links to the notification centre exactly once', async () => {
-    // The regression this exists for: adding `/notifications` to `NAV_ITEMS` *and* the header bell put
-    // two "Obaveštenja" entries in the sidebar. One entry per layout, at any width.
+  it('links to the notification centre exactly once, from the header', async () => {
+    // The regression this exists for: adding `/notifications` to `NAV_ITEMS` *and* a bell put two
+    // "Obaveštenja" entries in the sidebar. docs/02 §2.2 draws the bell in the **header**, so there is
+    // one link, it is in `header.topbar`, and the nav is destinations only.
     const { fixture } = await mount(0);
     const links = navLinks(fixture, 'a[href="/notifications"]');
     expect(links).toHaveLength(1);
-    // …and it is the bell, not a destination in the five-slot bar.
-    expect(links[0]?.classList.contains('nav__bell')).toBe(true);
+    expect(links[0]?.closest('header.topbar')).not.toBeNull();
+    expect(links[0]?.closest('nav')).toBeNull();
+  });
+
+  it('keeps the account controls in the header, not in a second bottom row', async () => {
+    // The bar carries the bell, the language switcher and Sign out; the old `.session` footer that put
+    // them under the content is gone.
+    const { fixture } = await mount(0);
+    const header = (fixture.nativeElement as HTMLElement).querySelector('header.topbar');
+    expect(header).not.toBeNull();
+    // The spec mounts with the English catalogue, which is the product's primary language (ADR-019).
+    expect(header?.textContent).toContain('Sign out');
+    expect((fixture.nativeElement as HTMLElement).querySelector('.session')).toBeNull();
   });
 
   afterEach(() => {
