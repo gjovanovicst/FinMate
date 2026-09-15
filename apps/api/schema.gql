@@ -641,6 +641,22 @@ type CommittedTransactionModel {
   wasReplayed: Boolean!
 }
 
+input ContributeToGoalInput {
+  amount: Money!
+
+  """
+  The day the money was put aside. Defaults to today in the Household timezone.
+  """
+  contributedOn: LocalDate
+  goalId: String!
+
+  """
+  Required: a contribution is money, so a retry must not add it twice (invariant I-10). A replay returns the original contribution with `wasReplayed: true`.
+  """
+  idempotencyKey: String!
+  note: String
+}
+
 input CorrectTransactionInput {
   amount: Money
   categoryId: ID
@@ -913,6 +929,35 @@ enum FragmentKind {
   UNKNOWN
 }
 
+type GoalContributionModel {
+  """Always positive; a contribution only adds."""
+  amount: Money!
+  contributedOn: LocalDate!
+  createdAt: DateTime!
+  goalId: String!
+  id: String!
+  note: String
+}
+
+type GoalContributionResultModel {
+  contribution: GoalContributionModel!
+
+  """The goal with refreshed progress and required monthly."""
+  goal: SavingGoalModel!
+
+  """True when the idempotency key had already been used."""
+  wasReplayed: Boolean!
+}
+
+"""
+ACTIVE while saving, ACHIEVED once the contributions reach the target (the backend sets this — it is recomputed, never a flag a client sends), ARCHIVED when the user stops tracking it.
+"""
+enum GoalStatus {
+  ACHIEVED
+  ACTIVE
+  ARCHIVED
+}
+
 type InsightConnection {
   edges: [InsightModelEdge!]!
   pageInfo: PageInfo!
@@ -1166,6 +1211,11 @@ type Mutation {
   completeOnboarding: OnboardingStateModel!
 
   """
+  Put money aside. Idempotent on `idempotencyKey` (invariant I-10): a replay returns the original contribution with `wasReplayed: true` instead of saving it twice.
+  """
+  contributeToGoal(input: ContributeToGoalInput!): GoalContributionResultModel!
+
+  """
   Correct one property of a Transaction and record the correction as a learning signal (docs/06 §5.3, F-09). The change is applied first and the Correction second, so a Correction never describes a change that did not happen. `synthesisedRule` is always returned when one can be derived, so the UI can offer "Zapamti za ubuduće"; a rule is created here only when `rememberForFuture` is true, the trigger is a resolved entity, and nothing shadows it.
   """
   correctTransaction(input: CorrectTransactionInput!): CorrectTransactionSuccessModel!
@@ -1242,6 +1292,11 @@ type Mutation {
   createRuleFromCorrection(input: CreateRuleFromCorrectionInput!): CreateRuleFromCorrectionResult!
 
   """
+  Create a goal. The currency is the Household ledger currency (ADR-011); the client does not choose it, exactly as for an Account’s opening balance and a Budget’s amount.
+  """
+  createSavingGoal(input: SavingGoalCreateInput!): SavingGoalModel!
+
+  """
   A name that folds to an existing one is refused with CONFLICT: `#Vanredno` and `#vanredno` are one label.
   """
   createTag(
@@ -1297,6 +1352,9 @@ type Mutation {
   """
   deleteCounterparty(id: ID!): Boolean!
 
+  """Remove a contribution and return the goal with its status recomputed."""
+  deleteGoalContribution(id: String!): SavingGoalModel!
+
   """
   Soft-delete, refusing while Transactions, Receipts or RecurringRules still reference it. Merging is the reassignment path.
   """
@@ -1306,6 +1364,11 @@ type Mutation {
   Soft-delete. A rule is a decision the user made, and F-31 has to be able to explain why a past Transaction was categorised the way it was.
   """
   deleteRule(id: ID!): Boolean!
+
+  """
+  Soft-delete a goal. Its contributions are kept and become unreachable with it.
+  """
+  deleteSavingGoal(id: String!): SavingGoalModel!
 
   """
   Soft-deletes the Tag AND removes its Transaction assignments. Unlike a Merchant or a Category there is nothing to reassign a label to, so the analogue of reassignment is clearing the assignments — a dangling label is worse than a missing one.
@@ -1439,6 +1502,11 @@ type Mutation {
   """
   updateNotificationPreferences(input: NotificationPreferencesInput!): NotificationPreferencesModel!
   updateRule(actions: JSON, conditions: JSON, id: ID!, isActive: Boolean, name: String, priority: Int, stopOnMatch: Boolean): RuleModel!
+
+  """
+  Patch a goal. An absent field is left alone; use `clearTargetDate` / `clearAccount` to unset one. `ACHIEVED` is recomputed from the contributions on every write.
+  """
+  updateSavingGoal(input: SavingGoalUpdateInput!): SavingGoalModel!
   updateTag(color: String, id: ID!, name: String): TagModel!
   updateTransaction(
     amount: Money
@@ -1843,6 +1911,14 @@ type Query {
   """
   rules: [RuleModel!]!
 
+  """One goal, or null when the id is not this Household’s."""
+  savingGoal(id: String!): SavingGoalModel
+
+  """
+  The Household’s goals, oldest first. `status` filters; omitting it (or sending an empty list) returns every status.
+  """
+  savingGoals(status: [GoalStatus!]): [SavingGoalModel!]!
+
   """
   Spend per Category over an inclusive range, biggest first, splits included (invariants I-1, I-7). With `includeSubcategories` a Category that has children carries their spend too and `isSubtreeAggregate` says so; the money in no Category is a row with a null `categoryId`, so the leaf rows’ shares add up to the whole range.
   """
@@ -2146,6 +2222,80 @@ enum RuleSynthesisTrigger {
   DISTINCTIVE_TOKEN
   MERCHANT_RESOLVED
   REPEATED_MERCHANT_CORRECTION
+}
+
+input SavingGoalCreateInput {
+  accountId: UUID
+  name: String!
+
+  """
+  The target. The currency must be the Household ledger currency (ADR-011).
+  """
+  target: Money!
+  targetDate: LocalDate
+}
+
+"""
+A target amount by a target date, with its contributions. Progress is the sum of the contributions — **not** of Transactions (docs/02 §4.13) — so nothing here talks to the ledger.
+"""
+type SavingGoalModel {
+  """Null when the Account was archived or removed."""
+  account: Account
+
+  """The Account the goal is set aside in."""
+  accountId: UUID
+
+  """Σ contributions, computed on read."""
+  contributed: Money!
+
+  """Newest first."""
+  contributions: [GoalContributionModel!]!
+  createdAt: DateTime!
+  id: String!
+
+  """
+  Whole months to the target month. Null when there is no target date; 0 means "due now".
+  """
+  monthsRemaining: Int
+  name: String!
+
+  """0…1, capped so a bar cannot be more than full."""
+  progress: Float!
+
+  """target − contributed, never negative."""
+  remaining: Money!
+
+  """
+  What to put aside each month from now on, rounded **up** so the plan reaches the target. Null only when the goal has no target date; when the date has passed it is the whole remainder.
+  """
+  requiredPerMonth: Money
+  status: GoalStatus!
+  target: Money!
+
+  """Null for a goal with no deadline."""
+  targetDate: LocalDate
+  updatedAt: DateTime!
+}
+
+input SavingGoalUpdateInput {
+  accountId: UUID
+
+  """Detach the Account."""
+  clearAccount: Boolean
+
+  """
+  Remove the target date. An absent `targetDate` leaves it unchanged (docs/06 §5.6).
+  """
+  clearTargetDate: Boolean
+  goalId: String!
+  name: String
+
+  """
+  Archive or restore a goal. ACHIEVED is recomputed from the contributions either way.
+  """
+  status: GoalStatus
+  target: Money
+  targetDate: LocalDate
 }
 
 type SkippedRowModel {

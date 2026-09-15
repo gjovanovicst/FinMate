@@ -90,6 +90,17 @@ export {
 } from './analytics';
 
 export {
+  GOAL_STATUSES,
+  ceilDiv,
+  goalProgress,
+  monthsUntil,
+  reconcileGoalStatus,
+  type GoalProgress,
+  type GoalProgressInput,
+  type GoalStatus,
+} from './goals';
+
+export {
   DEFAULT_CAP_PERCENT,
   proposeSavings,
   type SavingsCandidate,

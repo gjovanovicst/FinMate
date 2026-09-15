@@ -563,10 +563,16 @@ CREATE TABLE goal_contributions (
   amount_minor       BIGINT NOT NULL CHECK (amount_minor > 0),
   contributed_on     DATE NOT NULL,
   note               TEXT,
+  -- A contribution is money, so the write is idempotent (I-10): the client mints the key once and a
+  -- replay returns the original result instead of adding to the goal a second time. Same shape as
+  -- `transactions.idempotency_key`, and partial for the same reason — old rows have none.
+  idempotency_key    TEXT,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX ON goal_contributions (goal_id, contributed_on DESC);
 CREATE INDEX ON goal_contributions (household_id);
+CREATE UNIQUE INDEX ON goal_contributions (household_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
 
 CREATE TABLE recurring_rules (
   id                 UUID PRIMARY KEY,
@@ -809,7 +815,8 @@ test in [10](10-testing-and-quality.md).
 | Budget remaining | Budget − consumption | On read, Redis-cached 60 s |
 | Safe-to-spend today | Budget − spent − remaining recurring obligations, spread over remaining days | On read |
 | Month-end projection | Pace over elapsed days, adjusted for known recurring | On read |
-| Savings required per month | (target − contributed) / months remaining | On read |
+| Savings required per month | (target − contributed) / months remaining, rounded **up** | On read |
+| SavingGoal `ACHIEVED` | Σ `goal_contributions` ≥ `target`, recomputed on every write that can change it | Stored, but derived — deleting the contribution that crossed the target puts the goal back to `ACTIVE`. `ARCHIVED` is the one status a person chooses and it is never overridden |
 
 **None of these may be produced by an LLM.** The LLM receives them as facts when it needs to narrate
 (see [04](04-categorization-and-ai-engine.md#10-the-assistant-qa-path-f-23)).

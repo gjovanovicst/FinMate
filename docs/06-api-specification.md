@@ -685,7 +685,7 @@ type SavingGoal {
   id: UUID!
   name: String!
   target: Money!
-  targetDate: Date
+  targetDate: LocalDate             # a Household day, not an instant (docs/03 §3.2)
   accountId: UUID
   account: Account
   status: GoalStatus!
@@ -693,18 +693,20 @@ type SavingGoal {
   remaining: Money!
   progress: Float!                   # 0..1, capped at 1 for display
   requiredPerMonth: Money            # computed, null when no targetDate
-  monthsRemaining: Int
+  monthsRemaining: Int               # null when no targetDate; 0 means "due now"
   contributions: [GoalContribution!]!
-  version: Int!
   createdAt: DateTime!
   updatedAt: DateTime!
+  # `version: Int!` was drawn here and is deliberately NOT implemented: `saving_goals` has no such
+  # column (only `transactions` does), and inventing optimistic concurrency for one model is a
+  # migration nobody asked for. Recorded in §5.7, exactly as `AlertRule.version` is (§5.14).
 }
 
 type GoalContribution {
   id: UUID!
   goalId: UUID!
   amount: Money!
-  contributedOn: Date!
+  contributedOn: LocalDate!          # was `Date`: the schema has no `Date` scalar
   note: String
   createdAt: DateTime!
 }
@@ -2363,6 +2365,19 @@ type GoalContributionSuccess {
   clientMutationId: String
 }
 ```
+
+#### 5.7.1 Implementation notes (task 3.3.2)
+
+| Decision | Built | Why |
+|---|---|---|
+| `contributeToGoal` returns `GoalContributionSuccess` **directly** | `GoalContributionResultModel` instead of the union | The four union arms are already the typed `ApiError` codes every other module returns (`VALIDATION_FAILED`, `NOT_FOUND`, `RATE_LIMITED`); declaring arms with no distinct producer is the pattern this repo has declined twice (§5.5, §5.13). `wasReplayed` is kept — it is the one piece of information the union carried that a plain model does not. |
+| `input.createTransaction` | **Not implemented** | A contribution is a `goal_contribution` and **not** a Transaction (docs/02 §4.13, stated there to prevent double-counting). Recording the outflow is an Account-to-Account transfer — the ledger supports it through `transfer_peer_id` and no feature builds it yet — and a naive `EXPENSE` row would invent spending for money that was not spent. |
+| `idempotencyKey` | Required, enforced by a **new partial unique index** | The contract says a contribution is money and always idempotent, and `goal_contributions` had no column for the key. Migration `20260915120000_goal_contribution_idempotency` adds it nullable with `UNIQUE (household_id, idempotency_key) WHERE idempotency_key IS NOT NULL` — the same shape `transactions.idempotency_key` already has. Additive and forward-only. |
+| `status = ACHIEVED` | **Recomputed** on every write that can change it, never latched | `contributed >= target` is derived (ADR-001), so deleting the contribution that crossed the target puts a goal back to `ACTIVE` rather than leaving it "achieved" with 0 % saved. `ARCHIVED` is the one status a person chooses and it is never overridden. `reconcileGoalStatus` is pure and tested in `packages/domain/src/goals.spec.ts`. |
+| The currency | The Household ledger currency governs; the client's `Money.currency` is ignored | ADR-011, and the same rule as an Account's opening balance and a Budget's amount. A goal has no per-goal currency, and a contribution has no currency column of its own — it is denominated in the goal's. |
+| `requiredPerMonth` | `ceil((target − contributed) / months remaining)`, **rounded up** | A plan that truncates leaves the goal short on the deadline, which the user discovers on the day it matters. `months remaining` counts **calendar month boundaries**, so it does not move with the day of the month the screen is opened on. An overdue goal reports `monthsRemaining: 0` and asks for the whole remainder — not `null`, which would hide the problem, and not a division by zero. |
+| Deleting a goal | Soft delete; its contributions stay attached | docs/03 §4 keeps financial rows, and the contributed total is history a Phase 5 audit view can recover. `deleteSavingGoal` reads the goal **before** removing it so the response describes what was removed. |
+| Not built | `Dashboard.goals` (§4.1) and the `GoalStatus`-driven insight/alert producers | The goals surface ships as its own queries and mutations; a dashboard tile and the `GOAL_REACHED` producer are separate tasks, recorded in AGENTS. |
 
 ### 5.8 `materialiseRecurring`
 

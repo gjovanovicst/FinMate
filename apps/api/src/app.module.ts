@@ -12,6 +12,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AssistantModule } from './modules/assistant/assistant.module';
 import { BudgetingModule } from './modules/budgeting/budgeting.module';
 import { ClassificationModule } from './modules/classification/classification.module';
+import { GoalsModule } from './modules/goals/goals.module';
 import { InsightsModule } from './modules/insights/insights.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
@@ -43,6 +44,9 @@ import { PrismaModule } from './prisma/prisma.module';
     // Deterministic insight generation (docs/01 F-20/F-22). Composes `budgeting` rather than
     // recomputing consumption, so the feed and the dashboard cannot disagree.
     InsightsModule,
+    // Saving goals (F-18). Reads Accounts for the Account a goal is set aside in; it writes no
+    // Transactions, because a contribution is a `goal_contribution` and not spending (docs/02 §4.13).
+    GoalsModule,
     // Alerts and notifications (F-22). Imports `insights` — one direction only, per docs/05 §3.
     NotificationsModule,
     // Analytics (F-20). Reads `SpendReadModel` rather than aggregating again, so the chart and the
