@@ -75,6 +75,27 @@ export {
 } from './budget';
 
 export {
+  baselineMean,
+  budgetPaceInsights,
+  categorySpikeInsights,
+  generateInsights,
+  medianMinor,
+  periodsWithSpend,
+  positiveTrendInsights,
+  unusualSpendInsights,
+  INSIGHT_THRESHOLDS,
+  type BudgetPaceFact,
+  type CategoryTrendFact,
+  type InsightDraft,
+  type InsightFacts,
+  type InsightKind,
+  type InsightPayload,
+  type InsightSeverity,
+  type PeriodSpend,
+  type UnusualSpendFact,
+} from './insights';
+
+export {
   DEFAULT_KEYWORD_WEIGHT,
   KEYWORD_DECISION_THRESHOLD,
   SEED_VERSION,

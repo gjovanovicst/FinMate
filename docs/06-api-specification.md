@@ -2511,6 +2511,28 @@ embedding model is configured, which is the honest answer rather than an error
 
 ---
 
+### 5.13 Insight generation (task 3.1.1)
+
+The four generators (this task) and their thresholds are canonical in
+[01 §6 F-22](01-product-requirements.md). This section records only the **contract**.
+
+| Decision | Built | Why |
+|---|---|---|
+| Where the rules live | `packages/domain/src/insights.ts`, pure | The numbers in the feed are the same class of number as a balance (ADR-001), and the package whose job is arithmetic with tests is where they belong. The API loads facts and stores results; it computes nothing. |
+| Reusing F-21's projection | `projectMonthEnd` + `MIN_PACE_DAYS` from `./budget`, imported | A second copy of the pace arithmetic would be a second answer to "what will this month cost?", and the two would drift. |
+| `hint`-style severity | `insights.severity` CHECK: `INFO`, `POSITIVE`, `WARNING`, `CRITICAL` | Already in the schema (docs/03 §4); no migration in this task. |
+| A new column for the identity | **`dedupeKey` inside `payload`** | `insights` has no column for it and adding one is a migration this task does not need. The precedent is `classification_decisions.candidates.parseId`. The writer looks a key up before inserting, so a re-run for the same period is a no-op. ⚠️ Without a database constraint this is writer-enforced idempotence, not a guarantee: a concurrent double-run could duplicate. The nightly job is single-run, and 3.1.2's notification `dedupe_key` work is where a real constraint belongs. |
+| Money in the payload | Minor-unit **strings** | A JSON number in the money path is a float (ADR-003). Ratios stay numbers: they are comparisons, not money. |
+| `narrative` | Left `null` | It is the AI's field (docs/04 §9 `NARRATE`). Nothing in this task writes it, and the feed renders the payload's facts without it. |
+| `Dashboard.insights(limit)` | **Reads the same table**, most recent first, dismissed excluded | The dashboard tile and the feed must not disagree about what the newest insight is. |
+
+The service exposes `generate` (persist new drafts), `list` (filtered, keyset page on the UUIDv7 id),
+`dismiss` and `latest` (the dashboard's N). `generate` is what the `insights.generate` job calls
+([05 §8](05-architecture.md)); wiring the scheduler is task 3.1.2's alert path plus the worker, so in
+this task the same method is reachable directly by the resolver for verification.
+
+---
+
 ## 6. Subscriptions
 
 ```graphql

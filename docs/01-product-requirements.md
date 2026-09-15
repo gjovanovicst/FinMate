@@ -214,6 +214,53 @@ Scenario: Offline
   And it is visibly marked as "as of <timestamp>"
 ```
 
+### F-22 — Insight generators (deterministic) and positive feedback
+
+Canonical for the four generators task 3.1.1 ships. They live in `packages/domain` as pure functions;
+the API only loads facts and stores the result ([06 §5.13](06-api-specification.md)). Every figure in
+`payload` is computed by the backend (ADR-001) and every amount is a **minor-unit string** (ADR-003).
+Thresholds are named constants (`INSIGHT_THRESHOLDS`) and each is asserted on both sides of its
+boundary.
+
+```gherkin
+Scenario: Budget pace — projected overrun
+  Given an expense budget of 100000 for the current period
+  And at least 5 of the period's days have elapsed (MIN_PACE_DAYS)
+  When spend plus committed charges, projected to the end of the period, exceeds the limit
+  Then one BUDGET_PACE insight is emitted for that budget and period
+  And its severity is CRITICAL when the projected overrun is >= 20% of the limit, else WARNING
+  And nothing is emitted before MIN_PACE_DAYS, however dramatic the projection
+
+Scenario: Category spike
+  Given a category's spend in the current (partial) period
+  And a baseline of the previous 3 complete periods, of which at least 2 carry spend
+  When the current spend is >= 1.5x the baseline mean and at least 1000 minor units above it
+  Then one CATEGORY_SPIKE insight is emitted
+  And its severity is CRITICAL at >= 3x the baseline mean, else WARNING
+  And the current period is never part of its own baseline
+  And a period with no spend counts as zero in the mean, so the baseline is not inflated
+
+Scenario: Unusual spend
+  Given a transaction in the current period
+  And at least 5 earlier transactions in the same category within the trailing 90 days
+  When its amount is >= 3x the median of those transactions and at least 5000 minor units
+  Then one UNUSUAL_SPEND insight is emitted with severity WARNING
+  And the comparison uses the median, not the mean, so one past outlier cannot hide the next one
+
+Scenario: Positive trend (F-22 requires this explicitly)
+  Given a category's spend in the current period against the same baseline as the spike rule
+  When it is at least 20% below a baseline mean of at least 1000 minor units
+  Then one POSITIVE_TREND insight is emitted with severity POSITIVE
+  And its payload states the amount saved, not only a percentage
+
+Scenario: Determinism and re-runs
+  Given the same facts
+  When the generators run twice
+  Then the output is identical, in a fixed order
+  And each insight carries a dedupeKey of "<kind>:<periodStart>:<subject>"
+  And a re-run for the same period writes nothing new for a condition already recorded
+```
+
 ### F-23 — Assistant answers
 
 ```gherkin
