@@ -2,11 +2,15 @@ import {
   addDays,
   addMonths,
   monthPeriod,
+  parseAmount,
+  toMajorString,
   weekPeriod,
+  type CurrencyCode,
   type LocalDate,
 } from '@finmate/domain';
 
 import { normaliseForMatching } from '../../common/text/normalise';
+import { findNumeralTokens } from './numeric-validator';
 import {
   INTENT_TEMPLATES,
   SUGGESTED_QUESTIONS,
@@ -63,6 +67,12 @@ export interface NamedEntity {
 export interface PlannerContext {
   /** The Household's local day. The planner never reads a clock (docs/03 §3.2). */
   readonly today: LocalDate;
+  /**
+   * The Household's ledger currency, needed to read a **target amount** out of a question
+   * ("kako da uštedim 20.000?") through the same `parseAmount` the capture path uses (ADR-003).
+   * Optional so a caller that never asks about money need not supply it.
+   */
+  readonly currency?: CurrencyCode;
   readonly categories: readonly NamedEntity[];
   readonly merchants: readonly NamedEntity[];
   readonly accounts: readonly NamedEntity[];
@@ -78,6 +88,8 @@ export interface ResolvedPeriod {
 
 export interface ResolvedSlots {
   readonly period: ResolvedPeriod;
+  /** A target amount in minor units, as a string — `kako da uštedim 20.000` → `"2000000"`. */
+  readonly targetMinor?: string;
   readonly categoryId?: string;
   readonly merchantId?: string;
   readonly accountId?: string;
@@ -172,6 +184,17 @@ export function planQuestion(question: string, context: PlannerContext): Plan {
     matchedOn,
   });
 
+  // The target is resolved only for a template that requires it, straight from its own declaration —
+  // so "koliko sam potrošio na 2000" cannot pick up a stray amount, and a new template that needs an
+  // amount gets the extraction by naming the slot.
+  const wantsTarget =
+    INTENT_TEMPLATES[intent].requiredSlots.includes('targetMinor') ||
+    INTENT_TEMPLATES[intent].optionalSlots.includes('targetMinor');
+  const target = wantsTarget ? resolveTarget(folded, context.currency) : null;
+  // Provenance in the units a person recognises: minor units beside a question about money read as a
+  // figure 100× too large.
+  if (target !== null) matchedOn.push(`target:${target.label}`);
+
   // A trend question names the **baseline**, not the period to report.
   //
   // "Kako stojim u odnosu na prošli mesec?" asked in September compares September with August; reading
@@ -191,6 +214,7 @@ export function planQuestion(question: string, context: PlannerContext): Plan {
 
   const slots: ResolvedSlots = {
     period: effectivePeriod,
+    ...(target === null ? {} : { targetMinor: target.minor }),
     ...(category !== null ? { categoryId: category.id } : {}),
     ...(merchant !== null ? { merchantId: merchant.id } : {}),
     ...(account !== null ? { accountId: account.id } : {}),
@@ -231,6 +255,8 @@ function hasSlot(slots: ResolvedSlots, slot: SlotName): boolean {
   switch (slot) {
     case 'period':
       return true;
+    case 'targetMinor':
+      return slots.targetMinor !== undefined;
     case 'categoryId':
       return slots.categoryId !== undefined;
     case 'merchantId':
@@ -323,6 +349,21 @@ interface IntentCues {
  * is readable in one screen — the rule that fired is also appended to `matchedOn`, which is how a
  * misrouted question is diagnosed from the audit rather than by re-reading this function.
  */
+/**
+ * The phrases that make a question a request for a savings plan.
+ *
+ * Exported (module-level) because **two** things read it: the router picks `SAVINGS_PROPOSAL` from it,
+ * and {@link resolveTarget} anchors the amount to it, so "kako da uštedim 20.000 u avgustu 2025" takes
+ * the amount and not the year. A second copy of the list is how the two would drift apart.
+ */
+const SAVINGS_CUES = [
+  'kako da ustekam',
+  'kako da uštedim',
+  'kako da ustedim',
+  'predlog za stednju',
+  'predlog za štednju',
+] as const;
+
 function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
   const has = (...phrases: string[]): boolean => phrases.some((phrase) => folded.includes(phrase));
   const note = (intent: AssistantIntent, phrase: string): AssistantIntent => {
@@ -349,7 +390,7 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
   }
 
   // ---- goals & recurring
-  if (has('kako da ustekam', 'kako da uštedim', 'kako da ustedim', 'predlog za stednju', 'predlog za štednju')) {
+  if (has(...SAVINGS_CUES)) {
     return note('SAVINGS_PROPOSAL', 'kako da uštedim');
   }
   if (has('cilj', 'cilju', 'stednja', 'štednja', 'stek', 'štek')) {
@@ -547,6 +588,65 @@ function hasUnresolvedScope(folded: string, period: ResolvedPeriod): boolean {
     if (!allowed.has(match[1] ?? '')) return true;
   }
   return false;
+}
+
+/**
+ * Read a savings target out of the question, or `null` when there is none.
+ *
+ * ## Why the amount is anchored to the verb, and not just "the last number"
+ *
+ * *"kako da uštedim 20.000 u avgustu 2025"* contains two numerals, and the second one is a year. The
+ * amount is the **object of the verb** — the first numeral after the savings cue — so that question
+ * takes `20.000` and drops `2025`. The cue list is shared with the router, so the two cannot disagree
+ * about what makes a question a savings question.
+ *
+ * ## Why one token is parsed on its own
+ *
+ * `parseAmount` reads a number differently in prose than alone: `parseAmount('20.000')` offers
+ * *twenty thousand* (grouped) and *twenty* (decimal), in that order, while the same token inside a
+ * sentence came back as twenty **unambiguously** — silently, and 1000× off for a target. Extracting the
+ * token first and parsing it alone keeps the parser's own ambiguity where it belongs, in the open.
+ *
+ * ## Why the preferred reading is taken without asking
+ *
+ * `1.200` and `20.000` each have two readings, and docs/04's rule for the capture path is to ask rather
+ * than guess — because there the number becomes an amount of money in the ledger. Two things make the
+ * assistant different, and both are checkable: the parser already orders the readings by likelihood
+ * (and for a *target* the grouped one is the one a person means — nobody asks to save 20 dinara and
+ * writes it `20.000`), and the answer **repeats the target on its face** ("Target 20.000,00 RSD"), so
+ * a misread amount is visible immediately and correctable by rephrasing. Refusing instead would make
+ * F-30's own canonical question unanswerable.
+ */
+function resolveTarget(
+  folded: string,
+  currency: CurrencyCode | undefined,
+): { readonly minor: string; readonly label: string } | null {
+  const anchor = firstCueIndex(folded);
+  if (anchor === -1) return null;
+
+  const amount = findNumeralTokens(folded).find((token) => token.index > anchor);
+  if (amount === undefined) return null;
+
+  // The thousands shorthand belongs to the question, not to the token: `20k` is one numeral only
+  // because `parseAmount` sees the `k`, so it is put back before parsing.
+  const shorthand = folded[amount.index + amount.raw.length] === 'k' ? 'k' : '';
+  const parsed = parseAmount(`${amount.raw}${shorthand}`, currency ?? 'RSD');
+  if (parsed.money === null || parsed.money.amountMinor <= 0n) return null;
+  return {
+    minor: parsed.money.amountMinor.toString(),
+    label: `${toMajorString(parsed.money)} ${parsed.money.currency}`,
+  };
+}
+
+/** Where the earliest savings cue starts, or `-1`. */
+function firstCueIndex(folded: string): number {
+  let earliest = -1;
+  for (const cue of SAVINGS_CUES) {
+    const index = folded.indexOf(cue);
+    if (index === -1) continue;
+    if (earliest === -1 || index < earliest) earliest = index;
+  }
+  return earliest;
 }
 
 /** `top 5`, `5 najvećih`, `poslednjih 5` — or `null` for the template's default. */

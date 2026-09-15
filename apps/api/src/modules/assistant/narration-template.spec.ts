@@ -247,6 +247,66 @@ describe('how each frame reads', () => {
     );
   });
 
+  it('reads a savings proposal as a plan, with what it cannot reach (F-30)', () => {
+    const facts = factsOf({
+      rows: [
+        { label: 'Hrana / Supermarket', value: '349000', formatted: '3.490,00 RSD' },
+        { label: 'Gorivo', value: '151000', formatted: '1.510,00 RSD' },
+      ],
+      totals: [
+        { label: 'Target', money: { amountMinor: '500000', currency: 'RSD' }, formatted: '5.000,00 RSD' },
+        { label: 'Proposed', money: { amountMinor: '500000', currency: 'RSD' }, formatted: '5.000,00 RSD' },
+        { label: 'Shortfall', money: { amountMinor: '0', currency: 'RSD' }, formatted: '0,00 RSD' },
+      ],
+      formatted: {
+        headline: '5.000,00 RSD',
+        target: '5.000,00 RSD',
+        proposed: '5.000,00 RSD',
+        shortfall: '0,00 RSD',
+        meetsTarget: 'true',
+      },
+    });
+
+    expect(render('SAVINGS_PROPOSAL', facts)).toBe(
+      'To save 5.000,00 RSD: cut Hrana / Supermarket by 3.490,00 RSD, then Gorivo by 1.510,00 RSD.',
+    );
+  });
+
+  it('says what a proposal cannot reach instead of implying the target is met', () => {
+    const facts = factsOf({
+      rows: [{ label: 'Hrana / Supermarket', value: '349000', formatted: '3.490,00 RSD' }],
+      totals: [
+        { label: 'Target', money: { amountMinor: '500000', currency: 'RSD' }, formatted: '5.000,00 RSD' },
+        { label: 'Proposed', money: { amountMinor: '349000', currency: 'RSD' }, formatted: '3.490,00 RSD' },
+        { label: 'Shortfall', money: { amountMinor: '151000', currency: 'RSD' }, formatted: '1.510,00 RSD' },
+      ],
+      formatted: {
+        headline: '3.490,00 RSD',
+        target: '5.000,00 RSD',
+        proposed: '3.490,00 RSD',
+        shortfall: '1.510,00 RSD',
+        meetsTarget: 'false',
+      },
+    });
+
+    expect(render('SAVINGS_PROPOSAL', facts)).toContain('That still leaves 1.510,00 RSD short.');
+  });
+
+  it('answers a proposal with nothing to cut as nothing to cut', () => {
+    const facts = factsOf({
+      rows: [],
+      totals: [
+        { label: 'Target', money: { amountMinor: '500000', currency: 'RSD' }, formatted: '5.000,00 RSD' },
+        { label: 'Shortfall', money: { amountMinor: '500000', currency: 'RSD' }, formatted: '5.000,00 RSD' },
+      ],
+      formatted: { headline: '0,00 RSD', target: '5.000,00 RSD', shortfall: '5.000,00 RSD', meetsTarget: 'false' },
+    });
+
+    expect(render('SAVINGS_PROPOSAL', facts)).toBe(
+      "I cannot reach 5.000,00 RSD from that period's spending — there is nothing to cut.",
+    );
+  });
+
   it('a month against the usual one', () => {
     const facts = factsOf({
       totals: [{ label: 'This period', money: { amountMinor: '4665000', currency: 'RSD' }, formatted: '46.650,00 RSD' }],
@@ -267,6 +327,9 @@ describe('the refusal copy', () => {
   it('names what it could not resolve, without a figure', () => {
     expect(renderRefusal('UNRUNNABLE:categoryId')).toBe('I could not tell which Category you meant. Try naming it.');
     expect(renderRefusal('UNRUNNABLE:goalId')).toBe('I could not tell which goal you meant. Try naming it.');
+    // F-30's required slot: "how do I save?" with no amount is refused, and the refusal says which
+    // thing is missing rather than the generic "what you meant".
+    expect(renderRefusal('UNRUNNABLE:targetMinor')).toBe('I could not tell how much you want to save. Try naming it.');
   });
 
   it('distinguishes "not built" from "not understood"', () => {

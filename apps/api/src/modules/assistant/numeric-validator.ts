@@ -131,14 +131,23 @@ export function canonicaliseNumeral(token: string, locale: string): string | nul
   return trimmedFraction.length === 0 ? whole : `${whole}.${trimmedFraction}`;
 }
 
+/**
+ * The numeral tokens in a piece of text, with where they start.
+ *
+ * Exported because "what counts as a numeral" is one definition with two readers: this validator, and
+ * the planner's extraction of a **savings target** from a question (F-30). A second regex there is how
+ * `20.000` ends up meaning two different things in the same answer.
+ */
+export function findNumeralTokens(text: string): readonly { readonly raw: string; readonly index: number }[] {
+  return [...text.matchAll(NUMERAL)].map((match) => ({ raw: match[0], index: match.index ?? 0 }));
+}
+
 /** Every numeral in a piece of text, in order, with its canonical value (`null` when unreadable). */
 export function extractNumerals(text: string, locale: string): readonly { raw: string; value: string | null }[] {
-  const found: { raw: string; value: string | null }[] = [];
-  for (const match of text.matchAll(NUMERAL)) {
-    const raw = match[0];
-    found.push({ raw, value: canonicaliseNumeral(raw, locale) });
-  }
-  return found;
+  return findNumeralTokens(text).map((token) => ({
+    raw: token.raw,
+    value: canonicaliseNumeral(token.raw, locale),
+  }));
 }
 
 /** `formatMoney` for a machine value that arrived as minor units, or `null` when it cannot be one. */

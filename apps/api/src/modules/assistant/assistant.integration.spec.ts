@@ -462,6 +462,37 @@ describe('the assistant (integration)', () => {
     expect(balances.drillThrough?.filter).toEqual({});
   });
 
+  it('computes a savings proposal for the canonical F-30 question (docs/01 F-30)', async () => {
+    scriptNarrations(['Save 5.000,00 RSD by spending less on groceries.']);
+
+    const answer = await ask('kako da uštedim 5.000');
+
+    expect(answer.intent).toBe('SAVINGS_PROPOSAL');
+    expect(answer.answered).toBe(true);
+    expect(answer.facts.template).toBe('SAVINGS_PROPOSAL');
+    // This-month spend is 20.000 on Supermarket plus 5.000 uncategorised (which has no Category to
+    // cut), so 20 % of it is 4.000 — the 5.000 target is not reachable and the answer says so.
+    const totals = new Map(answer.facts.totals.map((total) => [total.label, total.money.amountMinor]));
+    expect(totals.get('Target')).toBe('500000');
+    expect(totals.get('Proposed')).toBe('400000');
+    expect(totals.get('Shortfall')).toBe('100000');
+    expect(answer.facts.rows.map((row) => row.label)).toEqual(['Hrana / Supermarket']);
+    // Provenance names the method and the period, so the plan is checkable like any other answer.
+    expect(answer.provenance.sourceQuery).toBe('savings.proposal.v1');
+    expect(answer.provenance.periodStart).toBe(thisMonth.start);
+  });
+
+  it('refuses a savings question with no amount rather than inventing a target', async () => {
+    scriptNarrations(['Save something.']);
+
+    const answer = await ask('kako da uštedim');
+
+    expect(answer.answered).toBe(false);
+    expect(answer.reason).toBe('UNRUNNABLE:targetMinor');
+    expect(answer.facts.rows).toEqual([]);
+    expect(calls).toHaveLength(0);
+  });
+
   it('answers a trend question with the two periods it actually compared', async () => {
     scriptNarrations(['You spent 25.000,00 RSD, against 10.000,00 RSD.']);
 

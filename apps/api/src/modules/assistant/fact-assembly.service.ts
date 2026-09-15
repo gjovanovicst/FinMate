@@ -5,6 +5,7 @@ import {
   money,
   monthPeriod,
   addMonths,
+  proposeSavings,
   type CurrencyCode,
   type LocalDate,
 } from '@finmate/domain';
@@ -246,7 +247,7 @@ export class FactAssemblyService {
     TREND_VS_AVERAGE: (context) => this.trendVsAverage(context),
     GOAL_PROGRESS: (context) => this.unavailableBuilt(context, 'NOT_BUILT:goals'),
     GOAL_REQUIRED_MONTHLY: (context) => this.unavailableBuilt(context, 'NOT_BUILT:goals'),
-    SAVINGS_PROPOSAL: (context) => this.unavailableBuilt(context, 'NOT_BUILT:goals'),
+    SAVINGS_PROPOSAL: (context) => this.savingsProposal(context),
     RECURRING_UPCOMING: (context) => this.unavailableBuilt(context, 'NOT_BUILT:recurring'),
     RECURRING_LIST: (context) => this.unavailableBuilt(context, 'NOT_BUILT:recurring'),
     NO_TEMPLATE_MATCH: (context) => this.unavailableBuilt(context, 'NO_TEMPLATE_MATCH'),
@@ -343,6 +344,114 @@ export class FactAssemblyService {
 
   /** The N categories with the most spend, splits included. */
   private async topCategories(context: Context, kind: 'EXPENSE' | 'INCOME'): Promise<Built> {
+    const spend = await this.categorySpend(context, kind);
+
+    const limit = Math.min(context.plan.slots.limit ?? 10, MAX_ROWS);
+    const rows = [...spend.totals.entries()]
+      .sort((left, right) => (right[1] > left[1] ? 1 : right[1] < left[1] ? -1 : left[0] < right[0] ? -1 : 1))
+      .slice(0, limit)
+      .map(([categoryId, minor]) => ({
+        label: this.pathOf(categoryId, spend.byId),
+        value: minor.toString(),
+        formatted: this.format(minor, context.currency),
+        categoryId,
+      }));
+
+    return {
+      rows,
+      totals: [],
+      formatted: {
+        period: `${context.period.start} – ${context.period.end}`,
+        headline: rows[0]?.formatted ?? this.format(0n, context.currency),
+        topLabel: rows[0]?.label ?? '',
+      },
+      transactionCount: spend.transactionCount,
+      filters: { kind, limit: String(limit) },
+    };
+  }
+
+  /**
+   * The savings proposal — docs/01 F-30, docs/02 §4.16.
+   *
+   * The arithmetic is {@link proposeSavings} in `@finmate/domain` (pure, integer minor units); what
+   * this builder owns is the **facts it is given**: the period's confirmed spend per Category, splits
+   * included, exactly as the budget tile counts it (I-1, ADR-015). A proposal computed from a
+   * different set of rows than the one the user can look at would be a plan nobody could check.
+   *
+   * The target comes from the planner as `slots.targetMinor`; without one the assembler has already
+   * refused the question, so reaching here means the amount was stated and unambiguous.
+   */
+  private async savingsProposal(context: Context): Promise<Built> {
+    const targetMinor = BigInt(context.plan.slots.targetMinor ?? '0');
+    const spend = await this.categorySpend(context, 'EXPENSE');
+    const proposal = proposeSavings({
+      targetMinor,
+      currency: context.currency,
+      candidates: [...spend.totals.entries()]
+        .filter(([categoryId]) => !spend.incomeIds.has(categoryId))
+        .map(([categoryId, spentMinor]) => ({ categoryId, spentMinor })),
+    });
+
+    const rows = proposal.lines.map((line) => ({
+      label: this.pathOf(line.categoryId, spend.byId),
+      value: line.reductionMinor.toString(),
+      formatted: this.format(line.reductionMinor, context.currency),
+      categoryId: line.categoryId,
+    }));
+
+    const target = this.format(proposal.targetMinor, context.currency);
+    const proposed = this.format(proposal.proposedMinor, context.currency);
+    const shortfall = this.format(proposal.shortfallMinor, context.currency);
+
+    return {
+      rows,
+      totals: [
+        {
+          label: 'Target',
+          money: { amountMinor: proposal.targetMinor.toString(), currency: context.currency },
+          formatted: target,
+        },
+        {
+          label: 'Proposed',
+          money: { amountMinor: proposal.proposedMinor.toString(), currency: context.currency },
+          formatted: proposed,
+        },
+        {
+          label: 'Shortfall',
+          money: { amountMinor: proposal.shortfallMinor.toString(), currency: context.currency },
+          formatted: shortfall,
+        },
+      ],
+      formatted: {
+        period: `${context.period.start} – ${context.period.end}`,
+        headline: proposed,
+        target,
+        proposed,
+        shortfall,
+        meetsTarget: String(proposal.meetsTarget),
+        capPercent: String(proposal.capPercent),
+        currency: context.currency,
+      },
+      transactionCount: spend.transactionCount,
+      filters: { kind: 'EXPENSE', capPercent: String(proposal.capPercent) },
+    };
+  }
+
+  /**
+   * Confirmed spend per Category in the period, splits included (I-1, ADR-015).
+   *
+   * Shared by the ranked view and the savings proposal so the two can never disagree about what a
+   * Category spent — the failure mode being a plan built on figures the screen contradicts.
+   */
+  private async categorySpend(
+    context: Context,
+    kind: 'EXPENSE' | 'INCOME',
+  ): Promise<{
+    readonly totals: ReadonlyMap<string, bigint>;
+    readonly byId: ReadonlyMap<string, { name: string; parent_id: string | null }>;
+    readonly incomeIds: ReadonlySet<string>;
+    readonly transactionCount: number;
+  }> {
     const [direct, split, categories] = await Promise.all([
       this.prisma.client.transactions.groupBy({
         by: ['category_id'],
@@ -372,11 +481,14 @@ export class FactAssemblyService {
       }),
       this.prisma.client.categories.findMany({
         where: { household_id: context.householdId, deleted_at: null },
-        select: { id: true, name: true, parent_id: true },
+        select: { id: true, name: true, parent_id: true, kind: true },
       }),
     ]);
 
     const byId = new Map(categories.map((row) => [row.id, row]));
+    const incomeIds = new Set(
+      categories.filter((row) => row.kind === 'INCOME').map((row) => row.id),
+    );
     const totals = new Map<string, bigint>();
     let transactionCount = 0;
     for (const row of direct) {
@@ -388,28 +500,7 @@ export class FactAssemblyService {
       totals.set(row.category_id, (totals.get(row.category_id) ?? 0n) + (row._sum.amount_minor ?? 0n));
     }
 
-    const limit = Math.min(context.plan.slots.limit ?? 10, MAX_ROWS);
-    const rows = [...totals.entries()]
-      .sort((left, right) => (right[1] > left[1] ? 1 : right[1] < left[1] ? -1 : left[0] < right[0] ? -1 : 1))
-      .slice(0, limit)
-      .map(([categoryId, minor]) => ({
-        label: this.pathOf(categoryId, byId),
-        value: minor.toString(),
-        formatted: this.format(minor, context.currency),
-        categoryId,
-      }));
-
-    return {
-      rows,
-      totals: [],
-      formatted: {
-        period: `${context.period.start} – ${context.period.end}`,
-        headline: rows[0]?.formatted ?? this.format(0n, context.currency),
-        topLabel: rows[0]?.label ?? '',
-      },
-      transactionCount,
-      filters: { kind, limit: String(limit) },
-    };
+    return { totals, byId, incomeIds, transactionCount };
   }
 
   /** The N merchants with the most spend. Splits carry no Merchant, so this is direct spend only. */

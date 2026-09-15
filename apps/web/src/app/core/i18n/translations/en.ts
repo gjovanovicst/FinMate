@@ -47,6 +47,11 @@ export const en = {
   'assistant.openReview': 'Open the review queue',
   'assistant.openBudgets': 'Open the budgets',
   'assistant.openAccounts': 'Open the accounts',
+  'assistant.proposal': 'Proposal (computed)',
+  'assistant.proposalTarget': 'Target',
+  'assistant.proposalProposed': 'Proposed',
+  'assistant.proposalShortfall': 'Short by',
+  'assistant.proposalNote': 'A suggestion only — no budget has been changed.',
   'assistant.failed': 'That question could not be sent. Please try again.',
 
   'notifications.title': 'Notifications',

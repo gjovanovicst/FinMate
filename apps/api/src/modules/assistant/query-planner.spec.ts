@@ -28,6 +28,7 @@ import {
 
 const CONTEXT: PlannerContext = {
   today: '2026-09-17',
+  currency: 'RSD',
   categories: [
     { id: 'cat-food', name: 'Hrana', path: 'Hrana' },
     { id: 'cat-market', name: 'Supermarket', path: 'Hrana / Supermarket' },
@@ -180,6 +181,48 @@ describe('intent routing', () => {
     expect(plan('kako da uštedim 20.000').intent).toBe('SAVINGS_PROPOSAL');
     expect(plan('šta mi se plaća uskoro').intent).toBe('RECURRING_UPCOMING');
     expect(plan('koje pretplate imam').intent).toBe('RECURRING_LIST');
+  });
+
+  it('reads the savings target out of the question, in the Household’s own money format (F-30)', () => {
+    // The same `parseAmount` the capture path uses: `.` and space group thousands, `,` is the decimal
+    // separator, and `20k` is twenty thousand (ADR-003 says the interpretation lives in one place).
+    expect(plan('kako da uštedim 20.000').slots.targetMinor).toBe('2000000');
+    expect(plan('kako da uštedim 20000 dinara').slots.targetMinor).toBe('2000000');
+    expect(plan('kako da uštedim 20k').slots.targetMinor).toBe('2000000');
+    expect(plan('kako da uštedim 1.500,50').slots.targetMinor).toBe('150050');
+  });
+
+  it('reports the target in the units a person reads, not in minor units', () => {
+    // `target:2000000` beside a question about money reads as a figure 100× too large.
+    expect(plan('kako da uštedim 20.000').matchedOn).toContain('target:20000.00 RSD');
+  });
+
+  it('takes the amount that follows the verb, not the last number in the sentence', () => {
+    // The year is the second numeral, and reading it as a target would plan around 2.025,00 RSD.
+    expect(plan('kako da uštedim 20.000 u avgustu 2025').slots.targetMinor).toBe('2000000');
+    expect(plan('predlog za štednju 5.000 ovog meseca').slots.targetMinor).toBe('500000');
+  });
+
+  it('takes the parser’s preferred reading for a grouped amount, and says the target in provenance', () => {
+    // `1.200` has two readings; the parser orders the grouped one first, which is the one a person
+    // means for a target. The answer repeats the figure, so a misreading is visible rather than silent.
+    expect(plan('kako da uštedim 1.200').slots.targetMinor).toBe('120000');
+    expect(plan('kako da uštedim 1.200').matchedOn).toContain('target:1200.00 RSD');
+  });
+
+  it('refuses a missing or zero target, because there is nothing to plan around', () => {
+    expect(plan('kako da uštedim').slots.targetMinor).toBeUndefined();
+    expect(plan('kako da uštedim 0').slots.targetMinor).toBeUndefined();
+    // And `isRunnable` is what turns that into a refusal for the caller.
+    expect(isRunnable(plan('kako da uštedim'))).toBe(false);
+    expect(missingSlots(plan('kako da uštedim'))).toEqual(['targetMinor']);
+  });
+
+  it('does not pick up a stray amount in a question that has no target', () => {
+    // The slot is resolved only for a template that names it, so this cannot answer a spend question
+    // with an amount the user never meant as a target.
+    expect(plan('koliko sam potrošio na hranu ovog meseca').slots.targetMinor).toBeUndefined();
+    expect(plan('koliko sam potrošio na hranu u avgustu 2025').slots.targetMinor).toBeUndefined();
   });
 
   it('matches through the shared fold, so Cyrillic and case do not matter', () => {

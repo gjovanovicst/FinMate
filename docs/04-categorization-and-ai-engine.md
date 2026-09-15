@@ -765,6 +765,13 @@ Implementation notes:
 - If no template fits, the assistant says so and offers the closest answerable questions. It never
   improvises a figure (enforced by an output validator that rejects any numeral not present in the
   facts payload — a cheap, effective guard).
+- **F-30's savings proposal is a calculator, not a prompt.** "Kako da uštedim 20.000?" selects
+  `SAVINGS_PROPOSAL`, the target is read out of the question with the same `parseAmount` the capture path
+  uses, and `proposeSavings` (`@finmate/domain`, pure, integer minor units) proposes up to 20 % of each
+  Category's own spend, biggest first, reporting the shortfall it cannot cover. The answer is a **plan
+  the user has not applied**: nothing writes a Budget (docs/06 §8.8 records why that is a decision and
+  not an omission), and the model's only part is the sentence — which is why [08 §6.7](../../docs/08-security-privacy-and-compliance.md)
+  can list F-30 as unchanged without AI consent.
 
 **Output numeric validator** deserves emphasis: before returning a narrative, extract all numerals
 from the generated text and assert each appears in the facts payload (allowing for locale

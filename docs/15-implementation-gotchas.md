@@ -533,6 +533,15 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   fixture must be appended to `document.body` before a focus assertion means anything, because an
   element that is not in the document cannot take focus and `document.activeElement` stays `BODY`.
 
+- **A selection set on a SCALAR is a runtime 400, and the mounted specs cannot see it.** The assistant
+  screen asked for `totals { money { amountMinor currency } }`; `Money` is a custom **scalar**, so the
+  query is invalid and the API answered `400 GRAPHQL_VALIDATION_FAILED` — in the app, every assistant
+  answer failed to load, while `typecheck`, `lint`, `web:build` and the mounted spec (which mocks
+  `GraphqlClient`) all stayed green, because the spec never sends the query anywhere. Scalars are
+  selected **bare** (`money`, `amount`, `formatted` — `JSON` and `Money` alike), and the only thing that
+  catches a mistake here is a request against the real schema: **validate every client query against
+  `apps/api/schema.gql`** (the `graphql` package can do it in a test) or run the screen live.
+
 - **`[routerLink]` with a query string inside the string percent-encodes the question mark.** The
   assistant's drill-through built `'/transactions?from=2026-09-01&to=2026-09-30'` and rendered
   `href="/transactions%3Ffrom%3D2026-09-01&to%3D…"`, because Angular treats the whole string as a

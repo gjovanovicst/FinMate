@@ -1,3 +1,4 @@
+import type { TranslationKey } from '../../core/i18n/translations';
 import type { MoneyWire } from '../../shared/ui/money/money.component';
 import { filterQueryFromBag } from '../transactions/transactions.view';
 
@@ -175,6 +176,60 @@ export function suggestionChips(turn: Turn | null): readonly string[] {
   if (turn?.answer === null || turn?.answer === undefined) return [];
   if (turn.answer.answered) return [];
   return turn.answer.suggestions.filter((question) => question.trim().length > 0);
+}
+
+/**
+ * Whether this answer is F-30's **proposal** rather than a report of what happened.
+ *
+ * The screen renders it differently on purpose. A proposal is a table of *reductions* with a target and
+ * a shortfall, and it must not read like a list of figures that already exist: the answer's own
+ * sentence says what it is, and this decides which layout (docs/02 §4.16: *"a computed table labelled
+ * Predlog (izračunato)"*).
+ */
+export function isProposal(facts: AssistantFacts): boolean {
+  return facts.template === 'SAVINGS_PROPOSAL';
+}
+
+export interface ProposalSummary {
+  /** What the Household asked to save. */
+  readonly target: MoneyWire | null;
+  /** What the rule could cover. */
+  readonly proposed: MoneyWire | null;
+  /** What it could not — the honest half of the answer. `null` when the target is met. */
+  readonly shortfall: MoneyWire | null;
+  readonly lines: readonly FactMoneyRow[];
+}
+
+/**
+ * The proposal's three headline figures and its lines.
+ *
+ * The server labels them `Target`, `Proposed` and `Shortfall`; the mapping to translation keys is here
+ * rather than in the template so an unrecognised label renders as the server's own word instead of a
+ * missing key. A shortfall of zero is dropped: "short by 0,00 RSD" is noise on a plan that works.
+ */
+export function proposalSummary(facts: AssistantFacts): ProposalSummary {
+  const byLabel = new Map(facts.totals.map((total) => [total.label, total.money]));
+  const shortfall = byLabel.get('Shortfall') ?? null;
+  return {
+    target: byLabel.get('Target') ?? null,
+    proposed: byLabel.get('Proposed') ?? null,
+    shortfall: shortfall !== null && shortfall.amountMinor !== '0' ? shortfall : null,
+    lines: factRows(facts),
+  };
+}
+
+/** The translation key for a proposal total, or `null` to render the server's own label. */
+export function proposalLabelKey(label: string): TranslationKey | null {
+  switch (label) {
+    case 'Target':
+      return 'assistant.proposalTarget';
+    case 'Proposed':
+      return 'assistant.proposalProposed';
+    case 'Shortfall':
+      return 'assistant.proposalShortfall';
+    default:
+      return null;
+  }
 }
 
 /**

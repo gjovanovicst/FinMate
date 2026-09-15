@@ -12,19 +12,23 @@ import { RouterLink } from '@angular/router';
 import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
-import { MoneyComponent } from '../../shared/ui/money/money.component';
+import { MoneyComponent, type MoneyWire } from '../../shared/ui/money/money.component';
 import {
   canExpand,
   drillThroughLabelKey,
   drillThroughTarget,
   factRows,
   factTotals,
+  isProposal,
   periodLabel,
   phaseOf,
+  proposalLabelKey,
+  proposalSummary,
   provenanceKey,
   suggestionChips,
   type AnswerPhase,
   type AssistantAnswer,
+  type AssistantFacts,
   type Turn,
 } from './assistant.view';
 
@@ -120,7 +124,35 @@ import {
             <div class="card" [class.card--refused]="!answer.answered">
               <p class="card__text">{{ answer.answerText }}</p>
 
-              @if (answer.answered) {
+              @if (answer.answered && isProposal(answer.facts)) {
+                <!-- F-30: a computed plan, not a report. It is labelled as a proposal and it says
+                     outright that nothing has been applied — the numbers are for the user to act on. -->
+                <section class="proposal">
+                  <h3 class="proposal__title">{{ i18n.t('assistant.proposal') }}</h3>
+                  <ul class="facts">
+                    @for (total of proposalTotals(answer.facts); track total.label) {
+                      <li class="facts__row facts__row--total">
+                        <span class="facts__label">{{ proposalLabel(total.label) }}</span>
+                        <fm-money class="facts__value" [amount]="total.money" />
+                      </li>
+                    }
+                  </ul>
+                  @if (proposalSummary(answer.facts).lines.length > 0) {
+                    <ul class="facts">
+                      @for (row of proposalSummary(answer.facts).lines; track row.label) {
+                        <li class="facts__row">
+                          <span class="facts__label">{{ row.label }}</span>
+                          <!-- The sign is asked for without a direction: the minus means "less", and
+                               the money component's direction word would call a reduction an expense. -->
+                          <fm-money class="facts__value" [amount]="row.money" [sign]="true" />
+                        </li>
+                      }
+                    </ul>
+                  }
+                  <p class="proposal__note">{{ i18n.t('assistant.proposalNote') }}</p>
+                </section>
+                <p class="prov__summary">{{ provenanceText(answer) }}</p>
+              } @else if (answer.answered) {
                 @if (canExpand(answer.facts)) {
                   <details class="prov">
                     <summary class="prov__summary">{{ provenanceText(answer) }}</summary>
@@ -285,6 +317,23 @@ import {
         margin-block-start: var(--space-3);
         font-size: var(--text-sm);
       }
+      .proposal {
+        margin-block-start: var(--space-3);
+        padding: var(--space-3);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+      }
+      .proposal__title {
+        margin: 0 0 var(--space-2);
+        font-size: var(--text-sm);
+        font-weight: 600;
+        text-transform: none;
+      }
+      .proposal__note {
+        margin: var(--space-3) 0 0;
+        font-size: var(--text-xs);
+        color: var(--color-text-muted);
+      }
       .prov {
         margin-block-start: var(--space-3);
         font-size: var(--text-sm);
@@ -371,7 +420,25 @@ export class AssistantComponent {
   readonly drillThroughTarget = drillThroughTarget;
   readonly factRows = factRows;
   readonly factTotals = factTotals;
+  readonly isProposal = isProposal;
+  readonly proposalSummary = proposalSummary;
   readonly suggestionChips = suggestionChips;
+
+  /** The proposal's headline figures, in the order the plan reads: target, proposed, short by. */
+  proposalTotals(facts: AssistantFacts): readonly { label: string; money: MoneyWire }[] {
+    const summary = proposalSummary(facts);
+    return [
+      ...(summary.target === null ? [] : [{ label: 'Target', money: summary.target }]),
+      ...(summary.proposed === null ? [] : [{ label: 'Proposed', money: summary.proposed }]),
+      ...(summary.shortfall === null ? [] : [{ label: 'Shortfall', money: summary.shortfall }]),
+    ];
+  }
+
+  /** A localised label for a proposal total, falling back to the server's own word. */
+  proposalLabel(label: string): string {
+    const key = proposalLabelKey(label);
+    return key === null ? label : this.i18n.t(key);
+  }
 
   onInput(event: Event): void {
     this.question.set((event.target as HTMLInputElement).value);
@@ -467,10 +534,9 @@ const ASSISTANT_QUERY = /* GraphQL */ `
         }
         totals {
           label
-          money {
-            amountMinor
-            currency
-          }
+          # Money is a SCALAR: a selection set on it is a validation error the client cannot see
+          # until the request is made, which is how this shipped broken in 3.2.4 (docs/15).
+          money
           formatted
         }
         formatted

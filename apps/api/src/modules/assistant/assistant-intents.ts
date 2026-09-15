@@ -80,6 +80,7 @@ export const AssistantIntentEnum = Object.freeze(
  */
 export type SlotName =
   | 'period'
+  | 'targetMinor'
   | 'categoryId'
   | 'merchantId'
   | 'accountId'
@@ -296,8 +297,13 @@ export const INTENT_TEMPLATES: Readonly<Record<AssistantIntent, IntentTemplate>>
     shape: 'TOTAL',
   },
   SAVINGS_PROPOSAL: {
-    sourceQuery: 'goals.savingsProposal.v1',
-    requiredSlots: [],
+    // Deliberately not `goals.…`: a savings proposal reads the ledger's spend and needs no SavingGoal
+    // (3.3.2 owns those), and a provenance string that names a table the figure never touched is a
+    // small lie in the one place the product promises to be checkable.
+    sourceQuery: 'savings.proposal.v1',
+    // The target is required: "how do I save?" without an amount is a different question — and one
+    // this template cannot answer, so it is refused rather than answered with a default target.
+    requiredSlots: ['targetMinor'],
     optionalSlots: ['period'],
     kind: 'EXPENSE',
     shape: 'ROWS',

@@ -693,8 +693,10 @@ infinity.
 > closest" (there is no similarity ranking, so a "closest three" would be a claim nobody can compute —
 > docs/06 §8.7); the composer is a **question field, not the shared `CaptureField`** §3 and DP-1 want on
 > four surfaces (that component is built nowhere, and a question and a transaction fragment are
-> different inputs — docs/06 §8.8); and F-30's proposal table is 3.2.5 and absent, so a savings question
-> is refused as `NOT_BUILT:goals` with the same chips. `narrationMode` and `reason` are **not rendered**:
+> different inputs — docs/06 §8.8); and F-30's proposal table **ships without its *Primeni* button**: the
+> plan is computed and labelled *Predlog (izračunato)* with its target and shortfall, and the screen says
+> "a suggestion only — no budget has been changed", because applying it means deciding what "apply" does
+> to a Budget that already exists (docs/06 §8.8). `narrationMode` and `reason` are **not rendered**:
 > a correct answer computed without a model is not a degraded experience, and this build has no provider
 > configured, so a badge would sit on every answer. The screen has **not been looked at by a human at
 > any width** yet.

@@ -78,6 +78,15 @@ export {
 } from './budget';
 
 export {
+  DEFAULT_CAP_PERCENT,
+  proposeSavings,
+  type SavingsCandidate,
+  type SavingsProposal,
+  type SavingsProposalInput,
+  type SavingsProposalLine,
+} from './savings';
+
+export {
   alertKindForInsight,
   evaluateAlerts,
   isQuietHour,

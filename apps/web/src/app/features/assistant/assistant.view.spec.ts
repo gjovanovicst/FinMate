@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import {
   canExpand,
-  drillThroughTarget,
   drillThroughLabelKey,
+  drillThroughTarget,
   factRows,
   factTotals,
+  isProposal,
   moneyRow,
   periodLabel,
   phaseOf,
+  proposalLabelKey,
+  proposalSummary,
   provenanceKey,
   suggestionChips,
   type AssistantAnswer,
@@ -125,6 +128,56 @@ describe('the figures the card shows', () => {
     expect(canExpand(facts())).toBe(true);
     expect(canExpand(facts({ totals: [] }))).toBe(false);
     expect(canExpand(facts({ totals: [], rows: [{ label: 'Hrana', value: '1', formatted: '1' }] }))).toBe(true);
+  });
+});
+
+describe('the F-30 proposal', () => {
+  const proposal: AssistantFacts = {
+    template: 'SAVINGS_PROPOSAL',
+    rows: [
+      { label: 'Hrana / Supermarket', value: '349000', formatted: '3.490,00 RSD' },
+      { label: 'Gorivo', value: '151000', formatted: '1.510,00 RSD' },
+    ],
+    totals: [
+      { label: 'Target', money: { amountMinor: '500000', currency: 'RSD' }, formatted: '5.000,00 RSD' },
+      { label: 'Proposed', money: { amountMinor: '500000', currency: 'RSD' }, formatted: '5.000,00 RSD' },
+      { label: 'Shortfall', money: { amountMinor: '0', currency: 'RSD' }, formatted: '0,00 RSD' },
+    ],
+    formatted: { headline: '5.000,00 RSD', meetsTarget: 'true' },
+  };
+
+  it('is recognised by its template, because it is a plan and not a report of what happened', () => {
+    expect(isProposal(proposal)).toBe(true);
+    expect(isProposal(facts())).toBe(false);
+  });
+
+  it('reads the three headline figures, and drops a shortfall of zero as noise', () => {
+    const summary = proposalSummary(proposal);
+
+    expect(summary.target?.amountMinor).toBe('500000');
+    expect(summary.proposed?.amountMinor).toBe('500000');
+    expect(summary.shortfall).toBeNull();
+    expect(summary.lines.map((line) => line.money.amountMinor)).toEqual(['349000', '151000']);
+  });
+
+  it('keeps a shortfall when there is one, because it is the honest half of the answer', () => {
+    const short = proposalSummary({
+      ...proposal,
+      totals: [
+        ...proposal.totals.slice(0, 2),
+        { label: 'Shortfall', money: { amountMinor: '100000', currency: 'RSD' }, formatted: '1.000,00 RSD' },
+      ],
+    });
+
+    expect(short.shortfall?.amountMinor).toBe('100000');
+  });
+
+  it('localises the server’s labels, and keeps an unknown one rather than showing a key', () => {
+    expect(proposalLabelKey('Target')).toBe('assistant.proposalTarget');
+    expect(proposalLabelKey('Proposed')).toBe('assistant.proposalProposed');
+    expect(proposalLabelKey('Shortfall')).toBe('assistant.proposalShortfall');
+    // A future server label must render as itself, not as `assistant.proposalSomething`.
+    expect(proposalLabelKey('Something new')).toBeNull();
   });
 });
 

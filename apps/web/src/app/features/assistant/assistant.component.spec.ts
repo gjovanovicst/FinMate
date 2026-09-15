@@ -221,6 +221,42 @@ describe('the assistant screen', () => {
     expect(fixture.nativeElement.querySelector('[role="alert"]')).not.toBeNull();
   });
 
+  it('renders an F-30 proposal as a labelled plan that says nothing was applied', async () => {
+    const { fixture } = await mount((query) => {
+      if (query.includes('query AssistantSuggestions')) return { assistantSuggestions: [] };
+      return {
+        assistantAnswer: {
+          ...ANSWER,
+          intent: 'SAVINGS_PROPOSAL',
+          answerText: 'You could save 5.000,00 RSD by spending less.',
+          facts: {
+            template: 'SAVINGS_PROPOSAL',
+            rows: [{ label: 'Hrana / Supermarket', value: '349000', formatted: '3.490,00 RSD' }],
+            totals: [
+              { label: 'Target', money: { amountMinor: '500000', currency: 'RSD' }, formatted: '5.000,00 RSD' },
+              { label: 'Proposed', money: { amountMinor: '349000', currency: 'RSD' }, formatted: '3.490,00 RSD' },
+              { label: 'Shortfall', money: { amountMinor: '151000', currency: 'RSD' }, formatted: '1.510,00 RSD' },
+            ],
+            formatted: { headline: '3.490,00 RSD' },
+          },
+          drillThrough: null,
+        },
+      };
+    });
+
+    await typeAndAsk(fixture, 'kako da uštedim 5.000');
+    const text = textOf(fixture);
+
+    expect(text).toContain('Proposal (computed)');
+    expect(text).toContain('Target');
+    expect(text).toContain('Short by');
+    // The point of the copy: a plan presented as a plan, with nothing applied behind the user's back.
+    expect(text).toContain('no budget has been changed');
+    expect(fixture.nativeElement.querySelector('.proposal')).not.toBeNull();
+    // Three totals plus the one reduction line, all through the only money renderer.
+    expect(fixture.nativeElement.querySelectorAll('.proposal fm-money').length).toBe(4);
+  });
+
   it('keeps the thread, so the previous question is still readable', async () => {
     const { fixture } = await mount();
 

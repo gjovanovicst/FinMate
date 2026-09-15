@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import { todayIn, uuidv7, DEFAULT_TIME_ZONE, type LocalDate } from '@finmate/domain';
+import { todayIn, uuidv7, DEFAULT_TIME_ZONE, type CurrencyCode, type LocalDate } from '@finmate/domain';
 
 import { ApiError } from '../../common/filters/all-exceptions.filter';
 import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
@@ -170,13 +170,18 @@ export class AssistantService {
 
     const household = await this.prisma.client.households.findFirst({
       where: { id: householdId },
-      select: { iana_timezone: true },
+      select: { iana_timezone: true, ledger_currency: true },
     });
     if (household === null) throw new ApiError('NOT_FOUND', 'Household not found.');
 
     const locale = this.resolveLocale(request.locale);
     const today = todayIn(household.iana_timezone || DEFAULT_TIME_ZONE);
-    const plan = planQuestion(question, await this.plannerContext(householdId, today));
+    const plan = planQuestion(
+      question,
+      // The currency is what lets the planner read a savings target out of the question the same way
+      // the capture path reads an amount (ADR-003): `20.000` is twenty thousand RSD, not 20.
+      await this.plannerContext(householdId, today, household.ledger_currency as CurrencyCode),
+    );
     const assembled = await this.facts.assemble(householdId, plan, { today });
 
     // A refusal is decided **before** the narrator is reached: docs/06 §8.5 forbids a figure for a
@@ -321,7 +326,11 @@ export class AssistantService {
    * recorded as a known limitation rather than hidden, because the alternative — a second, unbounded
    * read path — is a decision about the taxonomy module, not about the planner.
    */
-  private async plannerContext(householdId: string, today: LocalDate): Promise<PlannerContext> {
+  private async plannerContext(
+    householdId: string,
+    today: LocalDate,
+    currency: CurrencyCode,
+  ): Promise<PlannerContext> {
     const [categories, merchants, accounts, tags] = await Promise.all([
       this.categories.list(householdId),
       this.merchants.list(householdId, {}, { first: PLANNER_PAGE_SIZE }),
@@ -331,6 +340,7 @@ export class AssistantService {
 
     return {
       today,
+      currency,
       categories: categories.map((category) => ({
         id: category.id,
         name: category.name,

@@ -3136,6 +3136,12 @@ wire). 163 tests in the module, of which 20 are the integration spec that script
 | The narrator's input is built from pre-formatted strings | `factStrings()` | §8.2. The machine values are deliberately excluded — the model is not handed minor units or floats to reformat. |
 | A drill-through is offered only where a route can reproduce the scope | `DRILL_ROUTES`, `null` for `SPEND_BY_MERCHANT`, `SPEND_BY_TAG`, `TOP_MERCHANTS` | See §8.8. A link that shows rows the answer did not come from is worse than no link. |
 
+| The savings proposal is a **pure domain calculator**, not a prompt | `proposeSavings` in `@finmate/domain` (11 tests), fed by the period's per-Category spend with splits included | F-30 says *"backend computes, AI explains"*, and [08 §6.7](08-security-privacy-and-compliance.md) lists the proposal as unchanged without AI consent — so it cannot live in a prompt. It also shares `categorySpend` with `TOP_CATEGORIES`, so the plan and the ranked view can never disagree about what a Category spent. |
+| The target amount is read from the question, anchored to the verb | `resolveTarget`: the first numeral after `SAVINGS_CUES`, parsed alone through `parseAmount` | *"kako da uštedim 20.000 u avgustu 2025"* has two numerals and the second is a year, so "the last number" plans around 2.025 RSD. The token is parsed alone because `parseAmount` reads a grouped number **differently** in prose (*`20.000` → twenty*) than on its own (*→ twenty thousand, or twenty, in that order*) — silently, and 1000× off for a target. |
+| An ambiguous target is taken, not refused | `1.200` → 1.200,00 RSD (the parser's first reading) | docs/04 §3.1's "never silently picks" is about the **capture** path, where the number becomes money in the ledger. Here the number is a target the answer repeats on its face (*"Target 1.200,00 RSD"*), and refusing would make F-30's own canonical question unanswerable. |
+| A savings question without an amount is refused | `UNRUNNABLE:targetMinor` → *"I could not tell how much you want to save."* | "How do I save?" is a different question from "how do I save 20.000?", and answering it with a default target would be inventing the most important input. |
+| `sourceQuery` is `savings.proposal.v1`, not `goals.savingsProposal.v1` | The registry entry renamed | A savings proposal reads the ledger's spend and needs no SavingGoal (3.3.2 owns those); a provenance string naming a table the figure never touched is a small lie in the one place the product promises to be checkable. |
+
 ### 8.8 Known gaps in the assistant (3.2.3)
 
 - **Narration cost is not persisted.** `costMicros` is returned on the answer and logged; nothing
@@ -3168,6 +3174,19 @@ wire). 163 tests in the module, of which 20 are the integration spec that script
 - **The transcript is the client's, for the visit.** With no `conversationId` there is no context for a
   follow-up ("and last month?"), and a reload clears the thread. The empty state says so rather than
   implying memory the API does not have.
+- **F-30 stops at the proposal.** `SAVINGS_PROPOSAL` computes and presents a plan (3.2.5) — a target, a
+  reduction per Category, the shortfall — and **nothing is applied**: docs/02 §4.16's *Primeni* button is
+  not built. It is not an oversight but an unmade decision, and a real one: a Budget is a limit, so
+  "apply" means writing `current spend − reduction` into the Budget for each line — which can *raise* a
+  Budget the Household had already set lower, and can lower one below what it has already spent this
+  period. Who wins, whether an existing tighter Budget is left alone, and whether the write is one
+  mutation or the client's existing `upsertBudget` per line are product decisions (docs/02 owns them),
+  so the screen says *"a suggestion only — no budget has been changed"* instead of guessing.
+- **The proposal's cut rule is uniform, because nothing marks a Category as discretionary.** It is 20 %
+  of each Category's own spend, biggest first (`proposeSavings`, `@finmate/domain`). That is defensible
+  and stated, but it will happily propose cutting rent: the wireframe cuts `Hrana`/`Gorivo`/`Pretplate`,
+  which implies a notion of essential spending the data model does not have. Adding it is a
+  `categories` column and a product decision, not a heuristic to slip into the calculator.
 - **`/assistant` has not been looked at by a human at any width** — the same standing gap as `/review`
   and `/notifications` (docs/02 §9). Its mounted spec proves the flow; it cannot prove the layout.
 - **The planner matches against at most 200 Merchants and Accounts** per question (`MAX_PAGE_SIZE`).

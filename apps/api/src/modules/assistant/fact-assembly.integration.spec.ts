@@ -552,9 +552,9 @@ describe('fact assembly (integration)', () => {
   });
 
   it('refuses an intent whose data does not exist in this build, with a reason and no figures', async () => {
-    const goals = await assemble(planFor('SAVINGS_PROPOSAL'));
+    const goals = await assemble(planFor('GOAL_REQUIRED_MONTHLY'));
     expect(goals.available).toBe(false);
-    expect(goals.reason).toBe('NOT_BUILT:goals');
+    expect(goals.reason).toBe('UNRUNNABLE:goalId');
     expect(goals.facts.totals).toEqual([]);
     expect(goals.facts.rows).toEqual([]);
     expect(goals.facts.formatted).toEqual({});
@@ -578,6 +578,9 @@ describe('fact assembly (integration)', () => {
       ['SPEND_BY_ACCOUNT', { accountId }],
       ['SPEND_BY_TAG', { tagId }],
       ['ACCOUNT_BALANCE', { accountId }],
+      // F-30 needs a target amount, which the planner resolves from the question ("kako da uštedim
+      // 20.000"); without one it refuses, which is the point of the test below.
+      ['SAVINGS_PROPOSAL', { targetMinor: '500000' }],
     ];
     const slotsFor = new Map<AssistantIntent, Partial<ResolvedSlots>>(available);
 
@@ -595,11 +598,48 @@ describe('fact assembly (integration)', () => {
         'NO_TEMPLATE_MATCH',
         'RECURRING_LIST',
         'RECURRING_UPCOMING',
-        'SAVINGS_PROPOSAL',
       ].sort(),
     );
     expect(reasons.get('RECURRING_UPCOMING')).toBe('NOT_BUILT:recurring');
     expect(reasons.get('GOAL_REQUIRED_MONTHLY')).toBe('UNRUNNABLE:goalId');
+  });
+
+  it('proposes reductions that add up to the target, biggest Category first (F-30)', async () => {
+    // September: the basket's 17.450 in Supermarket, 9.200 in Gorivo (4.200 direct + the 5.000 split).
+    // 20 % of each is 3.490 and 1.840 = 5.330, so a 5.000 target is met from those two alone.
+    const result = await assemble(planFor('SAVINGS_PROPOSAL', { targetMinor: '500000' }));
+
+    expect(result.available).toBe(true);
+    expect(result.facts.rows.map((row) => [row.label, row.value])).toEqual([
+      ['Hrana / Supermarket', '349000'],
+      ['Gorivo', '151000'],
+    ]);
+    const totals = new Map(result.facts.totals.map((total) => [total.label, total.money.amountMinor]));
+    expect(totals.get('Target')).toBe('500000');
+    expect(totals.get('Proposed')).toBe('500000');
+    expect(totals.get('Shortfall')).toBe('0');
+    expect(result.facts.formatted['meetsTarget']).toBe('true');
+    expect(result.facts.formatted['capPercent']).toBe('20');
+  });
+
+  it('reports the shortfall when the cap cannot cover the target, instead of stretching the rule', async () => {
+    // 20 % of everything September spent (17.450 + 9.200 + 20.000 uncategorised, which has no Category
+    // to cut) is 5.330 — a 20.000 target is not reachable, and the answer says so.
+    const result = await assemble(planFor('SAVINGS_PROPOSAL', { targetMinor: '2000000' }));
+
+    expect(result.available).toBe(true);
+    const totals = new Map(result.facts.totals.map((total) => [total.label, total.money.amountMinor]));
+    expect(totals.get('Proposed')).toBe('533000');
+    expect(totals.get('Shortfall')).toBe('1467000');
+    expect(result.facts.formatted['meetsTarget']).toBe('false');
+  });
+
+  it('refuses a savings question with no amount rather than proposing against a default target', async () => {
+    const result = await assemble(planFor('SAVINGS_PROPOSAL'));
+
+    expect(result.available).toBe(false);
+    expect(result.reason).toBe('UNRUNNABLE:targetMinor');
+    expect(result.facts.rows).toEqual([]);
   });
 
   it('hands the narrator minor-unit strings and pre-formatted strings, never a float', async () => {

@@ -49,6 +49,11 @@ export const srLatn: Record<keyof typeof en, string> = {
   'assistant.openReview': 'Otvori red za proveru',
   'assistant.openBudgets': 'Otvori budžete',
   'assistant.openAccounts': 'Otvori račune',
+  'assistant.proposal': 'Predlog (izračunato)',
+  'assistant.proposalTarget': 'Cilj',
+  'assistant.proposalProposed': 'Predlog',
+  'assistant.proposalShortfall': 'Nedostaje',
+  'assistant.proposalNote': 'Samo predlog — nijedan budžet nije izmenjen.',
   'assistant.failed': 'Pitanje nije poslato. Pokušaj ponovo.',
 
   'notifications.title': 'Obaveštenja',

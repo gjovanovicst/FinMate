@@ -62,6 +62,7 @@ type Frame =
   | 'LIST'
   | 'TREND_PREVIOUS'
   | 'TREND_AVERAGE'
+  | 'PROPOSAL'
   | 'REFUSAL';
 
 const FRAMES: Readonly<Record<AssistantIntent, Frame>> = {
@@ -91,7 +92,7 @@ const FRAMES: Readonly<Record<AssistantIntent, Frame>> = {
   TREND_VS_AVERAGE: 'TREND_AVERAGE',
   GOAL_PROGRESS: 'REFUSAL',
   GOAL_REQUIRED_MONTHLY: 'REFUSAL',
-  SAVINGS_PROPOSAL: 'REFUSAL',
+  SAVINGS_PROPOSAL: 'PROPOSAL',
   RECURRING_UPCOMING: 'REFUSAL',
   RECURRING_LIST: 'REFUSAL',
   NO_TEMPLATE_MATCH: 'REFUSAL',
@@ -197,6 +198,28 @@ export function renderTemplateAnswer(input: TemplateAnswerInput): string {
         : `This period ${at}, against a usual ${average} — a difference of ${headline}.`;
     }
 
+    case 'PROPOSAL': {
+      // F-30. The sentence names the target, what the plan covers and what it cannot — all three from
+      // `formatted`, so the fallback says the same thing the table shows.
+      const target = facts.formatted['target'];
+      const shortfall = facts.formatted['shortfall'];
+      const named = namedRows(facts);
+      if (named.length === 0) {
+        return target === undefined
+          ? 'There is nothing in that period to cut.'
+          : `I cannot reach ${target} from that period's spending — there is nothing to cut.`;
+      }
+      // One verb for the list, not one per item: "cut X by A, then cut Y by B" reads like a form.
+      const plan = named
+        .map((row, index) => `${index === 0 ? 'cut ' : ''}${row.label} by ${row.formatted}`)
+        .join(', then ');
+      const short =
+        shortfall === undefined || facts.formatted['meetsTarget'] === 'true'
+          ? ''
+          : ` That still leaves ${shortfall} short.`;
+      return target === undefined ? `${plan}.${short}` : `To save ${target}: ${plan}.${short}`;
+    }
+
     case 'REFUSAL':
       // The service refuses before it renders (no facts are assembled for an unavailable template);
       // this arm exists so the `Record` stays total and says so rather than throwing.
@@ -234,6 +257,7 @@ export function renderRefusal(reason: string): string {
       goalId: 'which goal you meant',
       recurringRuleId: 'which recurring rule you meant',
       limit: 'how many rows you wanted',
+      targetMinor: 'how much you want to save',
       period: 'which period you meant',
     };
     return `I could not tell ${nouns[missing] ?? 'what you meant'}. Try naming it.`;
