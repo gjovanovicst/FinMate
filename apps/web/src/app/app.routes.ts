@@ -103,6 +103,15 @@ export const routes: Routes = [
     title: 'Pravila',
   },
   {
+    path: 'notifications',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/notifications/notifications.component').then(
+        (m) => m.NotificationsComponent,
+      ),
+    title: 'Obaveštenja',
+  },
+  {
     path: 'budgets',
     canActivate: [authenticatedGuard],
     loadComponent: () =>

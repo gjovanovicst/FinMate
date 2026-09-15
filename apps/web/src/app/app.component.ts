@@ -6,6 +6,7 @@ import { AuthStore } from './core/auth/auth.store';
 import { I18nService } from './core/i18n/i18n.service';
 import type { TranslationKey } from './core/i18n/translations';
 import { NAV_ITEMS, OVERFLOW_ITEMS, badgeAccessibleName, badgeText } from './core/navigation';
+import { NotificationStore } from './core/notifications/notification.store';
 import { ReviewQueueStore } from './core/review/review-queue.store';
 import { LanguageSwitcherComponent } from './shared/ui/language-switcher/language-switcher.component';
 
@@ -52,6 +53,21 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
               }
             </ul>
           }
+
+          <!-- docs/02 §2.2 draws 🔔 in the header on both layouts. It is not a nav *slot*, so the
+               review queue remains the only badged destination; the unread count lives here. -->
+          <a
+            class="nav__bell"
+            routerLink="/notifications"
+            routerLinkActive="nav__link--active"
+            [attr.aria-label]="bellName() ?? i18n.t('notifications.bell')"
+          >
+            <span class="nav__icon" aria-hidden="true">🔔</span>
+            <span class="nav__label">{{ i18n.t('notifications.bell') }}</span>
+            @if (bellBadge() !== '') {
+              <span class="nav__badge">{{ bellBadge() }}</span>
+            }
+          </a>
 
           <ul class="nav__list">
             @for (item of items; track item.path) {
@@ -202,6 +218,16 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
       /* docs/02 section 2.3: hidden at 0 (the span is not rendered), the literal count up to nine,
          then "9+" above. Positioned against the glyph so the label underneath never shifts when the
          count appears. */
+      .nav__bell {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.4rem 0.6rem;
+        min-inline-size: 0;
+        text-decoration: none;
+        color: inherit;
+      }
+
       .nav__badge {
         position: absolute;
         inset-block-start: -0.35rem;
@@ -345,6 +371,7 @@ export class AppComponent {
   private readonly auth = inject(AuthStore);
   private readonly router = inject(Router);
   private readonly reviewQueue = inject(ReviewQueueStore);
+  private readonly notificationsStore = inject(NotificationStore);
   readonly i18n = inject(I18nService);
 
   readonly isAuthenticated = this.auth.isAuthenticated;
@@ -383,6 +410,17 @@ export class AppComponent {
 
   readonly moreOpen = signal(false);
 
+  /** The unread-notification badge, by the same rule as the review badge (docs/02 §2.3). */
+  readonly bellBadge = computed(() => badgeText(this.notificationsStore.count()));
+
+  readonly bellName = computed(() =>
+    badgeAccessibleName(
+      this.notificationsStore.count(),
+      this.i18n.t('notifications.bellOne', { count: this.notificationsStore.count() }),
+      this.i18n.t('notifications.bellMany', { count: this.notificationsStore.count() }),
+    ),
+  );
+
   /** docs/02 §2.3: hidden at 0, `1`–`9` literal, `9+` above. */
   readonly badge = computed(() => badgeText(this.reviewQueue.count()));
 
@@ -406,14 +444,20 @@ export class AppComponent {
     // documents `reviewQueueCount` as the shell's call on every screen, and there is no realtime
     // layer to push it. See `ReviewQueueStore` for why this replaces the spec's subscription.
     effect(() => {
-      if (this.isAuthenticated()) void this.reviewQueue.refresh();
+      if (this.isAuthenticated()) {
+        void this.reviewQueue.refresh();
+        void this.notificationsStore.refresh();
+      }
     });
 
     this.router.events
       .pipe(filter((event) => event instanceof NavigationEnd))
       .subscribe((event) => {
         this.url.set((event as NavigationEnd).urlAfterRedirects);
-        if (this.isAuthenticated()) void this.reviewQueue.refresh();
+        if (this.isAuthenticated()) {
+          void this.reviewQueue.refresh();
+          void this.notificationsStore.refresh();
+        }
       });
   }
 

@@ -68,6 +68,15 @@ export interface AlertRuleView {
 export interface NotificationView {
   readonly id: string;
   readonly insightId: string | null;
+  /**
+   * The insight behind the row, flattened.
+   *
+   * The screen needs two things from it — the **tone** (severity) and where the row **links** (kind) —
+   * and reading them from a nested object would mean every client walking a relation. Two scalars are
+   * cheaper than the join-per-row a full `insight { … }` field would invite.
+   */
+  readonly insightKind: string | null;
+  readonly insightSeverity: string | null;
   readonly channel: string;
   readonly title: string;
   readonly body: string;
@@ -475,7 +484,12 @@ export class NotificationsService {
       ...(after !== undefined ? { id: { lt: after } } : {}),
     };
     const [rows, totalCount] = await Promise.all([
-      this.prisma.client.notifications.findMany({ where, orderBy: { id: 'desc' }, take: take + 1 }),
+      this.prisma.client.notifications.findMany({
+        where,
+        orderBy: { id: 'desc' },
+        take: take + 1,
+        include: { insights: { select: { kind: true, severity: true } } },
+      }),
       this.prisma.client.notifications.count({ where }),
     ]);
     const hasNextPage = rows.length > take;
@@ -595,6 +609,7 @@ export class NotificationsService {
   private toNotificationView(row: {
     id: string;
     insight_id: string | null;
+    insights?: { kind: string; severity: string } | null;
     channel: string;
     title: string;
     body: string;
@@ -606,6 +621,8 @@ export class NotificationsService {
     return {
       id: row.id,
       insightId: row.insight_id,
+      insightKind: row.insights?.kind ?? null,
+      insightSeverity: row.insights?.severity ?? null,
       channel: row.channel,
       title: row.title,
       body: row.body,

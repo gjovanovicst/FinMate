@@ -85,6 +85,18 @@ export class NotificationModel {
   @Field(() => ID, { nullable: true })
   insightId!: string | null;
 
+  @Field(() => String, {
+    nullable: true,
+    description: 'The insight kind behind this row, flattened so a client can link without a join.',
+  })
+  insightKind!: string | null;
+
+  @Field(() => String, {
+    nullable: true,
+    description: 'The insight severity, which is what the row\'s tone is drawn from.',
+  })
+  insightSeverity!: string | null;
+
   @Field(() => InsightModel, { nullable: true })
   insight!: InsightModel | null;
 
@@ -278,6 +290,8 @@ export function toNotificationModel(view: NotificationView): NotificationModel {
   return {
     id: view.id,
     insightId: view.insightId,
+    insightKind: view.insightKind,
+    insightSeverity: view.insightSeverity,
     // Not resolved here: the notification list is read far more often than the insight is needed, and
     // a join per row is the kind of cost that shows up as a slow badge. The client links by id.
     insight: null,

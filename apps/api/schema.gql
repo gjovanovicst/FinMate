@@ -1316,6 +1316,14 @@ type NotificationModel {
   id: ID!
   insight: InsightModel
   insightId: ID
+
+  """
+  The insight kind behind this row, flattened so a client can link without a join.
+  """
+  insightKind: String
+
+  """The insight severity, which is what the row's tone is drawn from."""
+  insightSeverity: String
   readAt: DateTime
   sentAt: DateTime
   status: NotificationStatus!

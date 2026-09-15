@@ -136,6 +136,8 @@ describe('AppComponent nav (mounted)', () => {
       '/counterparties',
       '/tags',
       '/rules',
+      // 3.1.4: the notification centre is reachable from the header bell and listed here.
+      '/notifications',
     ]);
   });
 
@@ -192,6 +194,7 @@ describe('AppComponent nav (mounted)', () => {
       '/counterparties',
       '/tags',
       '/rules',
+      '/notifications',
     ]);
   });
 });

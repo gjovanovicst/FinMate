@@ -41,6 +41,8 @@ describe('navigation destinations', () => {
       '/counterparties',
       '/tags',
       '/rules',
+      // Added by 3.1.4: reached from the header bell, listed so the sidebar is a complete view.
+      '/notifications',
     ]);
   });
 
