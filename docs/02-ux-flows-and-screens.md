@@ -651,6 +651,21 @@ explicit accept — never auto-created (`is_detected`,
 read-only in an advanced disclosure. `auto_confirm` is explained in one line: unchecked produces a
 `PENDING` row that appears for confirmation. Deactivating keeps history.
 
+> **Build state (task 3.3.3).** `/recurring` ships the rule list, the create/edit form with the
+> frequency picker, the auto-confirm checkbox with its one-line explanation, activate/deactivate, the
+> **next 30 days** summary and the raw RFC 5545 text behind a read-only disclosure, exactly as this
+> section draws it. Two things the screen is careful about: the schedule is **said in words** derived
+> from the same parse the server expands (a sentence that disagreed with the schedule would be a screen
+> that lies about when money moves), and **no date is ever computed on the client** — `nextOccurrenceOn`
+> and `upcomingOccurrences` are the API's expansion, flattened into the 30-day line.
+>
+> **What the drawing has and this build does not.** The **Proposals** section (detected subscriptions
+> with their evidence, `⚠ Predlozi (2)`, *Prihvati* / *✕*) is task 3.3.4: nothing writes
+> `is_detected` yet, so the section would be permanently empty and is not rendered at all rather than
+> shown empty. There is also no "post it now" button: that is `materialiseRecurring`, the job's own
+> entry point, and it belongs with the job's UI rather than as a per-rule action nobody asked for.
+> **The screen has not been looked at by a human at any width** (docs/02 §9's standing gap).
+
 ### 4.15 Analytics — F-20
 
 ```text

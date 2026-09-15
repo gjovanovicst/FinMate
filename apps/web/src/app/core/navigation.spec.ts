@@ -38,6 +38,7 @@ describe('navigation destinations', () => {
       // Plan holds Budgets, Goals and Recurring rules (docs/02 §2.1); the Uvid group follows, in the
       // document's own order: Analitika then Asistent.
       '/goals',
+      '/recurring',
       '/analytics',
       '/assistant',
       '/accounts',

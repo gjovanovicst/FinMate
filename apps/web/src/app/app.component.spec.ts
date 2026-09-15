@@ -153,6 +153,7 @@ describe('AppComponent nav (mounted)', () => {
     expect(panel).toEqual([
       '/budgets',
       '/goals',
+      '/recurring',
       // The Uvid group follows Plan, in the document's own order.
       '/analytics',
       '/assistant',
@@ -213,6 +214,7 @@ describe('AppComponent nav (mounted)', () => {
       '/review',
       '/budgets',
       '/goals',
+      '/recurring',
       '/analytics',
       '/assistant',
       '/accounts',

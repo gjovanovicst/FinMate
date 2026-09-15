@@ -67,6 +67,13 @@ export const routes: Routes = [
     title: 'Ciljevi',
   },
   {
+    path: 'recurring',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/recurring/recurring.component').then((m) => m.RecurringComponent),
+    title: 'Ponavljajuće',
+  },
+  {
     path: 'analytics',
     canActivate: [authenticatedGuard],
     loadComponent: () =>
