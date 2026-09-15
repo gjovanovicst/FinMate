@@ -61,6 +61,13 @@ export const routes: Routes = [
     title: 'Transakcije',
   },
   {
+    path: 'assistant',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/assistant/assistant.component').then((m) => m.AssistantComponent),
+    title: 'Asistent',
+  },
+  {
     path: 'review',
     canActivate: [authenticatedGuard],
     loadComponent: () =>

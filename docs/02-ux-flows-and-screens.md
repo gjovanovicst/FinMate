@@ -686,6 +686,19 @@ infinity.
   guess. F-30 returns a computed table labelled *Predlog (izračunato)* and offers to write the numbers
   into Budgets; it never edits a Budget silently.
 
+> **Build state (task 3.2.4).** `/assistant` ships the composer, the transcript, the answer card with
+> its figures, the expandable provenance line and the drill-through link, and it reads its starter chips
+> from `assistantSuggestions` (one source with the refusal's suggestions). Three deliberate differences
+> from the wireframe: the unanswerable case shows **six** canonical suggestions rather than "three
+> closest" (there is no similarity ranking, so a "closest three" would be a claim nobody can compute —
+> docs/06 §8.7); the composer is a **question field, not the shared `CaptureField`** §3 and DP-1 want on
+> four surfaces (that component is built nowhere, and a question and a transaction fragment are
+> different inputs — docs/06 §8.8); and F-30's proposal table is 3.2.5 and absent, so a savings question
+> is refused as `NOT_BUILT:goals` with the same chips. `narrationMode` and `reason` are **not rendered**:
+> a correct answer computed without a model is not a degraded experience, and this build has no provider
+> configured, so a badge would sit on every answer. The screen has **not been looked at by a human at
+> any width** yet.
+
 ### 4.17 Notifications centre — F-22
 
 ```text

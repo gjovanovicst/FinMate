@@ -152,6 +152,9 @@ describe('AppComponent nav (mounted)', () => {
     const panel = navLinks(fixture, '.nav__more-panel a').map((link) => link.getAttribute('href'));
     expect(panel).toEqual([
       '/budgets',
+      // docs/02 §2.2's Uvid group sits between Plan and the library; Analitika (3.3.1) is not built,
+      // so the assistant is its only member today.
+      '/assistant',
       '/accounts',
       '/categories',
       '/merchants',
@@ -208,6 +211,7 @@ describe('AppComponent nav (mounted)', () => {
       '/capture',
       '/review',
       '/budgets',
+      '/assistant',
       '/accounts',
       '/categories',
       '/merchants',

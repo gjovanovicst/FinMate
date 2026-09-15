@@ -1299,6 +1299,7 @@ type Query {
 
   # ---- assistant
   assistantAnswer(question: String!, locale: String): AssistantAnswerModel!      # 3.2.3
+  assistantSuggestions: [String!]!                                    # 3.2.4, the starter chips
 
   # ---- search
   search(query: String!, entities: [SearchEntity!], limit: Int = 20): SearchResults!
@@ -1492,7 +1493,12 @@ built (docs/06 §8.7 has the reasoning):
 
 `drillThrough` is null in two cases, and both are deliberate rather than unfinished: a **refusal** has
 nothing to link to, and a **merchant- or tag-scoped** answer has no route that can reproduce its scope
-until `transactions` accepts `merchantId`/`tagId` (§8.7).
+until `transactions` accepts `merchantId`/`tagId` (§8.8).
+
+`assistantSuggestions` (added by 3.2.4) returns the canonical answerable questions from the intent
+registry, so the screen's starter chips and a refusal's suggestions are the **same closed set**. Without
+it the client would hold a second copy of the planner's question list, and the first one to drift would
+send a user to a question the planner cannot route.
 
 ### 4.5 Search
 
@@ -3149,9 +3155,21 @@ wire). 163 tests in the module, of which 20 are the integration spec that script
 - **A merchant- or tag-scoped answer offers no drill-through**, because `transactions(...)` takes
   `categoryId` and `accountId` but not `merchantId` or `tagId`. Adding them is a ledger change
   (§4.1 + §5.1) and belongs with 3.2.4's UI, where the missing link is visible.
-- **`/transactions` does not read route query parameters yet**, so a drill-through link opens the
-  unfiltered list. docs/02 §FL-09 step 6 wants "the filter chips applied"; that is 3.2.4's work, and
-  until then the filter bag is a contract with no consumer.
+- **A drill-through now lands filtered** (3.2.4): `/transactions` reads the six arguments out of the URL
+  before its first query (`filtersFromQuery`), and the link carries route and parameters separately
+  because one string containing `?from=…` made `routerLink` encode the question mark (docs/15). The
+  screen reads the URL and never writes its own filters back to it, so a filter edit is not a history
+  entry — which also means a manually filtered list is still lost on reload.
+- **The assistant screen has a question composer, not docs/02 §3's `CaptureField`.** §3 and DP-1 want
+  *one* capture field mounted on the dashboard, the transactions list, the assistant and the mobile
+  shell; it is built nowhere, and capture remains its own full screen (`/capture`). A question and a
+  transaction fragment are different inputs to different pipelines, and unifying them is a UX change
+  across four surfaces rather than part of F-23.
+- **The transcript is the client's, for the visit.** With no `conversationId` there is no context for a
+  follow-up ("and last month?"), and a reload clears the thread. The empty state says so rather than
+  implying memory the API does not have.
+- **`/assistant` has not been looked at by a human at any width** — the same standing gap as `/review`
+  and `/notifications` (docs/02 §9). Its mounted spec proves the flow; it cannot prove the layout.
 - **The planner matches against at most 200 Merchants and Accounts** per question (`MAX_PAGE_SIZE`).
   Beyond that an entity can be in the Household's ledger and still not resolve. A single unbounded read
   for planning is a taxonomy-module decision.

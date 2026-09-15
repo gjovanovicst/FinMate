@@ -5,6 +5,9 @@ import {
   emptyFilters,
   exportUrl,
   filenameFromContentDisposition,
+  filterQueryFromBag,
+  filterQueryString,
+  filtersFromQuery,
   groupByDay,
   hasActiveFilters,
   localNoonInstant,
@@ -331,6 +334,76 @@ describe('exportUrl', () => {
     for (const key of ['kind', 'search'] as const) {
       expect(query.get(key)).toBe(String(variables[key]));
     }
+  });
+});
+
+describe('the drill-through a link carries', () => {
+  it('keeps exactly the arguments the transactions query takes', () => {
+    // The assistant's `drillThrough.filter` is a bag of these names (docs/06 §4.4). A key the screen
+    // cannot apply is dropped rather than forwarded: a URL claiming `merchantId` and showing every
+    // Merchant is a link that lies.
+    expect(
+      filterQueryFromBag({ from: '2026-09-01', to: '2026-09-30', merchantId: 'm1', search: '' }),
+    ).toEqual({ from: '2026-09-01', to: '2026-09-30' });
+    expect(filterQueryString({ merchantId: 'm1' })).toBe('');
+  });
+
+  it('reads a drill-through into the screen’s filter', () => {
+    const filters = filtersFromQuery({
+      from: '2026-09-01',
+      to: '2026-09-30',
+      kind: 'EXPENSE',
+      categoryId: 'c1',
+      needsReview: 'true',
+    });
+
+    expect(filters).toEqual({
+      ...emptyFilters(),
+      from: '2026-09-01',
+      to: '2026-09-30',
+      kind: 'EXPENSE',
+      categoryId: 'c1',
+      needsReviewOnly: true,
+    });
+    expect(hasActiveFilters(filters)).toBe(true);
+  });
+
+  it('applies only the keys the link carried, so it does not clear what the user chose', () => {
+    const base = { ...emptyFilters(), categoryId: 'mine', search: 'lidl' };
+    expect(filtersFromQuery({ from: '2026-09-01' }, base)).toEqual({
+      ...base,
+      from: '2026-09-01',
+    });
+  });
+
+  it('drops a kind the API would reject instead of turning a typo into a validation error', () => {
+    // The URL is user-editable, and the screen did nothing wrong.
+    expect(filtersFromQuery({ kind: 'nonsense' }).kind).toBe('');
+    expect(filtersFromQuery({ kind: 'INCOME' }).kind).toBe('INCOME');
+  });
+
+  it('treats a needsReview that is not "true" as the blocking lane, not as unset', () => {
+    expect(filtersFromQuery({ needsReview: 'true' }).needsReviewOnly).toBe(true);
+    expect(filtersFromQuery({ needsReview: 'false' }).needsReviewOnly).toBe(false);
+  });
+
+  it('reads nothing out of an empty query, which is how the screen opens normally', () => {
+    expect(filtersFromQuery({})).toEqual(emptyFilters());
+  });
+
+  it('round-trips the six keys a drill-through can carry', () => {
+    const original = {
+      from: '2026-09-01',
+      to: '2026-09-30',
+      kind: 'EXPENSE',
+      categoryId: 'c1',
+      accountId: 'a1',
+      needsReview: 'true',
+    };
+    const parsed = new URLSearchParams(filterQueryString(original));
+    const readBack: Record<string, string | null> = {};
+    for (const key of Object.keys(original)) readBack[key] = parsed.get(key);
+    expect(filtersFromQuery(readBack)).toEqual(filtersFromQuery(original));
   });
 });
 

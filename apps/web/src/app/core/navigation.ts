@@ -42,6 +42,9 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { path: '/capture', labelKey: 'nav.capture', icon: '➕', primary: true },
   { path: '/review', labelKey: 'nav.review', icon: '🔎', primary: true, badged: true },
   { path: '/budgets', labelKey: 'nav.budgets', icon: '🎯', primary: false },
+  // docs/02 §2.2's **Uvid** group (Analitika + Asistent). Analitika is 3.3.1 and not built, so
+  // the group has one member: the assistant, right after Plan and before the library.
+  { path: '/assistant', labelKey: 'nav.assistant', icon: '💬', primary: false },
   { path: '/accounts', labelKey: 'nav.accounts', icon: '🏦', primary: false },
   { path: '/categories', labelKey: 'nav.categories', icon: '🗂️', primary: false },
   { path: '/merchants', labelKey: 'nav.merchants', icon: '🏪', primary: false },

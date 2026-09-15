@@ -524,6 +524,24 @@ The tables hold platform content beside the Household’s own rows, which is whe
 
 Angular 22 zoneless + signals, and three separate ways a template literal or a type-checker can mislead you.
 
+- **A signal `viewChild()` read inside `afterNextRender` (or `ngAfterViewInit`) is `undefined` under
+  the mounted-spec harness.** The hook *runs* — a `console.log` inside it prints — but the query signal
+  has no value yet, so `this.input()?.nativeElement.focus()` silently does nothing and the test fails
+  for a reason that looks like the browser's fault. Query the host element instead
+  (`inject(ElementRef).nativeElement.querySelector('#the-input')`), which is available immediately and
+  behaves the same in the harness and in the app. Related, and easy to get wrong in the same test: a
+  fixture must be appended to `document.body` before a focus assertion means anything, because an
+  element that is not in the document cannot take focus and `document.activeElement` stays `BODY`.
+
+- **`[routerLink]` with a query string inside the string percent-encodes the question mark.** The
+  assistant's drill-through built `'/transactions?from=2026-09-01&to=2026-09-30'` and rendered
+  `href="/transactions%3Ffrom%3D2026-09-01&to%3D…"`, because Angular treats the whole string as a
+  single path **segment** — the link goes nowhere, and nothing fails: no error, no 404 until the user
+  clicks. Route and parameters are separate inputs:
+  `[routerLink]="target.route" [queryParams]="target.queryParams"`. A test asserting the rendered
+  `href` is what catches it; the pure "what URL should this be" function cannot, because the bug is in
+  what Angular does with the string.
+
 - **No hardcoded user-facing copy.** Every string goes through `I18nService.t('key')`. English is
   primary and is the source of the key set: add the string to `translations/en.ts` first, then to
   `sr-latn.ts` (typed, so a miss is a compile error). `sr-Cyrl` is generated — never edit it. A

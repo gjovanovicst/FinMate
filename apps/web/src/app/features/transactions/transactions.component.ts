@@ -1,8 +1,9 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink, type ParamMap } from '@angular/router';
 
 import { equalsMoney, parseAmount, type Money } from '@finmate/domain';
 
@@ -21,6 +22,7 @@ import {
   emptyFilters,
   exportUrl,
   filenameFromContentDisposition,
+  filtersFromQuery,
   groupByDay,
   hasActiveFilters,
   localNoonInstant,
@@ -833,6 +835,7 @@ export class TransactionsComponent {
   private readonly graphql = inject(GraphqlClient);
   private readonly errors = inject(ErrorMessageService);
   private readonly fb = inject(FormBuilder);
+  private readonly route = inject(ActivatedRoute);
 
   readonly rows = signal<readonly TransactionRow[]>([]);
   readonly categories = signal<readonly CategoryOption[]>([]);
@@ -939,6 +942,28 @@ export class TransactionsComponent {
   });
 
   constructor() {
+    // A drill-through arrives as query parameters — the assistant's `drillThrough.filter` names
+    // exactly these keys (docs/06 §4.4) — so they are read into the filter **before** the first load.
+    // Applying them afterwards would paint an unfiltered list and then replace it, which reads as the
+    // data changing under the user.
+    //
+    // The direction is one-way: the screen reads the URL and never writes its own filters back to it.
+    // A filter edit is not a navigation, and writing one would make every keystroke a history entry —
+    // and would fight this subscription.
+    const readParams = (params: ParamMap): Record<string, string | null> =>
+      Object.fromEntries(params.keys.map((key) => [key, params.get(key)]));
+
+    this.filters.set(filtersFromQuery(readParams(this.route.snapshot.queryParamMap)));
+
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const next = filtersFromQuery(readParams(params), this.filters());
+      // `queryParamMap` replays the current value on subscribe, so comparing first avoids a second
+      // fetch for a screen that was opened with no drill-through at all.
+      if (JSON.stringify(next) === JSON.stringify(this.filters())) return;
+      this.filters.set(next);
+      void this.reload();
+    });
+
     void this.load();
   }
 

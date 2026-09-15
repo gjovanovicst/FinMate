@@ -214,6 +214,75 @@ export function exportUrl(filters: TransactionFilters): string {
 }
 
 /**
+ * The keys a drill-through may put in the URL — exactly the `transactions` arguments (docs/06 §4.4).
+ *
+ * The assistant's `drillThrough.filter` is a bag of *these* names, so this list is the whole contract
+ * between the two screens. A key the screen cannot apply must be dropped rather than ignored
+ * silently: a URL that claims `merchantId` and shows every Merchant is a link that lies.
+ */
+export const FILTER_QUERY_KEYS = [
+  'from',
+  'to',
+  'categoryId',
+  'accountId',
+  'kind',
+  'needsReview',
+] as const;
+
+export type FilterQueryKey = (typeof FILTER_QUERY_KEYS)[number];
+
+/** The recognised, non-empty entries of a drill-through bag, in a stable order. */
+export function filterQueryFromBag(
+  bag: Readonly<Record<string, string>> | null | undefined,
+): Record<FilterQueryKey, string> {
+  const query = {} as Record<FilterQueryKey, string>;
+  if (!bag) return query;
+  for (const key of FILTER_QUERY_KEYS) {
+    const value = bag[key];
+    if (typeof value === 'string' && value.length > 0) query[key] = value;
+  }
+  return query;
+}
+
+/** The same bag as a query string (no leading `?`), for a drill-through link. */
+export function filterQueryString(bag: Readonly<Record<string, string>> | null | undefined): string {
+  return new URLSearchParams(filterQueryFromBag(bag)).toString();
+}
+
+/**
+ * Read a drill-through out of the URL into the screen's filter.
+ *
+ * Two decisions worth keeping:
+ *
+ *  - **Only the keys present are applied**, merged onto `base`, so a link carrying just a period does
+ *    not silently clear a Category the user had already chosen.
+ *  - **A `kind` that is not a `TransactionKind` is dropped**, not forwarded. The URL is
+ *    user-editable, and sending `kind=nonsense` to the API turns a typo into a validation error on a
+ *    screen that did nothing wrong.
+ */
+export function filtersFromQuery(
+  query: Readonly<Record<string, string | null>>,
+  base: TransactionFilters = emptyFilters(),
+): TransactionFilters {
+  const bag = filterQueryFromBag(
+    Object.fromEntries(
+      Object.entries(query).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+    ),
+  );
+
+  const kind = bag.kind;
+  return {
+    ...base,
+    ...(bag.from === undefined ? {} : { from: bag.from }),
+    ...(bag.to === undefined ? {} : { to: bag.to }),
+    ...(bag.categoryId === undefined ? {} : { categoryId: bag.categoryId }),
+    ...(bag.accountId === undefined ? {} : { accountId: bag.accountId }),
+    ...(kind === undefined || (kind !== 'EXPENSE' && kind !== 'INCOME') ? {} : { kind }),
+    ...(bag.needsReview === undefined ? {} : { needsReviewOnly: bag.needsReview === 'true' }),
+  };
+}
+
+/**
  * The filename the API chose, from `Content-Disposition`.
  *
  * Returns null rather than a guess when the header is missing or unparseable, so the caller decides

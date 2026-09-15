@@ -1,6 +1,7 @@
 import { Args, Query, Resolver } from '@nestjs/graphql';
 
 import { CurrentHouseholdId } from '../../common/auth/current-tenant.decorator';
+import { SUGGESTED_QUESTIONS } from './assistant-intents';
 import { AssistantService } from './assistant.service';
 import { AssistantAnswerModel, toAssistantAnswerModel } from './assistant.model';
 
@@ -43,5 +44,22 @@ export class AssistantResolver {
       ...(locale === undefined || locale === null ? {} : { locale }),
     });
     return toAssistantAnswerModel(answer);
+  }
+
+  /**
+   * The canonical questions a Household can be offered — the same closed set a refusal returns.
+   *
+   * It exists so the screen has **one** source for its starter chips: a client that hardcoded its own
+   * list would be a second copy of the planner's question set, and the first one to drift would send a
+   * user to a question the planner cannot route (docs/06 §8.1).
+   *
+   * No Household state is read, and it is a `Query` for the same reason `assistantAnswer` is: asking
+   * what can be asked writes nothing.
+   */
+  @Query(() => [String], {
+    description: 'The answerable starter questions (docs/06 §8.1), for the assistant screen.',
+  })
+  assistantSuggestions(): readonly string[] {
+    return SUGGESTED_QUESTIONS.map((suggestion) => suggestion.question);
   }
 }

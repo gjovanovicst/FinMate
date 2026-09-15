@@ -1626,6 +1626,11 @@ type Query {
   assistantAnswer(locale: String, question: String!): AssistantAnswerModel!
 
   """
+  The answerable starter questions (docs/06 §8.1), for the assistant screen.
+  """
+  assistantSuggestions: [String!]!
+
+  """
   Budgets with consumption for their CURRENT period. Spend includes splits and the whole Category subtree, and counts only CONFIRMED transactions (invariants I-5, I-7).
   """
   budgets(today: LocalDate): [BudgetModel!]!
