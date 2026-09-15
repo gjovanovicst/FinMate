@@ -221,7 +221,7 @@ a killed app resumes at the same step.
 | 1 | Starter tree preview (~40 Serbian nodes), inline rename/delete, *Dodaj kategoriju* | Categories (`is_system = true`) | Empty tree + a note that categorisation stays manual |
 | 2 | Currency (read-only `RSD`, ADR-011) + account multi-select with optional opening balance | Accounts (`CASH`/`BANK`/`CARD`/`OTHER`) | One `CASH` account, *Gotovina* |
 | 3 | *Kome redovno plaćaš?* free text, e.g. `Dejan rođa, septička jama` | Counterparty + alias + a **proposed** Rule | Nothing |
-| 4 | *Gde kupuješ?* multi-select from the ~60 shipped global Merchants | Merchant links + aliases | Global seeds still match at classify time |
+| 4 | *Gde kupuješ?* multi-select from the ~60 shipped global Merchants | Merchant links + aliases | Nothing; the tree's keywords still categorise |
 | 5 | Optional monthly income + savings target | Household Budget and/or SavingGoal skeleton | Dashboard shows its no-data states |
 | 6 | Guided first entry: the user types a real transaction, one row expands *Zašto ova kategorija?* | First real Transaction | Coach mark on the capture field |
 
@@ -243,6 +243,26 @@ a killed app resumes at the same step.
 ```
 
 Step 6 is the only place the app teaches by interruption, and it fires once per household.
+
+> **Corrections (task 2.3.3).**
+>
+> 1. **Step 4's Skip does not leave the global seeds matching.** It said *"Global seeds still match at
+>    classify time"*, and that is false in the built system: `loadContext` loads
+>    `merchants WHERE household_id = <household>`, which excludes the `household_id IS NULL` rows, and
+>    the tenancy guard's global-read arm cannot widen a predicate the caller already narrowed. Making
+>    the globals resolvable is not simply "delete the filter": a Household that has edited a shipped
+>    merchant owns a copy-on-write duplicate of it, so the context would contain two entities with one
+>    name and resolution would depend on which row won — that needs a precedence rule and its own
+>    tests, and it is recorded as a known gap rather than smuggled into this task. The Skip copy now
+>    says what is true: skipping step 4 leaves the category keywords to do the work, which they do.
+> 2. **Progress is stored on the Household, not on the Member.** `household_members` has no settings
+>    column, and in v1 a Household has exactly one Member (F-29 is a `Won't`), so the step is recorded
+>    in `households.settings.onboarding`. A per-member step becomes meaningful when sharing lands; see
+>    [06 §5.12.1](06-api-specification.md).
+> 3. **Step 1 is what makes the promise work, and it needs keyword *weights*.** Deciding a category
+>    from keywords requires a score of 2.0 ([04 §5.4](04-categorization-and-ai-engine.md)) and the
+>    schema default weight is 1.0, so a tree seeded at the default categorises nothing. The shipped
+>    tree marks decisive words at 2.0; see [04 §8.1.3](04-categorization-and-ai-engine.md).
 
 ### 4.2 Dashboard — F-19, F-21 (+ F-22 feed, F-08 callout)
 

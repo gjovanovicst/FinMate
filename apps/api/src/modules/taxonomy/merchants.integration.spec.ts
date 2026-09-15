@@ -120,7 +120,11 @@ describe('MerchantsService (integration)', () => {
 
     expect(names).toContain('Moj Prodavac');
     expect(names).not.toContain('Tudji Prodavac');
-    expect(page.totalCount).toBeGreaterThan(30);
+    // The shipped catalogue is ~60 rows and the first page is 50, so this only holds if the
+    // Household's own rows come FIRST. A bare `household_id: 'desc'` sorts NULLs first in Postgres
+    // and buries them — which is what happened the moment the catalogue outgrew one page.
+    expect(names.indexOf('Moj Prodavac')).toBeLessThan(names.indexOf('A1'));
+    expect(page.totalCount).toBeGreaterThan(60);
   });
 
   it('refuses a name that folds to one already visible', async () => {

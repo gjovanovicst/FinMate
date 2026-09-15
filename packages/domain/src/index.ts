@@ -73,3 +73,19 @@ export {
   type SafeToSpendInput,
   type SafeToSpendResult,
 } from './budget';
+
+export {
+  DEFAULT_KEYWORD_WEIGHT,
+  KEYWORD_DECISION_THRESHOLD,
+  SEED_VERSION,
+  SHIPPED_MERCHANTS,
+  STARTER_CATEGORIES,
+  STRONG_KEYWORD_WEIGHT,
+  flattenStarterCategories,
+  starterCategoryFor,
+  starterCategoryKeys,
+  type FlatStarterCategory,
+  type FlatStarterKeyword,
+  type ShippedMerchant,
+  type StarterCategory,
+} from './seed';

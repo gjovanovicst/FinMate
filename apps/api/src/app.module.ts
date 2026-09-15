@@ -11,6 +11,7 @@ import { AccountsModule } from './modules/accounts/accounts.module';
 import { BudgetingModule } from './modules/budgeting/budgeting.module';
 import { ClassificationModule } from './modules/classification/classification.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
+import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { TaxonomyModule } from './modules/taxonomy/taxonomy.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -31,6 +32,7 @@ import { PrismaModule } from './prisma/prisma.module';
     AccountsModule,
     TaxonomyModule,
     LedgerModule,
+    OnboardingModule,
     BudgetingModule,
     // The capture pipeline (docs/04 §2). Imports the pure packages; imports no AI adapter directly.
     ClassificationModule,

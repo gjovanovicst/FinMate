@@ -144,7 +144,20 @@ Two idempotent, versioned layers, both run by `pnpm db:seed`:
 **Layer 1 — platform seed (ships everywhere, including production):** global `Merchant` rows
 (`household_id IS NULL`, `is_global = true` — the ~60 local merchants from [F-13](01-product-requirements.md)),
 the default ~40-node Serbian `Category` tree, and `prompt_templates`. Content, not fixture: versioned in
-git under `packages/domain/seed/`, so a bad change is a reviewable PR.
+git under `packages/domain/src/seed/`, so a bad change is a reviewable PR.
+
+> **Path corrected (task 2.3.3).** This section said `packages/domain/seed/`. That directory would sit
+> outside the package's TypeScript program (`rootDir` is `src`, and the package is consumed as source),
+> so it would be neither typechecked nor reachable through the `@finmate/domain` specifier that both
+> apps import. The content lives in `src/seed/` and is re-exported from the package index — the same
+> reviewable-PR property, in a place the compiler and the bundler can both see.
+>
+> **Shipped counts (task 2.3.3), as opposed to the targets above:** 39 category nodes (35 expense,
+> 4 income) carrying 131 distinct keywords after folding, and **62** merchants. The ~60 and ~40 above
+> are the specification; these are what ships, and the seed spec asserts floors so a future edit cannot
+> quietly reintroduce the 38-merchant shortfall. Every category that has keywords carries at least one
+> at `weight = 2.0` — without that, docs/04 §5.4's 2.0 decision threshold means the tree categorises
+> nothing at all (see [04 §8.1.3](04-categorization-and-ai-engine.md)).
 
 **Layer 2 — demo fixture (local and CI only):** one Household reproducing a **known month**, exactly
 what [09 §3](09-implementation-plan.md)'s Phase 1 exit criterion requires.

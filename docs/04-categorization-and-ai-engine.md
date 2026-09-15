@@ -488,6 +488,42 @@ wins when it carries a pair, an **absent** field is filled from that decision, a
 is respected as "there is no entity here". See
 [06 §5.5](06-api-specification.md#55-resolvereviewitem).
 
+#### 8.1.3 The shipped tree had to be weighted to decide anything (fixed in 2.3.3)
+
+§5.4 decides a category from keywords only when the top score is **≥ 2.0**, and
+`category_keywords.weight`'s schema default is **1.0**. Those two facts together mean something easy
+to miss:
+
+> **A keyword written at the default weight scores 1.0 and can never decide a category on its own.**
+
+The shipped starter tree wrote all 137 of its keywords at the default. So the cold start F-13 exists to
+remove was still there, one layer down: after onboarding step 1 a Household had a full Serbian tree and
+`Lidl 2000` still fell through to the AI — or, with no provider configured, to the blocking lane. The
+demo Household hid it completely, because its merchants carry `default_category_id` and a *merchant
+default* is a different stage that always decides; only a fresh signup exposed it.
+
+The tree now names each keyword twice:
+
+| List | Weight | Meaning | Examples |
+|---|---|---|---|
+| `strong` | 2.0 | Decisive alone — one hit clears the threshold exactly | `lidl`, `netflix`, `gorivo`, `struja`, `penzija`, `plata` |
+| `include` | 1.0 | Corroborating — needs a second hit | `market`, `kafa`, `voda`, `rata`, `karte`, `jama` |
+| `exclude` | 1.0 | Hard-blocks the category (polarity, not score) | `ulje`, `filter`, `gume`, `registracija` on `Gorivo` |
+
+`kafa` is the clearest case for the split: buying coffee is `Kafa i kolači`, but "kafa i mleko" is
+groceries. A tree with every word decisive would file the second one wrong; a tree with every word
+corroborating files neither.
+
+Two consequences worth keeping:
+
+1. **The weight is content, so it is reviewed like content.** It lives in
+   `packages/domain/src/seed/categories.ts` next to the words, and `seed.spec.ts` asserts that every
+   category carrying keywords carries at least one decisive one, and that the exit-criterion words
+   (`lidl`, `gorivo`, `plata`) are among them.
+2. **A Household seeded before this fix repairs itself.** Both writers raise an existing keyword whose
+   weight is wrong rather than treating it as already present, so re-entering onboarding (or re-running
+   `pnpm db:seed`) fixes an old tree instead of skipping it.
+
 ### 8.2 Guardrails (the user is not always right, and neither are we)
 
 - **Never auto-create rules.** Synthesis always proposes; the user confirms. (P-2, and the source

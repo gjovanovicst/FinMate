@@ -751,6 +751,25 @@ type MerchantModelEdge {
   node: MerchantModel!
 }
 
+"""What applying a merchant selection did."""
+type MerchantSelectionResultModel {
+  """Selected merchants the Household already owned, left as they were."""
+  alreadyOwned: Int!
+
+  """Merchants made Household-owned, or given a default Category."""
+  applied: Int!
+
+  """
+  Selected names that are not in the shipped catalogue. Reported, never silently dropped.
+  """
+  unresolved: [String!]!
+
+  """
+  Copied, but with no default Category because the Household tree has no node at the seed’s path (usually a rename in step 1). Not an error: the category keywords still apply.
+  """
+  withoutCategory: [String!]!
+}
+
 """
 Money as integer minor units plus an ISO-4217 currency. amountMinor is a string to avoid losing precision beyond Number.MAX_SAFE_INTEGER (ADR-003). Always non-negative.
 """
@@ -761,6 +780,11 @@ type Mutation {
   Add an INCLUDE or EXCLUDE keyword. EXCLUDE hard-blocks the category, which is what keeps "ulje" out of Auto/Gorivo (docs/04 §5.4).
   """
   addCategoryKeyword(categoryId: ID!, keyword: String!, matchMode: String = "WORD", polarity: KeywordPolarity!): Boolean!
+
+  """
+  Make the selected shipped merchants this Household’s own, with a default Category resolved from the starter tree (F-13 step 4). A merchant already owned is left alone, so re-running never mints a second one.
+  """
+  applyMerchantSelection(names: [String!]!): MerchantSelectionResultModel!
 
   """
   The write half of the capture path (docs/06 §5.2). Validates, classifies and writes the whole `rows` array in ONE database transaction: if any row is structurally invalid nothing is written and every offending row is named. A row the confidence gate puts in the blocking lane is NOT a validation failure — it is written PENDING and enters the review queue, so one ambiguous row never blocks a batch (F-06). Idempotent per row via `idempotencyKey` (I-10).
@@ -792,6 +816,11 @@ type Mutation {
     """
     text: String!
   ): CaptureParseResultModel!
+
+  """
+  Mark onboarding complete and stamp the time. Separate from `setOnboardingStep` so completion is a fact of its own rather than an inference from reaching step 7.
+  """
+  completeOnboarding: OnboardingStateModel!
 
   """
   Correct one property of a Transaction and record the correction as a learning signal (docs/06 §5.3, F-09). The change is applied first and the Correction second, so a Correction never describes a change that did not happen. `synthesisedRule` is always returned when one can be derived, so the UI can offer "Zapamti za ubuduće"; a rule is created here only when `rememberForFuture` is true, the trigger is a resolved entity, and nothing shadows it.
@@ -968,6 +997,11 @@ type Mutation {
   Resolve one queued row (docs/06 §5.5). Choosing a category goes through the correction path, so it records a Correction and can create a rule — the queue is a learning surface, not a dismiss button. Resolving an already-resolved row is a NO-OP rather than a conflict: two devices clearing the same queue is not an error.
   """
   resolveReviewItem(input: ResolveReviewItemInput!): ResolveReviewItemSuccessModel!
+
+  """
+  Write the shipped starter category tree and its keywords into this Household (F-13 step 1). One transaction, and idempotent by (parent, name) — a second call reuses what is already there instead of creating a duplicate tree.
+  """
+  seedStarterCategories: StarterSeedResultModel!
   setCounterpartyAliases(
     """
     The complete alias set, not a delta. Values are folded (lower case, no diacritics) before storage, so what is stored may differ from what was sent. This is the supported way to record a second spelling of one person ("dejan roda" for "Dejan rođa").
@@ -982,6 +1016,11 @@ type Mutation {
     aliases: [String!]!
     merchantId: ID!
   ): MerchantModel!
+
+  """
+  Record the step to resume at, so a killed app or a closed tab comes back to the same place. Clamped rather than refused: this is progress bookkeeping, and a 500 on "step 8" would be a worse failure than resuming at the last real step.
+  """
+  setOnboardingStep(step: Int!): OnboardingStateModel!
 
   """
   Soft-delete the Transactions a capture just wrote — docs/02 §3's undo toast, in ONE call and all-or-nothing, because a toast that only half-applied would leave the user unable to tell which rows survived. Returns how many were actually undone. Never a hard delete: `deleted_at` is set and the row and its audit trail survive (docs/03 §3.4). Ids outside this Household match nothing rather than deleting another Household's rows.
@@ -1052,6 +1091,27 @@ type Mutation {
     periodStart: LocalDate
     rollover: Boolean = false
   ): BudgetModel!
+}
+
+"""
+How far through onboarding this Household is, and what it already has. A step past the last one (7) means the wizard finished.
+"""
+type OnboardingStateModel {
+  accounts: Int!
+  categories: Int!
+  completedAt: DateTime
+  keywords: Int!
+
+  """Merchants this Household owns. Global seeds are not counted."""
+  merchants: Int!
+
+  """
+  The shipped seed version this Household accepted. Null when the starter tree was skipped — which a later release can tell apart from "never asked", unlike counting rows.
+  """
+  seedVersion: Int
+
+  """The step to resume at: 1–6, or 7 once onboarding is complete."""
+  step: Int!
 }
 
 type PageInfo {
@@ -1187,6 +1247,11 @@ type Query {
     """Substring match on the name."""
     search: String
   ): MerchantConnection!
+
+  """
+  How far through onboarding this Household is, and what it already has. The wizard resumes from `step`; the counts let it say what a re-run would do before doing it.
+  """
+  onboardingState: OnboardingStateModel!
 
   """
   Split an amount evenly across categories without losing a para. The backend computes it so the client never rounds money (ADR-003); the result sums exactly (invariant I-1).
@@ -1532,6 +1597,20 @@ type SplitModel {
   confidence: Float
   id: ID!
   note: String
+}
+
+"""What seeding the starter tree did. Idempotent, so `reused` matters."""
+type StarterSeedResultModel {
+  """Categories created by this call."""
+  categories: Int!
+
+  """Category keywords created by this call."""
+  keywords: Int!
+
+  """
+  Nodes that already existed and were reused — the evidence a second run is a no-op.
+  """
+  reused: Int!
 }
 
 """

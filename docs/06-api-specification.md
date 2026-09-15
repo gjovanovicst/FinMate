@@ -2432,6 +2432,76 @@ completion receipt emailed to the user.
 
 ---
 
+### 5.12 Onboarding (F-13)
+
+```graphql
+type OnboardingState {
+  step: Int!                 # 1..6, or 7 once complete
+  completedAt: DateTime
+  seedVersion: Int           # null when the starter tree was skipped
+  categories: Int!
+  keywords: Int!
+  merchants: Int!            # this Household's OWN rows; global seeds are not counted
+  accounts: Int!
+}
+
+type StarterSeedResult  { categories: Int! keywords: Int! reused: Int! }
+type MerchantSelectionResult {
+  applied: Int!
+  alreadyOwned: Int!
+  unresolved: [String!]!     # selected names not in the shipped catalogue
+  withoutCategory: [String!]!
+}
+
+type Query    { onboardingState: OnboardingState! }
+type Mutation {
+  setOnboardingStep(step: Int!): OnboardingState!
+  seedStarterCategories: StarterSeedResult!
+  applyMerchantSelection(names: [String!]!): MerchantSelectionResult!
+  completeOnboarding: OnboardingState!
+}
+```
+
+**Only two of the six steps are operations here.** Step 2 creates an Account with `createAccount`,
+step 3 creates a Counterparty (and, only if the user accepts, a Rule) with the existing mutations, and
+step 5 sets a budget with `upsertBudget`. A mutation per step would be six ways to write rows the
+editors already validate. What is genuinely new is bulk-writing the shipped knowledge, plus progress.
+
+Every operation is scoped from the session — there is no `householdId` argument (ADR-008) — and every
+one is safe to call twice, because docs/01 F-13 makes onboarding re-enterable from settings.
+
+#### 5.12.1 Implementation notes (task 2.3.3)
+
+| Design | Built | Why |
+|---|---|---|
+| Per-step mutations | **Two operations** | Steps 1 and 4 are the only ones that need to write many rows; steps 2, 3 and 5 reuse `createAccount`, the Counterparty mutations and `upsertBudget`. |
+| The starter tree shipped to the client | Read from `@finmate/domain` (`src/seed/`) by both apps | One document, so the wizard previews exactly what the server will create. docs/11 §2.3 asked for the content to be versioned in the domain package. |
+| `seedStarterCategories(kinds:)` | No argument | Step 1's two tree tabs are display, not a filter; the spec never asks to seed one direction only. |
+| Progress on the Member (docs/02 §4.1) | `households.settings.onboarding` | `household_members` has no settings column, and in v1 a Household has exactly one Member (F-29 is a `Won't`), so the two are the same unit. Next to `aiConfidenceThresholds`, which already lives there. A per-member step becomes meaningful when sharing lands. |
+| A `Cursor` `onboardingState` page | A single object | It is one row's worth of state, and the counts are four scoped COUNTs. |
+| `applyMerchantSelection` via `MerchantsService.create` | Via `update` (copy-on-write) | `create`'s duplicate-name check sees **global** rows and refuses `Lidl` as "already exists". Copy-on-write is also what brings the shipped aliases along and what keeps the global row untouched for other Households. |
+| A default Category on a global merchant | A `categoryKey` in the seed | `categories.household_id` is `NOT NULL`, so there is no global category for a global merchant to point at. Onboarding resolves the key against the tree it just created, **by path**, and reports `withoutCategory` when the path is gone (a rename in step 1) rather than guessing. |
+
+**`seedStarterCategories` is one interactive transaction and is idempotent by `(parent, name)`.**
+Node identity is not the seed key: keys belong to the document and mean nothing inside a Household, so
+matching on them would create a second `Hrana` the moment a user renamed theirs. A keyword already
+present at the **wrong weight** is corrected rather than skipped, which is what lets a Household that
+ran the pre-2.3.3 seed repair its tree by re-entering onboarding.
+
+**`applyMerchantSelection` is not atomic, deliberately.** Each merchant goes through
+`MerchantsService.update`, which is the shipped copy-on-write path with its own transaction; a failure
+half-way leaves some merchants copied and the call is idempotent, so "press Continue again" is a
+correct recovery. Wrapping 62 copy-on-write transactions in a third one would hold a connection for the
+duration to protect against a state the retry already handles.
+
+**The `strong`/`include` keyword split is why step 1 is enough.** docs/04 §5.4 decides a category from
+keywords only at a score of **2.0**, and `category_keywords.weight` defaults to **1.0** — so a tree
+seeded at the default cannot decide a single input, which is exactly what the shipped tree did until
+this task. Decisive words (a merchant's name, or the word that *is* the category) are now written at
+2.0 and corroborating ones at 1.0. See [04 §8.1.3](04-categorization-and-ai-engine.md).
+
+---
+
 ## 6. Subscriptions
 
 ```graphql

@@ -53,9 +53,12 @@ export class MerchantsService {
     const [rows, totalCount] = await Promise.all([
       this.prisma.client.merchants.findMany({
         where,
-        // Own rows first: a Household's own copy is the one it edited, so it should not be buried
-        // under the ~60 seeded rows. `household_id: desc` puts non-null before null in Postgres.
-        orderBy: [{ household_id: 'desc' }, { name: 'asc' }],
+        // Own rows first: a Household's own copy is the one it edited, so it must not be buried
+        // under the ~60 seeded rows. **`nulls: 'last'` is load-bearing** — Postgres sorts NULLs
+        // FIRST in a `DESC` order, so a bare `orderBy: { household_id: 'desc' }` does the exact
+        // opposite and lists the global catalogue first. It went unnoticed while the seed was 38 rows
+        // and the first page is 50; at 62 it pushed every Household-owned merchant off page one.
+        orderBy: [{ household_id: { sort: 'desc', nulls: 'last' } }, { name: 'asc' }],
         take: take + 1,
         include: { merchant_aliases: true },
       }),
