@@ -655,21 +655,30 @@ ship an accessible table alternative ([07 §7.3](07-platform-strategy-mobile-des
 category with no prior-period data renders *nema osnova za poređenje* rather than a misleading
 infinity.
 
-> **Build state (task 3.3.1).** The analytics **API is live; the screen is not.** Five queries ship —
-> `spendByCategory`, `spendOverTime`, `topMerchants`, `monthComparison`, `cashflow` (docs/06 §4.3) —
-> each one reading the ledger's single split-aware aggregate, so the chart and the budget tile beside it
-> cannot disagree. Four decisions the wireframe does not show, all recorded in docs/06 §4.3: the
+> **Build state (task 3.3.1).** `/analytics` ships the period picker with `[`/`]`, the monthly
+> trend, the category bars with their share and change, the top merchants and the month-over-month
+> comparison, each with its table inside `<details>` as docs/07 §7.3 requires. **One GraphQL operation
+> per period** carries all four panels — that is what "one query drives every chart" means in
+> practice. Four decisions the wireframe does not show, all recorded in docs/06 §4.3: the
 > **uncategorised bucket is a row** (`categoryId: null`) and shares are of the range's whole confirmed
-> expense, because a Household with a third of its spending uncategorised must not see shares describing
-> only the other two thirds; the row set is a **tree** (every Category with spend plus every ancestor
-> that aggregates it, `isSubtreeAggregate`), so the flat chart draws the **roots**, which partition the
-> categorised spend, and `includeSubcategories: false` is the leaves-only view for the table; a Category
-> with no baseline renders `changeRatio: null` — *nema osnova za poređenje* — while `−1` stays the real
-> "fell by 100 %"; and `period`/`compareTo` are `YYYY-MM` while `delta`/`net` are **signed** `Balance`
-> values. The `/analytics` route, the chart components, the accessible table, the drill-through chips and
-> the `[`/`]` period navigation are **task 3.3.1b and are not built**; docs/07 §7.3's chart rules (a table
-> equivalent for every chart, an `aria-label` stating the takeaway, non-colour series distinctions) are
-> the contract that screen has to meet.
+> expense, because a Household with a third of its spending uncategorised must not see shares
+> describing only the other two thirds; the bars draw the **roots** only, since the API returns a tree
+> (a parent carries its children's money) and drawing all of it would count a subtree twice — the
+> table below shows the whole tree; a Category with no baseline renders *nema osnova za poređenje*
+> rather than `0 %`, and `−1` stays the real "fell by 100 %"; and `period`/`compareTo` are `YYYY-MM`
+> while `delta`/`net` are **signed** `Balance` values.
+>
+> **Deliberate differences from the drawing.** The title is a heading with a subtitle rather than a
+> toolbar, and **CSV is not per-section**: it exports the month's transactions (`/api/export/…` with
+> the same range the chart used), because an analytics-specific export format is a product decision
+> nobody has made. **The uncategorised row carries no drill-through** — `transactions(...)` has no
+> "category is null" filter, and a link that opened the whole month under the heading *Neraspoređeno*
+> would show rows the figure did not come from. `cashflow` (docs/06 §4.3) is **not fetched**: F-20
+> asks for category trends, month-over-month and top merchants, and the wireframe draws no cashflow
+> panel. The bars are a labelled, linked list rather than `role="img"` — an image role hides its
+> descendants, and these rows carry the drill-through. `[`/`]` are bound to the pager group rather
+> than the document, so they cannot steal a keystroke from another screen. **The screen has not been
+> looked at by a human at any width** (docs/02 §9's standing gap).
 
 ### 4.16 Assistant — F-23, F-30
 

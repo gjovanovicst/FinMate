@@ -563,6 +563,16 @@ The tables hold platform content beside the Household’s own rows, which is whe
 
 ---
 
+- **An element with `role="img"` hides everything inside it, including the links a chart needs.** A
+  bar chart whose rows drill through to `/transactions` cannot be wrapped in `role="img"` "for the
+  accessible label": assistive technology treats the subtree as a single replaced object, so the
+  anchors inside become unreachable — an accessibility regression that *improves* the automated
+  signal (the label is there) while removing the only way to reach the rows. The rule docs/07 §7.3
+  actually wants is a **table equivalent** plus a takeaway label: a list of labelled, linked rows is
+  already its own text alternative, and only graphics that carry no text at all (the sparkline) get
+  `role="img"` and an `aria-label` saying which way the series went.
+
+
 ---
 
 ## 9. Web UI, templates and i18n

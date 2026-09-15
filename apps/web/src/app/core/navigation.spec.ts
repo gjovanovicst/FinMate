@@ -35,8 +35,9 @@ describe('navigation destinations', () => {
     expect(overflow).toContain('/accounts');
     expect(overflow).toEqual([
       '/budgets',
-      // docs/02 §2.2's Uvid group sits between Plan and the library; Analitika (3.3.1) is not built,
-      // so the assistant is its only member today.
+      // docs/02 §2.2's Uvid group sits between Plan and the library, in the document's own order:
+      // Analitika then Asistent.
+      '/analytics',
       '/assistant',
       '/accounts',
       '/categories',

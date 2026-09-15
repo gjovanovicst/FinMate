@@ -61,6 +61,13 @@ export const routes: Routes = [
     title: 'Transakcije',
   },
   {
+    path: 'analytics',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/analytics/analytics.component').then((m) => m.AnalyticsComponent),
+    title: 'Analitika',
+  },
+  {
     path: 'assistant',
     canActivate: [authenticatedGuard],
     loadComponent: () =>
