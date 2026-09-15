@@ -41,9 +41,11 @@ describe('navigation destinations', () => {
       '/counterparties',
       '/tags',
       '/rules',
-      // Added by 3.1.4: reached from the header bell, listed so the sidebar is a complete view.
-      '/notifications',
     ]);
+
+    // The notification centre is deliberately **not** here: docs/02 §2.2 draws it as the header bell,
+    // and listing it as well put two "Obaveštenja" entries in the sidebar. The shell spec asserts the
+    // single link.
   });
 
   it('splits the full list without dropping anything', () => {

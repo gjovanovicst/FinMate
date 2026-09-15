@@ -54,8 +54,10 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
             </ul>
           }
 
-          <!-- docs/02 §2.2 draws 🔔 in the header on both layouts. It is not a nav *slot*, so the
-               review queue remains the only badged destination; the unread count lives here. -->
+          <!-- docs/02 §2.2 draws 🔔 in the header on both layouts, and it is the **only** entry to the
+               notification centre: listing it here *and* in NAV_ITEMS put two "Obaveštenja" rows in
+               the sidebar. It is not one of the five destinations, so the bottom bar still has five
+               slots and the review queue is still the only badged destination. -->
           <a
             class="nav__bell"
             routerLink="/notifications"
@@ -218,14 +220,21 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
       /* docs/02 section 2.3: hidden at 0 (the span is not rendered), the literal count up to nine,
          then "9+" above. Positioned against the glyph so the label underneath never shifts when the
          count appears. */
+      /* Compact: a slim, count-only row above the five destinations, so the thumb zone is unchanged.
+         Wide: the icon plus its label, matching the destinations below it. */
       .nav__bell {
         display: flex;
         align-items: center;
+        justify-content: flex-end;
         gap: 0.4rem;
-        padding: 0.4rem 0.6rem;
+        padding: var(--space-1) var(--space-3);
         min-inline-size: 0;
         text-decoration: none;
-        color: inherit;
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+      }
+      .nav__bell .nav__label {
+        display: none;
       }
 
       .nav__badge {
@@ -337,6 +346,14 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
         .nav__more-panel {
           display: none;
         }
+        .nav__bell {
+          justify-content: flex-start;
+          padding-block-end: var(--space-3);
+        }
+        .nav__bell .nav__label {
+          display: inline;
+        }
+
         .nav__list {
           flex-direction: column;
           gap: var(--space-1);

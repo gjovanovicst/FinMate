@@ -48,10 +48,6 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { path: '/counterparties', labelKey: 'nav.counterparties', icon: '👤', primary: false },
   { path: '/tags', labelKey: 'nav.tags', icon: '🏷️', primary: false },
   { path: '/rules', labelKey: 'nav.rules', icon: '⚙️', primary: false },
-  // The notification centre is reached from the header bell (docs/02 §2.2 draws 🔔 there) and
-  // listed here so the sidebar is a complete view of the app. It carries no `badged` flag: the
-  // one badged *slot* is the review queue, and the unread count lives on the bell.
-  { path: '/notifications', labelKey: 'nav.notifications', icon: '🔔', primary: false },
 ];
 
 export const PRIMARY_ITEMS: readonly NavItem[] = NAV_ITEMS.filter((item) => item.primary);

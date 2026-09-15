@@ -523,10 +523,11 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   Both are JS template literals, so a backtick *terminates the string* and the remainder is parsed as
   code. The error names neither the file nor the real problem: `Failed to resolve styles at position
   N to a string` / `Failed to resolve template at position N`, usually surfacing as
-  `Angular compilation initialization failed`. It has cost real time **five** times — twice from a
+  `Angular compilation initialization failed`. It has cost real time **six** times — twice from a
   backtick in a CSS comment documenting a property; again in 2.3.2b from *two* HTML comments and a CSS
-  comment written in the same sitting; and again in 2.3.3b from a comment that quoted `septička jama`,
-  **written minutes after adding this entry**. The pattern is that the author knows the rule and does it
+  comment written in the same sitting; again in 2.3.3b from a comment that quoted `septička jama`,
+  **written minutes after adding this entry**; and again in 3.1.4's follow-up fix, from an HTML comment
+  naming the `NAV_ITEMS` constant while removing a duplicate nav entry. The pattern is that the author knows the rule and does it
   anyway, because a comment that names a property — `aria-label`, `1`–`9`, a sample input — reaches for
   backticks by reflex. Two habits that work: describe the example in words (a bill such as septicka jama),
   and run the plain-backtick scan below before believing a template error is something else. Write CSS/HTML

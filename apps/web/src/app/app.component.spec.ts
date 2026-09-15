@@ -89,6 +89,16 @@ function reviewLink(fixture: { nativeElement: unknown }): HTMLAnchorElement {
 }
 
 describe('AppComponent nav (mounted)', () => {
+  it('links to the notification centre exactly once', async () => {
+    // The regression this exists for: adding `/notifications` to `NAV_ITEMS` *and* the header bell put
+    // two "Obaveštenja" entries in the sidebar. One entry per layout, at any width.
+    const { fixture } = await mount(0);
+    const links = navLinks(fixture, 'a[href="/notifications"]');
+    expect(links).toHaveLength(1);
+    // …and it is the bell, not a destination in the five-slot bar.
+    expect(links[0]?.classList.contains('nav__bell')).toBe(true);
+  });
+
   afterEach(() => {
     TestBed.resetTestingModule();
   });
@@ -136,8 +146,6 @@ describe('AppComponent nav (mounted)', () => {
       '/counterparties',
       '/tags',
       '/rules',
-      // 3.1.4: the notification centre is reachable from the header bell and listed here.
-      '/notifications',
     ]);
   });
 
@@ -194,7 +202,6 @@ describe('AppComponent nav (mounted)', () => {
       '/counterparties',
       '/tags',
       '/rules',
-      '/notifications',
     ]);
   });
 });
