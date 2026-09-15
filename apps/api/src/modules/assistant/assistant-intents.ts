@@ -59,6 +59,22 @@ export const ASSISTANT_INTENTS = [
 export type AssistantIntent = (typeof ASSISTANT_INTENTS)[number];
 
 /**
+ * The same closed set, as the object GraphQL needs for an enum.
+ *
+ * **Derived from {@link ASSISTANT_INTENTS}, never written out twice.** A hand-copied enum is the
+ * classic drift: an intent added to one list and not the other produces a schema that compiles and a
+ * planner that cannot route to a member the client can send. `registerEnumType` reads the keys, and
+ * the value of each key is the intent itself, so `AssistantIntent.SPEND_TOTAL` is `'SPEND_TOTAL'` on
+ * the wire.
+ */
+export const AssistantIntentEnum = Object.freeze(
+  Object.fromEntries(ASSISTANT_INTENTS.map((intent) => [intent, intent])) as Record<
+    AssistantIntent,
+    AssistantIntent
+  >,
+);
+
+/**
  * The slots a template can require. A slot is a **scalar or an id**, never a fragment of a query: the
  * repository method takes it as a parameter, which is what keeps the planner out of SQL entirely.
  */

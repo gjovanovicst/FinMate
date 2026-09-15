@@ -1,0 +1,247 @@
+/**
+ * The template answer — docs/06 §8.5's `TEMPLATE_FALLBACK`, docs/04 §10's "template-rendered answer
+ * with no LLM at all".
+ *
+ * ## Why this exists at all
+ *
+ * Two paths reach it, and neither is an error:
+ *
+ * 1. **No provider is configured** (the state of this build, and the state of any household whose
+ *    provider is unreachable). The facts are already computed, so refusing to answer because a model
+ *    is down would be a self-inflicted outage.
+ * 2. **The model narrated a number the payload does not contain.** docs/06 §8.5 regenerates once
+ *    with a stricter instruction and then renders deterministically — the user still gets the correct
+ *    answer, and the UI is expected to make the fallback invisible.
+ *
+ * ## The rule this file obeys
+ *
+ * It **cannot** invent a numeral: every figure it prints is read from `facts.formatted`,
+ * `facts.rows[].formatted` or `facts.totals[].formatted`, and the provenance it prints is the count
+ * and the range the payload already carries. A unit test runs `validateNarration` over the rendered
+ * answer for every intent, so that is an assertion rather than an intention.
+ *
+ * ## The gap it inherits
+ *
+ * The connective copy below is **English**, like every other server-rendered string in this API
+ * (docs/06 §5.14 records the DoD breach for notification copy; this is the same one). A Household's
+ * own names — `Hrana`, `Lidl` — appear untranslated because they are the user's own words. The money
+ * is formatted in the household's locale. Fixing this properly means the API gains a catalogue, or
+ * the client renders the fallback from `facts` — both are §5.14's decision, not this file's.
+ *
+ * @module apps/api/src/modules/assistant
+ */
+
+import type { AssistantIntent, IntentTemplate } from './assistant-intents';
+import type { AssistantFactsView, ProvenanceView } from './fact-assembly.service';
+
+export interface TemplateAnswerInput {
+  readonly intent: AssistantIntent;
+  readonly template: IntentTemplate;
+  readonly facts: AssistantFactsView;
+  readonly provenance: ProvenanceView;
+}
+
+/**
+ * Which sentence an intent's fallback uses.
+ *
+ * A `Record<AssistantIntent, Frame>` rather than a `switch` with a default arm: adding an intent then
+ * fails `tsc` until somebody decides how it reads, which is the same reason the intent registry and
+ * the builder registry are records. The arm names the **shape of the sentence**, not the intent, so
+ * the prose lives in a handful of renderers instead of twenty-nine.
+ */
+type Frame =
+  | 'TOTAL_AMOUNT'
+  | 'AVERAGE'
+  | 'COUNT'
+  | 'NET'
+  | 'STATE'
+  | 'BUDGET'
+  | 'SAFE'
+  | 'PROJECTION'
+  | 'ROWS'
+  | 'LIST'
+  | 'TREND_PREVIOUS'
+  | 'TREND_AVERAGE'
+  | 'REFUSAL';
+
+const FRAMES: Readonly<Record<AssistantIntent, Frame>> = {
+  SPEND_TOTAL: 'TOTAL_AMOUNT',
+  SPEND_BY_CATEGORY: 'TOTAL_AMOUNT',
+  SPEND_BY_MERCHANT: 'TOTAL_AMOUNT',
+  SPEND_BY_ACCOUNT: 'TOTAL_AMOUNT',
+  SPEND_BY_TAG: 'TOTAL_AMOUNT',
+  TOP_CATEGORIES: 'ROWS',
+  TOP_MERCHANTS: 'ROWS',
+  LARGEST_TRANSACTIONS: 'LIST',
+  AVERAGE_DAILY_SPEND: 'AVERAGE',
+  TRANSACTION_COUNT: 'COUNT',
+  TRANSACTION_LIST: 'LIST',
+  UNCATEGORISED_REVIEW: 'LIST',
+  INCOME_TOTAL: 'TOTAL_AMOUNT',
+  NET_CASHFLOW: 'NET',
+  ACCOUNT_BALANCE: 'STATE',
+  ACCOUNT_BALANCE_ALL: 'STATE',
+  BUDGET_STATUS: 'BUDGET',
+  BUDGET_LIST: 'ROWS',
+  SAFE_TO_SPEND: 'SAFE',
+  MONTH_PROJECTION: 'PROJECTION',
+  BUDGET_PACE_VS_PLAN: 'ROWS',
+  TREND_VS_LAST_MONTH: 'TREND_PREVIOUS',
+  COMPARE_PERIODS: 'REFUSAL',
+  TREND_VS_AVERAGE: 'TREND_AVERAGE',
+  GOAL_PROGRESS: 'REFUSAL',
+  GOAL_REQUIRED_MONTHLY: 'REFUSAL',
+  SAVINGS_PROPOSAL: 'REFUSAL',
+  RECURRING_UPCOMING: 'REFUSAL',
+  RECURRING_LIST: 'REFUSAL',
+  NO_TEMPLATE_MATCH: 'REFUSAL',
+};
+
+/** How many rows a fallback sentence names before it stops reading them out. */
+const MAX_NAMED_ROWS = 3;
+
+/**
+ * Render the deterministic answer for an assembled plan.
+ *
+ * Unavailable templates are not rendered here at all — the service returns {@link renderRefusal}
+ * for those, because an answer with no facts must carry no figure.
+ */
+export function renderTemplateAnswer(input: TemplateAnswerInput): string {
+  const { facts, provenance, template } = input;
+  const frame = FRAMES[input.intent];
+  const headline = facts.formatted['headline'] ?? '';
+  const at = facts.totals.find((total) => total.label === 'This period')?.formatted ?? headline;
+
+  switch (frame) {
+    case 'TOTAL_AMOUNT':
+      return template.kind === 'INCOME'
+        ? `You received ${headline}.`
+        : `You spent ${headline}.`;
+
+    case 'AVERAGE': {
+      const days = facts.formatted['days'];
+      const total = facts.formatted['total'];
+      return days === undefined
+        ? `You spent ${headline} a day on average.`
+        : `You spent ${headline} a day on average over ${days} days${total === undefined ? '' : `, ${total} in total`}.`;
+    }
+
+    case 'COUNT': {
+      const count = provenance.transactionCount;
+      return count === 1 ? 'You have 1 transaction in that period.' : `You have ${headline} transactions in that period.`;
+    }
+
+    case 'NET':
+      return `Income ${facts.formatted['income'] ?? ''}, spending ${facts.formatted['spending'] ?? ''}, net ${headline}.`;
+
+    case 'STATE': {
+      const asOf = facts.formatted['asOf'];
+      const named = namedRows(facts);
+      const subject = named.length === 0 ? 'Your balance' : `Your balance on ${named[0]?.label ?? ''}`;
+      return asOf === undefined ? `${subject} is ${headline}.` : `${subject} is ${headline}, as of ${asOf}.`;
+    }
+
+    case 'BUDGET': {
+      const limit = facts.formatted['limit'];
+      const spent = facts.formatted['spent'];
+      return limit === '' || limit === undefined
+        ? `You have ${headline} left of that budget${spent === undefined ? '' : ` after ${spent}`}.`
+        : `You have ${headline} left of ${limit}${spent === undefined ? '' : `, with ${spent} spent`}.`;
+    }
+
+    case 'SAFE': {
+      const spent = facts.formatted['spent'];
+      return spent === undefined
+        ? `You can spend ${headline} safely today.`
+        : `You can spend ${headline} safely today; ${spent} is spent this month.`;
+    }
+
+    case 'PROJECTION': {
+      const overrun = facts.totals.find((total) => total.label === 'Projected overrun')?.formatted;
+      const reliable = facts.formatted['reliable'] === 'true';
+      const caveat = reliable ? '' : ' The month is early, so this is a rough figure.';
+      return overrun === undefined
+        ? `You are on track for ${headline} this month.${caveat}`
+        : `You are on track for ${headline} this month, over by ${overrun}.${caveat}`;
+    }
+
+    case 'ROWS': {
+      const named = namedRows(facts);
+      // No rows means nothing to rank — and printing the zero headline the builder left behind
+      // ("Nothing to report there (0,00 RSD)") is a figure the answer does not need. The sentence
+      // carries no numeral at all, which is also the most honest thing a ranked list can say.
+      if (named.length === 0) return 'Nothing stands out in that period.';
+      return `${named.map((row) => `${row.label} ${row.formatted}`).join(', then ')}.`;
+    }
+
+    case 'LIST': {
+      const named = namedRows(facts);
+      const count = provenance.transactionCount;
+      const lead = count === 1 ? '1 transaction' : `${headline} transactions`;
+      return named.length === 0
+        ? `Nothing matched (${lead}).`
+        : `${lead}: ${named.map((row) => `${row.label} ${row.formatted}`).join(', then ')}.`;
+    }
+
+    case 'TREND_PREVIOUS': {
+      const previous = facts.formatted['previous'];
+      return previous === undefined
+        ? `This period ${at}.`
+        : `This period ${at}, against ${previous} in the previous period — a change of ${headline}.`;
+    }
+
+    case 'TREND_AVERAGE': {
+      const average = facts.formatted['average'];
+      return average === undefined
+        ? `This period ${at}.`
+        : `This period ${at}, against a usual ${average} — a difference of ${headline}.`;
+    }
+
+    case 'REFUSAL':
+      // The service refuses before it renders (no facts are assembled for an unavailable template);
+      // this arm exists so the `Record` stays total and says so rather than throwing.
+      return renderRefusal('NO_TEMPLATE_MATCH');
+  }
+}
+
+/**
+ * The copy for an answer the ledger cannot give.
+ *
+ * It is deliberately a **value** rather than an exception (docs/06 §8.5: `answered = false`, no
+ * figure, suggestions offered), and it says which kind of "cannot" it is, because "we do not have
+ * goals yet" and "I could not tell which Category you meant" are different problems for the user.
+ */
+export function renderRefusal(reason: string): string {
+  if (reason === 'NO_TEMPLATE_MATCH') {
+    return 'I cannot answer that from your ledger. Try one of the questions below.';
+  }
+  if (reason === 'NEEDS_TWO_PERIODS') {
+    return 'Comparing two periods needs both of them, which is not built yet.';
+  }
+  if (reason === 'NOT_BUILT:goals') {
+    return 'Saving goals are not part of the ledger yet, so I cannot answer that.';
+  }
+  if (reason === 'NOT_BUILT:recurring') {
+    return 'Recurring rules are not part of the ledger yet, so I cannot answer that.';
+  }
+  if (reason.startsWith('UNRUNNABLE:')) {
+    const missing = reason.slice('UNRUNNABLE:'.length);
+    const nouns: Readonly<Record<string, string>> = {
+      categoryId: 'which Category you meant',
+      merchantId: 'which Merchant you meant',
+      accountId: 'which Account you meant',
+      tagId: 'which Tag you meant',
+      goalId: 'which goal you meant',
+      recurringRuleId: 'which recurring rule you meant',
+      limit: 'how many rows you wanted',
+      period: 'which period you meant',
+    };
+    return `I could not tell ${nouns[missing] ?? 'what you meant'}. Try naming it.`;
+  }
+  return 'I cannot answer that from your ledger yet.';
+}
+
+/** The rows a sentence may name, capped so a fallback stays a sentence. */
+function namedRows(facts: AssistantFactsView): readonly { readonly label: string; readonly formatted: string }[] {
+  return facts.rows.filter((row) => row.label.length > 0).slice(0, MAX_NAMED_ROWS);
+}

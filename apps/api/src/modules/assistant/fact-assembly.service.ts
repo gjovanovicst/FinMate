@@ -83,6 +83,12 @@ export interface AssemblyResult {
   readonly reason?: string;
   readonly facts: AssistantFactsView;
   readonly provenance: ProvenanceView;
+  /**
+   * The Transactions the answer is *made of*, when the template aggregated named rows (docs/06 §4.4's
+   * drill-through). Empty for an aggregate: the rows behind a total are the filtered list, which is
+   * what `filters` is for — listing thousands of ids would be a payload nobody asked for.
+   */
+  readonly transactionIds: readonly string[];
 }
 
 interface Built {
@@ -93,6 +99,8 @@ interface Built {
   readonly filters: Readonly<Record<string, string>>;
   /** Set by a builder that cannot answer in this build, e.g. `NOT_BUILT:goals`. */
   readonly unavailable?: string;
+  /** The rows a `LIST` builder actually returned, for the drill-through; absent for an aggregate. */
+  readonly transactionIds?: readonly string[];
   /**
    * The range the figures were **actually** computed over, when that is not the plan's period.
    *
@@ -178,6 +186,7 @@ export class FactAssemblyService {
         computedAt: new Date(),
         ledgerCurrency: currency,
       },
+      transactionIds: built.transactionIds ?? [],
     };
   }
 
@@ -475,6 +484,7 @@ export class FactAssemblyService {
       },
       transactionCount: rows.length,
       filters: { kind },
+      transactionIds: rows.map((row) => row.id),
     };
   }
 
@@ -555,6 +565,7 @@ export class FactAssemblyService {
       formatted: { period: `${context.period.start} – ${context.period.end}`, headline: String(rows.length) },
       transactionCount: rows.length,
       filters: {},
+      transactionIds: rows.map((row) => row.id),
     };
   }
 
@@ -577,6 +588,7 @@ export class FactAssemblyService {
       formatted: { headline: String(rows.length), asOf: context.today },
       transactionCount: rows.length,
       filters: { needsReview: 'true', asOf: 'now' },
+      transactionIds: rows.map((row) => row.id),
       // The queue is a **current state**, not a period report: docs/06 §8.3's range is the household's
       // day, and the `asOf` filter says which of the two readings applies.
       period: this.asOf(context),

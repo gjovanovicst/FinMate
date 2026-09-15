@@ -1298,7 +1298,7 @@ type Query {
   monthProjection(period: String, asOf: Date): MonthProjection!                 # CP
 
   # ---- assistant
-  assistantAnswer(question: String!, locale: String, conversationId: UUID): AssistantAnswer!
+  assistantAnswer(question: String!, locale: String): AssistantAnswerModel!      # 3.2.3
 
   # ---- search
   search(query: String!, entities: [SearchEntity!], limit: Int = 20): SearchResults!
@@ -1432,37 +1432,41 @@ range it was computed over; there is no "guess what period this is" behaviour an
 
 ### 4.4 Assistant
 
+**Implemented in 3.2.3** — this block is the generated `apps/api/schema.gql`, verbatim in shape. The
+wire names carry the `Model` suffix, as every other object type in this schema does.
+
 ```graphql
-type AssistantAnswer {
+type AssistantAnswerModel {
   id: UUID!
   question: String!
   intent: AssistantIntent!
   answered: Boolean!
   answerText: String!                # narrated, or template-rendered on fallback
-  facts: AssistantFacts!             # the ONLY numbers the answer may contain
-  provenance: Provenance!
-  drillThrough: DrillThrough
-  suggestions: [String!]!            # answerable alternatives when answered = false
+  facts: AssistantFactsModel!        # the ONLY numbers the answer may contain
+  provenance: ProvenanceModel!
+  drillThrough: DrillThroughModel
+  suggestions: [String!]!            # the canonical answerable questions when answered = false
   narrationMode: NarrationMode!      # LLM | TEMPLATE_FALLBACK
   latencyMs: Int!
   costMicros: String
+  reason: String                     # why it is a refusal or a fallback; never shown as an error
 }
 
 enum NarrationMode { LLM TEMPLATE_FALLBACK }
 
-type AssistantFacts {
+type AssistantFactsModel {
   template: AssistantIntent!
-  rows: [AssistantFactRow!]!
-  totals: [AssistantFactTotal!]!
-  formatted: JSON!                   # locale+currency pre-formatted strings (see §8)
+  rows: [AssistantFactRowModel!]!
+  totals: [AssistantFactTotalModel!]!
+  formatted: JSON!                   # locale+currency pre-formatted strings (see §8.2)
 }
 
-type AssistantFactRow { label: String! value: String! categoryId: UUID merchantId: UUID }
-type AssistantFactTotal { label: String! money: Money! formatted: String! }
+type AssistantFactRowModel { label: String! value: String! formatted: String! categoryId: UUID merchantId: UUID }
+type AssistantFactTotalModel { label: String! money: Money! formatted: String! }
 
-type Provenance {
-  periodStart: Date!
-  periodEnd: Date!
+type ProvenanceModel {
+  periodStart: LocalDate!            # the aggregated range, which is not always the planned one (§8.3)
+  periodEnd: LocalDate!
   transactionCount: Int!
   sourceQuery: String!
   filters: JSON
@@ -1470,12 +1474,25 @@ type Provenance {
   ledgerCurrency: String!
 }
 
-type DrillThrough {
-  route: String!                     # Angular route with query params pre-filled
-  transactionIds: [UUID!]!
-  filter: TransactionFilterInput
+type DrillThroughModel {
+  route: String!                     # Angular route, e.g. /transactions, /review, /budgets, /accounts
+  transactionIds: [UUID!]!           # the rows a LIST answer is made of; empty for an aggregate
+  filter: JSON                       # the `transactions` arguments that reproduce the scope, by name
 }
 ```
+
+Three corrections against the sketch this section used to carry, each made when the operation was
+built (docs/06 §8.7 has the reasoning):
+
+| Sketch | Built | Why |
+|---|---|---|
+| `assistantAnswer(question, locale, conversationId)` | `assistantAnswer(question: String!, locale: String)` | There is no conversation store, so `conversationId` would be a parameter nothing honours. An accepted-and-ignored argument is a contract the API cannot keep. The transcript lives in the client until a store is designed. |
+| `DrillThrough.filter: TransactionFilterInput` | `JSON` | No such input type exists: the `transactions` query takes **flat** arguments (`from`, `to`, `categoryId`, `accountId`, `kind`, `needsReview`), and this bag names exactly those, so the client maps it one-to-one rather than translating between two vocabularies. |
+| `provenance.periodStart: Date!` | `LocalDate!` | A provenance range is a **calendar** range, not an instant; `LocalDate` is the scalar the rest of the API uses for one, and it is what the planner resolved. |
+
+`drillThrough` is null in two cases, and both are deliberate rather than unfinished: a **refusal** has
+nothing to link to, and a **merchant- or tag-scoped** answer has no route that can reproduce its scope
+until `transactions` accepts `merchantId`/`tagId` (§8.7).
 
 ### 4.5 Search
 
@@ -3038,24 +3055,37 @@ The enforcement path, applied on every narrated answer:
 ```text
 1. Extract every numeral token from answerText (Unicode decimal digits, grouped and ungrouped).
 2. Normalise each: strip group separators for the household locale, resolve "," decimal marker.
-3. Assert each normalised token matches, within the payload:
+3. Assert each normalised value matches, within the payload:
      - a facts.formatted string, or
-     - a rows[].value / totals[].money.amountMinor (after locale formatting), or
-     - a provenance count (transactionCount) or a date/year component (periodStart/periodEnd).
+     - a rows[].value / totals[].money.amountMinor **after locale formatting**, or
+     - a rows[].label (a Household may name a Category "Stan 2"), or
+     - a provenance count (transactionCount) or a date component (periodStart/periodEnd).
+     The bare minor-unit digits are deliberately NOT authorised: "4665000" for "46.650,00" is wrong
+     by 100×, and accepting it would let a factor-of-100 error through.
 4. On any unaccounted numeral: regenerate ONCE with a stricter instruction.
-5. On a second failure: return the TEMPLATE_FALLBACK rendering with narrationMode = "TEMPLATE_FALLBACK".
-   The user still gets the correct answer — it is simply rendered by a deterministic formatter.
+5. On a second failure — or on a transport failure, which gets no retry because the same payload to
+   the same unreachable endpoint is noise — return the TEMPLATE_FALLBACK rendering with
+   narrationMode = "TEMPLATE_FALLBACK". The user still gets the correct answer: it is rendered by a
+   deterministic formatter that reads only the facts payload (§8.7).
 ```
+
+The single-digit caveat, stated rather than discovered: a date component **is** a numeral, so for a
+monthly range `1` and `30` are authorised. §8.5 says so by listing the period as an allowed source; it
+means the validator is not absolute for single digits, and it is still absolute for every figure.
 
 Consequences that are part of the contract:
 
 - `narrationMode` is always populated and the UI is expected to make template fallback invisible (it is
   never framed as an error — a correct answer delivered without an LLM is not a degraded experience).
 - `NO_TEMPLATE_MATCH` ⇒ `answered = false`, `answerText` says the ledger cannot answer it, and
-  `suggestions` lists the nearest answerable questions. **No figure is ever produced.**
+  `suggestions` lists the canonical answerable questions. **No figure is ever produced**, and the
+  narrator is not called at all (§8.7).
+- `reason` carries *why* an answer is a refusal or a fallback — `UNACCOUNTED_NUMERALS:99.000,00`,
+  `AI_UNAVAILABLE:no-provider-configured`, `NOT_BUILT:goals`. It is diagnostic, not an error.
 - This is the same guarantee as the CI gate *"fabricated-numeral rate in narration: 0"*
   ([04 §11.2](04-categorization-and-ai-engine.md)) and the test in [09](09-implementation-plan.md)
-  §5 — it is asserted, not aspirational.
+  §5 — it is asserted over every template fallback and over scripted model output; the CI gate itself
+  still has no measured denominator (§8.8).
 
 ### 8.6 What fact assembly is (task 3.2.2)
 
@@ -3074,11 +3104,62 @@ Consequences that are part of the contract:
 | `transactionCount` for a `LIST` shape is the number of rows in the payload | `rows.length` | For a list the aggregate *is* the page: that is the set which was counted and the set the narrator may cite. |
 | A zero result is an answer | `available: true`, count `0`, `"0 RSD"` | §8.3: "you spent nothing on that" is correct. F-23 forbids fabricating a figure, not reporting a zero. |
 
-**`AssistantModule` boots but exposes no GraphQL operation yet.** docs/06 §4.4 declares
-`assistantAnswer` with a required `answerText` and a `narrationMode`; both are 3.2.3's narrator and
-template fallback, so publishing the operation now would publish a contract the API cannot keep. The
-module is registered in `app.module.ts` anyway — an unresolvable dependency is a boot failure that
-`typecheck` does not catch (task 2.3.4's lesson) — and `schema.gql` is unchanged by 3.2.2.
+**`AssistantModule` boots and now exposes §4.4's operation** (3.2.3). At 3.2.2 it did not: `answerText`
+and `narrationMode` are the narrator and the template fallback, and publishing the operation before
+them would have published a contract the API could not keep. The module was registered in
+`app.module.ts` anyway — an unresolvable dependency is a boot failure that `typecheck` does not catch
+(task 2.3.4's lesson) — so 3.2.2 changed nothing in `schema.gql`.
+
+### 8.7 What narration is (task 3.2.3)
+
+`apps/api/src/modules/assistant/` — `assistant.service.ts` (the pipeline), `numeric-validator.ts`
+(**pure**), `narration-template.ts` (**pure**), `narrate-prompt.ts` (**pure**),
+`assistant-narrator.ts` (the `NARRATE` seam), `assistant.model.ts` + `assistant.resolver.ts` (the
+wire). 163 tests in the module, of which 20 are the integration spec that scripts a model.
+
+| Decision | Built | Why |
+|---|---|---|
+| The pipeline refuses **before** it narrates | `NO_TEMPLATE_MATCH` and an unavailable template return `answered: false` with the assembled (empty) payload | §8.5 forbids a figure for a question the ledger cannot answer, and the way to guarantee that is for the narrator to have no figure to narrate. The integration test scripts a narrator that throws if it is called and asserts it is not. |
+| One stricter retry, then the template | `for (const strict of [false, true])`, then `TEMPLATE_FALLBACK` | §8.5 step 4. A model that invents a figure twice will not be talked out of it, and every extra attempt is paid for by the household. The `reason` names the **decisive** rejection, and `costMicros` sums **both** attempts — a discarded call was still billed. |
+| A **transport** failure gets no retry | The loop breaks and the template renders | Sending the same payload to the same unreachable endpoint is noise, not a second opinion. The distinction is only expressible because the narrator returns a value (`ok: false`) rather than throwing. |
+| The validator compares **values**, with the locale's own separators read from `Intl` | `27.450,00` ≡ `27.450`; a bare `4665000` is refused | §8.5 step 3's "after locale formatting" is load-bearing: allowing the machine value would let a factor-of-100 error through, and refusing a dropped decimal part would send correct answers to the fallback for nothing. |
+| What the payload authorises is enumerated, including labels | `formatted`, the locale-formatted machine values, `transactionCount`, the date components, and `rows[].label` | A Household may name a Category `Stan 2`, so its own label's numerals are authorised; a numeral in a different digit set is not, which is why the canonical form is never ASCII-folded. |
+| Every intent's fallback is **proved** unable to fabricate | `narration-template.spec.ts` runs `validateNarration` over the rendered answer for all 29 intents | §8.5 says the guarantee is "asserted, not aspirational". The frame is chosen by a `Record<AssistantIntent, Frame>`, so a new intent fails `tsc` until somebody decides how it reads. |
+| The cost guard applies to **paid** calls only | `AssistantNarrator.available`; the `AI_NARRATE` budget is consumed when it is true | §11.2 limits `assistantAnswer` because it is the one place a user can trigger unbounded LLM cost. A template answer costs nothing, so rationing it would refuse a correct, free answer — a self-inflicted outage. When no provider is configured (this build) the limiter is never called, which the integration test asserts. |
+| The prompt contains no numeral at all, and the retry does not name the numerals that failed | Bulleted rules; `narratePrompt({ strict })` | An instruction containing the answer is one the validator can no longer check, and a model copying from the prompt rather than the facts must not pass by accident. For the same reason `locale` is validated as letters-and-hyphens before it can reach the prompt. |
+| The narrator's input is built from pre-formatted strings | `factStrings()` | §8.2. The machine values are deliberately excluded — the model is not handed minor units or floats to reformat. |
+| A drill-through is offered only where a route can reproduce the scope | `DRILL_ROUTES`, `null` for `SPEND_BY_MERCHANT`, `SPEND_BY_TAG`, `TOP_MERCHANTS` | See §8.8. A link that shows rows the answer did not come from is worse than no link. |
+
+### 8.8 Known gaps in the assistant (3.2.3)
+
+- **Narration cost is not persisted.** `costMicros` is returned on the answer and logged; nothing
+  writes a row. docs/05 §3's assistant row said it "writes `classification_decisions` for cost" —
+  **the document was wrong and is corrected**: a narrated answer is not a classification decision, and
+  `classification_decisions.decided_by` has no value that means "narration", so writing one there would
+  corrupt every accuracy metric built on that table. A per-household narration spend ledger needs a
+  table (or a column set) that means what it says; that is a decision, not an oversight.
+- **The fallback copy is English.** `narration-template.ts` and `renderRefusal()` are server-rendered
+  strings, so they are the second instance of the DoD breach §5.14 records for notification copy: the
+  API has no i18n catalogue. The money is in the household's locale and the Household's own names are
+  untranslated (they are the user's words); the connectives are not. Fixing it means the API gains a
+  catalogue **or** the client renders the fallback from `facts` — §5.14's decision, and both surfaces
+  should be fixed together.
+- **`conversationId` is absent** from `assistantAnswer` (see §4.4): there is no conversation store.
+  A follow-up question therefore has no context, and the client owns the transcript.
+- **A merchant- or tag-scoped answer offers no drill-through**, because `transactions(...)` takes
+  `categoryId` and `accountId` but not `merchantId` or `tagId`. Adding them is a ledger change
+  (§4.1 + §5.1) and belongs with 3.2.4's UI, where the missing link is visible.
+- **`/transactions` does not read route query parameters yet**, so a drill-through link opens the
+  unfiltered list. docs/02 §FL-09 step 6 wants "the filter chips applied"; that is 3.2.4's work, and
+  until then the filter bag is a contract with no consumer.
+- **The planner matches against at most 200 Merchants and Accounts** per question (`MAX_PAGE_SIZE`).
+  Beyond that an entity can be in the Household's ledger and still not resolve. A single unbounded read
+  for planning is a taxonomy-module decision.
+- **Narration is never evaluated.** `pnpm test:evals` still reports the two narration gates as
+  `skipped`, because no provider is configured and the dataset holds classification cases, not
+  questions. The validator's guarantee *is* asserted — over the fallback for every intent, and over
+  scripted model output in the integration spec — but §04 §11.2's "fabricated-numeral rate" gate has no
+  measured number until a provider and a narration slice exist.
 
 ---
 

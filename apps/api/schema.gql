@@ -128,6 +128,100 @@ type AlternativeModel {
   confidence: Float!
 }
 
+"""docs/06 §4.4 and §8.5."""
+type AssistantAnswerModel {
+  answerText: String!
+
+  """
+  False when the template set cannot answer it. Then `answerText` says so, `suggestions` lists the answerable questions, and **no figure is produced** (docs/06 §8.5).
+  """
+  answered: Boolean!
+
+  """Provider spend for this answer, in micros."""
+  costMicros: String
+  drillThrough: DrillThroughModel
+  facts: AssistantFactsModel!
+  id: UUID!
+  intent: AssistantIntent!
+
+  """The whole answer, including the aggregate."""
+  latencyMs: Int!
+  narrationMode: NarrationMode!
+  provenance: ProvenanceModel!
+  question: String!
+
+  """
+  Why this is a refusal or a fallback — `UNACCOUNTED_NUMERALS:…`, `NOT_BUILT:goals`, … The UI does not show it as an error; it is what makes a fallback diagnosable.
+  """
+  reason: String
+  suggestions: [String!]!
+}
+
+"""
+One ranked or listed fact. `value` is the machine value (docs/06 §8.2).
+"""
+type AssistantFactRowModel {
+  categoryId: UUID
+
+  """The same value, currency- and locale-formatted."""
+  formatted: String!
+  label: String!
+  merchantId: UUID
+
+  """Minor units for money, a count otherwise. Never a float."""
+  value: String!
+}
+
+type AssistantFactTotalModel {
+  formatted: String!
+  label: String!
+  money: Money!
+}
+
+"""
+The ONLY numbers the answer may contain (docs/06 §8.2). `formatted` is the exact set of strings the narrator was given.
+"""
+type AssistantFactsModel {
+  formatted: JSON!
+  rows: [AssistantFactRowModel!]!
+  template: AssistantIntent!
+  totals: [AssistantFactTotalModel!]!
+}
+
+"""The closed template set the planner selects from (docs/06 §8.1)."""
+enum AssistantIntent {
+  ACCOUNT_BALANCE
+  ACCOUNT_BALANCE_ALL
+  AVERAGE_DAILY_SPEND
+  BUDGET_LIST
+  BUDGET_PACE_VS_PLAN
+  BUDGET_STATUS
+  COMPARE_PERIODS
+  GOAL_PROGRESS
+  GOAL_REQUIRED_MONTHLY
+  INCOME_TOTAL
+  LARGEST_TRANSACTIONS
+  MONTH_PROJECTION
+  NET_CASHFLOW
+  NO_TEMPLATE_MATCH
+  RECURRING_LIST
+  RECURRING_UPCOMING
+  SAFE_TO_SPEND
+  SAVINGS_PROPOSAL
+  SPEND_BY_ACCOUNT
+  SPEND_BY_CATEGORY
+  SPEND_BY_MERCHANT
+  SPEND_BY_TAG
+  SPEND_TOTAL
+  TOP_CATEGORIES
+  TOP_MERCHANTS
+  TRANSACTION_COUNT
+  TRANSACTION_LIST
+  TREND_VS_AVERAGE
+  TREND_VS_LAST_MONTH
+  UNCATEGORISED_REVIEW
+}
+
 """
 One losing candidate from rules-engine or the keyword tier, recorded on every decision so a choice can be explained after the fact (docs/04 §5.3.5, P-3).
 """
@@ -718,6 +812,16 @@ enum DegradationRung {
 }
 
 """
+Where the user can check the answer. `null` when no route can reproduce the scope — a link that cannot is worse than none (docs/06 §4.4).
+"""
+type DrillThroughModel {
+  """The `transactions` query arguments that reproduce the scope, by name."""
+  filter: JSON
+  route: String!
+  transactionIds: [UUID!]!
+}
+
+"""
 A just-written row that looks like a repeat of an existing Transaction (docs/06 §5.2.2). The advisory third mechanism: the row IS written, because the user may legitimately have bought the same thing twice. Blocking a real second purchase is a worse failure than showing an unwanted chip, so this never refuses anything — it only tells the client to offer an undo.
 """
 type DuplicateSuspectModel {
@@ -1290,6 +1394,14 @@ type Mutation {
 }
 
 """
+How `answerText` was produced. A fallback is not an error: it is the same answer rendered deterministically because no provider was reachable or the model invented a figure.
+"""
+enum NarrationMode {
+  LLM
+  TEMPLATE_FALLBACK
+}
+
+"""
 docs/03 §4's CHECK constraint. Only `IN_APP` is delivered in this build — the fan-out is 3.1.3 — but a rule may name the others and the evaluator already decides per channel.
 """
 enum NotificationChannel {
@@ -1469,6 +1581,23 @@ type ProposedSplit {
   categoryId: ID!
 }
 
+"""
+What the figure rests on: docs/06 §8.3. Trust comes from being checkable.
+"""
+type ProvenanceModel {
+  computedAt: DateTime!
+  filters: JSON
+  ledgerCurrency: String!
+  periodEnd: LocalDate!
+  periodStart: LocalDate!
+
+  """The repository method, e.g. `spend.byCategory.v1`."""
+  sourceQuery: String!
+
+  """CONFIRMED, non-deleted Transactions aggregated."""
+  transactionCount: Int!
+}
+
 type Query {
   """A single Account by id, scoped to the Household."""
   account(id: String!): Account!
@@ -1490,6 +1619,11 @@ type Query {
   The Household alert rules, including the documented defaults once anything has run.
   """
   alerts: [AlertRuleModel!]!
+
+  """
+  Answer a question about this Household's own ledger. The backend computes the facts; the model only narrates them, and every numeral it writes must exist in `facts` (ADR-017).
+  """
+  assistantAnswer(locale: String, question: String!): AssistantAnswerModel!
 
   """
   Budgets with consumption for their CURRENT period. Spend includes splits and the whole Category subtree, and counts only CONFIRMED transactions (invariants I-5, I-7).

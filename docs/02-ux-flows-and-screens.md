@@ -892,7 +892,9 @@ sequenceDiagram
    failure, one stricter retry, then the template answer.
 6. The answer renders with expandable provenance and a drill-through link that opens `/transactions`
    with the filter chips applied.
-7. If no template fits, the assistant says so and offers the three closest answerable questions.
+7. If no template fits, the assistant says so and offers the canonical answerable questions
+   (`SUGGESTED_QUESTIONS`, docs/06 §8.1 — there is no similarity ranking, so they are the closed set
+   rather than a "closest three").
 
 ### FL-10 — Offline capture, then sync with a reviewable diff (F-26)
 

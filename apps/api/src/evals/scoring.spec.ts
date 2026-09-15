@@ -233,7 +233,7 @@ describe('summarise', () => {
 });
 
 describe('evaluateGates', () => {
-  it('skips the narration gates instead of passing them, because NARRATE does not exist', () => {
+  it('skips the narration gates instead of passing them, because this harness has no narration', () => {
     const gates = evaluateGates([scoreCase(evalCase(), observedCase([observed()]))]);
     const narration = gates.filter((gate) => gate.metric.includes('narration'));
     expect(narration).toHaveLength(2);

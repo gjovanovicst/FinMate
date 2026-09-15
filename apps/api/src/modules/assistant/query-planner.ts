@@ -47,6 +47,17 @@ export interface NamedEntity {
   readonly name: string;
   /** A category's full breadcrumb (`Hrana / Supermarket`), when it has one. */
   readonly path?: string;
+  /**
+   * Whether the row belongs to this Household rather than being a shared/global one.
+   *
+   * `merchants` are globally readable with a nullable `household_id` (docs/08's global allow-list), so
+   * a Household that copied the seeded `Lidl` has **two** rows named `Lidl` in its context — and its
+   * Transactions point at its own copy. Without this flag the tie falls to the id, which picks
+   * whichever row happens to be older: usually the global seed, whose id is on no Transaction at all,
+   * so "koliko sam potrošio u lidlu" answered `0,00 RSD`. A fact assembled from a row the ledger does
+   * not reference is exactly the kind of confidently-empty answer ADR-017 exists to prevent.
+   */
+  readonly owned?: boolean;
 }
 
 export interface PlannerContext {
@@ -469,10 +480,13 @@ function matchEntity(
     }
   }
 
-  // Highest score wins; a tie falls back to the id, so two identically named entities resolve
-  // deterministically rather than by row order.
+  // Highest score wins; then the Household's **own** row over a shared one (see {@link NamedEntity.owned});
+  // then the id, so two identically named entities resolve deterministically rather than by row order.
   candidates.sort(
-    (left, right) => right.score - left.score || (left.entity.id < right.entity.id ? -1 : 1),
+    (left, right) =>
+      right.score - left.score ||
+      Number(right.entity.owned ?? false) - Number(left.entity.owned ?? false) ||
+      (left.entity.id < right.entity.id ? -1 : 1),
   );
   return candidates[0]?.entity ?? null;
 }

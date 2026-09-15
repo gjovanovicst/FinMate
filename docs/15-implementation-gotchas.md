@@ -202,6 +202,14 @@ Code-first GraphQL with custom scalars: most of these are registration problems 
   failure lands in the error banner instead of downloading a file full of JSON. Distinct from the
   async whole-household `exportData` (docs/06 §5.11), which needs the worker and is not built.
 
+- **A nullable GraphQL argument arrives as `null`, never as `undefined`.** `assistantAnswer(question,
+  locale: String)` was written as `locale?: string` with `locale === undefined ? default : …`, so every
+  question asked **without** a locale threw `TypeError: Cannot read properties of null (reading
+  'length')` and surfaced as an opaque `INTERNAL` — while the integration tests stayed green, because
+  they passed the field as absent (the same trap as the capture path's *absent vs explicit `null`*, on
+  the input side). Handle both, or normalise at the resolver. It took a live query to find, which is
+  the argument for the live pass even when the tests are thorough.
+
 - **Inserting a method above a decorated one steals its decorator, and nothing catches it but a live
   call.** Adding `dispatchNotifications` immediately above the existing `runAlerts` in a resolver put
   the new method *between* `runAlerts`'s `@Mutation(...)` and the method it described, so

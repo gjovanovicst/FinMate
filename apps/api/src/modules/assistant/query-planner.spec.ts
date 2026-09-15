@@ -311,6 +311,23 @@ describe('determinism', () => {
     };
     expect(planQuestion('koliko sam potrošio na kafu', ambiguous).slots.categoryId).toBe('cat-a');
   });
+
+  it('prefers the Household’s own row over a shared one with the same name', () => {
+    // `merchants` is globally readable, so a Household that copied the seeded `Lidl` has two rows
+    // named `Lidl` — and only its own is referenced by its Transactions. Before the `owned` flag the
+    // tie went to the id, which picked the global seed (created earlier), and "koliko sam potrošio u
+    // lidlu" answered 0,00 RSD from a row no Transaction points at.
+    const withGlobalSeed: PlannerContext = {
+      ...CONTEXT,
+      merchants: [
+        { id: 'mer-global', name: 'Lidl' },
+        { id: 'mer-owned', name: 'Lidl', owned: true },
+      ],
+    };
+    const result = planQuestion('koliko sam potrošio u lidlu', withGlobalSeed);
+    expect(result.intent).toBe('SPEND_BY_MERCHANT');
+    expect(result.slots.merchantId).toBe('mer-owned');
+  });
 });
 
 describe('every intent is reachable', () => {

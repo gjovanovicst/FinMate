@@ -97,7 +97,7 @@ directly — cross-module reads go through the owning service or a read-model qu
 | `recurring` | Recurring rules, RRULE expansion, materialisation job, subscription detection | `recurring_rules` |
 | `insights` | Deterministic insight generation (pace, spikes, trends), month-end projection | `insights` |
 | `notifications` | Alert rules, dedupe, channel dispatch (in-app, email, web push), quiet hours | `alert_rules`, `notifications` |
-| `assistant` | Query planner (intent → template), fact assembly, narration, provenance | reads many, writes `classification_decisions` for cost |
+| `assistant` | Query planner (intent → template), fact assembly, narration, provenance | **reads many; writes nothing.** `costMicros`/`latencyMs` are returned on the answer and logged — a narration is not a classification decision, and `classification_decisions.decided_by` has no value that means "narration" (docs/06 §8.8) |
 | `ai` | Provider adapters, routing, circuit breakers, budget guards, prompt registry | `ai_provider_configs`, `prompt_templates` |
 | `files` | Presigned upload/download, virus scan hook, lifecycle/purge | `attachments` |
 | `audit` | Append-only audit trail, GDPR export & purge orchestration | `audit_log` |

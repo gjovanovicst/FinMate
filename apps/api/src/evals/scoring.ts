@@ -223,10 +223,10 @@ export function summarise(scores: readonly CaseScore[]): readonly SliceMetrics[]
 /**
  * docs/04 §11.2's gates, plus docs/09 §4's rule-hit ratio.
  *
- * A gate whose feature does not exist yet is **`null`, with a reason** — never a silent pass. Three of
- * the eight are in that state in this build (narration is unbuilt, no provider is configured), and a
- * report that showed them green would be the most dangerous kind of evaluation: one that certifies
- * what it never ran.
+ * A gate whose feature does not exist yet is **`null`, with a reason** — never a silent pass. Five of
+ * the eight are in that state in this build (no provider is configured, and this dataset holds
+ * classification cases rather than assistant questions), and a report that showed them green would be
+ * the most dangerous kind of evaluation: one that certifies what it never ran.
  *
  * `providerConfigured` is a **structural** precondition, not a judgement call: with no model wired,
  * top-3 ranks a candidate list that is always empty for an unresolved fragment, so the metric
@@ -333,7 +333,9 @@ export function evaluateGates(
       null,
       null,
       'docs/04 §11.2',
-      'NARRATE does not exist yet (Phase 3, task 3.2), so there is no narration to check',
+      'no narration provider is configured in this build, and the dataset holds classification ' +
+        'cases rather than questions — 3.2.3 asserts the guarantee over the template fallback and ' +
+        'over scripted model output (docs/06 §8.7), which is not this harness',
     ),
     gate(
       'Fabricated-numeral rate in narration',
@@ -341,7 +343,7 @@ export function evaluateGates(
       null,
       null,
       'docs/04 §11.2',
-      'NARRATE does not exist yet (Phase 3, task 3.2) — ADR-017 guards the assistant, not this run',
+      'ADR-017 guards the assistant path, not this run (docs/06 §8.8)',
     ),
     gate(
       'p95 latency, parse+classify',
