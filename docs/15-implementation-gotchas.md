@@ -159,6 +159,17 @@ ADR-008 is enforced by an extension, not by discipline — which is why these tw
   is one parameterised `$queryRaw` joining `transactions` on `household_id` and `deleted_at IS NULL`;
   the join *is* the tenancy predicate. One grouped statement for the page, never a count per row.
 
+- **A `transaction_splits` row must carry `household_id`, and a `transaction_tags` row cannot be
+  written at all, only through its parent.** The two look alike in docs/03 and behave differently in
+  code: `transaction_splits` has its own `household_id` (added by the
+  `20260914160000_scope_aggregated_children` migration, after the init DDL), so a fixture inserts it
+  directly — but forget the column and the insert fails on NOT NULL, not on tenancy.
+  `transaction_tags` has **no** `household_id` and is `PARENT_SCOPED`: `prisma.transaction_tags.create`
+  throws `TenancyError`, and the assignment must ride along as
+  `transactions.create({ data: { …, transaction_tags: { create: [{ tag_id }] } } })`. Reading it is the
+  same shape (`include: { transaction_tags: true }`), which is why a fixture that wants a tagged row
+  has to create the Transaction and the Tag together.
+
 ---
 
 ## 4. GraphQL and the API surface

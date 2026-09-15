@@ -16,5 +16,9 @@ import { AccountsService } from './accounts.service';
     UuidScalar,
     LocalDateScalar,
   ],
+  // The assistant reads balances through this service rather than re-deriving them: a balance is
+  // `opening + income − expense` over every CONFIRMED Transaction, which is invariant I-4's arithmetic
+  // and must exist in exactly one place (docs/06 §8.2, ADR-001).
+  exports: [AccountsService],
 })
 export class AccountsModule {}

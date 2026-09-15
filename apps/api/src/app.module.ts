@@ -8,6 +8,7 @@ import { ConfigModule } from './config/config.module';
 import { GraphqlModule } from './graphql/graphql.module';
 import { HealthController } from './health/health.controller';
 import { AccountsModule } from './modules/accounts/accounts.module';
+import { AssistantModule } from './modules/assistant/assistant.module';
 import { BudgetingModule } from './modules/budgeting/budgeting.module';
 import { ClassificationModule } from './modules/classification/classification.module';
 import { InsightsModule } from './modules/insights/insights.module';
@@ -43,6 +44,9 @@ import { PrismaModule } from './prisma/prisma.module';
     InsightsModule,
     // Alerts and notifications (F-22). Imports `insights` — one direction only, per docs/05 §3.
     NotificationsModule,
+    // The assistant (F-23). Fact assembly only so far: docs/06 §8's `assistantAnswer` needs 3.2.3's
+    // narrator and template fallback before it can be published without inventing `answerText`.
+    AssistantModule,
   ],
   controllers: [HealthController],
   providers: [

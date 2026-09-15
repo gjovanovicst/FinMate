@@ -157,11 +157,29 @@ export function planQuestion(question: string, context: PlannerContext): Plan {
     hasMerchant: merchant !== null,
     hasAccount: account !== null,
     hasTag: tag !== null,
+    period,
     matchedOn,
   });
 
+  // A trend question names the **baseline**, not the period to report.
+  //
+  // "Kako stojim u odnosu na prošli mesec?" asked in September compares September with August; reading
+  // `prošli mesec` as the period makes it compare August with July, which is a true answer to a
+  // different question. The phrase table cannot tell the two apart — "koliko sam potrošio prošlog
+  // meseca" *does* mean August — so the adjustment happens here, after routing, and `matchedOn` says
+  // which role the phrase played.
+  const baselineIsPreviousMonth =
+    intent === 'TREND_VS_LAST_MONTH' && period.matchedOn === 'prošlog meseca';
+  const effectivePeriod: ResolvedPeriod = baselineIsPreviousMonth
+    ? { ...monthPeriod(context.today), matchedOn: DEFAULT_PERIOD_PHRASE }
+    : period;
+  if (baselineIsPreviousMonth) {
+    matchedOn[0] = `period:${effectivePeriod.matchedOn}`;
+    matchedOn.push(`baseline:${period.matchedOn}`);
+  }
+
   const slots: ResolvedSlots = {
-    period,
+    period: effectivePeriod,
     ...(category !== null ? { categoryId: category.id } : {}),
     ...(merchant !== null ? { merchantId: merchant.id } : {}),
     ...(account !== null ? { accountId: account.id } : {}),
@@ -283,6 +301,7 @@ interface IntentCues {
   readonly hasMerchant: boolean;
   readonly hasAccount: boolean;
   readonly hasTag: boolean;
+  readonly period: ResolvedPeriod;
   readonly matchedOn: string[];
 }
 
@@ -397,7 +416,7 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
     // "na hranu", "za gorivo", "u lidlu" — the question is **scoped** to something, and if that
     // something is not a name this Household has, answering the unscoped total would answer a
     // different question under the one that was asked. Refusing is the honest outcome (ADR-017).
-    if (hasUnresolvedScope(folded)) return note('NO_TEMPLATE_MATCH', 'nerazrešen opseg');
+    if (hasUnresolvedScope(folded, cues.period)) return note('NO_TEMPLATE_MATCH', 'nerazrešen opseg');
     return note('SPEND_TOTAL', 'potrošio');
   }
 
@@ -491,9 +510,10 @@ function sharesStem(name: string, word: string): boolean {
  * Whether a spend question names a scope the planner could not resolve.
  *
  * Deliberately narrow: only the prepositions that introduce a scope (`na`, `za`, `u`, `kod`) followed by
- * a word of four or more characters that is not a period or stop word. `koliko sam potrošio na more`
- * refuses; `koliko sam potrošio ovog meseca` does not, because `ovog` is a period word and the period
- * slot already consumed it.
+ * a word of four or more characters that the period did not already consume. `koliko sam potrošio na
+ * more` refuses; `koliko sam potrošio ovog meseca` does not, and neither does `koliko sam potrošio u
+ * avgustu` — a month the phrase table resolved *is* a resolved scope, and reading it as an unresolved
+ * entity refused a question the templates can answer.
  */
 const SCOPE_WORDS = new Set([
   'ovog', 'ovog', 'proslog', 'prošlog', 'ove', 'prosle', 'prošle', 'poslednjih', 'zadnjih', 'proteklih',
@@ -501,9 +521,18 @@ const SCOPE_WORDS = new Set([
   'racuna', 'računa', 'gotovinu', 'gotovine', 'prosek', 'proseka', 'ukupno',
 ]);
 
-function hasUnresolvedScope(folded: string): boolean {
-  const match = /\b(?:na|za|u|kod)\s+([a-z]{4,})/.exec(folded);
-  return match !== null && !SCOPE_WORDS.has(match[1] ?? '');
+function hasUnresolvedScope(folded: string, period: ResolvedPeriod): boolean {
+  // The words the period phrase used are resolved by definition. A named month is the case that needs
+  // this: `resolvePeriod` returns the word **as typed** (`avgustu`), which is what the question says.
+  const allowed = new Set(SCOPE_WORDS);
+  for (const word of normaliseForMatching(period.matchedOn).split(/[^a-z0-9]+/)) {
+    if (word.length > 0) allowed.add(word);
+  }
+
+  for (const match of folded.matchAll(/\b(?:na|za|u|kod)\s+([a-z]{4,})/g)) {
+    if (!allowed.has(match[1] ?? '')) return true;
+  }
+  return false;
 }
 
 /** `top 5`, `5 najvećih`, `poslednjih 5` — or `null` for the template's default. */

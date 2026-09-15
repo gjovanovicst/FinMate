@@ -38,6 +38,12 @@ export const envSchema = z
      * decided (Q-1), both places change in one commit.
      */
     APP_NAME: z.string().default('FinMate'),
+    /**
+     * The locale money and dates are formatted in for server-rendered copy (notifications, assistant
+     * facts). The product's *copy* is English (ADR-019); money follows the Serbian convention the rest
+     * of the app renders, and `formatMoney`'s own default is this value.
+     */
+    APP_DEFAULT_LOCALE: z.string().default('sr-Latn-RS'),
     SMTP_URL: z.string().optional(),
 
     /** Login throttling (docs/08 §3 — credential stuffing is threat T-02). */

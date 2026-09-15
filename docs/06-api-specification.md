@@ -2996,6 +2996,13 @@ drill-through link. [04 §10](04-categorization-and-ai-engine.md): *"Trust comes
 | `computedAt` | Server instant the aggregate ran | Yes |
 | `ledgerCurrency` | Currency of the totals (ADR-011) | Yes |
 
+**The range must describe the aggregate, not the question.** A template that does not aggregate the
+period the question named says so: `periodStart`/`periodEnd` carry the range it *did* use — a Budget's own
+`period_start`, the dashboard's current month. A **state** figure has no range at all (a balance is the
+whole ledger; the review queue is the current queue), so it reports `periodStart = periodEnd =` the
+household's local today with `filters.asOf = "now"`. A range that is merely the one the question named is
+the one kind of provenance that is worse than none.
+
 If `transactionCount = 0`, `answerText` must say so plainly and `answered` may still be `true` — "you
 spent nothing on that" is a correct answer, and the F-23 acceptance criterion forbids fabricating a
 figure, not reporting a zero.
@@ -3011,7 +3018,8 @@ figure, not reporting a zero.
 | The planner is pure, and its output type has no field a query could travel in | `Plan { intent, template, slots, matchedOn }` | The guarantee is the shape, not a promise: the caller looks the intent up and calls the named method with the slots. A test asserts the serialised plan contains no SQL-shaped word. |
 | Entity slots match the Household's **own** names, through the shared fold | `matchEntity` over categories/merchants/accounts/tags | A keyword list here would drift from the tree the user actually has. The fold is `common/text/normalise` — the same one the classifier and the editors use. |
 | …with **stem tolerance**, because Serbian inflects | A 3-character common prefix, at most two trailing characters free | `Hrana` is the category; people type *"na hranu"*. Word-for-word matching found nothing and the question fell through to `SPEND_TOTAL` — a confident wrong answer to a question the template set *can* answer. `Gorivo`/`goriva`, `Tekući`/`tekućeg`, `Lidl`/`lidlu` are the same shape. An exact occurrence still scores above a stem match. ⚠️ Bounded cost: a name beginning with a month stem (`Martin`) reads as March; the period is provenance the user sees (`matchedOn`), so a wrong guess is visible rather than silent. |
-| A **scoped** spend question with an unresolved scope is refused | "na/za/u/kod X" where X resolved to no entity ⇒ `NO_TEMPLATE_MATCH` | *"koliko sam potrošio na more"* must not be answered with the month's total: that is a true figure to a question nobody asked, which is the failure ADR-017 exists to make impossible. |
+| A **scoped** spend question with an unresolved scope is refused | "na/za/u/kod X" where X resolved to no entity ⇒ `NO_TEMPLATE_MATCH` | *"koliko sam potrošio na more"* must not be answered with the month's total: that is a true figure to a question nobody asked, which is the failure ADR-017 exists to make impossible. The words the **period** consumed are resolved by definition — `koliko sam potrošio u avgustu` was refused until 3.2.2, because the phrase table's own answer (`avgustu`) was then re-read as an unresolved entity. |
+| A trend question's `prošli mesec` is the **baseline**, not the period | `TREND_VS_LAST_MONTH` with that phrase anchors on the current month and records `baseline:prošlog meseca` | *"Kako stojim u odnosu na prošli mesec?"* asked in September compares September with August. Reading the phrase as the period compared August with July — a true answer to a different question, and the phrase table cannot tell the two apart before the intent is known. |
 | Period resolution is a phrase table, and a named month resolves to its **most recent** occurrence | `danas`/`juče`/`ove i prošle nedelje`/`ovog i prošlog meseca`/`ove i prošle godine`/`poslednjih N dana`/month stems | Asking in March about *avgust* means last August; answering with one that has not happened yet gives a figure the user cannot reconcile. The default is the current month and it says so. |
 | `isRunnable` + `missingSlots` are separate from matching | A routed intent with an unresolved **required** slot is refused | Goals and recurring rules have no slot resolution yet (3.3.2/3.3.3), so a goal question routes correctly and is then refused — the difference between "not implemented" and "answered with something else". |
 | `matchedOn` carries the cues | Period phrase, `category:<name>`, `intent:<phrase>` | docs/06 §8.3 requires an answer to be checkable; "why did it think I meant Hrana?" is the first question a wrong answer raises, and this answers it from the audit instead of by re-reading the planner. |
@@ -3048,6 +3056,29 @@ Consequences that are part of the contract:
 - This is the same guarantee as the CI gate *"fabricated-numeral rate in narration: 0"*
   ([04 §11.2](04-categorization-and-ai-engine.md)) and the test in [09](09-implementation-plan.md)
   §5 — it is asserted, not aspirational.
+
+### 8.6 What fact assembly is (task 3.2.2)
+
+`apps/api/src/modules/assistant/fact-assembly.service.ts`, with `fact-assembly.integration.spec.ts`
+(33 tests) against a real database.
+
+| Decision | Built | Why |
+|---|---|---|
+| The builder registry is a `Record<AssistantIntent, …>` | A builder for every intent, or `tsc` fails | The same reason as the planner's registry: completeness is a compile-time property with no `default:` arm to fall into. |
+| An intent whose data does not exist **refuses with a reason** | `available: false` + `reason: "NOT_BUILT:goals"` / `"NOT_BUILT:recurring"` / `"NEEDS_TWO_PERIODS"` / `"NO_TEMPLATE_MATCH"`, with **empty** facts | "We have no goals yet" and "somebody forgot to write the builder" must not look identical from outside. An unavailable template must not be narratable, so its facts are empty rather than plausible. |
+| The **assembler** enforces `isRunnable`, not only its caller | `reason: "UNRUNNABLE:categoryId"` | `SPEND_BY_CATEGORY` with no resolved category aggregates *everything* and can be labelled with the category that was not found — a true figure answering a question nobody asked. 3.2.4's UI is a caller that can forget; this is the layer that must not. |
+| Splits are included, and a parent Category expands to its children | Two aggregates (Transaction + Split) plus a subtree walk | I-1/I-11 and ADR-015: the question must aggregate what the **budget tile the user is looking at** aggregates. ⚠️ A deliberate divergence: the 3.1.1 insight generators count direct rows only, so the two figures can differ for a split — 3.3.1's analytics work must reconcile them. |
+| Every money figure is a pre-formatted string **and** its minor units | `rows[].value`, `totals[].money.amountMinor`, `formatted.*` | §8.2: the narrator reproduces strings instead of reformatting raw numbers (ADR-003), and the client builds a chart without parsing `"27.450 RSD"`. |
+| Balances and budget consumption come from their owning services | `AccountsService.list`, `BudgetsService.list`/`dashboard` — never a local aggregate | I-4 and I-5 arithmetic already exists in exactly one place; re-deriving it is how the assistant and the screen the user is comparing against start disagreeing. |
+| Provenance reports the range that was **actually** aggregated | `Built.period`, set by the budget and dashboard templates; `filters.asOf = "now"` for a balance or the review queue | See §8.3. A balance is the whole ledger and a projection is the current month, so the plan's period would be a claim about the number that is not true. |
+| `transactionCount` for a `LIST` shape is the number of rows in the payload | `rows.length` | For a list the aggregate *is* the page: that is the set which was counted and the set the narrator may cite. |
+| A zero result is an answer | `available: true`, count `0`, `"0 RSD"` | §8.3: "you spent nothing on that" is correct. F-23 forbids fabricating a figure, not reporting a zero. |
+
+**`AssistantModule` boots but exposes no GraphQL operation yet.** docs/06 §4.4 declares
+`assistantAnswer` with a required `answerText` and a `narrationMode`; both are 3.2.3's narrator and
+template fallback, so publishing the operation now would publish a contract the API cannot keep. The
+module is registered in `app.module.ts` anyway — an unresolvable dependency is a boot failure that
+`typecheck` does not catch (task 2.3.4's lesson) — and `schema.gql` is unchanged by 3.2.2.
 
 ---
 

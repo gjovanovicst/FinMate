@@ -141,6 +141,29 @@ describe('intent routing', () => {
     expect(plan('potrošnja u odnosu na prosek').intent).toBe('TREND_VS_AVERAGE');
   });
 
+  it('reads "prošli mesec" as the baseline of a trend question, not as the period to report', () => {
+    // The canonical question compares **this** month with the last one. Reading the phrase as the
+    // period answered August-versus-July — a true figure answering a question nobody asked.
+    const trend = plan('kako stojim u odnosu na prošli mesec');
+    expect(trend.intent).toBe('TREND_VS_LAST_MONTH');
+    expect(trend.slots.period).toEqual({
+      start: '2026-09-01',
+      end: '2026-09-30',
+      matchedOn: 'ovog meseca',
+    });
+    expect(trend.matchedOn).toContain('baseline:prošlog meseca');
+    expect(trend.matchedOn).toContain('period:ovog meseca');
+
+    // The same words in a plain spend question still mean August.
+    const spend = plan('koliko sam potrošio prošlog meseca');
+    expect(spend.intent).toBe('SPEND_TOTAL');
+    expect(spend.slots.period).toEqual({
+      start: '2026-08-01',
+      end: '2026-08-31',
+      matchedOn: 'prošlog meseca',
+    });
+  });
+
   it('routes lists, counts and the review queue', () => {
     expect(plan('na šta mi odlazi najviše novca').intent).toBe('TOP_CATEGORIES');
     expect(plan('koji prodavci su najviše').intent).toBe('TOP_MERCHANTS');
@@ -258,6 +281,12 @@ describe('runnability', () => {
   it('still answers a spend question whose scope is a period rather than an entity', () => {
     expect(plan('koliko sam potrošio ovog meseca').intent).toBe('SPEND_TOTAL');
     expect(plan('koliko sam potrošio danas').intent).toBe('SPEND_TOTAL');
+    // A named month is the scope and a resolved period at the same time. Reading `u avgustu` as an
+    // unresolved entity refused a question the template set can answer — a refusal is honest, but this
+    // one was wrong, and the phrase table had already resolved it.
+    expect(plan('koliko sam potrošio u avgustu').intent).toBe('SPEND_TOTAL');
+    expect(plan('koliko sam potrošio u avgustu').slots.period.start).toBe('2026-08-01');
+    expect(plan('koliko sam potrošio u septembru').slots.period.start).toBe('2026-09-01');
   });
 
   it('is never runnable when it refused', () => {
