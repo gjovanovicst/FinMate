@@ -191,6 +191,23 @@ Code-first GraphQL with custom scalars: most of these are registration problems 
   failure lands in the error banner instead of downloading a file full of JSON. Distinct from the
   async whole-household `exportData` (docs/06 §5.11), which needs the worker and is not built.
 
+- **A monthly Budget is one row per scope, and `period_start` does not roll forward by itself.**
+  `budgets_unique_scope` is unique on the Household/category scope, not on the period, so a Household
+  that has not touched its budget this month still has a row anchored in an **earlier** month — and
+  `periodBounds('MONTHLY', row.period_start)` then describes that earlier month. Two consequences worth
+  knowing: inserting a second budget for the same category fails with `budgets_unique_scope` (move
+  `period_start` instead), and the insight generator's pace rule correctly filters on
+  `periodStart === current period`, so a stale budget produces **no** pace insight rather than one
+  projected against the wrong window. Whether the app should roll the row forward automatically is the
+  budgets module's question (1.3.1), not the insight job's.
+
+- **Never persist a suppressed notification: it burns the `UNIQUE (user_id, dedupe_key)` forever.**
+  `notifications` dedupes on `(user_id, dedupe_key)`, so writing a row for a condition we *decided not
+  to send* (rate-limited, rule off) makes that condition permanently undeliverable once the reason
+  clears — the notification equivalent of poisoning a cache. Only `SENT` and `QUEUED` are rows;
+  suppression is reported in the run summary. `QUEUED` **does** occupy the key, correctly: quiet hours
+  delay, they do not drop.
+
 - **An `HH:MM` quiet-hours window that crosses midnight inverts if you write the obvious comparison.**
   `time >= start && time < end` is correct for `12:00–13:00` and exactly **backwards** for the common
   case `21:00–08:00`, where it mutes the daytime and alerts at 3 a.m. The crossing case needs

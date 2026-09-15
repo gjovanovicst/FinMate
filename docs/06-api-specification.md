@@ -2540,6 +2540,14 @@ declines to declare union arms with no producer (§5.5). The dashboard rail is `
 rather than `Dashboard.insights(limit:)`, because the `dashboard` query belongs to `budgeting` and is
 not built out to the docs/06 §4.1 shape yet — moving the field is a later edit, not a client change.
 
+**A budget belongs to one period at a time.** `budgets_unique_scope` allows a single row per scope,
+and nothing rolls `period_start` forward on its own, so the pace generator only speaks for a Household
+whose budget is anchored in the current period. A stale row is filtered out rather than projected
+against the wrong window; whether the app should roll it automatically belongs to the budgets module
+(1.3.1), and the `BUDGET_THRESHOLD` alert kind has no insight producer for the same reason — the
+`BUDGET_PACE` insight maps to `PACE_OVERRUN`, and a "% of budget used" alert would be a second
+generator.
+
 **Two facts the generators do not yet see, recorded rather than hidden.** `committedMinor` is `0n` for
 every budget: per-budget committed charges need the recurring rules of 3.3.3, and the Household-level
 `reserved` figure belongs to the Household budget scope, so the pace insight is currently a **pace-only**
@@ -2570,7 +2578,13 @@ contract. The pipeline is docs/05 §9's, and the storage is docs/03 §4's two ta
 | `AlertRule.version` | **Not implemented** | docs/06 §3.2 declares `version: Int!` and `AlertRuleUpdateInput.version`, but neither docs/03 §4's DDL nor the migrated table has the column. Rather than invent a migration for optimistic concurrency on a settings list nobody edits concurrently, the field is omitted and this line is the record. Adding it later is one migration and one input field. |
 | Notification copy | **English only, rendered server-side** | `notifications.title`/`body` are `TEXT NOT NULL` and the API has no i18n catalogue — the web's lives in `apps/web`. This is a **Definition-of-Done breach** of the same shape as `fm-money`'s hardcoded label: it is recorded here, and the fix is either a shared catalogue in a package or storing a key plus payload parameters and rendering at read time. `NotificationPreferencesInput.locale` exists and is not yet honoured. |
 | `EMAIL`/`PUSH`/`WEB_PUSH` | Rows are written; nothing is sent | Channel fan-out is task 3.1.3. The evaluator already decides per channel, so 3.1.3 changes only the writer. |
-| Rule CRUD | `alerts`, `createAlertRule`, `updateAlertRule` | Without one, the evaluator is unconfigurable and unverifiable end to end. The settings **screen** is 3.1.4. |
+| Rule CRUD | `alerts`, `createAlertRule`, `updateAlertRule`, `deleteAlertRule` | Without one, the evaluator is unconfigurable and unverifiable end to end. The settings **screen** is 3.1.4. |
+| Defaults | Two rows written by `ensureDefaultRules` on the first run (`PACE_OVERRUN`, `UNUSUAL_SPEND`; `IN_APP`; active) | docs/02 §7.1 shows alerts arriving without the user visiting settings, so "no rules" cannot mean "no alerts". They are **rows, not hidden code defaults**, so the screen shows what is actually on and editing a rule edits the thing that decides. Written once, only for a Household that has configured nothing. |
+| `SUPPRESSED` decisions | **Not persisted** | `notifications` is `UNIQUE (user_id, dedupe_key)`. Writing a rate-limited row burns the key and makes that condition **permanently undeliverable** once the cap resets — the notification equivalent of poisoning a cache. Only `SENT` and `QUEUED` become rows; suppression is reported in the `runAlerts` summary instead. `QUEUED` occupies the key correctly: the row exists and will be delivered. |
+| Non-in-app channels | Stored `QUEUED`, never `SENT` | The evaluator's `SENT` means "deliverable". Only `IN_APP` can actually be delivered in this build, so an email/push row waits for 3.1.3's fan-out rather than claiming a delivery that has not happened. |
+| `markNotificationRead` | Returns `{ notification, unreadNotificationCount }` | The badge is on every screen; making it a second round trip is a badge that lags. `markAllNotificationsRead` returns how many rows changed. |
+| `updateNotificationPreferences` | **Not built** | `NotificationPreferencesInput` has no table (`docs/03 §4` defines none), and the settings screen is 3.1.4. Positive feedback is therefore on by default, which is F-22's stated intent. |
+| `runAlerts` | A mutation, not a scheduled job | docs/05 §8 defines `insights.generate` and `notifications.dispatch`; the worker and its scheduler do not exist, so this calls the **same** service method the worker will (insights first, then evaluation, in the pipeline's order) and is idempotent. |
 
 ---
 

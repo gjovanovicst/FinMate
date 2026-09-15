@@ -47,6 +47,64 @@ enum AccountKind {
   OTHER
 }
 
+input AlertRuleInput {
+  channels: [NotificationChannel!]
+  isActive: Boolean = true
+  kind: String!
+
+  """
+  `{ "start": "21:00", "end": "08:00" }` in the Household timezone; `null` = none.
+  """
+  quietHours: JSON
+
+  """Kind-specific thresholds. `{}` means "the documented defaults"."""
+  threshold: JSON
+}
+
+type AlertRuleModel {
+  channels: [NotificationChannel!]!
+  createdAt: DateTime!
+  id: ID!
+  isActive: Boolean!
+
+  """
+  BUDGET_THRESHOLD · PACE_OVERRUN · RECURRING_DUE · UNUSUAL_SPEND · GOAL_REACHED. An open string: the column is `TEXT` and a new kind must not need a schema change.
+  """
+  kind: String!
+  quietHours: JSON
+  threshold: JSON!
+  updatedAt: DateTime!
+}
+
+input AlertRuleUpdateInput {
+  channels: [NotificationChannel!]
+  id: ID!
+  isActive: Boolean
+  kind: String
+  quietHours: JSON
+  threshold: JSON
+}
+
+type AlertRunModel {
+  """Conditions already sent — the dedupe key did its job."""
+  duplicates: Int!
+
+  """Insights the generators wrote in this run."""
+  insightsCreated: Int!
+
+  """Notification rows written (delivered or queued)."""
+  notificationsCreated: Int!
+
+  """Deferred to the end of quiet hours — queued, not dropped."""
+  queued: Int!
+
+  """Held back by the daily cap."""
+  rateLimited: Int!
+
+  """Nothing configured for the condition, or the user opted out."""
+  suppressed: Int!
+}
+
 """
 One AI alternative the model ranked below its choice (docs/04 §6.2, top 2–3).
 """
@@ -914,6 +972,7 @@ type Mutation {
     """
     openingBalance: Money
   ): Account!
+  createAlertRule(input: AlertRuleInput!): AlertRuleModel!
   createCategory(
     """A user-authored hint passed to the classifier (docs/04 §6.3)."""
     aiDescription: String
@@ -1013,6 +1072,9 @@ type Mutation {
     """
     tagIds: [ID!]
   ): TransactionModel!
+
+  """Returns false when the id is not this Household's rule."""
+  deleteAlertRule(id: ID!): Boolean!
   deleteBudget(id: ID!): Boolean!
 
   """
@@ -1060,6 +1122,14 @@ type Mutation {
     asOf: String
   ): InsightGenerationModel!
 
+  """Marks every unread notification read. Returns how many rows changed."""
+  markAllNotificationsRead: Int!
+
+  """
+  Marks one notification read and returns the new unread count, so the badge never needs a second round trip. Null when the row is not this user's.
+  """
+  markNotificationRead(id: ID!): NotificationReadModel
+
   """
   Move every Transaction from one counterparty to another, union their aliases, then delete the source. This is how a duplicate created before the fold rule existed is cleaned up.
   """
@@ -1089,6 +1159,16 @@ type Mutation {
   resolveReviewItem(input: ResolveReviewItemInput!): ResolveReviewItemSuccessModel!
 
   """
+  Generate the period insights, then evaluate them against the Household rules: dedupe, quiet hours and the daily cap are applied, and deliverable notifications are written. Idempotent — the dedupe key is enforced by UNIQUE (user_id, dedupe_key).
+  """
+  runAlerts(
+    """
+    The local day to generate and evaluate for. Defaults to today in the Household zone.
+    """
+    asOf: String
+  ): AlertRunModel!
+
+  """
   Write the shipped starter category tree and its keywords into this Household (F-13 step 1). One transaction, and idempotent by (parent, name) — a second call reuses what is already there instead of creating a duplicate tree.
   """
   seedStarterCategories: StarterSeedResultModel!
@@ -1116,6 +1196,9 @@ type Mutation {
   Soft-delete the Transactions a capture just wrote — docs/02 §3's undo toast, in ONE call and all-or-nothing, because a toast that only half-applied would leave the user unable to tell which rows survived. Returns how many were actually undone. Never a hard delete: `deleted_at` is set and the row and its audit trail survive (docs/03 §3.4). Ids outside this Household match nothing rather than deleting another Household's rows.
   """
   undoCapture(transactionIds: [ID!]!): Int!
+
+  """Returns null when the id is not this Household's rule."""
+  updateAlertRule(input: AlertRuleUpdateInput!): AlertRuleModel
   updateCategory(
     aiDescription: String
     color: String
@@ -1181,6 +1264,59 @@ type Mutation {
     periodStart: LocalDate
     rollover: Boolean = false
   ): BudgetModel!
+}
+
+"""
+docs/03 §4's CHECK constraint. Only `IN_APP` is delivered in this build — the fan-out is 3.1.3 — but a rule may name the others and the evaluator already decides per channel.
+"""
+enum NotificationChannel {
+  EMAIL
+  IN_APP
+  PUSH
+  WEB_PUSH
+}
+
+type NotificationConnection {
+  edges: [NotificationModelEdge!]!
+  pageInfo: PageInfo!
+
+  """
+  Total rows matching the filter, ignoring the page window. Useful for "23 transactions" style labels, and cheap because it is a scoped COUNT.
+  """
+  totalCount: Int!
+}
+
+type NotificationModel {
+  body: String!
+  channel: NotificationChannel!
+  createdAt: DateTime!
+  id: ID!
+  insight: InsightModel
+  insightId: ID
+  readAt: DateTime
+  sentAt: DateTime
+  status: NotificationStatus!
+  title: String!
+}
+
+type NotificationModelEdge {
+  cursor: String!
+  node: NotificationModel!
+}
+
+type NotificationReadModel {
+  notification: NotificationModel!
+  unreadNotificationCount: Int!
+}
+
+"""
+`QUEUED` is what quiet hours produce: delayed by docs/05 §8's dispatch job, never dropped.
+"""
+enum NotificationStatus {
+  FAILED
+  QUEUED
+  SENT
+  SUPPRESSED
 }
 
 """
@@ -1295,6 +1431,11 @@ type Query {
   ): AccountConnection!
 
   """
+  The Household alert rules, including the documented defaults once anything has run.
+  """
+  alerts: [AlertRuleModel!]!
+
+  """
   Budgets with consumption for their CURRENT period. Spend includes splits and the whole Category subtree, and counts only CONFIRMED transactions (invariants I-5, I-7).
   """
   budgets(today: LocalDate): [BudgetModel!]!
@@ -1352,6 +1493,14 @@ type Query {
     """Substring match on the name."""
     search: String
   ): MerchantConnection!
+
+  """The notification centre, newest first, keyset-paged on the UUIDv7 id."""
+  notifications(
+    """Cursor from a previous page."""
+    after: String
+    first: Int
+    unreadOnly: Boolean = false
+  ): NotificationConnection!
 
   """
   How far through onboarding this Household is, and what it already has. The wizard resumes from `step`; the counts let it say what a re-run would do before doing it.
@@ -1421,6 +1570,9 @@ type Query {
     """Inclusive upper bound."""
     to: LocalDate
   ): TransactionConnection!
+
+  """The badge count for the current user."""
+  unreadNotificationCount: Int!
 }
 
 type RejectedRowModel {

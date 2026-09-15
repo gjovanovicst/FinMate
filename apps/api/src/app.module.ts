@@ -11,6 +11,7 @@ import { AccountsModule } from './modules/accounts/accounts.module';
 import { BudgetingModule } from './modules/budgeting/budgeting.module';
 import { ClassificationModule } from './modules/classification/classification.module';
 import { InsightsModule } from './modules/insights/insights.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { TaxonomyModule } from './modules/taxonomy/taxonomy.module';
@@ -40,6 +41,8 @@ import { PrismaModule } from './prisma/prisma.module';
     // Deterministic insight generation (docs/01 F-20/F-22). Composes `budgeting` rather than
     // recomputing consumption, so the feed and the dashboard cannot disagree.
     InsightsModule,
+    // Alerts and notifications (F-22). Imports `insights` — one direction only, per docs/05 §3.
+    NotificationsModule,
   ],
   controllers: [HealthController],
   providers: [

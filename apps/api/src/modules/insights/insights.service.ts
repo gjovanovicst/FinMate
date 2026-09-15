@@ -242,6 +242,10 @@ export class InsightsService {
     unusual: readonly UnusualSpendFact[];
   } {
     // ---- budgets: only the ones whose period *is* the current month, and only expense-side ones.
+    //
+    // `budgets_unique_scope` allows one budget row per scope, and nothing rolls its `period_start`
+    // forward — so a Household that has not touched its budget this month has a row anchored in an
+    // earlier period, and this filter is what stops the insight projecting against a stale window.
     const budgetFacts: BudgetPaceFact[] = budgets
       .filter(
         (budget) =>
