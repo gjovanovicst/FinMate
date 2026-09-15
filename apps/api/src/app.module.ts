@@ -17,6 +17,7 @@ import { InsightsModule } from './modules/insights/insights.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
+import { RecurringModule } from './modules/recurring/recurring.module';
 import { TaxonomyModule } from './modules/taxonomy/taxonomy.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -47,6 +48,9 @@ import { PrismaModule } from './prisma/prisma.module';
     // Saving goals (F-18). Reads Accounts for the Account a goal is set aside in; it writes no
     // Transactions, because a contribution is a `goal_contribution` and not spending (docs/02 §4.13).
     GoalsModule,
+    // Recurring rules (F-16). Posts through the ledger's own create path, so a materialised row gets
+    // the same validation and idempotency as a hand-typed one.
+    RecurringModule,
     // Alerts and notifications (F-22). Imports `insights` — one direction only, per docs/05 §3.
     NotificationsModule,
     // Analytics (F-20). Reads `SpendReadModel` rather than aggregating again, so the chart and the

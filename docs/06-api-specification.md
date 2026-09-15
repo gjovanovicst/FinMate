@@ -722,17 +722,18 @@ type RecurringRule {
   merchantId: UUID
   merchant: Merchant
   description: String!
-  rrule: String!                     # RFC 5545
-  nextOccurrenceOn: Date!
-  endsOn: Date
+  rrule: String!                     # RFC 5545, restricted to the subset §5.8.1 lists
+  nextOccurrenceOn: LocalDate!       # was `Date`: the schema has no `Date` scalar
+  endsOn: LocalDate
   autoConfirm: Boolean!
-  isDetected: Boolean!
+  isDetected: Boolean!               # 3.3.4 fills this; nothing writes true yet
   isActive: Boolean!
-  generatedCount: Int!
-  upcomingOccurrences: [Date!]!      # next 6, expanded server-side
-  version: Int!
+  generatedCount: Int!               # COUNT of this rule's Transactions, derived on read
+  upcomingOccurrences: [LocalDate!]! # next 6, expanded server-side
   createdAt: DateTime!
   updatedAt: DateTime!
+  # `version: Int!` was drawn here and is deliberately NOT implemented: `recurring_rules` has no such
+  # column (only `transactions` does). Recorded in §5.8.1, as for `SavingGoal` (§5.7) and `AlertRule`.
 }
 ```
 
@@ -2379,7 +2380,7 @@ type GoalContributionSuccess {
 | Deleting a goal | Soft delete; its contributions stay attached | docs/03 §4 keeps financial rows, and the contributed total is history a Phase 5 audit view can recover. `deleteSavingGoal` reads the goal **before** removing it so the response describes what was removed. |
 | Not built | `Dashboard.goals` (§4.1) and the `GoalStatus`-driven insight/alert producers | The goals surface ships as its own queries and mutations; a dashboard tile and the `GOAL_REACHED` producer are separate tasks, recorded in AGENTS. |
 
-### 5.8 `materialiseRecurring`
+### 5.8 `materialiseRecurring` (task 3.3.3)
 
 Called by the `recurring.materialise` BullMQ job ([05 §8](05-architecture.md)) **and** available to the
 client for the "post it now" affordance on an upcoming bill.
@@ -2408,6 +2409,22 @@ type RecurringSkip { ruleId: UUID! reason: String! }
 Materialised transactions are `source = RECURRING`; `status = CONFIRMED` when `auto_confirm` is true,
 otherwise `PENDING` with `needs_review = true` — a subscription the household did not actually pay this
 month must not silently consume budget (I-7).
+
+#### 5.8.1 Implementation notes (task 3.3.3)
+
+| Decision | Built | Why |
+|---|---|---|
+| `input.idempotencyKey` | **Not in the input** | A materialised Transaction's key is derived from `(ruleId, occurrence date)`, so a retry is safe *whatever* the caller sends — including the same job running twice under two different keys, which a batch key cannot prevent. `wasReplayed` reports when a run posted nothing because an earlier one already had. This is strictly stronger than the document asked for. |
+| `previewed: [Transaction!]!` | `[RecurringPreviewModel!]!` | A preview has no id and no `createdAt`; declaring it a `Transaction` would mean inventing both for a row that does not exist. The preview carries exactly what the client shows: rule, date, account, amount, description and the status it *would* be written with. |
+| `Transaction.recurringRuleId` | Added | `transactions.recurring_rule_id` existed with no way to read it. It links a posted bill back to its standing order, and `generatedCount` is derived from it. |
+| The RRULE subset | `FREQ` (DAILY/WEEKLY/MONTHLY/YEARLY), `INTERVAL`, `BYMONTHDAY`, `BYDAY`, `COUNT`, `UNTIL`; `WKST` accepted and ignored | A full RFC 5545 implementation is a dependency (ADR-004) and thousands of lines for `BYSETPOS`/`BYYEARDAY` this model has no column for. A part outside the subset is **refused with a reason**, never ignored: silently dropping `BYSETPOS` produces dates nobody asked for. The stored text is the **canonical** form, so two equal rules look equal and a client cannot smuggle in an unsupported part. |
+| A month without the requested day | **Skipped**, per RFC 5545 | `FREQ=MONTHLY;BYMONTHDAY=31` produces nothing in February. Rolling back to the 28th would move a bill the household budgets for. |
+| Dates, never instants | Everything is a `LocalDate` (I-2) | A rule on the 15th is the 15th on both sides of a DST transition; the instant is derived once, on the write path, from `occurred_local_date`. docs/10 §5.3's "expands across DST" is a property of the representation rather than a special case. |
+| `COUNT` | Compared against `generatedCount` (the rows the rule posted), not against expansion steps | A paused or retried run must not lose an occurrence, and the column that records what actually happened is the ledger. A rule that has used up its `COUNT` retires itself. |
+| Catch-up | Every occurrence inside the rule's own window is posted, then the rule retires | A job that missed two months still owes those rows; the RRULE plus `ends_on` define exactly which occurrences exist. Dropping them would silently lose months of a bill the household paid. |
+| `next_occurrence_on` when a rule finishes | Set to the **last occurrence it posted**, not left stale | A stale date makes the row read as if that occurrence were still pending, and reactivating the rule would re-post from there. |
+| The write path | `TransactionsService.create` | A materialised row gets I-3's category/kind check, ADR-011's currency, the local-day derivation and I-10's idempotency from the same code a hand-typed row uses. |
+| Not built | The `recurring.materialise` **job** (no worker), subscription **detection** (`is_detected`, `confirmDetectedSubscription`, 3.3.4), and the `RECURRING_DUE` alert producer | The mutation calls exactly the service method the job will, so wiring the scheduler later changes nothing here. |
 
 ### 5.9 `commitReceipt` and `reconcileReceipt`
 

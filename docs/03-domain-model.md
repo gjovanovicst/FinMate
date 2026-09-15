@@ -815,6 +815,8 @@ test in [10](10-testing-and-quality.md).
 | Budget remaining | Budget − consumption | On read, Redis-cached 60 s |
 | Safe-to-spend today | Budget − spent − remaining recurring obligations, spread over remaining days | On read |
 | Month-end projection | Pace over elapsed days, adjusted for known recurring | On read |
+| RecurringRule `generatedCount` | `COUNT(transactions WHERE recurring_rule_id)` | On read |
+| RecurringRule `next_occurrence_on` | Advanced by the materialiser to the next unposted occurrence, or pinned to the **last posted** one when the rule finishes | Stored, but derived from the rule plus what it has posted |
 | Savings required per month | (target − contributed) / months remaining, rounded **up** | On read |
 | SavingGoal `ACHIEVED` | Σ `goal_contributions` ≥ `target`, recomputed on every write that can change it | Stored, but derived — deleting the contribution that crossed the target puts the goal back to `ACTIVE`. `ARCHIVED` is the one status a person chooses and it is never overridden |
 

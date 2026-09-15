@@ -70,6 +70,19 @@ export interface CreateTransactionInput {
   readonly status?: TransactionStatus;
   readonly source?: TransactionSource;
   readonly categorySource?: CategorySource | null;
+  /**
+   * The RecurringRule that generated this row, when one did (F-16's materialisation, `source:
+   * RECURRING`). It is written on the create path so the link is atomic with the row — patching it
+   * afterwards would leave a window in which a materialised Transaction has no rule, and
+   * `generatedCount` is derived from exactly this column.
+   */
+  readonly recurringRuleId?: string | null;
+  /**
+   * Whether the row belongs to I-8's **blocking** review lane. Only the recurring materialiser sets it
+   * today: a subscription that may not have been paid this month is posted `PENDING` and must appear
+   * for confirmation, while a row the user typed goes through the classification gate instead.
+   */
+  readonly needsReview?: boolean;
   readonly splits?: readonly TransactionSplitInput[];
   readonly idempotencyKey?: string | null;
   /** The Tag set to attach. Omitted means "no tags"; see `update` for the replace-vs-omit rule. */
@@ -297,6 +310,8 @@ export interface TransactionRowShape {
   description: string;
   note: string | null;
   raw_input: string | null;
+  /** Set when a RecurringRule generated the row (F-16's materialisation). */
+  recurring_rule_id: string | null;
   occurred_at: Date;
   occurred_local_date: Date;
   status: string;
@@ -573,6 +588,7 @@ export class TransactionsService {
         note: row.note,
         needsReview: row.needs_review,
         source: row.source,
+        recurringRuleId: row.recurring_rule_id,
         id: row.id,
       })),
     );
@@ -664,6 +680,8 @@ export class TransactionsService {
           status: input.status ?? TransactionStatus.CONFIRMED,
           source: input.source ?? TransactionSource.MANUAL,
           category_source: input.splits?.length ? null : (input.categorySource ?? null),
+          recurring_rule_id: input.recurringRuleId ?? null,
+          needs_review: input.needsReview ?? false,
           idempotency_key: input.idempotencyKey ?? null,
           // Tags are written through the parent Transaction's nested write: `transaction_tags` has
           // no `household_id`, and the tenancy guard refuses every direct operation on it because
@@ -2360,6 +2378,7 @@ export class TransactionsService {
       occurredLocalDate: row.occurred_local_date.toISOString().slice(0, 10),
       status: row.status as TransactionStatus,
       source: row.source as TransactionSource,
+      recurringRuleId: row.recurring_rule_id,
       categorySource: row.category_source as CategorySource | null,
       confidence: row.confidence === null ? null : Number(row.confidence),
       needsReview: row.needs_review,

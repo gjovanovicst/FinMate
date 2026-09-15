@@ -90,6 +90,20 @@ export {
 } from './analytics';
 
 export {
+  RECURRENCE_FREQUENCIES,
+  WEEKDAYS,
+  expandOccurrences,
+  formatRRule,
+  nextOccurrenceOn,
+  parseRRule,
+  type RRuleError,
+  type RRuleParse,
+  type RRuleSpec,
+  type RecurrenceFrequency,
+  type Weekday,
+} from './recurring';
+
+export {
   GOAL_STATUSES,
   ceilDiv,
   goalProgress,

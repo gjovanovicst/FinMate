@@ -1046,6 +1046,34 @@ A calendar day in the Household timezone, formatted YYYY-MM-DD (docs/03 §3.2).
 """
 scalar LocalDate
 
+input MaterialiseRecurringInput {
+  """Defaults to today in the Household timezone."""
+  asOf: LocalDate
+
+  """Show what would be posted and write nothing."""
+  dryRun: Boolean = false
+
+  """Empty or absent means every due rule of the Household."""
+  ruleIds: [UUID!]
+}
+
+type MaterialiseRecurringResultModel {
+  """The rows that were written."""
+  created: [TransactionModel!]!
+  newNextOccurrences: [RecurringOccurrenceModel!]!
+
+  """
+  What a `dryRun` **would** write. A preview is not a Transaction — it has no id and no createdAt — so it is modelled as one rather than faking a ledger row (docs/06 §5.8.1).
+  """
+  previewed: [RecurringPreviewModel!]!
+  skipped: [RecurringSkipModel!]!
+
+  """
+  True when every due occurrence had already been posted. Idempotency is per (rule, occurrence) through `transactions.idempotency_key`, which is stronger than a batch key: any retry of the same date cannot double-post.
+  """
+  wasReplayed: Boolean!
+}
+
 """
 An alternative spelling that resolves to this Merchant. Stored folded (lower case, no diacritics) so it matches however the user types it.
 """
@@ -1264,6 +1292,11 @@ type Mutation {
   ): MerchantModel!
 
   """
+  Create a standing order. The schedule is parsed and canonicalised, and an unsupported part is refused rather than ignored. The currency is the Household ledger currency (ADR-011).
+  """
+  createRecurringRule(input: RecurringRuleCreateInput!): RecurringRuleModel!
+
+  """
   Save a rule. The document is validated by the rules engine, so an unevaluable rule is refused here rather than silently skipped on every future parse.
   """
   createRule(
@@ -1361,6 +1394,11 @@ type Mutation {
   deleteMerchant(id: ID!): Boolean!
 
   """
+  Soft-delete a rule. The Transactions it posted are kept — they are the ledger.
+  """
+  deleteRecurringRule(id: String!): Boolean!
+
+  """
   Soft-delete. A rule is a decision the user made, and F-31 has to be able to explain why a past Transaction was categorised the way it was.
   """
   deleteRule(id: ID!): Boolean!
@@ -1407,6 +1445,11 @@ type Mutation {
   Marks one notification read and returns the new unread count, so the badge never needs a second round trip. Null when the row is not this user's.
   """
   markNotificationRead(id: ID!): NotificationReadModel
+
+  """
+  Post every due occurrence (docs/06 §5.8). Idempotent per (rule, occurrence) through the Transactions’ own idempotency key, so a retry cannot double-post; `dryRun` shows what would be written and writes nothing. A rule without `autoConfirm` posts PENDING rows flagged for review.
+  """
+  materialiseRecurring(input: MaterialiseRecurringInput!): MaterialiseRecurringResultModel!
 
   """
   Move every Transaction from one counterparty to another, union their aliases, then delete the source. This is how a duplicate created before the fold rule existed is cleaned up.
@@ -1501,6 +1544,11 @@ type Mutation {
   Merge the given fields into the stored preferences; omitted fields are unchanged.
   """
   updateNotificationPreferences(input: NotificationPreferencesInput!): NotificationPreferencesModel!
+
+  """
+  Patch a rule. An absent field is left alone; `clearEndsOn`/`clearCategory` unset one. A changed schedule re-anchors `nextOccurrenceOn` from the new start.
+  """
+  updateRecurringRule(input: RecurringRuleUpdateInput!): RecurringRuleModel!
   updateRule(actions: JSON, conditions: JSON, id: ID!, isActive: Boolean, name: String, priority: Int, stopOnMatch: Boolean): RuleModel!
 
   """
@@ -1884,6 +1932,11 @@ type Query {
   proposeEqualSplits(amount: Money!, categoryIds: [ID!]!): [ProposedSplit!]!
 
   """
+  The Household’s standing orders, soonest next occurrence first. `activeOnly` defaults to true; false lists deactivated and deleted ones too, because deactivating keeps the history.
+  """
+  recurringRules(activeOnly: Boolean = true): [RecurringRuleModel!]!
+
+  """
   The blocking lane (invariant I-8): Transactions with no category or a calibrated confidence below 0.60, oldest-recorded first so nothing starves. The advisory band is not here — those rows are applied and valid (docs/04 §7).
   """
   reviewQueue(
@@ -1967,6 +2020,128 @@ type Query {
 
   """The badge count for the current user."""
   unreadNotificationCount: Int!
+
+  """
+  The rules with an occurrence inside the next `withinDays` days — docs/02 §4.14’s "next 30 days" line. A rule with nothing in the window is omitted rather than returned empty.
+  """
+  upcomingRecurring(withinDays: Int = 30): [RecurringRuleModel!]!
+}
+
+type RecurringOccurrenceModel {
+  """Null when the rule has finished."""
+  nextOccurrenceOn: LocalDate
+  ruleId: UUID!
+}
+
+"""
+One occurrence a rule would post, as a preview — nothing exists in the ledger yet.
+"""
+type RecurringPreviewModel {
+  accountId: UUID!
+  amount: Money!
+  description: String!
+  occurredOn: LocalDate!
+  ruleId: String!
+
+  """
+  The status the row would be written with: CONFIRMED when `autoConfirm`, else PENDING and flagged for review (I-7, I-8).
+  """
+  status: String!
+}
+
+input RecurringRuleCreateInput {
+  accountId: UUID!
+
+  """The currency must be the Household ledger currency (ADR-011)."""
+  amount: Money!
+  autoConfirm: Boolean = false
+  categoryId: UUID
+  description: String!
+  endsOn: LocalDate
+
+  """EXPENSE or INCOME."""
+  kind: String!
+  merchantId: UUID
+
+  """
+  RFC 5545, restricted to FREQ (DAILY/WEEKLY/MONTHLY/YEARLY), INTERVAL, BYMONTHDAY, BYDAY, COUNT and UNTIL. Anything else is refused rather than silently ignored.
+  """
+  rrule: String!
+
+  """
+  The first occurrence. Defaults to the first occurrence on or after today.
+  """
+  startsOn: LocalDate
+}
+
+"""
+A standing order: an amount that repeats on an RRULE, and the next date it will be posted. Materialised Transactions are `source = RECURRING` and carry this rule’s id.
+"""
+type RecurringRuleModel {
+  accountId: UUID!
+
+  """The Account’s name, for the card."""
+  accountName: String
+  amount: Money!
+
+  """
+  When true a materialised row is CONFIRMED; when false it is PENDING **and** flagged for review, because a subscription the household did not pay must not silently consume budget.
+  """
+  autoConfirm: Boolean!
+  categoryId: UUID
+  createdAt: DateTime!
+  description: String!
+
+  """The last date this rule may post."""
+  endsOn: LocalDate
+
+  """How many Transactions this rule has posted."""
+  generatedCount: Int!
+  id: String!
+  isActive: Boolean!
+
+  """Inferred from history rather than created by the user (3.3.4)."""
+  isDetected: Boolean!
+
+  """EXPENSE or INCOME (I-3)."""
+  kind: String!
+  merchantId: UUID
+  nextOccurrenceOn: LocalDate!
+
+  """Canonical RFC 5545, restricted to the subset the API expands."""
+  rrule: String!
+
+  """The next few dates, expanded server-side."""
+  upcomingOccurrences: [LocalDate!]!
+  updatedAt: DateTime!
+}
+
+input RecurringRuleUpdateInput {
+  amount: Money
+  autoConfirm: Boolean
+  categoryId: UUID
+
+  """Detach the Category."""
+  clearCategory: Boolean
+
+  """Remove the end date."""
+  clearEndsOn: Boolean
+  description: String
+  endsOn: LocalDate
+
+  """Deactivating keeps the history (docs/02 §4.14)."""
+  isActive: Boolean
+  rrule: String
+  ruleId: UUID!
+  startsOn: LocalDate
+}
+
+type RecurringSkipModel {
+  """
+  Why nothing was posted: NOT_DUE, INACTIVE, ENDED or ALREADY_MATERIALISED.
+  """
+  reason: String!
+  ruleId: UUID!
 }
 
 type RejectedRowModel {
@@ -2430,6 +2605,11 @@ type TransactionModel {
 
   """The verbatim natural-language input."""
   rawInput: String
+
+  """
+  The RecurringRule that generated this row, when one did (`source: RECURRING`). It is what links a posted bill back to the standing order that produced it (F-16).
+  """
+  recurringRuleId: UUID
   source: TransactionSource!
   splits: [SplitModel!]!
   status: TransactionStatus!

@@ -3,7 +3,7 @@ import { Field, Float, ID, Int, ObjectType, registerEnumType } from '@nestjs/gra
 import type { Money } from '@finmate/domain';
 
 import { MoneyScalar } from '../../graphql/scalars/money.scalar';
-import { LocalDateScalar } from '../../graphql/scalars/uuid.scalar';
+import { LocalDateScalar, UuidScalar } from '../../graphql/scalars/uuid.scalar';
 import { Paginated } from '../../graphql/pagination';
 import { CategoryKind } from '../taxonomy/category.model';
 import { TagModel } from '../taxonomy/tag.model';
@@ -139,6 +139,14 @@ export class TransactionModel {
 
   @Field(() => TransactionSource)
   source!: TransactionSource;
+
+  @Field(() => UuidScalar, {
+    nullable: true,
+    description:
+      'The RecurringRule that generated this row, when one did (`source: RECURRING`). It is what links ' +
+      'a posted bill back to the standing order that produced it (F-16).',
+  })
+  recurringRuleId!: string | null;
 
   @Field(() => CategorySource, { nullable: true })
   categorySource!: CategorySource | null;
