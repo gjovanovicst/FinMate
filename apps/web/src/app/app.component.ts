@@ -357,6 +357,7 @@ export class AppComponent {
     { path: '/merchants', labelKey: 'nav.merchants', icon: '🏪', primary: false },
     { path: '/counterparties', labelKey: 'nav.counterparties', icon: '👤', primary: false },
     { path: '/tags', labelKey: 'nav.tags', icon: '🏷️', primary: false },
+    { path: '/rules', labelKey: 'nav.rules', icon: '⚙️', primary: false },
   ];
 
   /**

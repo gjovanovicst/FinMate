@@ -80,6 +80,12 @@ export const routes: Routes = [
     title: 'Kategorije',
   },
   {
+    path: 'rules',
+    canActivate: [authenticatedGuard],
+    loadComponent: () => import('./features/rules/rules.component').then((m) => m.RulesComponent),
+    title: 'Pravila',
+  },
+  {
     path: 'budgets',
     canActivate: [authenticatedGuard],
     loadComponent: () =>

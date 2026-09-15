@@ -232,5 +232,54 @@ export function filenameFromContentDisposition(header: string | null): string | 
   }
 }
 
+/** What an edit sheet's save actually has to do. */
+export interface EditPlan {
+  /** The category changed, so this is a **Correction** and carries a learning signal. */
+  readonly categoryChanged: boolean;
+  /** Something other than the category changed, so a plain update still has work to do. */
+  readonly otherFieldsChanged: boolean;
+  /** The category to store, `null` meaning "clear it". */
+  readonly nextCategoryId: string | null;
+}
+
+/**
+ * Decide which write an edit sheet's Save needs.
+ *
+ * **This is the decision that routes a save to `correctTransaction` instead of `updateTransaction`**,
+ * and it is pure because getting it wrong is silent in both directions: send a category change
+ * through a plain update and the Correction is never recorded (the learning loop loses its signal,
+ * with no error anywhere); send an unchanged category through a correction and the `corrections`
+ * table fills with rows that say nothing changed.
+ *
+ * A split Transaction has no transaction-level category — its parts carry their own — so a category
+ * edit is not applicable and never counts as a correction (`categoryId` is passed as `null` and
+ * `current.categoryId` is `null` too, which this comparison treats as unchanged).
+ */
+export function planEdit(args: {
+  readonly current: TransactionRow;
+  readonly categoryId: string | null;
+  readonly description: string;
+  readonly occurredOn: string;
+  readonly status: TransactionStatus;
+  readonly note: string;
+  /** `null` for a split Transaction, whose total is fixed by its parts (I-1). */
+  readonly amountMinor: bigint | null;
+}): EditPlan {
+  const nextCategoryId = args.categoryId;
+
+  return {
+    categoryChanged: nextCategoryId !== args.current.categoryId,
+    otherFieldsChanged:
+      args.description !== args.current.description ||
+      args.occurredOn !== args.current.occurredLocalDate ||
+      args.status !== args.current.status ||
+      args.note.trim() !== (args.current.note ?? '') ||
+      // A `null` amount means "not editable here", never "no change to zero" — comparing it against
+      // the stored figure would report every split Transaction as edited on every save.
+      (args.amountMinor !== null && args.amountMinor !== BigInt(args.current.amount.amountMinor)),
+    nextCategoryId,
+  };
+}
+
 /** One screenful. Small enough to keep the first paint quick, large enough to fill a phone twice. */
 export const PAGE_SIZE = 25;

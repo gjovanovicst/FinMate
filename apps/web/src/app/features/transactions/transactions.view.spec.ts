@@ -8,6 +8,7 @@ import {
   groupByDay,
   hasActiveFilters,
   localNoonInstant,
+  planEdit,
   toQueryVariables,
   totalOf,
   type TransactionRow,
@@ -35,6 +36,93 @@ function row(overrides: Partial<TransactionRow> = {}): TransactionRow {
     ...overrides,
   };
 }
+
+describe('planEdit', () => {
+  const row = (over: Partial<TransactionRow> = {}): TransactionRow => ({
+    id: 'tx-1',
+    kind: 'EXPENSE',
+    status: 'CONFIRMED',
+    amount: { amountMinor: '200000', currency: 'RSD' },
+    description: 'Lidl',
+    note: null,
+    occurredAt: '2026-09-14T10:00:00.000Z',
+    occurredLocalDate: '2026-09-14',
+    categoryId: 'cat-food',
+    accountId: 'acct-1',
+    needsReview: false,
+    version: 1,
+    splits: [],
+    ...over,
+  });
+
+  const next = (over: Partial<Parameters<typeof planEdit>[0]> = {}) => ({
+    current: row(),
+    categoryId: 'cat-food',
+    description: 'Lidl',
+    occurredOn: '2026-09-14',
+    status: 'CONFIRMED' as const,
+    note: '',
+    amountMinor: 200000n,
+    ...over,
+  });
+
+  it('reports a category change as a correction and nothing else', () => {
+    const plan = planEdit(next({ categoryId: 'cat-house' }));
+    expect(plan).toEqual({
+      categoryChanged: true,
+      otherFieldsChanged: false,
+      nextCategoryId: 'cat-house',
+    });
+  });
+
+  it('clearing the category is a correction too', () => {
+    // `null` means "clear it", and a cleared category is exactly the kind of change the review queue
+    // and the learning loop care about.
+    const plan = planEdit(next({ categoryId: null }));
+    expect(plan.categoryChanged).toBe(true);
+    expect(plan.nextCategoryId).toBeNull();
+  });
+
+  it('reports an unchanged category as no correction, so corrections stay meaningful', () => {
+    expect(planEdit(next()).categoryChanged).toBe(false);
+    expect(planEdit(next()).otherFieldsChanged).toBe(false);
+  });
+
+  it('separates a plain edit from a correction', () => {
+    const plan = planEdit(next({ description: 'Lidl Zemun' }));
+    expect(plan.categoryChanged).toBe(false);
+    expect(plan.otherFieldsChanged).toBe(true);
+  });
+
+  it('reports both when both changed, so neither write is skipped', () => {
+    const plan = planEdit(next({ categoryId: 'cat-house', description: 'Lidl Zemun' }));
+    expect(plan.categoryChanged).toBe(true);
+    expect(plan.otherFieldsChanged).toBe(true);
+  });
+
+  it('treats a trimmed-empty note as equal to no note', () => {
+    expect(planEdit(next({ note: '   ' })).otherFieldsChanged).toBe(false);
+    expect(planEdit(next({ note: 'kesa' })).otherFieldsChanged).toBe(true);
+  });
+
+  it('does not report a split transaction as edited when the amount is not editable', () => {
+    // A split Transaction's total is fixed by its parts (I-1), so the sheet passes `null`. Comparing
+    // `null` against the stored figure would mark every split row as edited on every save.
+    const plan = planEdit(
+      next({ current: row({ splits: [{ id: 's1', amount: { amountMinor: '200000', currency: 'RSD' }, categoryId: 'cat-food' }] }), amountMinor: null }),
+    );
+    expect(plan.otherFieldsChanged).toBe(false);
+  });
+
+  it('detects an amount change in bigint, with no float in between', () => {
+    expect(planEdit(next({ amountMinor: 200000n })).otherFieldsChanged).toBe(false);
+    expect(planEdit(next({ amountMinor: 200001n })).otherFieldsChanged).toBe(true);
+    // Past 2^53, where a `Number` comparison would start reporting "unchanged" for a real edit.
+    const huge = row({ amount: { amountMinor: '9007199254740993', currency: 'RSD' } });
+    expect(planEdit(next({ current: huge, amountMinor: 9_007_199_254_740_993n })).otherFieldsChanged).toBe(false);
+    expect(planEdit(next({ current: huge, amountMinor: 9_007_199_254_740_994n })).otherFieldsChanged).toBe(true);
+  });
+});
 
 describe('groupByDay', () => {
   it('groups rows by their local calendar day, preserving server order', () => {
