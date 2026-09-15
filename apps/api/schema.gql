@@ -48,6 +48,46 @@ enum AccountKind {
 }
 
 """
+One AI alternative the model ranked below its choice (docs/04 §6.2, top 2–3).
+"""
+type AlternativeModel {
+  categoryId: ID!
+
+  """Raw model confidence — not gated, not calibrated."""
+  confidence: Float!
+}
+
+"""
+One losing candidate from rules-engine or the keyword tier, recorded on every decision so a choice can be explained after the fact (docs/04 §5.3.5, P-3).
+"""
+type AuditCandidateModel {
+  """
+  True when an EXCLUDE keyword hard-blocked this category (docs/04 §5.4).
+  """
+  blocked: Boolean
+
+  """The category this candidate would have chosen."""
+  categoryId: ID
+
+  """An AI alternative’s raw confidence."""
+  confidence: Float
+  id: ID
+
+  """`RULE`, `KEYWORD`, `ENTITY`, `DEFAULT` or `AMOUNT`."""
+  kind: String!
+  matchMode: String
+  matchedTokens: Int
+
+  """A rule name, an entity name, a keyword."""
+  name: String
+
+  """`INCLUDE` or `EXCLUDE`."""
+  polarity: String
+  reason: String
+  score: Float
+}
+
+"""
 A derived, SIGNED money value: { amountMinor, currency }, where amountMinor may be negative. Read-only — balances are computed by the backend and never accepted as input (ADR-003).
 """
 scalar Balance
@@ -99,6 +139,31 @@ enum BudgetPeriod {
   QUARTERLY
   WEEKLY
   YEARLY
+}
+
+"""
+The capture preview (docs/06 §5.1). Nothing in the ledger changed; one audit row per fragment was written.
+"""
+type CaptureParseResultModel {
+  """
+  True when the run was not the full pipeline — an outage, not an error (docs/04 §9).
+  """
+  degraded: Boolean!
+
+  """One per detected fragment, in input order."""
+  fragments: [ProposalModel!]!
+  latencyMs: Int!
+
+  """Binds this preview to a later captureCommit."""
+  parseId: ID!
+  rawText: String!
+  rung: DegradationRung!
+
+  """Text the segmenter could not attach to a fragment."""
+  unresolvedSegments: [String!]!
+
+  """True when a model contributed to at least one decision."""
+  usedAi: Boolean!
 }
 
 type CategoryKeywordModel {
@@ -160,6 +225,49 @@ enum CategorySource {
   IMPORT
   RULE
   USER
+}
+
+"""
+A `classification_decisions` row (F-31): who or what chose this category, with what confidence, and — when a model was involved — which provider, model and prompt version.
+"""
+type ClassificationDecisionModel {
+  aiModel: String
+
+  """`OPENAI`, `ANTHROPIC`, … when a model ran."""
+  aiProvider: String
+
+  """
+  The `candidates` JSONB blob, verbatim — losing candidates and parse metadata.
+  """
+  candidatesJson: String!
+  categoryId: ID
+
+  """
+  Calibrated, `numeric(4,3)`. The raw value lives in `candidates.rawConfidence`.
+  """
+  confidence: Float
+
+  """
+  Integer micro-units as a string, for the same reason Money is a string.
+  """
+  costMicros: String
+  createdAt: DateTime!
+  decidedBy: DecidedBy!
+  id: ID!
+
+  """
+  Null when no model call shipped — never 0, so “no model” stays distinguishable.
+  """
+  latencyMs: Int
+
+  """The folded form matching actually compared."""
+  normalizedInput: String!
+  promptVersion: Int
+  rawInput: String!
+  ruleId: ID
+
+  """Set once captureCommit writes the Transaction."""
+  transactionId: ID
 }
 
 """
@@ -264,6 +372,38 @@ A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date
 scalar DateTime
 
 """
+Which layer produced the category, cheapest first: RULE, KEYWORD, MERCHANT_DEFAULT, COUNTERPARTY_DEFAULT, AI, USER, FALLBACK. The pipeline never guesses: an unavailable model records FALLBACK, never AI (docs/04 §9).
+"""
+enum DecidedBy {
+  AI
+  COUNTERPARTY_DEFAULT
+  FALLBACK
+  KEYWORD
+  MERCHANT_DEFAULT
+  RULE
+  USER
+}
+
+"""
+How much of the pipeline actually ran. Rules and keywords are untouched by a provider outage, so capture still succeeds — the user can always record a transaction (docs/04 §9).
+"""
+enum DegradationRung {
+  DETERMINISTIC_ONLY
+  FULL_PIPELINE
+  MANUAL_ENTRY
+  RULES_KEYWORDS_ONLY
+}
+
+"""
+Direction as the parser read it. `UNKNOWN` means no direction signal at all, and `needsDirectionConfirmation` marks a refund/storno word where the sign must be asked about rather than guessed (docs/04 §3.1).
+"""
+enum FragmentKind {
+  EXPENSE
+  INCOME
+  UNKNOWN
+}
+
+"""
 INCLUDE routes input toward a Category; EXCLUDE hard-blocks it. Exclusions are not optional: without them "ulje" routes engine oil into Auto/Gorivo (docs/04 §5.4).
 """
 enum KeywordPolarity {
@@ -339,6 +479,32 @@ type Mutation {
   Add an INCLUDE or EXCLUDE keyword. EXCLUDE hard-blocks the category, which is what keeps "ulje" out of Auto/Gorivo (docs/04 §5.4).
   """
   addCategoryKeyword(categoryId: ID!, keyword: String!, matchMode: String = "WORD", polarity: KeywordPolarity!): Boolean!
+
+  """
+  Parse and classify without touching the ledger — writes one `classification_decisions` row per fragment for audit and cost (F-07, F-31). Safe to call on every keystroke pause.
+  """
+  captureParse(
+    """
+    `false` ⇒ rules and keywords only, no egress. The user-level consent switch (docs/08 §6.7).
+    """
+    allowAi: Boolean
+
+    """Defaults to the Household locale."""
+    locale: String
+
+    """Defaults to now."""
+    occurredAt: DateTime
+
+    """
+    The Household local day, when the client knows it. Derived from the instant and the Household timezone otherwise (docs/03 §3.2).
+    """
+    occurredLocalDate: LocalDate
+
+    """
+    One or more fragments separated by comma, `;`, newline, `+`, ` i ` or ` pa ` — `Lidl 2000, gorivo 3500, plata 150000` is three fragments (docs/04 §3).
+    """
+    text: String!
+  ): CaptureParseResultModel!
 
   """
   Create an Account. The currency is the Household ledger currency (ADR-011).
@@ -563,6 +729,61 @@ type PageInfo {
 }
 
 """
+One classified fragment (docs/06 §5.1). `needsReview` is the BLOCKING lane only — a null category or a calibrated confidence below 0.60 (docs/04 §7, invariant I-8). `advisory` is the derived 0.60–0.89 AI lane, which the nav badge must NOT count.
+"""
+type ProposalModel {
+  """
+  The advisory lane: an AI suggestion at 0.60–0.89. Applied and valid, shown on a secondary tab, never counted by the nav badge (docs/04 §7).
+  """
+  advisory: Boolean!
+  alternatives: [AlternativeModel!]!
+
+  """Minor units as a STRING. A JSON number would be a float (ADR-003)."""
+  amountMinor: String
+
+  """Everything considered and rejected, with its score or reason."""
+  candidates: [AuditCandidateModel!]!
+  categoryId: ID
+
+  """
+  The CALIBRATED confidence, three decimals — the gate consumes this, never the model’s self-reported number (ADR-009, docs/04 §6.4).
+  """
+  confidence: Float!
+  counterpartyId: ID
+  currency: String
+  decidedBy: DecidedBy!
+  description: String!
+
+  """Echo this back as `acceptedProposalId` on captureCommit."""
+  id: ID!
+  kind: FragmentKind!
+
+  """The Merchant/Counterparty the decision came from."""
+  merchantId: ID
+
+  """
+  A refund/storno word was present, so the direction must be asked about rather than guessed (docs/04 §3.1).
+  """
+  needsDirectionConfirmation: Boolean!
+
+  """The blocking review lane: `confidence < 0.60` OR no category (I-8)."""
+  needsReview: Boolean!
+
+  """ISO calendar day, `YYYY-MM-DD`."""
+  occurredOn: String
+
+  """Machine-readable reason; the UI localises its own copy."""
+  rationale: String!
+  rawText: String!
+
+  """The deciding rule, when one did."""
+  ruleId: ID
+
+  """Folded content tokens, as the matcher saw them."""
+  tokens: [String!]!
+}
+
+"""
 A split the backend computed, so the client never rounds money itself (ADR-003).
 """
 type ProposedSplit {
@@ -596,6 +817,11 @@ type Query {
   The Household category tree, flat, each node carrying its depth and breadcrumb. Ordered by sortOrder then name.
   """
   categories(kind: CategoryKind): [CategoryModel!]!
+
+  """
+  The classification audit trail for one Transaction (F-31): which layer chose the category, with what confidence, and — when a model was involved — which provider and prompt version.
+  """
+  classificationDecisions(transactionId: ID!): [ClassificationDecisionModel!]!
 
   """
   The Household’s Counterparties, name-ordered. Keyset-paginated on the UUIDv7 id. There is no global/shareable set: every Counterparty is the Household’s own row.

@@ -9,6 +9,7 @@ import { GraphqlModule } from './graphql/graphql.module';
 import { HealthController } from './health/health.controller';
 import { AccountsModule } from './modules/accounts/accounts.module';
 import { BudgetingModule } from './modules/budgeting/budgeting.module';
+import { ClassificationModule } from './modules/classification/classification.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { TaxonomyModule } from './modules/taxonomy/taxonomy.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -31,6 +32,8 @@ import { PrismaModule } from './prisma/prisma.module';
     TaxonomyModule,
     LedgerModule,
     BudgetingModule,
+    // The capture pipeline (docs/04 §2). Imports the pure packages; imports no AI adapter directly.
+    ClassificationModule,
   ],
   controllers: [HealthController],
   providers: [
