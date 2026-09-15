@@ -18,13 +18,72 @@
  */
 
 import { foldForMatching, foldTokens } from '@finmate/nlp';
-import { validateRule, type Rule, type RuleActions, type RuleOrigin, type TextFolder } from '@finmate/rules-engine';
+import {
+  validateRule,
+  type CategoryKeyword,
+  type Rule,
+  type RuleActions,
+  type RuleOrigin,
+  type TextFolder,
+} from '@finmate/rules-engine';
 
 /** The product's one fold and tokenizer, injected into the rules engine. */
 export const PIPELINE_TEXT_FOLDER: TextFolder = Object.freeze({
   fold: (value: string): string => foldForMatching(value),
   tokens: (value: string): readonly string[] => foldTokens(value),
 });
+
+/** The `rules` columns the **engine** needs. */
+export const RULE_ENGINE_SELECT = {
+  id: true,
+  name: true,
+  priority: true,
+  is_active: true,
+  stop_on_match: true,
+  conditions: true,
+  actions: true,
+  origin: true,
+  created_at: true,
+} as const;
+
+/** The `category_keywords` columns the engine's implicit priority-1000 tier needs. */
+export const KEYWORD_SELECT = {
+  id: true,
+  category_id: true,
+  keyword: true,
+  polarity: true,
+  match_mode: true,
+  weight: true,
+} as const;
+
+/** One `category_keywords` row as selected above. */
+export interface KeywordRow {
+  readonly id: string;
+  readonly category_id: string;
+  readonly keyword: string;
+  readonly polarity: string;
+  readonly match_mode: string;
+  readonly weight: unknown;
+}
+
+/**
+ * A keyword row → the engine's shape.
+ *
+ * `weight` is `numeric(4,2)`, a **score and not money**, so the Decimal→`number` conversion is
+ * correct here (ADR-003 governs `amount_minor`; see `CategoryKeyword.weight` in the engine's types).
+ * Shared by the pipeline and by `RulesService`'s conflict check so the two cannot score keywords
+ * differently — which would have made the guardrail's answer disagree with the pipeline's.
+ */
+export function toPipelineKeyword(row: KeywordRow): CategoryKeyword {
+  return {
+    id: row.id,
+    categoryId: row.category_id,
+    keyword: row.keyword,
+    polarity: row.polarity as CategoryKeyword['polarity'],
+    matchMode: row.match_mode as CategoryKeyword['matchMode'],
+    weight: Number(row.weight),
+  };
+}
 
 /** The `rules` row as Prisma returns it. Structurally typed so this file needs no generated import. */
 export interface RuleRow {

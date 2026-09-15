@@ -7,6 +7,20 @@ import { LocalDateScalar } from '../../graphql/scalars/uuid.scalar';
 import { toClassificationDecisionModel } from '../classification/classification.resolver';
 import { ClassificationService } from '../classification/classification.service';
 import {
+  CorrectionsService,
+  RuleShadowedError,
+  type CorrectionRow,
+} from '../classification/corrections.service';
+import { toRuleConflictModel, toRuleModel } from '../classification/rules.resolver';
+import {
+  CorrectTransactionInput,
+  CorrectTransactionSuccessModel,
+  CreateRuleFromCorrectionInput,
+  CreateRuleFromCorrectionResult,
+  type CreateRuleFromCorrectionSuccessModel,
+  type RuleConflictErrorModel,
+} from '../classification/rules.model';
+import {
   CaptureCommitInput,
   CaptureCommitResult,
   type CaptureCommitRejectedModel,
@@ -205,6 +219,7 @@ export class TransactionsResolver {
     // ledger already depends on the classification module for its pipeline, so this is the same
     // edge, not a new one.
     private readonly classification: ClassificationService,
+    private readonly corrections: CorrectionsService,
   ) {}
 
   @Query(() => TransactionConnection, {
@@ -409,6 +424,139 @@ export class TransactionsResolver {
     @CurrentHouseholdId() householdId: string,
   ): Promise<number> {
     return this.transactionsService.undoCapture(householdId, transactionIds);
+  }
+
+  @Mutation(() => CorrectTransactionSuccessModel, {
+    description:
+      'Correct one property of a Transaction and record the correction as a learning signal ' +
+      '(docs/06 §5.3, F-09). The change is applied first and the Correction second, so a Correction ' +
+      'never describes a change that did not happen. `synthesisedRule` is always returned when one can ' +
+      'be derived, so the UI can offer "Zapamti za ubuduće"; a rule is created here only when ' +
+      '`rememberForFuture` is true, the trigger is a resolved entity, and nothing shadows it.',
+  })
+  async correctTransaction(
+    @CurrentHouseholdId() householdId: string,
+    @Args('input', { type: () => CorrectTransactionInput }) input: CorrectTransactionInput,
+  ): Promise<CorrectTransactionSuccessModel> {
+    const outcome = await this.transactionsService.correctTransaction(householdId, {
+      transactionId: input.transactionId,
+      version: input.version ?? null as unknown as number,
+      field: input.field,
+      categoryId: input.categoryId ?? null,
+      merchantId: input.merchantId ?? null,
+      counterpartyId: input.counterpartyId ?? null,
+      amountMinor: input.amount === undefined || input.amount === null
+        ? null
+        : BigInt(input.amount.amountMinor),
+      rememberForFuture: input.rememberForFuture,
+    });
+
+    return {
+      transaction: outcome.transaction,
+      correction: {
+        id: outcome.correction.id,
+        transactionId: outcome.correction.transactionId,
+        field: outcome.correction.field as never,
+        fromValue: outcome.correction.fromValue,
+        toValue: outcome.correction.toValue,
+        wasAiSuggested: outcome.correction.wasAiSuggested,
+        ruleCreatedId: outcome.correction.ruleCreatedId,
+        ruleCreated: outcome.correction.ruleCreated ? toRuleModel(outcome.correction.ruleCreated) : null,
+        createdAt: outcome.correction.createdAt,
+      },
+      synthesisedRule: outcome.synthesis
+        ? {
+            name: outcome.synthesis.synthesis.proposal.name,
+            priority: outcome.synthesis.synthesis.proposal.priority,
+            conditions: outcome.synthesis.synthesis.proposal.conditions,
+            actions: outcome.synthesis.synthesis.proposal.actions,
+            origin: outcome.synthesis.synthesis.proposal.origin as never,
+            explanation: outcome.synthesis.synthesis.proposal.explanation,
+            explanationCode: outcome.synthesis.synthesis.proposal.explanationCode,
+            trigger: outcome.synthesis.synthesis.proposal.trigger as never,
+            confidence: outcome.synthesis.synthesis.proposal.confidence,
+          }
+        : null,
+      // The correction WAS applied, so a proposal conflict rides on the success payload rather than
+      // coming back as an error arm the client would read as "nothing happened".
+      ruleConflicts: (outcome.synthesis?.check.conflicts ?? []).map(toRuleConflictModel),
+    };
+  }
+
+  @Mutation(() => CreateRuleFromCorrectionResult, {
+    description:
+      'Save the rule a correction proposed (docs/06 §5.4). Without `overrides` the product’s own ' +
+      'proposal is saved, and a proposal that would be shadowed is refused with the conflicting rules ' +
+      'so the UI can offer to edit the winner instead (docs/04 §8.2). With `overrides` the user has ' +
+      'authored the rule, so it is saved and any conflict is recorded on the result.',
+  })
+  async createRuleFromCorrection(
+    @CurrentHouseholdId() householdId: string,
+    @Args('input', { type: () => CreateRuleFromCorrectionInput })
+    input: CreateRuleFromCorrectionInput,
+  ): Promise<typeof CreateRuleFromCorrectionResult> {
+    const correction: CorrectionRow = await this.corrections.require(householdId, input.correctionId);
+    const subject =
+      correction.transaction_id === null
+        ? null
+        : await this.transactionsService.correctionSubject(
+            householdId,
+            correction.transaction_id,
+            correction.to_value,
+          );
+
+    try {
+      const outcome = await this.corrections.createRuleFromCorrection(
+        householdId,
+        correction,
+        subject,
+        {
+          acceptProposal: input.acceptProposal,
+          overrides: input.overrides ?? null,
+        },
+      );
+
+      const success: CreateRuleFromCorrectionSuccessModel = {
+        rule: toRuleModel(outcome.rule),
+        correction: {
+          id: outcome.correction.id,
+          transactionId: outcome.correction.transactionId,
+          field: outcome.correction.field as never,
+          fromValue: outcome.correction.fromValue,
+          toValue: outcome.correction.toValue,
+          wasAiSuggested: outcome.correction.wasAiSuggested,
+          ruleCreatedId: outcome.correction.ruleCreatedId,
+          ruleCreated: outcome.correction.ruleCreated
+            ? toRuleModel(outcome.correction.ruleCreated)
+            : null,
+          createdAt: outcome.correction.createdAt,
+        },
+        cacheInvalidatedAt: outcome.cacheInvalidatedAt,
+        ruleConflicts: outcome.ruleConflicts.map(toRuleConflictModel),
+      };
+      return success;
+    } catch (error) {
+      if (error instanceof RuleShadowedError) {
+        const rejected: RuleConflictErrorModel = {
+          code: 'CONFLICT',
+          message: error.message,
+          proposal: {
+            name: error.proposal.name,
+            priority: error.proposal.priority,
+            conditions: error.proposal.conditions,
+            actions: error.proposal.actions,
+            origin: error.proposal.origin as never,
+            explanation: error.proposal.explanation,
+            explanationCode: error.proposal.explanationCode,
+            trigger: error.proposal.trigger as never,
+            confidence: error.proposal.confidence,
+          },
+          conflicting: error.conflicts.map(toRuleConflictModel),
+        };
+        return rejected;
+      }
+      throw error;
+    }
   }
 
   @Query(() => [ProposedSplit], {

@@ -25,6 +25,12 @@ import {
   type DecisionSnapshot,
   type FragmentResult,
 } from '../classification/classification.service';
+import {
+  CorrectionsService,
+  type CorrectionView,
+} from '../classification/corrections.service';
+import type { CorrectionSubject, RuleSynthesis } from '../classification/rule-synthesis';
+import { RulesService, type RuleView, type ShadowCheck } from '../classification/rules.service';
 import { applyConfidenceGate, resolveLaneThresholds } from '../classification/confidence-gate';
 import { TagsService } from '../taxonomy/tags.service';
 import { CaptureRejectionCode } from './capture-commit.model';
@@ -176,6 +182,31 @@ export interface CaptureCommitOutcome {
   readonly reviewQueueCount: number;
 }
 
+/** The fields a correction may change. `kind` is accepted by the API and refused by the service. */
+export type CorrectionField = 'category' | 'merchant' | 'counterparty' | 'kind' | 'amount';
+
+export interface CorrectTransactionInput {
+  readonly transactionId: string;
+  /** Optimistic concurrency. Required: a correction is a human edit on a row they just read. */
+  readonly version: number;
+  readonly field: CorrectionField;
+  readonly categoryId?: string | null;
+  readonly merchantId?: string | null;
+  readonly counterpartyId?: string | null;
+  readonly amountMinor?: bigint | null;
+  /** docs/06 §5.3's "Zapamti za ubuduće". Declining still records the Correction. */
+  readonly rememberForFuture?: boolean;
+}
+
+export interface CorrectTransactionOutcome {
+  readonly transaction: TransactionModel;
+  readonly correction: CorrectionView;
+  /** `null` when nothing could be derived — a legitimate outcome, not a failure. */
+  readonly synthesis: { readonly synthesis: RuleSynthesis; readonly check: ShadowCheck } | null;
+  /** The rule created because the user ticked "remember", if the narrow case applied. */
+  readonly ruleCreated: RuleView | null;
+}
+
 /** One just-written row that looks like a repeat of an existing Transaction. */
 export interface DuplicateSuspectRow {
   readonly clientRowId: string;
@@ -246,11 +277,66 @@ interface CaptureResolution {
   readonly confidence: CalibratedConfidence;
   readonly categorySource: CategorySource | null;
   readonly decisionId: string;
+  /** The deciding rule, when the pipeline chose one — for `hit_count` (docs/04 §8.2). */
+  readonly ruleId: string | null;
   readonly outcome: DecisionOutcome;
   readonly description: string;
   readonly rawText: string;
   readonly status: TransactionStatus;
   readonly needsReview: boolean;
+}
+
+/**
+ * A Transaction's value for the corrected field, as the string `corrections.from_value`/`to_value`
+ * hold it.
+ *
+ * Money crosses as a decimal **string** (`amount_minor` is a bigint, and a JSON/`TEXT` column cannot
+ * hold one) — the same rule the audit blob follows (ADR-003).
+ */
+function readField(
+  row: {
+    readonly category_id: string | null;
+    readonly merchant_id: string | null;
+    readonly counterparty_id: string | null;
+    readonly amount_minor: bigint;
+    readonly kind: string;
+  },
+  field: CorrectionField,
+): string | null {
+  switch (field) {
+    case 'category':
+      return row.category_id;
+    case 'merchant':
+      return row.merchant_id;
+    case 'counterparty':
+      return row.counterparty_id;
+    case 'amount':
+      return row.amount_minor.toString();
+    case 'kind':
+      return row.kind;
+  }
+}
+
+/**
+ * The same reading, off the API model the update returns.
+ *
+ * Two functions rather than one generic: the Prisma row and `TransactionModel` name their fields
+ * differently (`amount_minor: bigint` vs `amount: Money`), and a polymorphic reader that accepts both
+ * would be the place a `bigint` silently became a `number`.
+ */
+function readModelField(row: TransactionModel, field: CorrectionField): string | null {
+  switch (field) {
+    case 'category':
+      return row.categoryId;
+    case 'merchant':
+      return row.merchantId;
+    case 'counterparty':
+      return row.counterpartyId;
+    case 'amount':
+      return row.amount.amountMinor.toString();
+    case 'kind':
+      return row.kind;
+  }
 }
 
 /**
@@ -307,6 +393,10 @@ export class TransactionsService {
     private readonly prisma: PrismaService,
     private readonly tags: TagsService,
     private readonly classification: ClassificationService,
+    // The learning loop: `corrections` and `rules` are the classification module's tables, and the
+    // ledger asks for them rather than reaching into them (docs/05 §3).
+    private readonly corrections: CorrectionsService,
+    private readonly rules: RulesService,
   ) {}
 
   async list(
@@ -1008,6 +1098,17 @@ export class TransactionsService {
 
     committed.push(...written);
 
+    // docs/04 §8.2's decay signal. Counted HERE, not on the parse path: `captureParse` fires on a
+    // 250 ms keystroke debounce, so counting there would inflate `hit_count` by an order of magnitude
+    // and make "stale after 90 days" meaningless. A hit is a Transaction a rule actually decided.
+    await this.rules.recordHits(
+      householdId,
+      written
+        .map((row) => resolutions.find((resolution) => resolution.clientRowId === row.clientRowId))
+        .map((resolution) => resolution?.ruleId)
+        .filter((ruleId): ruleId is string => ruleId !== undefined && ruleId !== null),
+    );
+
     // docs/06 §5.2.2's third mechanism. Read-only and advisory: the rows are already committed, and
     // nothing here can un-commit them. A failure to compute a suspect must therefore not fail the
     // capture — the money is fine and a missing chip is not worth losing an entry over.
@@ -1192,6 +1293,7 @@ export class TransactionsService {
     let categorySource: CategorySource | null;
     let fromAi = false;
     let decisionId: string;
+    let ruleId: string | null = null;
     let outcome: DecisionOutcome;
     let description: string;
 
@@ -1201,6 +1303,9 @@ export class TransactionsService {
       // no review prompt for a decision a human just made.
       confidence = calibratedConfidenceFromStorage(1);
       categorySource = CategorySource.USER;
+      // A user's own choice is not a rule hit, even when the row arrived from a preview the pipeline
+      // had classified: the rule did not decide this Transaction, the person did.
+      ruleId = null;
       description = (row.description ?? snapshot?.rawInput ?? '').trim();
       if (snapshot !== null) {
         decisionId = snapshot.id;
@@ -1218,6 +1323,7 @@ export class TransactionsService {
       categorySource = categorySourceFor(snapshot.decidedBy);
       fromAi = snapshot.decidedBy === 'AI';
       decisionId = snapshot.id;
+      ruleId = snapshot.ruleId;
       outcome = 'ACCEPTED';
       description = (row.description ?? snapshot.rawInput).trim();
     } else {
@@ -1239,6 +1345,7 @@ export class TransactionsService {
             : null;
       fromAi = classified.decidedBy === 'AI';
       decisionId = classified.decisionId;
+      ruleId = classified.ruleId;
       outcome = 'ACCEPTED';
       description = (row.description ?? classified.description).trim();
     }
@@ -1275,6 +1382,7 @@ export class TransactionsService {
       confidence,
       categorySource,
       decisionId,
+      ruleId,
       outcome,
       description,
       rawText: (snapshot?.rawInput ?? classified?.rawText ?? row.description ?? '').trim(),
@@ -1505,6 +1613,175 @@ export class TransactionsService {
     });
 
     return this.getById(householdId, id);
+  }
+
+  /**
+   * `correctTransaction` — the learning-loop entry point (docs/06 §5.3, docs/04 §8).
+   *
+   * A correction is two writes that must both happen: the **field change** (through {@link update}, so
+   * I-3, I-1's split rule and optimistic concurrency all apply) and the **Correction row** that makes
+   * it a learning signal. The order is deliberate — the change first, the signal second — because a
+   * Correction that describes a change a failed write never made is worse than no Correction: the
+   * weekly re-fit would train on it (docs/04 §6.4).
+   *
+   * ## `kind` is refused
+   *
+   * `corrections.field`'s CHECK allows `kind` because the table is shared with imports, and docs/06
+   * §5.3 declares the arm. But direction is not a flippable property (AGENTS.md: `updateTransaction`
+   * cannot change `kind`), and silently *not* applying it while recording a Correction would be a lie
+   * in the audit trail. So the arm exists, is reachable, and refuses with a message that says what to
+   * do instead.
+   *
+   * ## Nothing is ever auto-created, except when the user said so
+   *
+   * The proposal is always returned so the UI can offer it (F-09's "Zapamti za ubuduće"). A rule is
+   * created here **only** when the user ticked `rememberForFuture`, the trigger is a resolved entity,
+   * and nothing shadows it — docs/06 §5.3's narrow case, where the tick *is* the confirmation.
+   */
+  async correctTransaction(
+    householdId: string,
+    input: CorrectTransactionInput,
+  ): Promise<CorrectTransactionOutcome> {
+    const existing = await this.prisma.client.transactions.findFirst({
+      where: { id: input.transactionId, household_id: householdId, deleted_at: null },
+      select: {
+        id: true,
+        category_id: true,
+        merchant_id: true,
+        counterparty_id: true,
+        amount_minor: true,
+        kind: true,
+        category_source: true,
+      },
+    });
+    if (existing === null) throw new ApiError('NOT_FOUND', 'Transaction not found.');
+
+    if (input.field === 'kind') {
+      throw new ApiError(
+        'VALIDATION_FAILED',
+        'Direction cannot be corrected in place: an expense and an income are different facts about ' +
+          'money, not a property of one. Delete this transaction and record it again (invariant I-1 ' +
+          'and the split rule depend on the direction being fixed at creation).',
+      );
+    }
+
+    const fromValue = readField(existing, input.field);
+    const update = this.updateFor(input);
+    // The change first: it is the thing the user asked for and the thing the Correction will claim.
+    const transaction = await this.update(householdId, input.transactionId, update);
+
+    const correction = await this.corrections.record(householdId, {
+      transactionId: input.transactionId,
+      field: input.field,
+      fromValue,
+      toValue: readModelField(transaction, input.field),
+      // The denormalised `category_source` is the honest signal for a category correction: it is what
+      // the pipeline wrote, so a `USER` or `IMPORT` source can never be mistaken for a model's guess.
+      wasAiSuggested: input.field === 'category' && existing.category_source === 'AI',
+    });
+
+    const subject = await this.correctionSubject(
+      householdId,
+      input.transactionId,
+      transaction.categoryId,
+    );
+    const synthesis = subject === null ? null : await this.corrections.synthesise(householdId, subject);
+
+    const ruleCreated =
+      input.rememberForFuture && synthesis !== null
+        ? await this.corrections.createConfirmedRule(householdId, correction, synthesis)
+        : null;
+
+    const view = await this.corrections.view(
+      householdId,
+      ruleCreated === null ? correction : { ...correction, rule_created_id: ruleCreated.id },
+      ruleCreated,
+    );
+
+    return {
+      transaction,
+      correction: view,
+      synthesis,
+      ruleCreated,
+    };
+  }
+
+  /**
+   * Everything synthesis needs about a Transaction, resolved.
+   *
+   * Lives here because it starts from the Transaction, which the ledger owns; the two lookups it needs
+   * beyond that go through the owning services — the names through `classification` (which already
+   * reads `merchants`/`counterparties` for the pipeline) and the repeat count through the corrections
+   * module. Returns `null` when the Transaction is gone, which the caller reports rather than guessing.
+   */
+  async correctionSubject(
+    householdId: string,
+    transactionId: string,
+    categoryId: string | null,
+  ): Promise<CorrectionSubject | null> {
+    // No corrected-to Category means no rule to propose: a rule's whole action is the category.
+    if (categoryId === null) return null;
+
+    const row = await this.prisma.client.transactions.findFirst({
+      where: { id: transactionId, household_id: householdId, deleted_at: null },
+      select: { merchant_id: true, counterparty_id: true, description: true },
+    });
+    if (row === null) return null;
+
+    const [names, category, priorSameMerchantCorrections] = await Promise.all([
+      this.classification.entityNames(householdId, {
+        merchantId: row.merchant_id,
+        counterpartyId: row.counterparty_id,
+      }),
+      this.prisma.client.categories.findFirst({
+        where: { id: categoryId, household_id: householdId, deleted_at: null },
+        select: { name: true },
+      }),
+      row.merchant_id === null
+        ? Promise.resolve(0)
+        : this.corrections.priorMerchantCorrections(householdId, row.merchant_id, categoryId),
+    ]);
+    if (category === null) return null;
+
+    return {
+      categoryId,
+      categoryName: category.name,
+      description: row.description,
+      merchantId: row.merchant_id,
+      merchantName: names.merchantName,
+      counterpartyId: row.counterparty_id,
+      counterpartyName: names.counterpartyName,
+      priorSameMerchantCorrections,
+    };
+  }
+
+  /** A correction, as the field patch `update` takes. Validated there, not here. */
+  private updateFor(input: CorrectTransactionInput): UpdateTransactionInput {
+    if (input.version === undefined || input.version === null) {
+      // The correction is a human edit on a row they just read, so the version is what makes it safe
+      // against a second device. Contracting it away would make this the one write path with no
+      // concurrency control at all.
+      throw new ApiError('VALIDATION_FAILED', 'A correction needs the `version` you read.');
+    }
+
+    const base = { version: input.version };
+    switch (input.field) {
+      case 'category':
+        return { ...base, categoryId: input.categoryId ?? null };
+      case 'merchant':
+        return { ...base, merchantId: input.merchantId ?? null };
+      case 'counterparty':
+        return { ...base, counterpartyId: input.counterpartyId ?? null };
+      case 'amount':
+        if (input.amountMinor === undefined || input.amountMinor === null) {
+          throw new ApiError('VALIDATION_FAILED', 'A correction of the amount needs the new amount.');
+        }
+        return { ...base, amountMinor: input.amountMinor };
+      case 'kind':
+        // Unreachable: `correctTransaction` refuses `kind` before it gets here. Kept exhaustive so a
+        // new field on the enum is a compile error rather than a silent no-op.
+        throw new ApiError('VALIDATION_FAILED', 'Direction cannot be corrected in place.');
+    }
   }
 
   /** Soft-delete. Financial rows are never hard-deleted, so history stays auditable. */

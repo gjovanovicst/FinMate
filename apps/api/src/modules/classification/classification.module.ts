@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { JsonScalar } from '../../graphql/scalars/json.scalar';
+
 import { PrismaModule } from '../../prisma/prisma.module';
 import {
   AI_CLASSIFIER,
@@ -7,6 +9,9 @@ import {
   type AiClassifier,
 } from './ai-classifier';
 import { ClassificationResolver } from './classification.resolver';
+import { CorrectionsService } from './corrections.service';
+import { RulesResolver } from './rules.resolver';
+import { RulesService } from './rules.service';
 import {
   CALIBRATION_STORE,
   ClassificationService,
@@ -37,11 +42,20 @@ import {
   providers: [
     ClassificationService,
     ClassificationResolver,
+    // docs/05 §3 puts `rules` and `corrections` in this module, so the learning loop is not a new
+    // module: it is the write half of the pipeline whose read half is already here.
+    RulesService,
+    CorrectionsService,
+    RulesResolver,
+    // Custom scalars are registered by being provided; they are referenced by type in `@Field()`.
+    // Omitting this makes Nest report `CannotDetermineInputTypeError` naming the class, which reads
+    // like a decorator problem rather than a missing provider.
+    JsonScalar,
     { provide: AI_CLASSIFIER, useValue: UNCONFIGURED_AI_CLASSIFIER satisfies AiClassifier },
     { provide: CALIBRATION_STORE, useValue: NO_CALIBRATION },
   ],
   // Exported so the ledger (task 2.2.5's `captureCommit`) can attach a decision to the Transaction it
   // wrote and can re-classify a row that never went through a preview, without a second pipeline.
-  exports: [ClassificationService, AI_CLASSIFIER, CALIBRATION_STORE],
+  exports: [ClassificationService, RulesService, CorrectionsService, AI_CLASSIFIER, CALIBRATION_STORE],
 })
 export class ClassificationModule {}

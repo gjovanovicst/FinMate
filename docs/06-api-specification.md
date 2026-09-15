@@ -2038,6 +2038,33 @@ Per [04 §8.2](04-categorization-and-ai-engine.md): the API **never auto-creates
 explains in plain language, and waits. `ruleCreated` is populated only in the narrow case where the user
 has already ticked "remember" **and** the trigger is a resolved entity with no conflict.
 
+#### 5.3.1 Implementation notes (task 2.3.1)
+
+Built in `apps/api/src/modules/classification/`: `rule-synthesis.ts` (pure), `rules.service.ts`
+(owns `rules`), `corrections.service.ts` (owns `corrections`), and `correctTransaction` on the
+**ledger's** `TransactionsService` — it writes a Transaction, and the module edge stays one-directional
+(`ledger → classification`), which `captureCommit` had already established.
+
+| Design | Built | Why |
+|---|---|---|
+| `union CorrectTransactionResult = … \| RuleConflictError \| ConflictError \| NotFoundError` | The **success type directly**; conflicts ride on it as `ruleConflicts` | `CONFLICT`/`NOT_FOUND` are already typed GraphQL errors on `extensions.code`. `RuleConflictError` cannot apply: the correction was **applied and recorded** before a proposal conflict is known, so an error arm would tell the client nothing happened. |
+| `explanation: String!` shown verbatim | `explanation` is the safe English fallback; **`explanationCode`** (additive) is what the client localises | The same rule as the API's error codes: the server owns a stable code, the *client* owns the wording, so a proposal reads in the user's language. |
+| `Rule.version: Int!` | **Absent** | `rules` has no `version` column (docs/03 §4). Rules hold no money, so last-write-wins is acceptable; `merchants` set the precedent. |
+| `backfillPreview` / `backfill`, `dashboardDelta` | **Not built** | The bulk re-classify rewrites `category_id` on N Transactions and needs its own correctness story (I-3, the audit trail, a diff the user can read); `dashboardDelta` is absent for the reason §5.2.4 records. |
+| `acceptProposal: false` "records the refusal as a signal" | The rule is not created; the refusal is **not persisted** | `corrections` has no column for it, so the only durable trace is `rule_created_id IS NULL` — which is also what "never asked" looks like. Recorded as a gap, not hidden. |
+
+Two behaviours that are not visible in the SDL:
+
+- **A `kind` correction is refused**, with a message that says to delete and re-record. The CHECK allows
+  the value because the table is shared with imports, but direction is not a flippable property, and
+  recording a Correction for a change that was not applied would put a fiction in the audit trail.
+- **The conflict guardrail runs the real engine.** Synthesis produces a *witness* — an input the
+  proposal matches — and `checkShadowing` asks `evaluateRules` who wins on it, with and without the
+  proposal. It also treats "already decided to the **same** category" as a shadow, because the
+  proposal would add nothing; without that arm, ticking "remember" twice would pile up duplicate rules.
+  A proposal is evaluated with `createdAt = now`, because docs/04 §5.3.1 breaks a specificity tie on
+  `created_at DESC` and an epoch timestamp would make every proposal lose every tie.
+
 ### 5.4 `createRuleFromCorrection`
 
 ```graphql

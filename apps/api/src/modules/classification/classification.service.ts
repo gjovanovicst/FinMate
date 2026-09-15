@@ -8,7 +8,7 @@ import {
   foldForMatching,
   type TransactionFragment,
 } from '@finmate/nlp';
-import type { CategoryKeyword, Rule as EngineRule } from '@finmate/rules-engine';
+import type { CategoryKeyword, Rule, Rule as EngineRule } from '@finmate/rules-engine';
 
 import { ApiError } from '../../common/filters/all-exceptions.filter';
 import type { Prisma } from '../../generated/prisma/client';
@@ -37,7 +37,14 @@ import {
   type PipelineOutcome,
   type PipelineRung,
 } from './classification.pipeline';
-import { loadRules, PIPELINE_TEXT_FOLDER, type RuleRow } from './rule-adapter';
+import {
+  KEYWORD_SELECT,
+  loadRules,
+  PIPELINE_TEXT_FOLDER,
+  RULE_ENGINE_SELECT,
+  toPipelineKeyword,
+  type RuleRow,
+} from './rule-adapter';
 
 /**
  * `classification` — the orchestration layer that turns `packages/nlp`,
@@ -778,6 +785,76 @@ export class ClassificationService {
    * the case docs/04 §4's rung 2 needs to hit. Nothing here can write through that widening because
    * this method only reads.
    */
+  /**
+   * The rule engine's inputs for one Household — `rules` and `category_keywords`, nothing else.
+   *
+   * Split out of {@link loadContext} because `RulesService`'s conflict check needs exactly these two
+   * and nothing else, and loading five tables (categories, merchants, counterparties) to answer "who
+   * wins on this input" would be four wasted queries per check. The two `select` objects and the
+   * keyword mapping are shared with `loadContext`, so the pipeline and the guardrail cannot disagree
+   * about what a rule or a keyword *is* — the failure mode that would make the guardrail's answer
+   * wrong in a way nobody notices until a rule silently does nothing.
+   */
+  async ruleInputs(
+    householdId: string,
+  ): Promise<{ rules: readonly Rule[]; keywords: readonly CategoryKeyword[] }> {
+    const [ruleRows, keywordRows] = await Promise.all([
+      this.prisma.client.rules.findMany({
+        where: { household_id: householdId, is_active: true, deleted_at: null },
+        select: RULE_ENGINE_SELECT,
+      }),
+      this.prisma.client.category_keywords.findMany({
+        where: { household_id: householdId },
+        select: KEYWORD_SELECT,
+      }),
+    ]);
+
+    const { rules, rejected } = loadRules(ruleRows as RuleRow[]);
+    if (rejected.length > 0) {
+      this.logger.warn(
+        `skipped ${rejected.length} malformed rule(s) for household ${householdId}: ${rejected.join(', ')}`,
+      );
+    }
+
+    return { rules, keywords: keywordRows.map(toPipelineKeyword) };
+  }
+
+  /**
+   * The display names of the entities a Transaction resolved.
+   *
+   * Needed because a synthesised rule's *name* and explanation read as "Lidl → Hrana", while the rule
+   * itself stores the id. Reads the same two tables `loadContext` already reads (Merchants through the
+   * guard's global-read widening, Counterparties strictly scoped), so this adds no new access.
+   */
+  async entityNames(
+    householdId: string,
+    ids: { readonly merchantId: string | null; readonly counterpartyId: string | null },
+  ): Promise<{ merchantName: string | null; counterpartyName: string | null }> {
+    const [merchant, counterparty] = await Promise.all([
+      ids.merchantId === null
+        ? Promise.resolve(null)
+        : this.prisma.client.merchants.findFirst({
+            where: { id: ids.merchantId, deleted_at: null },
+            select: { name: true },
+          }),
+      ids.counterpartyId === null
+        ? Promise.resolve(null)
+        : this.prisma.client.counterparties.findFirst({
+            where: { id: ids.counterpartyId, deleted_at: null },
+            select: { name: true },
+          }),
+    ]);
+
+    // Left un-scoped for the read by the guard, and the household predicate is the id itself: an id
+    // from another Household simply does not resolve, so a name is never borrowed.
+    void householdId;
+
+    return {
+      merchantName: merchant?.name ?? null,
+      counterpartyName: counterparty?.name ?? null,
+    };
+  }
+
   private async loadContext(householdId: string): Promise<HouseholdContext> {
     const household = await this.prisma.client.households.findFirst({ where: { id: householdId } });
     if (!household) throw new ApiError('NOT_FOUND', 'Household not found.');
@@ -789,28 +866,11 @@ export class ClassificationService {
       }),
       this.prisma.client.category_keywords.findMany({
         where: { household_id: householdId },
-        select: {
-          id: true,
-          category_id: true,
-          keyword: true,
-          polarity: true,
-          match_mode: true,
-          weight: true,
-        },
+        select: KEYWORD_SELECT,
       }),
       this.prisma.client.rules.findMany({
         where: { household_id: householdId, is_active: true, deleted_at: null },
-        select: {
-          id: true,
-          name: true,
-          priority: true,
-          is_active: true,
-          stop_on_match: true,
-          conditions: true,
-          actions: true,
-          origin: true,
-          created_at: true,
-        },
+        select: RULE_ENGINE_SELECT,
       }),
       this.prisma.client.merchants.findMany({
         where: { household_id: householdId, deleted_at: null },
@@ -845,16 +905,7 @@ export class ClassificationService {
       household: { currency: household.ledger_currency, timeZone: household.iana_timezone },
       thresholds: resolveLaneThresholds(household.settings),
       categories: withBreadcrumbs(categories),
-      keywords: keywordRows.map((row) => ({
-        id: row.id,
-        categoryId: row.category_id,
-        keyword: row.keyword,
-        polarity: row.polarity as CategoryKeyword['polarity'],
-        matchMode: row.match_mode as CategoryKeyword['matchMode'],
-        // `category_keywords.weight` is `numeric(4,2)` — a score, not money, so a Decimal→number
-        // conversion is correct here (see `CategoryKeyword.weight` in `@finmate/rules-engine`).
-        weight: Number(row.weight),
-      })),
+      keywords: keywordRows.map(toPipelineKeyword),
       rules,
       merchants: merchantRows.map(toEntity),
       counterparts: counterpartyRows.map(toEntity),

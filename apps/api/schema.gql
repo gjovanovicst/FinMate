@@ -426,6 +426,70 @@ type CommittedTransactionModel {
   wasReplayed: Boolean!
 }
 
+input CorrectTransactionInput {
+  amount: Money
+  categoryId: ID
+  counterpartyId: ID
+  field: CorrectionField!
+  kind: TransactionKind
+  merchantId: ID
+
+  """
+  The "Zapamti za ubuduće" checkbox (F-09). The proposal is returned either way; this only says whether the user asked. A rule is NEVER created here — docs/04 §8.2, ADR-010.
+  """
+  rememberForFuture: Boolean! = false
+  transactionId: ID!
+
+  """
+  Optimistic concurrency. A mismatch is a CONFLICT rather than a silent overwrite.
+  """
+  version: Int
+}
+
+type CorrectTransactionSuccessModel {
+  """The correction, always written. This is the learning signal."""
+  correction: CorrectionModel!
+
+  """
+  Rules that would win on the proposal’s own trigger input, so accepting it would add a rule that never fires. Additive to the SDL: carried on the SUCCESS arm because the correction was applied regardless.
+  """
+  ruleConflicts: [RuleConflictModel!]!
+
+  """
+  Present when a rule could be derived. `null` means there was nothing to key a rule on — a resolved entity or a distinctive word — which is a legitimate outcome, not a failure.
+  """
+  synthesisedRule: RuleProposalModel
+  transaction: TransactionModel!
+}
+
+"""
+Which property the user corrected. `kind` is refused: direction is not a flippable property (AGENTS.md), and the CHECK allows the value only because the table is shared with imports.
+"""
+enum CorrectionField {
+  amount
+  category
+  counterparty
+  kind
+  merchant
+}
+
+"""
+The durable learning signal (docs/04 §8). Corrections are append-only: they are what the weekly calibration re-fit and the "was this proposal any good?" question read.
+"""
+type CorrectionModel {
+  createdAt: DateTime!
+  field: CorrectionField!
+  fromValue: String
+  id: ID!
+  ruleCreated: RuleModel
+  ruleCreatedId: ID
+  toValue: String
+  transactionId: ID
+
+  """True when a model had proposed the value the user changed."""
+  wasAiSuggested: Boolean!
+}
+
 """
 An alternative spelling that resolves to this Counterparty. Stored folded (lower case, no diacritics) so it matches however the user types it — "Dejan rođa" and "dejan roda" are one person (docs/01 F-11).
 """
@@ -478,6 +542,38 @@ enum CounterpartyType {
   GOVERNMENT
   OTHER
   PERSON
+}
+
+input CreateRuleFromCorrectionInput {
+  """
+  `false` means "this was a one-off". The rule is not created. The refusal is **not** persisted — `corrections` has no column for it — so it is currently only an answered prompt.
+  """
+  acceptProposal: Boolean! = true
+  correctionId: ID!
+
+  """
+  The user edited the proposal before saving. Passing overrides also means the user has authored the rule, so a shadowing conflict is recorded on the result rather than refused.
+  """
+  overrides: RuleOverrideInput
+}
+
+"""
+The rule was created, or the proposal would be shadowed by an existing rule and the caller did not override it — docs/04 §8.2 surfaces that instead of silently adding a dead rule.
+"""
+union CreateRuleFromCorrectionResult = CreateRuleFromCorrectionSuccessModel | RuleConflictErrorModel
+
+type CreateRuleFromCorrectionSuccessModel {
+  """
+  When the rule became visible to the pipeline. Nothing is cached — rules are read on every parse — so this is the moment of the write and the next parse sees it.
+  """
+  cacheInvalidatedAt: DateTime!
+  correction: CorrectionModel!
+  rule: RuleModel!
+
+  """
+  Populated only when the user overrode the proposal, i.e. authored the rule themselves.
+  """
+  ruleConflicts: [RuleConflictModel!]!
 }
 
 type DashboardModel {
@@ -583,6 +679,11 @@ enum FragmentKind {
   INCOME
   UNKNOWN
 }
+
+"""
+Arbitrary JSON, used for the rule condition and action documents. Unvalidated: the writer is responsible for checking the shape (the rules engine validates every rule on evaluation).
+"""
+scalar JSON
 
 """
 INCLUDE routes input toward a Category; EXCLUDE hard-blocks it. Exclusions are not optional: without them "ulje" routes engine oil into Auto/Gorivo (docs/04 §5.4).
@@ -693,6 +794,11 @@ type Mutation {
   ): CaptureParseResultModel!
 
   """
+  Correct one property of a Transaction and record the correction as a learning signal (docs/06 §5.3, F-09). The change is applied first and the Correction second, so a Correction never describes a change that did not happen. `synthesisedRule` is always returned when one can be derived, so the UI can offer "Zapamti za ubuduće"; a rule is created here only when `rememberForFuture` is true, the trigger is a resolved entity, and nothing shadows it.
+  """
+  correctTransaction(input: CorrectTransactionInput!): CorrectTransactionSuccessModel!
+
+  """
   Create an Account. The currency is the Household ledger currency (ADR-011).
   """
   createAccount(
@@ -733,6 +839,34 @@ type Mutation {
     defaultCategoryId: ID
     name: String!
   ): MerchantModel!
+
+  """
+  Save a rule. The document is validated by the rules engine, so an unevaluable rule is refused here rather than silently skipped on every future parse.
+  """
+  createRule(
+    """
+    `{ setCategoryId, setMerchantId, setCounterpartyId, setDescription, addTagIds }`.
+    """
+    actions: JSON!
+
+    """
+    A condition tree: `{ all: [{ field, op, value }] }`. Validated by the rules engine before it is stored, so a rule this API accepts is one the pipeline can evaluate.
+    """
+    conditions: JSON!
+    isActive: Boolean
+    name: String!
+
+    """
+    Lower wins. Defaults to 100, the same tier a learned rule uses (docs/04 §5.3.1).
+    """
+    priority: Int
+    stopOnMatch: Boolean
+  ): RuleModel!
+
+  """
+  Save the rule a correction proposed (docs/06 §5.4). Without `overrides` the product’s own proposal is saved, and a proposal that would be shadowed is refused with the conflicting rules so the UI can offer to edit the winner instead (docs/04 §8.2). With `overrides` the user has authored the rule, so it is saved and any conflict is recorded on the result.
+  """
+  createRuleFromCorrection(input: CreateRuleFromCorrectionInput!): CreateRuleFromCorrectionResult!
 
   """
   A name that folds to an existing one is refused with CONFLICT: `#Vanredno` and `#vanredno` are one label.
@@ -791,6 +925,11 @@ type Mutation {
   Soft-delete, refusing while Transactions, Receipts or RecurringRules still reference it. Merging is the reassignment path.
   """
   deleteMerchant(id: ID!): Boolean!
+
+  """
+  Soft-delete. A rule is a decision the user made, and F-31 has to be able to explain why a past Transaction was categorised the way it was.
+  """
+  deleteRule(id: ID!): Boolean!
 
   """
   Soft-deletes the Tag AND removes its Transaction assignments. Unlike a Merchant or a Category there is nothing to reassign a label to, so the analogue of reassignment is clearing the assignments — a dangling label is worse than a missing one.
@@ -862,6 +1001,7 @@ type Mutation {
   Editing a shipped merchant creates a Household-owned copy and moves this Household’s references onto it, so the platform catalogue is never mutated (seeds are copy-on-write).
   """
   updateMerchant(aiHint: String, defaultCategoryId: ID, id: ID!, name: String): MerchantModel!
+  updateRule(actions: JSON, conditions: JSON, id: ID!, isActive: Boolean, name: String, priority: Int, stopOnMatch: Boolean): RuleModel!
   updateTag(color: String, id: ID!, name: String): TagModel!
   updateTransaction(
     amount: Money
@@ -1047,6 +1187,12 @@ type Query {
   Split an amount evenly across categories without losing a para. The backend computes it so the client never rounds money (ADR-003); the result sums exactly (invariant I-1).
   """
   proposeEqualSplits(amount: Money!, categoryIds: [ID!]!): [ProposedSplit!]!
+  rule(id: ID!): RuleModel!
+
+  """
+  Every rule of this Household, active or not, ordered as the engine evaluates them (`priority ASC`, then newest first). `conflictsWith` is computed by running the real engine on an input each rule matches, so it cannot disagree with what the pipeline will do.
+  """
+  rules: [RuleModel!]!
   tag(id: ID!): TagModel
 
   """
@@ -1087,6 +1233,131 @@ type RejectedRowModel {
   """The input field at fault, when one is nameable."""
   field: String
   message: String!
+}
+
+type RuleConflictErrorModel {
+  code: String!
+  conflicting: [RuleConflictModel!]!
+  message: String!
+  proposal: RuleProposalModel!
+}
+
+"""
+An existing rule that would win on a proposed rule’s own trigger input — so the proposal would never fire. docs/04 §8.2: offer to edit that rule rather than shadow it, because shadowing rules is how rule sets rot.
+"""
+type RuleConflictModel {
+  """
+  The Category the existing rule sets. Equal to `proposedValue` means that rule already covers this input, so the proposal is redundant rather than contradictory.
+  """
+  existingValue: String
+
+  """
+  The condition field the two rules overlap on — `merchant`, `counterparty` or `text`.
+  """
+  overlappingField: String!
+
+  """Lower wins (docs/04 §5.3.1)."""
+  priority: Int!
+  proposedValue: String
+  ruleId: ID!
+  ruleName: String!
+}
+
+"""One row of `rules` (docs/06 §5.3)."""
+type RuleModel {
+  actions: JSON!
+  conditions: JSON!
+
+  """
+  Rules that would win on this rule’s own witnessed input, so it may never fire. A **witnessed** check, not a general static analysis: it asks the real engine who wins on an input this rule matches, so it cannot drift from runtime behaviour. A rule whose conditions yield no witness reports none.
+  """
+  conflictsWith: [RuleConflictModel!]!
+  createdAt: DateTime!
+
+  """Count of committed Transactions this rule decided, as a string."""
+  hitCount: String!
+  id: ID!
+  isActive: Boolean!
+
+  """
+  `hitCount = 0` and older than 90 days (docs/04 §8.2). Surfaced so the user can prune; the rule itself is never auto-deleted.
+  """
+  isStale: Boolean!
+  lastHitAt: DateTime
+  name: String!
+  origin: RuleOrigin!
+
+  """Lower wins."""
+  priority: Int!
+  sourceCorrectionId: ID
+
+  """The first matching stop rule is the decision (docs/04 §5.3.2)."""
+  stopOnMatch: Boolean!
+  updatedAt: DateTime!
+}
+
+"""
+`LEARNED` means the product proposed it from a correction and the user accepted (ADR-010); a `LEARNED` rule is never presented as one the user wrote.
+"""
+enum RuleOrigin {
+  IMPORT
+  LEARNED
+  SYSTEM
+  USER
+}
+
+input RuleOverrideInput {
+  actions: JSON
+  conditions: JSON
+  isActive: Boolean
+  name: String
+  priority: Int
+  stopOnMatch: Boolean
+}
+
+"""
+A candidate rule, derived from a correction and **not yet saved** (docs/04 §8.1).
+"""
+type RuleProposalModel {
+  """`{ setCategoryId, setMerchantId, addTagIds, setDescription }`."""
+  actions: JSON!
+
+  """A condition tree: `{ all: [{ field, op, value }] }`."""
+  conditions: JSON!
+
+  """
+  How much the trigger is worth trusting, `0..1`. Derived (docs/04 gives no numbers): a resolved entity is a fact about the user’s data, a text token is a guess about their wording. Used for ordering and explanation only — nothing auto-applies.
+  """
+  confidence: Float!
+
+  """
+  A safe English sentence, per docs/06 §5.3. The client should prefer `explanationCode` so the proposal reads in the user’s language.
+  """
+  explanation: String!
+
+  """
+  A stable code (`RULE_SYNTH_*`) the client localises. Additive to the SDL; see the module note.
+  """
+  explanationCode: String!
+  name: String!
+  origin: RuleOrigin!
+
+  """
+  Lower wins. Learned rules share the user tier and are ordered by specificity.
+  """
+  priority: Int!
+  trigger: RuleSynthesisTrigger!
+}
+
+"""
+What the proposal was derived from, narrowest first. `REPEATED_MERCHANT_CORRECTION` is advice to change that Merchant’s default instead of adding a fourth rule (docs/04 §8.2).
+"""
+enum RuleSynthesisTrigger {
+  CONTRADICTS_EXISTING_RULE
+  COUNTERPARTY_RESOLVED
+  DISTINCTIVE_TOKEN
+  MERCHANT_RESOLVED
+  REPEATED_MERCHANT_CORRECTION
 }
 
 type SkippedRowModel {

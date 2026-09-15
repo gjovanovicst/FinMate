@@ -434,6 +434,29 @@ From a correction, the backend derives the **narrowest rule that would have prev
 | Same merchant corrected 3× to the same category | Suggest changing the merchant's default category instead of adding a 4th rule |
 | Correction contradicts an existing rule | Offer to **edit that rule** rather than shadow it — shadowing rules is how rule sets rot |
 
+#### 8.1.1 What synthesis can and cannot fix (task 2.3.1)
+
+A synthesised rule is only as good as the entity resolution that feeds it, and one case is worth
+stating because [01 F-09](01-product-requirements.md) is written in terms of it.
+
+F-09's scenario corrects `Dejan rođa 3600`, and then expects the next input — `Dejan 2000` — to resolve
+"via the rules engine with no AI call". The rule is synthesised correctly
+(`counterparty eq Dejan → setCategory(X)`), but **the rule cannot fire, because `Dejan` alone does not
+resolve `Dejan rođa`.** That is not a defect in the ladder: §4's rung 3 requires *every* folded token of
+the name to occur among the input's tokens, precisely so that an abbreviation cannot auto-apply at
+0.90. Three ways the shorthand starts working, in the order they are worth reaching for:
+
+1. **An alias.** `dejan` stored as a `counterparty_aliases` row makes rung 3 match, and aliases are
+   exactly what F-13's onboarding step 3 creates ("Counterparty + alias"). This works today.
+2. **Rung 5, embeddings** (task 2.3.4). §4 says stage 5 "uses embeddings of the household's own
+   history, which is what makes `Dejan rođa` resolvable for one household and irrelevant to another" —
+   the shorthand is the case that rung exists for.
+3. **A keyword**, which the `DISTINCTIVE_TOKEN` trigger already adds when no entity resolves.
+
+The rule itself is not the problem, and weakening rung 3 to make the shorthand resolve would trade a
+missing match for a wrong one. Asserted in
+`apps/api/src/modules/classification/corrections.integration.spec.ts`.
+
 ### 8.2 Guardrails (the user is not always right, and neither are we)
 
 - **Never auto-create rules.** Synthesis always proposes; the user confirms. (P-2, and the source
