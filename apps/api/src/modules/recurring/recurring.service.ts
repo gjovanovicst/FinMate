@@ -4,6 +4,7 @@ import {
   DEFAULT_TIME_ZONE,
   addDays,
   compareLocalDates,
+  detectSubscriptions,
   expandOccurrences,
   formatRRule,
   nextOccurrenceOn,
@@ -16,6 +17,7 @@ import {
 } from '@finmate/domain';
 
 import { ApiError } from '../../common/filters/all-exceptions.filter';
+import { normaliseForMatching } from '../../common/text/normalise';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TransactionsService } from '../ledger/transactions.service';
 import {
@@ -433,6 +435,174 @@ export class RecurringService {
       wasReplayed:
         !dryRun && created.length === 0 && skipped.some((skip) => skip.reason === 'ALREADY_MATERIALISED'),
     };
+  }
+
+  /**
+   * Propose the subscriptions hiding in the Household's own history (F-16, task 3.3.4).
+   *
+   * **Nothing is activated.** Each proposal is written as a rule with `is_detected = true` and
+   * `is_active = false`, which is what gives the client something to accept or dismiss — and what makes
+   * a dismissal stick: the row is soft-deleted, so the next run recognises that identity and does not
+   * propose it again.
+   *
+   * The reading is `EXPENSE`, `CONFIRMED`, non-deleted rows over the last ~13 months (I-7): a
+   * subscription is money that actually moved, and a pending row has not moved yet.
+   */
+  async detect(householdId: string, options: { readonly today?: LocalDate } = {}): Promise<readonly RecurringRuleView[]> {
+    const today = options.today ?? (await this.today(householdId));
+    const window = { from: addDays(today, -400), to: today };
+
+    const rows = await this.prisma.client.transactions.findMany({
+      where: {
+        household_id: householdId,
+        deleted_at: null,
+        status: 'CONFIRMED', // I-7
+        kind: 'EXPENSE',
+        occurred_local_date: { gte: this.date(window.from), lte: this.date(window.to) },
+      },
+      select: {
+        id: true,
+        description: true,
+        merchant_id: true,
+        account_id: true,
+        amount_minor: true,
+        occurred_local_date: true,
+      },
+      orderBy: { occurred_local_date: 'asc' },
+    });
+
+    // The identity is the resolved Merchant when there is one, otherwise the **folded** description —
+    // the same fold the classifier and the entity ladder use, so "NETFLIX" and "Netflix" are one bill.
+    const charges = rows.map((row) => ({
+      key: row.merchant_id === null ? `d:${normaliseForMatching(row.description)}` : `m:${row.merchant_id}`,
+      label: row.description,
+      merchantId: row.merchant_id,
+      description: row.description,
+      amountMinor: row.amount_minor,
+      occurredOn: this.iso(row.occurred_local_date),
+    }));
+
+    const proposals = detectSubscriptions(charges, { today });
+    if (proposals.length === 0) return [];
+
+    // Every identity this Household already knows about — an active rule, a proposal awaiting an
+    // answer, or one that was dismissed. Dismissing means "never show me this again".
+    const existing = await this.prisma.client.recurring_rules.findMany({
+      where: { household_id: householdId, kind: 'EXPENSE' },
+      select: { description: true, merchant_id: true },
+    });
+    const known = new Set(
+      existing.map((rule) =>
+        rule.merchant_id === null ? `d:${normaliseForMatching(rule.description)}` : `m:${rule.merchant_id}`,
+      ),
+    );
+
+    const created: RecurringRuleView[] = [];
+    for (const proposal of proposals) {
+      if (known.has(proposal.key)) continue;
+
+      const spec = parseRRule(proposal.period.rrule);
+      if (!spec.ok) continue;
+      const next = nextOccurrenceOn(spec.spec, proposal.lastOccurredOn, addDays(proposal.lastOccurredOn, 1));
+      if (next === null) continue;
+
+      // The Account the bill was paid from: the one most of its charges used.
+      const accountId = await this.dominantAccount(householdId, rows, proposal);
+
+      const row = await this.prisma.client.recurring_rules.create({
+        data: {
+          id: uuidv7(),
+          household_id: householdId,
+          account_id: accountId,
+          kind: 'EXPENSE',
+          amount_minor: proposal.typicalAmountMinor,
+          currency: await this.currencyOf(householdId),
+          category_id: null,
+          merchant_id: proposal.merchantId,
+          description: proposal.description,
+          rrule: proposal.period.rrule,
+          next_occurrence_on: this.date(next),
+          ends_on: null,
+          // A proposal: it exists so the user can accept it, and it posts nothing until they do.
+          auto_confirm: false,
+          is_detected: true,
+          is_active: false,
+        },
+      });
+      created.push(await this.getById(householdId, row.id));
+    }
+
+    return created;
+  }
+
+  /** Accept a proposal: it becomes an ordinary rule and starts posting from its next occurrence. */
+  async confirmDetected(householdId: string, ruleId: string): Promise<RecurringRuleView> {
+    const rule = await this.requireRule(householdId, ruleId);
+    if (!rule.is_detected) return this.getById(householdId, ruleId);
+
+    await this.prisma.client.recurring_rules.update({
+      where: { id: ruleId },
+      data: { is_detected: false, is_active: true, updated_at: new Date() },
+    });
+    return this.getById(householdId, ruleId);
+  }
+
+  /**
+   * Dismiss a proposal. Soft-deleted, so it leaves every list **and** the detector remembers not to
+   * propose that identity again — which is the whole difference between a dismissal and a nag.
+   *
+   * Refuses a rule that is not a proposal: dismissing a real standing order would look like a delete.
+   */
+  async dismissDetected(householdId: string, ruleId: string): Promise<void> {
+    const rule = await this.requireRule(householdId, ruleId);
+    if (!rule.is_detected) {
+      throw new ApiError(
+        'VALIDATION_FAILED',
+        'That is a rule the Household made, not a suggestion. Deactivate it instead.',
+      );
+    }
+
+    await this.prisma.client.recurring_rules.updateMany({
+      where: { id: ruleId, household_id: householdId, deleted_at: null },
+      data: { deleted_at: new Date(), is_active: false, updated_at: new Date() },
+    });
+  }
+
+  /** The Account most of a proposal's charges were paid from. */
+  private async dominantAccount(
+    householdId: string,
+    rows: readonly { readonly merchant_id: string | null; readonly description: string; readonly account_id?: string }[],
+    proposal: { readonly key: string; readonly merchantId: string | null; readonly description: string },
+  ): Promise<string> {
+    const matching = rows.filter((row) =>
+      proposal.merchantId === null
+        ? row.merchant_id === null && normaliseForMatching(row.description) === normaliseForMatching(proposal.description)
+        : row.merchant_id === proposal.merchantId,
+    );
+
+    const counts = new Map<string, number>();
+    for (const row of matching) {
+      if (row.account_id === undefined) continue;
+      counts.set(row.account_id, (counts.get(row.account_id) ?? 0) + 1);
+    }
+    const winner = [...counts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0];
+    if (winner !== undefined) return winner[0];
+
+    const account = await this.prisma.client.accounts.findFirst({
+      where: { household_id: householdId, deleted_at: null, is_archived: false },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    });
+    if (account === null) throw new ApiError('VALIDATION_FAILED', 'This Household has no Account to book a rule against.');
+    return account.id;
+  }
+
+  private async currencyOf(householdId: string): Promise<string> {
+    const household = await this.prisma.client.households.findFirst({
+      where: { id: householdId },
+      select: { ledger_currency: true },
+    });
+    return household?.ledger_currency ?? 'RSD';
   }
 
   // -------------------------------------------------------------------------------------------

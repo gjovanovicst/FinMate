@@ -284,6 +284,24 @@ export function dateLabel(day: string, tag: string): string {
   );
 }
 
+/** The proposals awaiting an answer — detected, not yet accepted (docs/02 §4.14's *Predlozi*). */
+export function proposals(rules: readonly RecurringRule[]): readonly RecurringRule[] {
+  return rules.filter((rule) => rule.isDetected && rule.isActive === false);
+}
+
+/**
+ * The evidence line under a proposal.
+ *
+ * docs/02 §4.14 draws *"4×, isti iznos"*: how many charges were seen, and whether they were all the
+ * same amount. The count and the word are the whole argument for accepting it, so neither is optional.
+ */
+export function evidence(proposal: RecurringRule): {
+  readonly key: TranslationKey;
+  readonly params: Record<string, number>;
+} {
+  return { key: 'recurring.evidence', params: { count: proposal.upcomingOccurrences.length } };
+}
+
 /** Active rules first, then by next occurrence — the order the list is scanned in. */
 export function orderedRules(rules: readonly RecurringRule[]): readonly RecurringRule[] {
   return [...rules].sort((left, right) => {

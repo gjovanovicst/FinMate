@@ -127,6 +127,34 @@ describe('recurring rules (integration)', () => {
     await moduleRef?.close();
   });
 
+  /** One confirmed expense row, for the detection fixtures. */
+  async function row(input: {
+    amountMinor: bigint;
+    day: LocalDate;
+    description: string;
+    merchantId?: string | null;
+  }): Promise<void> {
+    await asTenant(() =>
+      prisma.client.transactions.create({
+        data: {
+          id: uuidv7(),
+          household_id: householdId,
+          account_id: accountId,
+          kind: 'EXPENSE',
+          amount_minor: input.amountMinor,
+          currency: 'RSD',
+          category_id: null,
+          merchant_id: input.merchantId ?? null,
+          description: input.description,
+          source: 'MANUAL',
+          status: 'CONFIRMED',
+          occurred_at: new Date(`${input.day}T10:00:00.000Z`),
+          occurred_local_date: new Date(`${input.day}T00:00:00.000Z`),
+        },
+      }),
+    );
+  }
+
   const create = (overrides: Partial<Parameters<RecurringService['create']>[1]> = {}) =>
     asTenant(() =>
       recurring.create(householdId, {
@@ -421,6 +449,103 @@ describe('recurring rules (integration)', () => {
     const descriptions = all.created.map((row) => row.description);
     expect(descriptions).toContain('Uskoro');
     expect(descriptions).toContain('Daleko');
+  });
+
+  // ---------------------------------------------------------------------------------------------
+  // Detection (3.3.4)
+  // ---------------------------------------------------------------------------------------------
+
+  /** A run of confirmed charges for one Merchant, `count` months back from `last`. */
+  async function history(input: {
+    description: string;
+    amountMinor: bigint;
+    last: LocalDate;
+    count: number;
+    merchantId?: string | null;
+  }): Promise<void> {
+    for (let index = input.count - 1; index >= 0; index -= 1) {
+      await row({
+        amountMinor: input.amountMinor,
+        day: addMonths(input.last, -index),
+        description: input.description,
+        merchantId: input.merchantId ?? null,
+      });
+    }
+  }
+
+  it('proposes a subscription with its evidence and activates nothing', async () => {
+    await history({ description: 'Spotify', amountMinor: 599_00n, last: TODAY, count: 4 });
+
+    const proposals = await asTenant(() => recurring.detect(householdId, { today: TODAY }));
+
+    expect(proposals).toHaveLength(1);
+    const proposal = proposals[0]!;
+    expect(proposal.description).toBe('Spotify');
+    expect(proposal.isDetected).toBe(true);
+    expect(proposal.isActive).toBe(false);
+    expect(proposal.amountMinor).toBe(599_00n);
+    expect(proposal.rrule).toBe('RRULE:FREQ=MONTHLY');
+    expect(proposal.generatedCount).toBe(0);
+
+    // Nothing was posted and nothing is due: a proposal is not a rule.
+    const materialised = await asTenant(() => recurring.materialise(householdId, { ruleIds: [proposal.id], asOf: TODAY }));
+    expect(materialised.created).toHaveLength(0);
+  });
+
+  it('accepting a proposal turns it into an ordinary rule that then posts', async () => {
+    await history({ description: 'Deezer', amountMinor: 799_00n, last: addMonths(TODAY, -1), count: 3 });
+    const [proposal] = await asTenant(() => recurring.detect(householdId, { today: TODAY }));
+    expect(proposal).toBeDefined();
+
+    const accepted = await asTenant(() => recurring.confirmDetected(householdId, proposal!.id));
+    expect(accepted.isDetected).toBe(false);
+    expect(accepted.isActive).toBe(true);
+
+    // Its next occurrence is in the future, so nothing is due *yet* — the rule is real, not a duplicate.
+    const due = await asTenant(() =>
+      recurring.materialise(householdId, { ruleIds: [accepted.id], asOf: addMonths(TODAY, 2) }),
+    );
+    expect(due.created.length).toBeGreaterThanOrEqual(1);
+    expect(due.created.every((row) => row.description === 'Deezer')).toBe(true);
+  });
+
+  it('never proposes the same identity twice, and a dismissal is remembered', async () => {
+    await history({ description: 'HBO', amountMinor: 699_00n, last: TODAY, count: 3 });
+    const first = await asTenant(() => recurring.detect(householdId, { today: TODAY }));
+    const hbo = first.find((row) => row.description === 'HBO');
+    expect(hbo).toBeDefined();
+
+    // While it is still an open proposal, a second run does not duplicate it.
+    const again = await asTenant(() => recurring.detect(householdId, { today: TODAY }));
+    expect(again.some((row) => row.description === 'HBO')).toBe(false);
+
+    await asTenant(() => recurring.dismissDetected(householdId, hbo!.id));
+    const afterDismissal = await asTenant(() => recurring.detect(householdId, { today: TODAY }));
+    expect(afterDismissal.some((row) => row.description === 'HBO')).toBe(false);
+  });
+
+  it('refuses to dismiss a rule the Household made', async () => {
+    const rule = await create({ description: 'Moje pravilo', startsOn: '2026-01-15' });
+    await expect(asTenant(() => recurring.dismissDetected(householdId, rule.id))).rejects.toThrow(
+      /not a suggestion/,
+    );
+  });
+
+  it('does not treat three groceries as a subscription', async () => {
+    await history({ description: 'Idea', amountMinor: 1_200_00n, last: TODAY, count: 3 });
+    await row({ amountMinor: 9_800_00n, day: addMonths(TODAY, -2), description: 'Idea' });
+    await row({ amountMinor: 150_00n, day: addMonths(TODAY, -3), description: 'Idea' });
+
+    const proposals = await asTenant(() => recurring.detect(householdId, { today: TODAY }));
+    expect(proposals.some((row) => row.description === 'Idea')).toBe(false);
+  });
+
+  it('never detects another Household’s subscriptions', async () => {
+    const proposals = await runWithTenant(otherContext, () => recurring.detect(otherHouseholdId, { today: TODAY }));
+    expect(proposals).toHaveLength(0);
+    await expect(
+      runWithTenant(otherContext, () => recurring.confirmDetected(otherHouseholdId, '01a0a711-0000-7000-8000-000000000000')),
+    ).rejects.toThrow(/Recurring rule not found/);
   });
 
   it('never touches another Household’s rules', async () => {

@@ -11,6 +11,8 @@ import { todayLocally } from '../capture/capture.view';
 import {
   EMPTY_DRAFT,
   FREQUENCIES,
+  evidence,
+  proposals,
   buildRRule,
   dateLabel,
   describeSchedule,
@@ -74,6 +76,43 @@ import {
       }
       @if (notice(); as message) {
         <p class="notice" role="status">{{ message }}</p>
+      }
+
+      @if (proposals().length > 0) {
+        <section class="panel panel--proposals" aria-labelledby="recurring-proposals">
+          <h2 class="panel__title" id="recurring-proposals">
+            {{ i18n.t('recurring.proposals', { count: proposals().length }) }}
+          </h2>
+          <p class="muted">{{ i18n.t('recurring.proposalsHint') }}</p>
+          <ul class="cards">
+            @for (proposal of proposals(); track proposal.id) {
+              <li class="card">
+                <div class="card__head">
+                  <h3 class="card__name">{{ proposal.description }}</h3>
+                  <fm-money [amount]="proposal.amount" />
+                </div>
+                <p class="card__schedule">
+                  <span>{{ sentenceText(proposal.rrule) }}</span>
+                  <span class="card__next">{{ evidenceText(proposal) }}</span>
+                </p>
+                <div class="card__actions">
+                  <button class="button" type="button" (click)="acceptProposal(proposal)">
+                    {{ i18n.t('recurring.accept') }}
+                  </button>
+                  <button class="button button--quiet" type="button" (click)="dismissProposal(proposal)">
+                    {{ i18n.t('recurring.dismiss') }}
+                  </button>
+                </div>
+              </li>
+            }
+          </ul>
+        </section>
+      } @else {
+        <p class="muted">
+          <button class="button button--quiet" type="button" [disabled]="saving()" (click)="checkSubscriptions()">
+            {{ saving() ? i18n.t('recurring.checking') : i18n.t('recurring.check') }}
+          </button>
+        </p>
       }
 
       @if (formOpen()) {
@@ -301,6 +340,9 @@ import {
         margin: 0;
         font-size: var(--text-sm);
       }
+      .panel--proposals {
+        border-style: dashed;
+      }
       .panel,
       .card {
         padding: var(--space-4);
@@ -468,6 +510,7 @@ export class RecurringComponent {
   readonly problem = signal<TranslationKey | null>(null);
 
   readonly ordered = computed(() => orderedRules(this.rules()));
+  readonly proposals = computed(() => proposals(this.rules()));
   readonly upcoming = computed(() => upcomingWithin(this.rules(), todayLocally(), 30));
 
   /** The sentence for the draft, live — the form says what it is about to save. */
@@ -490,6 +533,59 @@ export class RecurringComponent {
 
   day(day: string): string {
     return dateLabel(day, this.i18n.tag());
+  }
+
+  evidenceText(proposal: RecurringRule): string {
+    return this.i18n.t(evidence(proposal).key, evidence(proposal).params);
+  }
+
+  /** Run the detector. The `recurring.detect` job calls the same service method. */
+  async checkSubscriptions(): Promise<void> {
+    this.saving.set(true);
+    this.error.set(null);
+    try {
+      const result = await this.graphql.query<{ detectSubscriptions: readonly RecurringRule[] }>(
+        DETECT_SUBSCRIPTIONS,
+      );
+      this.notice.set(
+        result.detectSubscriptions.length === 0
+          ? this.i18n.t('recurring.checkNone')
+          : this.i18n.t('recurring.checkFound', { count: result.detectSubscriptions.length }),
+      );
+      await this.load();
+    } catch (error) {
+      this.error.set(this.errors.for(error));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  async acceptProposal(proposal: RecurringRule): Promise<void> {
+    this.saving.set(true);
+    this.error.set(null);
+    try {
+      await this.graphql.query(CONFIRM_PROPOSAL, { ruleId: proposal.id });
+      this.notice.set(this.i18n.t('recurring.accepted'));
+      await this.load();
+    } catch (error) {
+      this.error.set(this.errors.for(error));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  async dismissProposal(proposal: RecurringRule): Promise<void> {
+    this.saving.set(true);
+    this.error.set(null);
+    try {
+      await this.graphql.query(DISMISS_PROPOSAL, { ruleId: proposal.id });
+      this.notice.set(this.i18n.t('recurring.dismissed'));
+      await this.load();
+    } catch (error) {
+      this.error.set(this.errors.for(error));
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   frequencyKey(frequency: string): TranslationKey {
@@ -691,6 +787,29 @@ const CREATE_RULE = /* GraphQL */ `
     createRecurringRule(input: $input) {
       ${RULE_FIELDS}
     }
+  }
+`;
+
+const DETECT_SUBSCRIPTIONS = /* GraphQL */ `
+  mutation DetectSubscriptions {
+    detectSubscriptions {
+      id
+      description
+    }
+  }
+`;
+
+const CONFIRM_PROPOSAL = /* GraphQL */ `
+  mutation ConfirmDetectedSubscription($ruleId: String!) {
+    confirmDetectedSubscription(ruleId: $ruleId) {
+      ${RULE_FIELDS}
+    }
+  }
+`;
+
+const DISMISS_PROPOSAL = /* GraphQL */ `
+  mutation DismissDetectedSubscription($ruleId: String!) {
+    dismissDetectedSubscription(ruleId: $ruleId)
   }
 `;
 

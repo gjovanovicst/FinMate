@@ -2426,6 +2426,21 @@ month must not silently consume budget (I-7).
 | The write path | `TransactionsService.create` | A materialised row gets I-3's category/kind check, ADR-011's currency, the local-day derivation and I-10's idempotency from the same code a hand-typed row uses. |
 | Not built | The `recurring.materialise` **job** (no worker), subscription **detection** (`is_detected`, `confirmDetectedSubscription`, 3.3.4), and the `RECURRING_DUE` alert producer | The mutation calls exactly the service method the job will, so wiring the scheduler later changes nothing here. |
 
+#### 5.8.2 Subscription detection (task 3.3.4)
+
+`detectSubscriptions` is a mutation here, not a query, because it **writes**: a run inserts a
+`RecurringRule` per candidate with `is_detected = true` and `is_active = false`. That is what gives the
+client something to accept, and what makes a dismissal stick.
+
+| Decision | Built | Why |
+|---|---|---|
+| Propose, never auto-create | Every candidate is an inactive, detected rule | docs/04 §8.2's guardrail; the screen shows the evidence and the user answers (*Prihvati* / *✕*). An inactive rule posts nothing, and the integration spec asserts as much. |
+| `dismissDetectedSubscription` | Soft-deletes the row | The detector skips an identity the Household already rules on, already has a proposal for, **or has dismissed** — a dismissal that could be re-proposed is a nag. It is also refused for a rule the Household made, because dismissing one would look like a delete. |
+| The candidate rules (`@finmate/domain/src/subscriptions.ts`) | ≥ 3 charges, amounts within 2 % of the median, gaps within 4 days (+3 for the calendar's slack in a month), last charge within 45 days | Three is where a coincidence becomes a pattern; the tolerance absorbs a price rise but not a different purchase; the recency window is why a cancelled subscription stops being one. The **period is chosen from the gaps** (weekly/monthly/quarterly/yearly) rather than assumed — assuming monthly is how a weekly delivery becomes a monthly bill. |
+| Identity | The resolved Merchant, else the **folded** description | The same fold the classifier and the entity ladder use, so `NETFLIX` and `Netflix` are one bill. |
+| No scheduled job | `recurring.detect` does not exist (no worker) | The mutation calls the same service method the job will; the screen has an explicit *Look for subscriptions* action meanwhile. |
+| Not built | The `RECURRING_DUE` alert producer, and `committedMinor` for a budget's pace insight | Both are wiring 3.1.x to 3.3.3's data; recorded in AGENTS. |
+
 ### 5.9 `commitReceipt` and `reconcileReceipt`
 
 ```graphql

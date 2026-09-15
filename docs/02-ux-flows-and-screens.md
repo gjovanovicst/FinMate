@@ -659,10 +659,12 @@ read-only in an advanced disclosure. `auto_confirm` is explained in one line: un
 > that lies about when money moves), and **no date is ever computed on the client** — `nextOccurrenceOn`
 > and `upcomingOccurrences` are the API's expansion, flattened into the 30-day line.
 >
-> **What the drawing has and this build does not.** The **Proposals** section (detected subscriptions
-> with their evidence, `⚠ Predlozi (2)`, *Prihvati* / *✕*) is task 3.3.4: nothing writes
-> `is_detected` yet, so the section would be permanently empty and is not rendered at all rather than
-> shown empty. There is also no "post it now" button: that is `materialiseRecurring`, the job's own
+> **The Proposals section is task 3.3.4 and ships.** Detection runs on request (*Traži pretplate* — the
+> `recurring.detect` job needs the worker), and each candidate is drawn with its evidence and two
+> answers: *Prihvati* turns it into an ordinary rule, *✕* dismisses it and the detector will not suggest
+> that identity again. Nothing is posted until the user accepts — the API stores every candidate as an
+> inactive, detected rule, which is what "propose, never auto-create" (docs/04 §8.2) means in the
+> schema. There is also no "post it now" button: that is `materialiseRecurring`, the job's own
 > entry point, and it belongs with the job's UI rather than as a per-rule action nobody asked for.
 > **The screen has not been looked at by a human at any width** (docs/02 §9's standing gap).
 

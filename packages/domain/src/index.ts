@@ -104,6 +104,14 @@ export {
 } from './recurring';
 
 export {
+  detectSubscriptions,
+  type DetectedPeriod,
+  type DetectOptions,
+  type SubscriptionCharge,
+  type SubscriptionProposal,
+} from './subscriptions';
+
+export {
   GOAL_STATUSES,
   ceilDiv,
   goalProgress,

@@ -168,6 +168,37 @@ describe('the recurring screen', () => {
     expect(queries.some((query) => query.includes('deleteRecurringRule'))).toBe(false);
   });
 
+  it('accepts and dismisses a proposal through the two detection mutations', async () => {
+    const proposal: RecurringRule = { ...RULE, id: 'p1', description: 'Spotify', isDetected: true, isActive: false };
+    const { fixture, client } = await mount((query) =>
+      query.includes('query Recurring')
+        ? { recurringRules: [proposal], accounts: { edges: [] } }
+        : {},
+    );
+    fixture.detectChanges();
+
+    // The proposal is drawn with its evidence and two answers, and it is not in the rules list.
+    expect(textOf(fixture)).toContain('Spotify');
+    expect(textOf(fixture)).toContain('Suggestions');
+
+    await fixture.componentInstance.acceptProposal(proposal);
+    await fixture.componentInstance.dismissProposal(proposal);
+    await fixture.whenStable();
+
+    const queries = client.query.mock.calls.map((entry) => String(entry[0]));
+    expect(queries.some((query) => query.includes('confirmDetectedSubscription'))).toBe(true);
+    expect(queries.some((query) => query.includes('dismissDetectedSubscription'))).toBe(true);
+  });
+
+  it('runs the detector on request, since there is no scheduled job', async () => {
+    const { fixture, client } = await mount();
+    await fixture.componentInstance.checkSubscriptions();
+    await fixture.whenStable();
+
+    const call = client.query.mock.calls.find((entry) => String(entry[0]).includes('detectSubscriptions'));
+    expect(call).toBeDefined();
+  });
+
   it('shows an error instead of an empty list when the query fails', async () => {
     const client = { query: vi.fn(() => Promise.reject(new Error('boom'))) };
     TestBed.configureTestingModule({

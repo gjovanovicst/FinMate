@@ -114,6 +114,44 @@ export class RecurringResolver {
     return toRecurringRuleModel(rule);
   }
 
+  @Mutation(() => [RecurringRuleModel], {
+    description:
+      'Propose the subscriptions hiding in the Household’s own history (F-16, task 3.3.4). Each proposal ' +
+      'is stored `isDetected: true, isActive: false`, so it posts nothing until the user accepts it — ' +
+      '**propose, never auto-create** (docs/04 §8.2). An identity the Household already rules on, already ' +
+      'proposed, or already dismissed is skipped. The `recurring.detect` job calls this same method.',
+  })
+  async detectSubscriptions(
+    @CurrentHouseholdId() householdId: string,
+  ): Promise<RecurringRuleModel[]> {
+    const proposals = await this.recurringService.detect(householdId);
+    return proposals.map(toRecurringRuleModel);
+  }
+
+  @Mutation(() => RecurringRuleModel, {
+    description: 'Accept a proposal: it becomes an ordinary rule and starts posting from its next date.',
+  })
+  async confirmDetectedSubscription(
+    @CurrentHouseholdId() householdId: string,
+    @Args('ruleId', { type: () => String }) ruleId: string,
+  ): Promise<RecurringRuleModel> {
+    const rule = await this.recurringService.confirmDetected(householdId, ruleId);
+    return toRecurringRuleModel(rule);
+  }
+
+  @Mutation(() => Boolean, {
+    description:
+      'Dismiss a proposal. It is soft-deleted, so the detector remembers not to propose that identity ' +
+      'again — and a rule the Household made is refused rather than quietly removed.',
+  })
+  async dismissDetectedSubscription(
+    @CurrentHouseholdId() householdId: string,
+    @Args('ruleId', { type: () => String }) ruleId: string,
+  ): Promise<boolean> {
+    await this.recurringService.dismissDetected(householdId, ruleId);
+    return true;
+  }
+
   @Mutation(() => Boolean, {
     description: 'Soft-delete a rule. The Transactions it posted are kept — they are the ledger.',
   })

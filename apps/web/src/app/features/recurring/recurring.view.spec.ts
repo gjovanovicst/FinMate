@@ -9,8 +9,10 @@ import {
   draftFromRule,
   draftProblem,
   intervalOf,
+  evidence,
   orderedRules,
   problemKey,
+  proposals,
   ruleWriteInput,
   upcomingWithin,
   weekdayLabelKey,
@@ -178,6 +180,24 @@ describe('the form’s write plan', () => {
       autoConfirm: false,
     });
     expect(ruleWriteInput({ ...valid, description: '' }, 'RSD')).toBeNull();
+  });
+});
+
+describe('the proposals', () => {
+  it('lists what is detected and not yet accepted, and nothing else', () => {
+    const detected = rule({ id: 'p1', isDetected: true, isActive: false, description: 'Spotify' });
+    const accepted = rule({ id: 'p2', isDetected: false, isActive: true });
+
+    expect(proposals([detected, accepted]).map((row) => row.id)).toEqual(['p1']);
+  });
+
+  it('states the evidence with the number of dates the API expanded', () => {
+    const proposal = rule({
+      isDetected: true,
+      isActive: false,
+      upcomingOccurrences: ['2026-10-01', '2026-11-01', '2026-12-01'],
+    });
+    expect(evidence(proposal)).toEqual({ key: 'recurring.evidence', params: { count: 3 } });
   });
 });
 
