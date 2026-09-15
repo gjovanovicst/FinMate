@@ -132,10 +132,41 @@ Stage 5 uses embeddings of the household's **own** history, not a global model, 
 `Dejan rođa` resolvable for one household and irrelevant to another. Embeddings are cached per
 household in `pgvector` (or Redis for hot items); a free local embedding model is sufficient.
 
+**Steps 1–4 are pure and live in `packages/nlp`** (task 2.1.4); step 5 is I/O and belongs to the
+API/worker layer (task 2.3.4). The details the ladder above leaves open, fixed so the caller and the
+tests cannot disagree:
+
+| Rung | Exact meaning |
+|---|---|
+| 1 Exact | The trimmed input equals `name` or a stored alias **character for character**, as supplied. Aliases are stored normalised, so in production a stored alias usually lands on rung 2; rung 1 is what catches a canonical name typed exactly as displayed. Matching the canonical `name` is always allowed, whether or not an alias row exists for it. |
+| 2 Normalized | The folded input equals the folded name/alias (`foldForMatching`: Cyrillic → Latin, case, diacritics, whitespace). |
+| 3 Prefix / token | Every folded token of the name or an alias occurs among the input's folded tokens. Word order is irrelevant, so `lidl prodavnica` and `prodavnica lidl` both reach `lidl`. A prefix of a *word* (`prod` → `prodavnica`) is deliberately **not** a match: at 0.90 it would auto-apply on an abbreviation. |
+| 4 Trigram | `similarity(folded input, folded name/alias) > 0.55`, compared against the folded forms so the SQL `similarity()` over the normalised alias column is the same computation. The default implementation in `packages/nlp` follows the `pg_trgm` definition (two leading and one trailing pad space per word, length-3 windows, `|∩| / |∪|` over the sets); a caller injecting SQL `similarity()` must use that same definition, or the effective threshold drifts silently. |
+
+**Rung 4's confidence mapping (derived).** The band `0.55–0.85` is what §4 fixes; the function is
+interpolated linearly and monotonically from the threshold to certainty:
+
+```text
+t          = clamp((similarity - 0.55) / (1 - 0.55), 0, 1)
+confidence = 0.55 + t * (0.85 - 0.55)
+```
+
+The safe reading of [ADR-009](14-decisions-and-risks.md) is therefore the one implemented: a hit that
+only just clears 0.55 carries a confidence **below 0.60** and lands in the *ask* lane. This rung never
+auto-applies — 0.60 is not reached until similarity 0.625, and 0.90 is outside the band entirely. Rung
+4 produces a **candidate with a confidence**, not a decision: the caller's confidence gate decides the
+lane, and no second gate belongs in front of the ladder.
+
+**Ties** are broken deterministically: confidence descending, then the matched name/alias's length
+descending (the more specific match), then `entity.id` ascending. Ids are unique, so the order is
+total.
+
 **Merchant vs. counterparty disambiguation:** an entity is a **Merchant** if it appears with retail
 semantics (multiple transactions, an amount bracket typical of retail, a known chain alias);
 otherwise a **Counterparty**. When ambiguous, the LLM decides once and the answer is remembered as an
-alias — the same self-improving pattern as categories.
+alias — the same self-improving pattern as categories. This needs transaction counts, amount brackets
+and eventually the model, so it is **not** part of the pure resolver; it attaches in the classification
+module (task 2.2.3).
 
 ---
 

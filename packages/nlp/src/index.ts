@@ -1,7 +1,10 @@
 /**
- * Serbian natural-language normalization, segmentation and extraction.
+ * Serbian natural-language normalization, segmentation, extraction and the pure half of entity
+ * resolution.
  *
- * Owner: docs/04-categorization-and-ai-engine.md §3
+ * Owner: docs/04-categorization-and-ai-engine.md §3 (normalize / segment / extract) and §4 steps 1–4
+ * (exact → normalized → prefix/token → trigram). Step 5, the embedding k-NN, is I/O and lands in the
+ * API/worker layer as task 2.3.4.
  *
  * **Pure and dependency-free** (no database, no AI provider). It runs on BOTH the server and the
  * browser — docs/05 §5.3 uses it client-side so the capture preview is instant — which is why the
@@ -39,3 +42,26 @@ export {
   type ExtractOptions,
   type TransactionFragment,
 } from './extract';
+
+export {
+  TRIGRAM_CONFIDENCE_MAX,
+  TRIGRAM_CONFIDENCE_MIN,
+  TRIGRAM_SIMILARITY_THRESHOLD,
+  pgTrigramSimilarity,
+  trigramConfidence,
+  trigramsOf,
+  type TrigramSimilarity,
+} from './trigram';
+
+export {
+  RESOLUTION_LADDER,
+  RUNG_CONFIDENCE,
+  resolveEntity,
+  type CounterpartyType,
+  type EntityCandidate,
+  type EntityKind,
+  type EntityMatch,
+  type EntityResolutionResult,
+  type ResolveEntityOptions,
+  type ResolutionRung,
+} from './resolve';
