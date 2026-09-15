@@ -259,6 +259,27 @@ Step 6 is the only place the app teaches by interruption, and it fires once per 
 >    column, and in v1 a Household has exactly one Member (F-29 is a `Won't`), so the step is recorded
 >    in `households.settings.onboarding`. A per-member step becomes meaningful when sharing lands; see
 >    [06 §5.12.1](06-api-specification.md).
+>
+> 4. **What step 1 ships (task 2.3.3b): a preview, not an editor.** The table above asks for inline
+>    rename/delete and *Dodaj kategoriju*. The wizard previews the tree it is about to create and links
+>    to `/categories`, which is the shipped tree editor with I-11/I-12 already enforced. A second editor
+>    inside the wizard would be a second implementation of the same invariants for one screen's
+>    convenience, and the wireframe's own copy says *menjaš ih kasnije*. Rename/delete in step 1 is
+>    therefore **not built** and is not a gap in the feature: the editor is one tap away.
+> 5. **Step 5 offers a monthly budget, not "monthly income + savings target".** SavingGoal is Phase 3
+>    (task 3.3.2) and does not exist, and the budget model is expense-side only, so an income figure has
+>    nowhere to go. What step 5 writes is a whole-household monthly `Budget`, which is what the
+>    dashboard's safe-to-spend actually reads.
+> 6. **Step 3 needs a category picker, and the wireframe does not show one.** The pipeline suggests a
+>    category when the *phrase* implies one (`septička jama` does) and suggests nothing for a person's
+>    name (`Dejan rođa`), verified live. Without a picker, step 3 could only ever create a rule for a
+>    bill — so the F-09 case ("correct `Dejan` once and it is learned") would be unreachable from
+>    onboarding. Each card therefore has a category select, seeded with the suggestion when there is
+>    one; *Dodaj* creates the Counterparty either way and a Rule only once a category is chosen.
+> 7. **The navigation is hidden during onboarding.** The wireframe draws a full-screen wizard with only
+>    *Back* and *Step 3 of 6*; a list of ten destinations beside "pick your starting categories" invites
+>    the user to leave the one flow that decides whether the product is useful. Every step still has
+>    Skip, so this is not a trap.
 > 3. **Step 1 is what makes the promise work, and it needs keyword *weights*.** Deciding a category
 >    from keywords requires a score of 2.0 ([04 §5.4](04-categorization-and-ai-engine.md)) and the
 >    schema default weight is 1.0, so a tree seeded at the default categorises nothing. The shipped

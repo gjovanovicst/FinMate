@@ -31,7 +31,7 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
     <a class="skip-link" href="#main">{{ i18n.t('app.skipToContent') }}</a>
 
     <div class="shell" [class.shell--authenticated]="isAuthenticated()">
-      @if (isAuthenticated()) {
+      @if (showNav()) {
         <nav class="nav" [attr.aria-label]="i18n.t('app.primaryNav')">
           @if (moreOpen()) {
             <!-- Compact only: on wide screens the overflow items are in the sidebar already, and
@@ -94,6 +94,7 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
         </nav>
       }
 
+      <!-- The nav's own grid row must collapse with it, or the wizard sits under an empty band. -->
       <main id="main" class="content" tabindex="-1">
         <router-outlet />
       </main>
@@ -349,6 +350,17 @@ export class AppComponent {
   readonly isAuthenticated = this.auth.isAuthenticated;
 
   /**
+   * Whether to draw the navigation.
+   *
+   * docs/02 §4.1 draws onboarding as a full-screen wizard with only *Back* and *Step 3 of 6* — no nav,
+   * because a list of ten destinations next to "pick your starting categories" invites the user to
+   * leave the one flow that decides whether the product is useful. Every step still has its own Skip
+   * and the last has Finish, so hiding the nav is not a trap.
+   */
+  private readonly url = signal(this.router.url);
+  readonly showNav = computed(() => this.isAuthenticated() && !this.url().startsWith('/onboarding'));
+
+  /**
    * Roles are shown as words, not enum values. The role itself comes from the server (never a token
    * claim), and only the label is localised.
    */
@@ -399,7 +411,8 @@ export class AppComponent {
 
     this.router.events
       .pipe(filter((event) => event instanceof NavigationEnd))
-      .subscribe(() => {
+      .subscribe((event) => {
+        this.url.set((event as NavigationEnd).urlAfterRedirects);
         if (this.isAuthenticated()) void this.reviewQueue.refresh();
       });
   }

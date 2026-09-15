@@ -1,6 +1,7 @@
 import type { Routes } from '@angular/router';
 
 import { anonymousGuard, authenticatedGuard } from './core/auth/auth.guard';
+import { onboardingGuard } from './core/onboarding/onboarding.guard';
 
 /**
  * Routes.
@@ -23,8 +24,17 @@ export const routes: Routes = [
     title: 'Registracija',
   },
   {
-    path: '',
+    path: 'onboarding',
     canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/onboarding/onboarding.component').then((m) => m.OnboardingComponent),
+    title: 'Podešavanje',
+  },
+  {
+    path: '',
+    // The dashboard is the only guarded entry point: sign-in lands here, which is the case docs/02
+    // FL-01 §3 describes. Skipping onboarding has to leave the rest of the app reachable.
+    canActivate: [authenticatedGuard, onboardingGuard],
     loadComponent: () =>
       import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent),
     title: 'Pregled',

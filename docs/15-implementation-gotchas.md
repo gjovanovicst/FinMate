@@ -401,6 +401,13 @@ The tables hold platform content beside the Household’s own rows, which is whe
 
 ## 9. Web UI, templates and i18n
 
+- **A spec that uses `TestBed` needs BOTH `// @vitest-environment jsdom` as its first line AND
+  `initAngularTesting()` imported before any Angular import.** They fail differently and neither message
+  names the cause: without the JIT compiler it is `Cannot read properties of null (reading 'ngModule')`,
+  and without a DOM it is `ReferenceError: document is not defined` from `platform-browser`'s
+  `DOCUMENT` factory. A *pure* spec (no `TestBed`) needs neither, which is why most specs do not show
+  the pattern — and why a service spec that injects `GraphqlClient` (which injects `HttpClient`) does.
+
 Angular 22 zoneless + signals, and three separate ways a template literal or a type-checker can mislead you.
 
 - **No hardcoded user-facing copy.** Every string goes through `I18nService.t('key')`. English is
@@ -421,10 +428,13 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   Both are JS template literals, so a backtick *terminates the string* and the remainder is parsed as
   code. The error names neither the file nor the real problem: `Failed to resolve styles at position
   N to a string` / `Failed to resolve template at position N`, usually surfacing as
-  `Angular compilation initialization failed`. It has cost real time **four** times — twice from a
-  backtick in a CSS comment documenting a property, and again in 2.3.2b from *two* HTML comments and a
-  CSS comment written in the same sitting (the author knew the rule and still did it, because a comment
-  that names a property — `aria-label`, `1`–`9` — reaches for backticks by reflex). Write CSS/HTML
+  `Angular compilation initialization failed`. It has cost real time **five** times — twice from a
+  backtick in a CSS comment documenting a property; again in 2.3.2b from *two* HTML comments and a CSS
+  comment written in the same sitting; and again in 2.3.3b from a comment that quoted `septička jama`,
+  **written minutes after adding this entry**. The pattern is that the author knows the rule and does it
+  anyway, because a comment that names a property — `aria-label`, `1`–`9`, a sample input — reaches for
+  backticks by reflex. Two habits that work: describe the example in words (a bill such as septicka jama),
+  and run the plain-backtick scan below before believing a template error is something else. Write CSS/HTML
   comment prose without them, or use quotes. **The failure looks like a syntax error, not a template
   error** when it happens in TS: `tsc` reports `TS1005: ',' expected` at the first markup line after the
   comment, and `const X = /* GraphQL */ \`` lines further down show as stray backticks — so a
