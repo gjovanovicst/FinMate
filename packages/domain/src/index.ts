@@ -77,6 +77,24 @@ export {
 } from './budget';
 
 export {
+  alertKindForInsight,
+  evaluateAlerts,
+  isQuietHour,
+  notificationDedupeKey,
+  MAX_NOTIFICATIONS_PER_DAY,
+  type AlertCandidate,
+  type AlertDecision,
+  type AlertDecisionReason,
+  type AlertEvaluationInput,
+  type AlertKind,
+  type AlertRuleFact,
+  type AlertSeverity,
+  type NotificationChannel,
+  type NotificationStatus,
+  type QuietHours,
+} from './alerts';
+
+export {
   baselineMean,
   budgetPaceInsights,
   categorySpikeInsights,

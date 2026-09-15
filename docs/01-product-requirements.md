@@ -264,6 +264,40 @@ Scenario: Determinism and re-runs
   And a re-run for the same period writes nothing new for a condition already recorded
 ```
 
+#### F-22 alerts — the evaluator's rules (task 3.1.2)
+
+Canonical for `packages/domain/src/alerts.ts` (docs/05 §9's pipeline). An alert is a **decision**, not
+a side effect: the evaluator returns `DELIVER` / `QUIET_HOURS` / `DUPLICATE` / `RATE_LIMITED` /
+`RULE_INACTIVE` / `POSITIVE_DISABLED` and the caller writes rows.
+
+```gherkin
+Scenario: Dedupe by condition and channel
+  Given an insight whose dedupeKey is "<kind>:<periodStart>:<subject>"
+  When a notification for it would be created
+  Then its dedupe_key is "<insight dedupeKey>:<channel>"
+  And a second attempt for the same key is suppressed, not re-sent
+  And the database enforces it: UNIQUE (user_id, dedupe_key)
+
+Scenario: Quiet hours delay, they do not drop
+  Given quiet hours 21:00-08:00 in the user's local time
+  When a condition fires at 23:15
+  Then the notification is written QUEUED, never SUPPRESSED
+  And it is delivered once the window ends
+  And a window whose start equals its end means "never quiet", not "always quiet"
+
+Scenario: Rate limit
+  Given the user has already received 10 notifications in the last 24 hours
+  When another non-critical condition fires
+  Then it is suppressed as RATE_LIMITED
+  And a CRITICAL condition is still delivered: a cap that can swallow the one alert that
+    mattered is worse than a noisy feed
+
+Scenario: Rules and positive feedback
+  Given an alert rule of the matching kind that is inactive, or no rule at all
+  Then nothing is delivered for that condition
+  And a POSITIVE insight is in-app only, and only when the user has positive feedback switched on
+```
+
 ### F-23 — Assistant answers
 
 ```gherkin

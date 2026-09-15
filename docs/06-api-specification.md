@@ -2554,6 +2554,24 @@ gives the schema two types named `JSON` and **fails at boot** with
 *"Schema must contain uniquely named types"* — invisible to `api:test`, which builds per-module testing
 modules. `JSON` now lives in `GraphQLScalarsModule` and is imported, never re-provided.
 
+### 5.14 Alert rules and notifications (task 3.1.2)
+
+The evaluator's rules are canonical in [01 §6 F-22](01-product-requirements.md); this records the
+contract. The pipeline is docs/05 §9's, and the storage is docs/03 §4's two tables — no migration.
+
+| Decision | Built | Why |
+|---|---|---|
+| `dedupe_key` shape | `<insight dedupeKey>:<channel>`, enforced by `UNIQUE (user_id, dedupe_key)` | The insight's key already names the condition (kind, period, subject), which is docs/05 §9's `BUDGET_THRESHOLD:category-17:2026-10:80` in this build's vocabulary. Per **channel**, because an in-app row does not mean the email was sent — they have different costs and different meanings. |
+| Quiet hours | `{ "start": "HH:MM", "end": "HH:MM" }`, may cross midnight; `start === end` means never | docs/05 §9 puts the check before the channel fan-out: nothing is delivered inside the window. A crossing window inverts if written as `>= start && < end`, and `start === end` read as "always" would silently switch every alert off. |
+| Quiet hours outcome | `status = 'QUEUED'` | docs/05 §8's `notifications.dispatch` job drains queued rows, so quiet hours **delay**. Dropping would answer "do not interrupt me" with "keep me ignorant". |
+| Rate limit | 10 notifications per user per rolling 24 h; `CRITICAL` exempt | Not previously specified. A cap exists for noise, and a cap that can swallow the one alert that mattered does more damage than the noise it prevents. |
+| Insight → rule mapping | `BUDGET_PACE → PACE_OVERRUN`; `CATEGORY_SPIKE`/`UNUSUAL_SPEND → UNUSUAL_SPEND` | One question ("is this normal?") at two grains; two switches for one intention is configuration nobody understands. `RECURRING_DUE` and `GOAL_REACHED` stay in the vocabulary with **no producer** until 3.3.3 and 3.3.2 — the §5.5 precedent. |
+| `POSITIVE` delivery | In-app only, and only when `positiveFeedback` is on | Good news is not worth a push, and docs/02 §7.1 gives it its own tab rather than the interrupt path. |
+| `AlertRule.version` | **Not implemented** | docs/06 §3.2 declares `version: Int!` and `AlertRuleUpdateInput.version`, but neither docs/03 §4's DDL nor the migrated table has the column. Rather than invent a migration for optimistic concurrency on a settings list nobody edits concurrently, the field is omitted and this line is the record. Adding it later is one migration and one input field. |
+| Notification copy | **English only, rendered server-side** | `notifications.title`/`body` are `TEXT NOT NULL` and the API has no i18n catalogue — the web's lives in `apps/web`. This is a **Definition-of-Done breach** of the same shape as `fm-money`'s hardcoded label: it is recorded here, and the fix is either a shared catalogue in a package or storing a key plus payload parameters and rendering at read time. `NotificationPreferencesInput.locale` exists and is not yet honoured. |
+| `EMAIL`/`PUSH`/`WEB_PUSH` | Rows are written; nothing is sent | Channel fan-out is task 3.1.3. The evaluator already decides per channel, so 3.1.3 changes only the writer. |
+| Rule CRUD | `alerts`, `createAlertRule`, `updateAlertRule` | Without one, the evaluator is unconfigurable and unverifiable end to end. The settings **screen** is 3.1.4. |
+
 ---
 
 ## 6. Subscriptions

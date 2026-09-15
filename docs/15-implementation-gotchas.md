@@ -191,6 +191,15 @@ Code-first GraphQL with custom scalars: most of these are registration problems 
   failure lands in the error banner instead of downloading a file full of JSON. Distinct from the
   async whole-household `exportData` (docs/06 §5.11), which needs the worker and is not built.
 
+- **An `HH:MM` quiet-hours window that crosses midnight inverts if you write the obvious comparison.**
+  `time >= start && time < end` is correct for `12:00–13:00` and exactly **backwards** for the common
+  case `21:00–08:00`, where it mutes the daytime and alerts at 3 a.m. The crossing case needs
+  `time >= start || time < end`. Two adjacent traps: `start === end` must mean *never quiet* (a user
+  setting both ends to `00:00` means "do not hold anything back", and reading it as "always" silently
+  switches every alert off), and quiet hours **delay** rather than drop — the row is written `QUEUED`
+  for docs/05 §8's `notifications.dispatch` to drain, because "do not interrupt me" is not "keep me
+  ignorant". Asserted on both sides of every boundary in `packages/domain/src/alerts.spec.ts`.
+
 - **A custom scalar provided by two modules breaks the schema at boot, not in tests.** `JsonScalar`
   was legitimately added to `InsightsModule`'s providers exactly as `ClassificationModule` has it, and
   the whole app then failed to start with `Schema must contain uniquely named types but contains multiple
