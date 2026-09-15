@@ -34,6 +34,7 @@ The core thesis, in one line:
 | Integrating / testing | [06](06-api-specification.md) → [10](10-testing-and-quality.md) |
 | Operating it | [11](11-devops-and-observability.md) → [08](08-security-privacy-and-compliance.md) |
 | Reviewing scope disputes | [14](14-decisions-and-risks.md) (ADR log) |
+| Debugging something that should work | [15](15-implementation-gotchas.md) |
 
 ---
 
@@ -65,6 +66,7 @@ The core thesis, in one line:
 | 10 | [Testing & quality](10-testing-and-quality.md) | Test pyramid, AI evaluation harness, golden dataset, CI gates, release criteria |
 | 11 | [DevOps & observability](11-devops-and-observability.md) | Environments, Docker, CI/CD, migrations, monitoring, SLOs, cost controls |
 | 14 | [Decisions & risks](14-decisions-and-risks.md) | ADR log, risk register, open questions needing a human decision |
+| 15 | [Implementation gotchas](15-implementation-gotchas.md) | 63 accumulated traps in 10 groups, each saying what the failure looks like — read before debugging anything that "should work" |
 
 ---
 
@@ -89,7 +91,7 @@ These are fixed for the plan; each has an ADR in [`14-decisions-and-risks.md`](1
 
 | | |
 |---|---|
-| Documents | 16 (this index + 15 numbered) |
+| Documents | 17 (this index + 16 numbered) |
 | ADRs | 19, with 2 closed questions recorded inline |
 | Feature IDs | 34 (`F-01`–`F-34`), all traceable to code and tests |
 | Invariants | 12 (`I-1`–`I-12`) |
