@@ -996,6 +996,14 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   Playwright *plus* a service worker means the page still gets HTTP responses — the app is not "offline"
   in the sense of "no responses", which is exactly why the shell can boot at all.
 
+- **The API's structured log is boot-only, so a client/server disagreement cannot be split by reading it.** Found trying to
+  diagnose R-27: the pass showed a queued capture's flush returning **HTTP 200** while the database held nothing, and the obvious
+  next question — "did the request even reach the API?" — has **no answer in the logs**, because `/tmp/api-dev.log` contains the
+  Nest boot sequence and nothing per-request (`grep -c graphql` returns the module-loader line). docs/11 asks for structured JSON
+  logs and the filter/error paths do log, but there is no request log, so a live cross-check between what the browser saw and what
+  the server did is impossible. When a defect is "the client thinks X, the server did Y", **add the request log before hunting** —
+  otherwise the only evidence is the client's own account of events.
+
 - **No hardcoded user-facing copy.** Every string goes through `I18nService.t('key')`. English is
   primary and is the source of the key set: add the string to `translations/en.ts` first, then to
   `sr-latn.ts` (typed, so a miss is a compile error). `sr-Cyrl` is generated — never edit it. A
