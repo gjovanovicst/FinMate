@@ -661,6 +661,51 @@ and they are the input to the next content iteration rather than a rewrite of th
   transactions?" — with a diff preview. This is a delight feature *and* it retroactively fixes the
   analytics that made the user distrust the app.
 
+#### 8.1.6 The AI's category and the deterministic direction are never reconciled (open, task 2.2.7)
+
+Found on 2026-09-16, minutes after the first live provider was wired (ADR-032), by reproducing a user's
+own entry — `Lidl 2000, fuel 3500, salary 150000` — on a Household with the starter tree seeded.
+
+`fuel` and `salary` are English, so the deterministic stages correctly found nothing and the model was
+asked. It answered well on the categories: `fuel 3500` → `Gorivo` at 0.807, `salary 150000` → `Plata` at
+0.765. Both were then saved with `kind = EXPENSE`. `Plata` is an **INCOME** category.
+
+| input | decidedBy | category | category kind | row kind | needsDirectionConfirmation |
+|---|---|---|---|---|---|
+| `plata 150000` | KEYWORD | Plata | INCOME | **INCOME** | false |
+| `salary 150000` | AI | Plata | INCOME | **EXPENSE** | false |
+| `income 150000` | AI | Uplata | INCOME | **EXPENSE** | false |
+
+**Why it happens.** §3.1's income vocabulary is Serbian (`plata`, `penzija`, `uplata`, `povraćaj`) and
+it sets `kind` deterministically; an English synonym sets nothing, so the fragment defaults to EXPENSE.
+`PipelineCategory` carries `kind` — every Category has one (§4's tree, invariant I-3) — so the pipeline
+holds both halves of the contradiction and never looks: the closed candidate list handed to the model is
+**not filtered by the fragment's direction**, and the model's choice is **not checked against it**.
+`packages/ai`'s `provider.ts` states the intended rule for the amount ("The caller must reconcile it
+against the deterministic parser and refuse it when they disagree"); the direction has no equivalent.
+
+**Why this is the mirror of 8.1.5, and not the same defect.** There, a category-implying stage decided
+while the direction was *unknown*, and the fix was a gate that refuses to decide. Here the direction is
+**known** and a later stage contradicts it — so the fix is a reconciliation, not a refusal, and it is one
+place (the AI stage) rather than five. It also slips past the confidence gate rather than through it:
+0.765 is the verify lane, so the row is neither blocking nor flagged, and nothing downstream will ever
+ask about it.
+
+**Why it is scheduled rather than patched.** Every candidate fix is a product decision about which side
+wins, and they are not equivalent:
+
+- **filter the candidate list by direction** before the model sees it — cheapest, but it silently
+  removes the model's ability to say "this is actually income" when the *parser* is wrong;
+- **trust the model's category and flip `kind`** — makes the model authoritative over a money-semantics
+  field, which ADR-001 and ADR-003 forbid;
+- **keep the kind, drop the category and ask** — safest and consistent with 8.1.5, but it turns a
+  reasonable suggestion into a blocking question whenever a Household types in English;
+- **set `needsDirectionConfirmation` and let the direction gate handle it** — reuses 8.1.5's mechanism,
+  and is the option that needs the least new code.
+
+Recorded in [15 §6](../15-implementation-gotchas.md) and scheduled as task 2.2.7 in [09](09-implementation-plan.md);
+the behaviour is unchanged until that decision is made.
+
 ---
 
 ## 9. AI provider abstraction

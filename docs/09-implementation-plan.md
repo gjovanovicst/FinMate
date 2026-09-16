@@ -129,6 +129,7 @@ enough until there is a product.
 | 2.2.4 | Capture UI: single + bulk input, parse preview, per-row confidence badge, one-action confirm | 3 | F-05, F-06 |
 | 2.2.5 | Idempotency + duplicate detection | 1.5 | F-06 |
 | 2.2.6 | **The AI composition root and the consent gate** — **added by [ADR-031](14-decisions-and-risks.md), decided by [ADR-032](14-decisions-and-risks.md)**, and landed during Sprint 4.2 because nothing had scheduled it: config → routing table → adapters → `AI_CLASSIFIER`/`NARRATOR`/`OCR`/`EMBEDDINGS`, inert when nothing is configured; the per-Household `consents` record with `aiConsents` + `recordAiConsent` (OWNER-only, append-only) and the router's per-call `ConsentGate`; plus the two prompt defects the first live call found | 2 | F-05, F-06, F-07 |
+| 2.2.7 | **Reconcile the model's category with the deterministic direction** — **found by 2.2.6's live verification** (docs/04 §8.1.6): the closed candidate list is not filtered by the fragment's `kind` and the model's choice is not checked against it, so `salary 150000` saves as an EXPENSE row in the INCOME category `Plata` at 0.765 — the verify lane, so nothing asks. The decision is which side wins; the recommended option reuses 8.1.5's direction gate | 0.5 | F-05, F-07 |
 
 ### Sprint 2.3 (week 8) — Corrections, review queue, seeding, ~10 pd
 

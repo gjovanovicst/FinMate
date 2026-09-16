@@ -646,6 +646,20 @@ docs/04 is canonical for all of this. The recurring theme is that a second copy 
   The lesson for any seam that composes several layers into one wire message: **assert the bytes that
   ship**, not the value each layer returns.
 
+- **An EXPENSE row in an INCOME category: the model's category and the deterministic direction are never
+  reconciled.** The rules decide `kind` from docs/04 §3.1's Serbian income vocabulary and set
+  `needsDirectionConfirmation` when the sign is a question. The AI stage decides only a *category* — and
+  `PipelineCategory` carries `kind`, so the pipeline holds both halves and never compares them. Real
+  symptom, reproduced live on 2026-09-16 by re-typing a user's entry: `salary 150000` → `decidedBy: AI`,
+  category `Plata` (an INCOME category) and `kind = EXPENSE`, at 0.765 — the **verify** lane, so not
+  blocking, not flagged, and nothing downstream ever asks. `income 150000` → `Uplata`, same shape. The
+  Serbian spelling is fine (`plata 150000` → KEYWORD, `INCOME`). It is the mirror of docs/04 §8.1.5: there
+  a stage decided while the direction was *unknown* (fixed by a gate that refuses); here the direction is
+  *known* and a later stage contradicts it. Open, scheduled as task 2.2.7 — every fix (filter the
+  candidate list by direction, flip `kind`, drop the category and ask, or set the direction flag and let
+  8.1.5's gate handle it) is a product decision about which side wins, so it is recorded rather than
+  patched. docs/04 §8.1.6.
+
 ## 7. Capture and the commit path
 
 F-05/F-06 and I-10: the path where a mistake costs the user money.
