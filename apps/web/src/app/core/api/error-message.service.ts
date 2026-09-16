@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 
 import { I18nService } from '../i18n/i18n.service';
 import type { TranslationKey } from '../i18n/translations';
+import { isUnreachable } from './unreachable';
 
 /**
  * Turn a typed API error into a message in the active language.
@@ -27,11 +28,9 @@ export class ErrorMessageService {
   private readonly i18n = inject(I18nService);
 
   for(error: unknown): string {
-    // Before any code lookup: a request that never reached the API has no code.
-    const status = readStatus(error);
-    if (status === 0 || status === 502 || status === 503 || status === 504) {
-      return this.i18n.t('error.UNREACHABLE');
-    }
+    // Before any code lookup: a request that never reached the API has no code. The rule lives in
+    // `unreachable.ts`, because the auth store and the offline shell ask the same question (ADR-033).
+    if (isUnreachable(error)) return this.i18n.t('error.UNREACHABLE');
 
     const code = readCode(error);
     const key = code ? (`error.${code}` as TranslationKey) : undefined;
@@ -43,13 +42,6 @@ export class ErrorMessageService {
     const serverMessage = readServerMessage(error);
     return serverMessage ?? this.i18n.t('error.INTERNAL');
   }
-}
-
-/** Angular's `HttpErrorResponse.status`, read structurally so this module needs no HTTP import. */
-function readStatus(error: unknown): number | null {
-  if (error === null || typeof error !== 'object' || !('status' in error)) return null;
-  const status = (error as { status?: unknown }).status;
-  return typeof status === 'number' ? status : null;
 }
 
 function readCode(error: unknown): string | null {

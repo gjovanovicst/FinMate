@@ -118,15 +118,27 @@ const REFUSAL_CODES = new Set([
   'BAD_USER_INPUT',
   'GRAPHQL_VALIDATION_FAILED',
   'GRAPHQL_PARSE_FAILED',
-  'UNAUTHENTICATED',
   'FORBIDDEN',
   'NOT_FOUND',
   'CONFLICT',
   'QUOTA_EXCEEDED',
 ]);
 
-/** Codes that are the server's problem, so the same request may succeed later. */
-const RETRYABLE_CODES = new Set(['INTERNAL', 'RATE_LIMITED', 'AI_UNAVAILABLE', 'SERVICE_UNAVAILABLE']);
+/**
+ * Codes that are not the entry's fault, so the same request may succeed later.
+ *
+ * `UNAUTHENTICATED` is here rather than above (ADR-033 decision 4): it describes the **session**, not
+ * the row. A queue that drains just after a session expired — or while the app is signed out and the
+ * network came back — used to park every entry as *cannot be sent*, which is the one outcome a durable
+ * queue must never produce for a reason the user can fix by signing in.
+ */
+const RETRYABLE_CODES = new Set([
+  'INTERNAL',
+  'RATE_LIMITED',
+  'AI_UNAVAILABLE',
+  'SERVICE_UNAVAILABLE',
+  'UNAUTHENTICATED',
+]);
 
 /**
  * Classify a failure from `send`.
@@ -147,6 +159,9 @@ export function isRetryable(error: unknown): boolean {
   if (isGraphQLFailure(error)) {
     if (error.status === 0 || error.status >= 500) return true; // offline, DNS, 5xx
     if (error.status === 408 || error.status === 429) return true; // timeout, throttled
+    // A `401` is the session's problem, never the row's (ADR-033 decision 4): signing in is what fixes
+    // it, so the entry waits rather than being parked as *cannot be sent*.
+    if (error.status === 401) return true;
     if (error.status >= 400) return false; // every other 4xx is a refusal
 
     for (const item of error.errors) {

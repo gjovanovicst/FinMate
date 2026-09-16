@@ -24,6 +24,7 @@
 import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Injectable, computed, effect, inject, signal } from '@angular/core';
 
+import { AuthStore } from '../auth/auth.store';
 import { GraphQLRequestError, GraphqlClient } from '../graphql/graphql.client';
 import { OfflineStoreHolder } from './offline-store-holder';
 import { withFlushLock } from './flush-lock';
@@ -223,6 +224,7 @@ export class SyncRefusedError extends Error {
 @Injectable({ providedIn: 'root' })
 export class SyncService {
   private readonly graphql = inject(GraphqlClient);
+  private readonly auth = inject(AuthStore);
   private readonly stores = inject(OfflineStoreHolder);
   private readonly documentRef = inject(DOCUMENT);
   private readonly destroyRef = inject(DestroyRef);
@@ -305,6 +307,14 @@ export class SyncService {
       }
     });
 
+    // A session arriving is itself a flush trigger (ADR-033): the boot flush may run before
+    // `restore()` has answered, and a queued capture must not wait for the next `online` event or a tab
+    // switch to be sent.
+    effect(() => {
+      if (this.auth.accessToken() === null) return;
+      void this.flushNow();
+    });
+
     // App start (ADR-026 decision 3). Deliberately not awaited: every consumer is a signal.
     void this.flushNow();
   }
@@ -363,6 +373,12 @@ export class SyncService {
    * moment later — so it returns `null` without touching `busy` or the error signal.
    */
   async flushNow(): Promise<FlushResult | null> {
+    // Nothing can be sent without a session (ADR-033 decision 4), and attempting it is not harmless:
+    // the API answers `401`, and a queue that treats that as the *entry's* problem parks work the user
+    // can fix by signing in. Returning here leaves the queue exactly as it was — no attempt counted,
+    // no error recorded — and the effect below sends it the moment a session exists.
+    if (this.auth.accessToken() === null) return null;
+
     const locks = (globalThis.navigator as { locks?: LockManager } | undefined)?.locks;
     return withFlushLock(locks, async () => {
       this.busySignal.set(true);

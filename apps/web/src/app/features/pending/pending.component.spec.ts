@@ -7,6 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { OutboxEntry } from '../../core/offline/outbox';
+import { AuthStore } from '../../core/auth/auth.store';
 import { SyncService } from '../../core/offline/sync.service';
 import type { SyncConflict, SyncDiff } from '../../core/offline/sync.types';
 import { PendingComponent } from './pending.component';
@@ -48,6 +49,8 @@ async function mount(args: {
   readonly rejected?: readonly OutboxEntry[];
   readonly diffs?: readonly SyncDiff[];
   readonly conflicts?: readonly SyncConflict[];
+  /** The session; `null` is the signed-out state the offline shell renders in (ADR-033). */
+  readonly token?: string | null;
 }): Promise<Mounted> {
   const pending = signal<readonly OutboxEntry[]>(args.pending ?? []);
   const rejected = signal<readonly OutboxEntry[]>(args.rejected ?? []);
@@ -79,6 +82,8 @@ async function mount(args: {
     providers: [
       provideZonelessChangeDetection(),
       { provide: SyncService, useValue: stub as unknown as SyncService },
+      // A session is what makes the send controls appear (ADR-033 decision 4).
+      { provide: AuthStore, useValue: { accessToken: signal(args.token === undefined ? 'token-1' : args.token) } },
     ],
   });
 
@@ -262,4 +267,20 @@ describe('PendingComponent (mounted)', () => {
 
     expect(text(fixture)).toContain('the row moved');
   });
+  /**
+   * ADR-033 decision 4: with no session the queue cannot be sent, so the controls that would pretend to
+   * try are not offered — while the local escape hatches stay.
+   */
+  it('offers no send control while there is no session, and keeps export and discard', async () => {
+    const { fixture } = await mount({ pending: [entry()], token: null });
+    const rendered = text(fixture);
+
+    expect(rendered).toContain('Lidl');
+    expect(rendered).toContain('Discard');
+    expect(rendered).toContain('Export as text');
+    // Neither the per-row retry nor the retry-all control is drawn.
+    expect(rendered).not.toContain('Try again');
+    expect(rendered).not.toContain('Try all');
+  });
+
 });

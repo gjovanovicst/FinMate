@@ -164,7 +164,9 @@ async function mount(
       provideZonelessChangeDetection(),
       provideRouter([]),
       { provide: GraphqlClient, useValue: client },
-      { provide: AuthStore, useValue: { role: signal(role) } },
+      // The role is what this screen reads; `accessToken` is what the queue's flush gate reads
+      // (ADR-033 decision 4), and a real session is the state every mount here is in unless stated.
+      { provide: AuthStore, useValue: { role: signal(role), accessToken: signal('token-1') } },
       // A stub only where the queue's behaviour is the subject; otherwise the real service is mounted,
       // which is harmless because an empty queue sends nothing.
       ...(sync ? [{ provide: SyncService, useValue: sync as SyncService }] : []),

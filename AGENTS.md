@@ -69,31 +69,21 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   also found **two prompt defects no test could see** (a twice-rendered category list, and a
   `json_object` prompt that never named the fields); both are fixed with regression tests at the
   composed seam.
-- **And then 5.2a closed R-25**: the **first-use consent sheet**, opened by the capture screen when a
-  preview comes back `degraded` — the moment docs/08 §6.6 asks for. The sheet and `/settings`' card are
-  **one component** (`ui-consent-purpose`), so the provider/region/never-sent/trade disclosure cannot
-  drift between the two screens, and the sheet adds only the reason and three verbs: **Allow**,
-  **Decline** (a first-class button, not a dark pattern) and **Not now**, which defers without writing
-  anything, because `NOT_ASKED` is the *absence* of a row. Verified live in a real browser at
-  320/768/1280 px, 22 checks — no record ⇒ the model is not called, declining keeps it refused, allowing
-  turns the same entry into `decidedBy: AI`. That pass also found **R-26**: a full page load signs the
-  user out (the refresh cookie is scoped `Path=/auth` while the browser asks the proxy for
-  `/api/auth/refresh`, and a browser matches cookie paths against the visible URL) — in-app navigation
-  hides it completely, which is why no test caught it (fixed in **4.3.5**, below). The same pass measured
-  the shell overflowing at 320 px by 48 px (the bottom nav
-  is 368 px wide) — **fixed in 4.3.1a**, which traced it to one missing declaration and audited all 18
-  authenticated routes at three widths at zero overflow.
+- **And then 5.2a closed R-25**: the **first-use consent sheet**, opened by `/capture` when a preview comes
+  back `degraded` — the moment docs/08 §6.6 asks for. The sheet and `/settings`' card are **one component**
+  (`ui-consent-purpose`), so the provider/region/never-sent/trade disclosure cannot drift between the two
+  screens; the sheet adds only the reason and three verbs (Allow, a first-class Decline, and *Not now*,
+  which defers without writing because `NOT_ASKED` is the *absence* of a row). Verified live at
+  320/768/1280 px, 22 checks. That pass also found **R-26** (a full page load signed the user out) and
+  measured the shell overflowing by 48 px at 320 px — **fixed in 4.3.1a**.
 - **4.3.1's halves are done** (4.3.1a layout, 4.3.1b the sheet's dismissal contract, 4.3.1d the all-screens
   audit) — the measurements, the `minmax(0, 1fr)` cause and the swipe/dirty-guard contract are in docs/09's
   rows and docs/02 §9, not repeated here.
-- **And 4.3.5 closed R-26.** A cookie path is an attribute the *browser* checks, so it has to describe the
+- **And 4.3.5 closed R-26.** A cookie path is an attribute the *browser* checks, so it must describe the
   URL the browser requests — and the server never sees the `/api` its proxy strips. The refresh cookie was
-  scoped to `/auth`, the browser asks for `/api/auth/refresh`, so the cookie was never attached and **every
-  hard reload signed the user out**; the in-memory access token hid it from every in-app navigation and
-  every test. Now the scope follows `PUBLIC_API_PREFIX` (default `''`, `/api` in dev, validated so a scheme
-  or trailing slash cannot silently produce a cookie nobody sends), used by the write **and** both clears.
-  **Verified live 9/9**: cookie stored at `/api/auth`, a hard reload stays in the app, a second reload
-  survives the rotation, a deep link holds, logout really removes it.
+  scoped to `/auth` while the browser asks for `/api/auth/refresh`, so **every hard reload signed the user
+  out**; the in-memory access token hid it from every in-app navigation and every test. It now follows
+  `PUBLIC_API_PREFIX` (`''`, `/api` in dev), used by the write **and** both clears. **Live 9/9.**
 - **4.3.1d measured every screen instead of assuming, and it paid twice.** A browser instrument walked all
   20 routes at 320/768/1280 px **and in the light theme** and captured a contact sheet for the human pass
   (`.artifacts/visual-audit/contact-sheet.md`). It found a systemic contrast defect — `--color-text-subtle`
@@ -115,14 +105,18 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   composer now writes and reads ADR-025 decision 5's taxonomy cache — the categories and accounts it names,
   and the `taxonomy` store's first writer since 4.2.2. **Verified live 8/8**: an airplane-mode `Lidl 2000`
   queues, drains on reconnect, and **writes one transaction carrying the cached account**, with nothing
-  waiting or refused and no duplicate. **(b)** an offline reload still lands on `/sign-in`, so the queued work
-  is unreachable without a connection — a security decision (an unlocked lock authorising an offline session)
-  and the one half that still needs an ADR.
-- **Next**: **R-27(b)** — the offline reload's dead end, which needs an ADR — or **the human visual
-  pass**, now a review rather than a click-through because 4.3.1d produced a contact sheet of all 20
-  screens at three widths plus the light theme, with the mechanical defects already found and fixed.
-  **4.3.1e** (control sizes) and **4.3.1c** (the pinned capture bar) are the two decisions that pass
-  feeds. Then 4.3.3 (mobile keyboard) / 4.3.4 (bundle + Lighthouse).
+  waiting or refused and no duplicate. **(b) is fixed in 4.3.6c** ([ADR-033](docs/14-decisions-and-risks.md)): an
+  unlocked install whose session could not be restored because *nothing answered* renders a **read-only
+  offline shell** — one sentence, two links (`/pending`, `/transactions`' cached ledger), no navigation —
+  and **nothing is sent without a session** (the flush is skipped without a token, a `401` is retryable
+  rather than the entry's fault, and the tray hides controls that cannot work). **Verified live 13/13**: an
+  offline reload + PIN lands on the tray with the capture listed, the cached ledger is reachable under its
+  label, a signed-out reconnect sends and refuses nothing, and the queue drains exactly once after the
+  session returns. **R-27 is closed in full.**
+- **Next**: **the human visual pass** — the contact sheet 4.3.1d produced (all 20 screens at three widths
+  plus the light theme), which is the review that feeds **4.3.1e** (17 controls under WCAG's 24 px floor)
+  and **4.3.1c** (the pinned capture bar). Then 4.3.3 (mobile keyboard) / 4.3.4 (bundle + Lighthouse);
+  4.3.2 (install prompt) stays blocked on the product name.
 
 **The long form is in the docs, deliberately.** Each task's decisions, its deviations from these
 specifications and every defect it found live are recorded where they belong: docs/09 §6 for sequencing,
@@ -160,7 +154,7 @@ narrative above does not repeat them.
 | CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → lint → typecheck → test → **evals** → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
 | Web (0.8) | Angular 22, **zoneless** + signals, ADR-006. Responsive shell (bottom nav → sidebar at 1024px), design tokens (`apps/web/src/styles.css`), `fm-money` as the only Money renderer, auth pages, Accounts consuming GraphQL |
 | i18n | `core/i18n/`: **English primary**, Serbian latin + cyrillic. Runtime catalogue (no rebuild), `TranslationKey` derived from `en`, `sr-Cyrl` generated at runtime. Language switcher in the shell |
-| Tests | **2549 pass** — 951 API + 274 ai + 272 domain + 789 web + 149 nlp + 108 rules-engine + 6 worker (plus `contracts`, which ships no specs and passes with none) |
+| Tests | **2565 pass** — 951 API + 274 ai + 272 domain + 805 web + 149 nlp + 108 rules-engine + 6 worker (plus `contracts`, which ships no specs and passes with none) |
 | Worker | `apps/worker` **boots and is scheduled** (ADR-022, task 3.4.1): five BullMQ jobs over the API's own services — `recurring.materialise`, `recurring.detect`, `insights.generate` (generate *and* evaluate since 3.4.4), `notifications.dispatch`, `files.purge` (4.1.1) — `nx run worker:serve`. The remaining jobs in docs/05 §8's table are unbuilt, and ADR-022 makes stating what makes a job idempotent a precondition for adding one |
 | Receipts (F-14) | `apps/api/src/modules/receipts` **implemented in 4.1.3**: `createReceipt`, `extractReceipt`, `addReceiptItem`/`updateReceiptItem`/`removeReceiptItem`, `reconcileReceipt`, `receipts`/`receipt`. Item categories come from the **same** `ClassificationService.parse` a typed fragment uses (auditable in `classification_decisions`); I-6 lives in `@finmate/domain/src/receipts.ts` with both sides of the tolerance asserted. **No `OCR` endpoint is routed** (ADR-032 decision 3 leaves `EMBEDDINGS` inert and routes only the endpoints the config names), so extraction honestly reports `AI_UNAVAILABLE:no-provider-configured` and manual itemisation is the path, and the detail screen therefore does not offer extraction at all; the **OCR webhook (§9.5)** is not built. `commitReceipt` and `DETACH_TRANSACTION` are (4.1.4a) and both screens that call them are (4.1.4b/4.1.5, `/receipts` + `/receipts/:id`). `CreateReceiptInput.attachmentId` is **required**, so a Receipt exists only over a photo — the library's capture action is the only way in. `receipts` is a plain list with no `filter`/`totalCount`, so the library reads the first 50 and says `{count} shown, newest first` rather than claiming a total |
 | Service worker (F-26) | `apps/web/ngsw-config.json` + `@angular/service-worker`, **ADR-024**. It caches the **app shell only** — `/index.html`, `/*.js`, `/*.css`, 39 built URLs in all — and declares **no `dataGroups`**, so no API response can enter the HTTP cache (the offline data cache is IndexedDB, docs/08 §3.9); `navigationUrls` explicitly excludes `/graphql`, `/api/**`, `/auth/**`, `/v1/**` and the health paths, so the shell never answers for the API. Registered in the **production build only** (`enabled: !isDevMode()`), so `web:serve` has no worker and the built `dist` is what gets verified. The update flow is a **non-dismissible banner** that activates only on the user's click. ⚠️ **Not installable yet** — no manifest and no icons (4.3.2, and a manifest carries the undecided product name), and the Playwright offline pass docs/10 §8.3 specifies does not exist, so the cache strategy is verified by inspecting and serving the build rather than by throttling a browser. ⚠️ The deploy path has to serve `ngsw-worker.js`/`ngsw.json` unhashed and revalidated over HTTPS; nothing does yet (docs/11 §5, Q-7) |
@@ -204,7 +198,7 @@ API serves `/auth/*` and `/graphql` without one (docs/06). Changing the prefix o
 produces a 404 that looks like an auth failure — and the same fact, in the other direction, is why
 `PUBLIC_API_PREFIX` exists: anything the browser path-scopes (the refresh cookie) must name the
 *browser's* path, because the API never sees the prefix.
-Verified working: lint 9/9, typecheck 9/9, 2549 tests, `pnpm test:evals` gating green, `web:build`, GraphQL over HTTP through the
+Verified working: lint 9/9, typecheck 9/9, 2565 tests, `pnpm test:evals` gating green, `web:build`, GraphQL over HTTP through the
 browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, the presign → PUT to MinIO →
 `commitAttachment` → `302` download round trip (verified live, bytes compared), and `prisma migrate diff`
 reporting no drift.
@@ -219,7 +213,7 @@ Read the document that owns your task before starting:
 | If you are… | Read first |
 |---|---|
 | starting any task | `docs/05-architecture.md` §2 — monorepo layout + the dependency rule |
-| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 148 entries, each saying what the failure looks like |
+| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 149 entries, each saying what the failure looks like |
 | touching money, Transactions, balances | `docs/03-domain-model.md` — **canonical glossary, DDL, invariants** |
 | adding or changing a feature | `docs/01-product-requirements.md` — the `F-xx` catalogue |
 | touching categorization, rules, prompts, AI | `docs/04-categorization-and-ai-engine.md` |
@@ -314,7 +308,7 @@ A change is not done until (doc 09 §8):
 
 ## Gotchas
 
-**The full list — 148 entries in 10 groups, each written to say what it looks like when it goes wrong —
+**The full list — 149 entries in 10 groups, each written to say what it looks like when it goes wrong —
 is [`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md). Read it before debugging
 anything that "should work".** It was split out because this file had grown past the instruction budget
 and was being truncated on load. The ones below stay here because they are the ones that bite hardest,

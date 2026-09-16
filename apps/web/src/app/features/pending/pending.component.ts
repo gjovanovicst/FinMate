@@ -18,6 +18,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { AppLockService } from '../../core/app-lock/app-lock.service';
 import { pendingDurabilityKey } from '../../core/app-lock/lock.view';
 import type { TranslationKey } from '../../core/i18n/translations';
+import { AuthStore } from '../../core/auth/auth.store';
 import { I18nService } from '../../core/i18n/i18n.service';
 import { nextAttemptDelay, type OutboxEntry } from '../../core/offline/outbox';
 import { SyncService } from '../../core/offline/sync.service';
@@ -52,14 +53,18 @@ import { categoryLabel, rawInputs, syncedAtLabel, whyKey } from '../../core/offl
     }
 
     <div class="toolbar">
-      <button
-        class="btn btn--primary"
-        type="button"
-        [disabled]="sync.busy() || empty()"
-        (click)="retryAll()"
-      >
-        {{ i18n.t('pending.retryAll') }}
-      </button>
+      <!-- ADR-033 decision 4: nothing can be sent without a session, so the control is not offered
+           rather than shown broken (docs/02 §2). The offline shell says why, once, above this screen. -->
+      @if (canSend()) {
+        <button
+          class="btn btn--primary"
+          type="button"
+          [disabled]="sync.busy() || empty()"
+          (click)="retryAll()"
+        >
+          {{ i18n.t('pending.retryAll') }}
+        </button>
+      }
       <button class="btn" type="button" [disabled]="empty()" (click)="exportText()">
         {{ i18n.t('pending.export') }}
       </button>
@@ -101,9 +106,11 @@ import { categoryLabel, rawInputs, syncedAtLabel, whyKey } from '../../core/offl
                 }
                 <p class="row__error">{{ i18n.t('pending.lastError', { message: errorText(entry) }) }}</p>
                 <div class="row__actions">
-                  <button class="btn" type="button" [disabled]="sync.busy()" (click)="retry(entry.seq)">
-                    {{ i18n.t('pending.retry') }}
-                  </button>
+                  @if (canSend()) {
+                    <button class="btn" type="button" [disabled]="sync.busy()" (click)="retry(entry.seq)">
+                      {{ i18n.t('pending.retry') }}
+                    </button>
+                  }
                   <button class="btn" type="button" [disabled]="sync.busy()" (click)="discard(entry.seq)">
                     {{ i18n.t('pending.discard') }}
                   </button>
@@ -141,9 +148,11 @@ import { categoryLabel, rawInputs, syncedAtLabel, whyKey } from '../../core/offl
                   </p>
                 }
                 <div class="row__actions">
-                  <button class="btn" type="button" [disabled]="sync.busy()" (click)="retry(entry.seq)">
-                    {{ i18n.t('pending.retry') }}
-                  </button>
+                  @if (canSend()) {
+                    <button class="btn" type="button" [disabled]="sync.busy()" (click)="retry(entry.seq)">
+                      {{ i18n.t('pending.retry') }}
+                    </button>
+                  }
                   <button class="btn" type="button" [disabled]="sync.busy()" (click)="discard(entry.seq)">
                     {{ i18n.t('pending.discard') }}
                   </button>
@@ -448,6 +457,16 @@ export class PendingComponent {
   }
   readonly sync = inject(SyncService);
   private readonly appLock = inject(AppLockService);
+  private readonly auth = inject(AuthStore);
+
+  /**
+   * Whether the queue can be sent from here at all (ADR-033 decision 4).
+   *
+   * Without a session nothing is attempted, so the retry controls are hidden rather than offered and
+   * ignored — docs/02 §2's rule that a control which cannot work is not shown. Viewing, exporting and
+   * discarding stay available: they are local, and they are the escape hatch F-26 promises.
+   */
+  readonly canSend = computed(() => this.auth.accessToken() !== null);
 
   private readonly exportedText = signal<string | null>(null);
   private readonly loadingSignal = signal(true);

@@ -59,6 +59,27 @@ import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
       <!-- The gate (ADR-029 decision 5): no nav, no header, no outlet. There is nothing to navigate
            to, because the data key is not in memory and every offline read is empty by construction. -->
       <fm-app-lock-screen />
+    } @else if (offlineOnly()) {
+      <!-- ADR-033: the lock is unlocked, so the data key is in memory and what it protects is readable,
+           but there is no session and nothing answered. No nav, because only the two offline-capable
+           routes can work; the outlet renders one of them. -->
+      <div class="offline">
+        <p class="offline__note">{{ i18n.t('offline.sessionNote') }}</p>
+        <!-- Two links, not a navigation: these are the only destinations that work without a session
+             (ADR-033 decision 2). Without them the cached ledger would be reachable by URL only. -->
+        <nav class="offline__links" [attr.aria-label]="i18n.t('app.primaryNav')">
+          <a class="offline__link" routerLink="/pending" routerLinkActive="offline__link--active">
+            {{ i18n.t('pending.title') }}
+          </a>
+          <a class="offline__link" routerLink="/transactions" routerLinkActive="offline__link--active">
+            {{ i18n.t('nav.transactions') }}
+          </a>
+          <a class="offline__signIn" routerLink="/sign-in">{{ i18n.t('offline.signIn') }}</a>
+        </nav>
+        <main id="main" class="offline__content" tabindex="-1">
+          <router-outlet />
+        </main>
+      </div>
     } @else {
     <div class="shell" [class.shell--authenticated]="isAuthenticated()">
       @if (showNav()) {
@@ -192,6 +213,50 @@ import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
       :host {
         display: block;
         min-block-size: 100dvh;
+      }
+
+      /* The offline shell (ADR-033): a sentence, one action, and the outlet. It deliberately has no
+         nav and no header — every destination it cannot serve is a control that cannot work. */
+      .offline {
+        display: grid;
+        gap: var(--space-4);
+        max-inline-size: 48rem;
+        margin-inline: auto;
+        padding: calc(var(--space-4) + env(safe-area-inset-top)) var(--space-4)
+          calc(var(--space-6) + env(safe-area-inset-bottom));
+      }
+      .offline__note {
+        margin: 0;
+        color: var(--color-text-muted);
+      }
+      .offline__links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-3);
+        align-items: center;
+      }
+      .offline__link,
+      .offline__signIn {
+        padding: var(--space-2) var(--space-3);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        color: var(--color-text);
+        text-decoration: none;
+        min-block-size: 2.25rem;
+        display: inline-flex;
+        align-items: center;
+      }
+      .offline__link--active {
+        border-color: var(--color-primary);
+        color: var(--color-primary);
+      }
+      .offline__signIn {
+        border-color: var(--color-primary);
+        color: var(--color-primary);
+        font-weight: 600;
+      }
+      .offline__content {
+        display: block;
       }
 
       /* Skip link: hidden until focused. Without it a keyboard user tabs the whole nav on every
@@ -509,6 +574,19 @@ export class AppComponent {
   readonly isAuthenticated = this.auth.isAuthenticated;
 
   /**
+   * The offline shell (ADR-033): the lock is through, so the data key is in memory, but this page load
+   * could not restore a session because nothing answered. The two offline-capable routes are reachable
+   * and everything else redirects to the tray, so the shell renders a sentence and an outlet instead of
+   * a navigation it cannot honour.
+   */
+  readonly offlineOnly = computed(
+    () =>
+      this.appLock.state() === 'UNLOCKED' &&
+      this.auth.restoreFailure() === 'UNREACHABLE' &&
+      !this.isAuthenticated(),
+  );
+
+  /**
    * Whether to draw the navigation.
    *
    * docs/02 §4.1 draws onboarding as a full-screen wizard with only *Back* and *Step 3 of 6* — no nav,
@@ -585,6 +663,17 @@ export class AppComponent {
         // was already granted, so this is not a request per navigation.
         void this.push.syncOnStart();
       }
+    });
+
+    // Entering the offline shell (ADR-033) is a *navigation* the router has already decided the other
+    // way: at boot it sent an unauthenticated visitor to `/sign-in` before the lock was unlocked, so
+    // the unlock has to move it to the one screen that works. Only when the current route is not
+    // offline-capable — a deep link to `/transactions` stays where the user asked to be.
+    effect(() => {
+      if (!this.offlineOnly()) return;
+      const path = this.url();
+      if (path.startsWith('/pending') || path.startsWith('/transactions')) return;
+      void this.router.navigateByUrl('/pending');
     });
 
     // Idle tracking (docs/08 §3.9's five minutes). Activity is noted on the events a person actually

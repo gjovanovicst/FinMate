@@ -877,6 +877,11 @@ export const en = {
   // ---- pending sync (F-26; ADR-026, docs/02 section 4.3, docs/07 section 6) ----
   // The header chip's count. It renders only while something is queued.
   'sync.chip': 'Waiting to send ({count})',
+  // ADR-033: the shell an unlocked install renders when no session could be restored because nothing
+  // answered. It replaces the navigation, so it has to say what state the app is in and what happens next.
+  'offline.sessionNote':
+    'The server is not reachable, so you are still signed out. Your saved captures are on this device and will be sent once you are back online and signed in.',
+  'offline.signIn': 'Sign in',
   'sync.chipLabel': 'Waiting to send, {count} entries',
   // ADR-027 decisions 2 and 4: the one provenance label a snapshot-served figure carries. Mandatory
   // for any cached figure (docs/02 section 4.2, and section 10's money.asOf row).

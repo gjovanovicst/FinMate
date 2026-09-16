@@ -867,6 +867,9 @@ export const srLatn: Record<keyof typeof en, string> = {
 
   // ---- čeka slanje (F-26; ADR-026) ----
   'sync.chip': 'Čeka slanje ({count})',
+  'offline.sessionNote':
+    'Server nije dostupan, pa ste i dalje odjavljeni. Sačuvani unosi su na ovom uređaju i biće poslati kada se ponovo povežete i prijavite.',
+  'offline.signIn': 'Prijavi se',
   'sync.chipLabel': 'Čeka slanje, {count} stavke',
   // ADR-027: the wording docs/02 section 4.2 already uses for a figure that came from the snapshot.
   'money.asOf': 'podaci od {time}',

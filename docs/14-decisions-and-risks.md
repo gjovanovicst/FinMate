@@ -1961,6 +1961,81 @@ things worth deciding rather than discovering:
 
 ---
 
+### ADR-033 — An unlocked install that cannot restore its session gets a read-only offline shell, not `/sign-in`
+
+**Status:** Accepted (2026-09-17), closing **R-27(b)**.
+
+**Context.** 4.3.6 measured the hole and 4.3.6a/4.3.6b made it matter: with the app lock armed, reloading
+**offline** renders the lock screen, the PIN unlocks it, and the router lands on `/sign-in` — so the queue
+that now genuinely survives on disk is unreachable, and F-26's exit criterion ("full capture flow works in
+airplane mode") fails *after a reload* even though the capture itself works. Two facts force a decision
+rather than a fix:
+
+- **The access token is in memory only** (docs/08 §2.1) and the refresh cookie is the only session
+  credential, so a cold start with nothing answering cannot restore a session at all. The app is
+  authenticated-or-not with no third state, and `/sign-in` is the only screen that state has.
+- **Letting the unlock authorise an offline session** — treating the stored session as valid until
+  reconnect — would keep a server-revoked session usable on the device until it next reached the network.
+  That is precisely what remote revocation (ADR-025 decision 2's wipe) exists to prevent, so it is a
+  security decision, not a UI one.
+
+Meanwhile the unlock has already proved the device holds the data key, and the data that key opens is
+exactly what the user needs: the queued captures and the cached ledger.
+
+**Decision.**
+
+1. **The session failure is classified once, by one rule.** A refresh that fails because nothing answered —
+   `status 0`, `502`, `503`, `504` — is `UNREACHABLE`; anything else, including a `401`, is `REFUSED`
+   (and an explicit sign-out is `SIGNED_OUT`). Only `UNREACHABLE` can open the offline shell; `REFUSED`
+   keeps today's behaviour, `/sign-in`, and the wipe-on-`401` path is untouched.
+2. **An unlocked install in `UNREACHABLE` reaches exactly two routes, and they are read-only against the
+   server**: `/pending` (the queue, which is local by construction) and `/transactions` (whose cached
+   ledger already serves a failed read under one `podaci od <time>` line, 4.2.8b). Every other route
+   redirects to `/pending`, and the shell offers **two links to those two routes — not the navigation**,
+   because every other destination is a control that cannot work (docs/02 §2). Verified live: without the
+   ledger link the cached rows were reachable by URL only, since the boot deep link is consumed by the
+   pre-unlock redirect to `/sign-in`.
+3. **The shell says what it is.** One line from the shell itself, not from each screen: the session is not
+   restored because the server is unreachable, the queued captures are on this device, they will be sent
+   once the user is back online and signed in — plus a *Sign in* action. The header's existing offline chip
+   keeps the counts visible.
+4. **The classification is one function.** `isUnreachable(error)` is the single definition of "nothing
+   answered", used by the error messages, the auth store, and (structurally) the outbox's retryable arm —
+   so a proxy with no upstream cannot mean three different things in three modules.
+
+**Consequences.**
+- ✅ F-26's exit criterion holds *after a reload*: unlock → the queued captures are visible, exportable and
+  discardable, and the labels on the cached ledger stay honest.
+- ✅ Revocation semantics are intact. Nothing that needs the server happens without a session, so the
+  narrow reading of "what an unlock authorises" costs availability and never integrity.
+- ⚠️ **The offline app is two screens and a sentence.** The dashboard, analytics and the assistant are
+  unreachable in this state, which is the point — their content is the server's aggregates, and serving
+  them from a cached row set is forbidden (ADR-001, ADR-027's 4.2.8b amendment).
+- ⚠️ **A `401` mid-session is a different path and is unaffected**: `restoreFailure` is set by `restore()`,
+  which runs once per page load, so the shell is entered only from a cold start that could not reach the
+  server.
+- ⚠️ **The guard's allow-list is data on two routes.** A third offline-capable route has to say so with
+  `data: { offline: true }`; a route that does not is silently excluded rather than accidentally included,
+  which is the failure direction this wants.
+- ⚠️ Offline *writes* stay out of scope here: nothing is sent without a session (the flush rule and the
+  `UNAUTHENTICATED` classification are the same task's second half), so the shell is a viewer with an
+  export, not an offline client.
+
+**Alternatives rejected.**
+- **(a) Let the unlock authorise an offline session.** The most complete offline app, and the reason a
+  durable queue exists at all — but it keeps a revoked session usable on the device until the next
+  connection, which removes a mitigation T-03 and the wipe are scored against. The narrower reading is the
+  one this ADR takes; widening it later is an amendment with a security review, not a refactor.
+- **(b) A dedicated offline component that re-renders the queue and the ledger.** Two copies of the tray's
+  markup and copy — including what discarding a capture means — for a state whose two screens already
+  exist and already handle a failed read. The offline shell is chrome around them.
+- **(c) Do nothing.** The status quo: a durable queue that a reload hides. That is R-27(b), and 4.3.6
+  measured it.
+- **(d) Cache the access token so a reload is "authenticated".** A token on disk outlives a revoke and
+  turns the app lock into decoration (docs/08 §2.1 forbids it).
+
+---
+
 ## Part 2 — Risk register
 
 Scored as **Likelihood (L)** and **Impact (I)** on 1–5; **Exposure = L × I**. Anything ≥ 12 gets an
@@ -1999,7 +2074,7 @@ owner and a checkpoint in [09](09-implementation-plan.md).
 
 | **R-26** | ~~**A cold start signs the user out**~~ **CLOSED in 4.3.5** — — the refresh cookie is scoped `Path=/auth` while the browser reaches the API at `/api/auth/*` through the deploy proxy, so the cookie is never sent, `AuthStore.restore()` gets an empty token, and `authenticatedGuard` bounces every hard reload to `/sign-in`. Found by 5.2a's live pass, not by any test, because every test drives the client in-process and every API test calls `/auth/*` directly | 4 | 3 | 12 | The in-memory access token survives in-app navigation, so a session in use looks fine — which is exactly why it hid. It broke the service worker's reload path (ADR-024), the app lock's re-auth screen on a locked install (ADR-029 — a locked install must show its re-auth screen, not `/sign-in`), and any PWA cold start (4.3.2). Three candidate fixes, each moving a different one of the three paths: narrow the client, widen the cookie, or move the API off `/api`. Sending the cookie explicitly returns a real token, so the cause is isolated and the fix is small — it is a **decision**, not an investigation. **Fixed in 4.3.5**: the cookie path follows the **public mount prefix** — `PUBLIC_API_PREFIX` (default `''`, `/api` in dev), validated to be a path prefix so a scheme or a trailing slash cannot silently produce a cookie nobody sends — used by the `Set-Cookie`, by both `clearCookie` calls, and pinned by `auth.controller.spec.ts` plus four config cases. **Verified live 9/9**: the cookie stores at `/api/auth`, a hard reload no longer bounces to `/sign-in`, a second reload survives the token rotation, a deep link holds, and logout removes the cookie (a clear at the wrong path would have left it). doc 09's 4.3.5 row carries the same numbers. The narrow scope survives, and the fix does not pre-empt Q-7. *Widening the cookie to `Path=/`* was rejected (it hands the refresh token to every request) and *two client prefixes* was rejected (AGENTS.md already warns about that class) | **4.3.5**, before the install prompt (4.3.2) or any PWA claim; and before the launch gates, because a reload is the most common user action there is |
 
-| **R-27** | **The offline pass found two holes in F-26's exit criterion — and 4.3.6's diagnosis found the first one is a store defect, not a payload one.** (a) **An offline capture is written where a reload cannot find it.** Measured in the production build with the lock armed and unlocked: the offline `captureCommit` queues (the chip reads *Waiting to send (1)*), the reconnect flush reaches the server, the server **refuses the whole batch** — `VALIDATION_FAILED`, *a row with no accountId needs a defaultAccountId on the request* — and the tray, **read on the same page**, correctly reports *0 waiting to send, 1 refused* with that message. So the classification is right and the earlier reading (*dropped as sent*) is **refuted**; the *0 refused* the pass saw was read **after a full reload**. What is wrong is the store: `OfflineStoreHolder` **has no `invalidate()`**, although `app-lock.service.ts`'s module doc names one, so the backing leaves the in-memory one only when a *data* consumer calls `repository()` after the unlock — and this path never does (the boot-time flush built the memory backing while locked; the dashboard mounted before the unlock; `/transactions` caches nothing when there are no rows). Measured: IndexedDB's `outbox` is **empty** after that capture, and one fresh dashboard mount after the unlock makes the *same* capture land there (`outbox: ["1"]`). **And a record on disk is still not enough**: after a reload the tray reads *Nothing is waiting to be sent* while IndexedDB holds `outbox: ["1"]`, because the boot builds the outbox over the memory backing while locked and nothing re-reads the queue when the unlock changes it. The refusal has its own cause, and it is a third defect: offline the composer's `accounts` query fails, so it sends `defaultAccountId: null`, and the API will not default it. **The consequence is that ADR-029's and R-23's claim that arming the lock makes an offline capture survive a reload is false as measured.** (b) **An offline reload cannot restore the session**: reloading offline renders *Unlock the app*, the PIN unlocks it, and the router lands on **`/sign-in`** with no way in while the network is down. The exit criterion says "full capture flow works in airplane mode", and after a reload it does not | 4 | 4 | 16 | (a) is silent by construction: the chip is pending-only, so a refused **capture** looks exactly like a sent one from the header, and the *0 refused* the pass read came from a tray loading a store that dies with the page. **Diagnosis complete (4.3.6).** The earlier suspects stay ruled out — `outbox.flush` retries a 5xx correctly and `GraphqlClient.query` throws for an `errors` body or a 200 with no `data` — and so does the client's refusal handling, which the same-page tray reading proves. The fix is three parts: **(a1)** make the store backing follow the lock state and re-read the queue after the switch — **DONE in 4.3.6a** (ADR-025's amendment: the provider exposes `durability` as a signal, the holder watches it, `generation` is a signal and `SyncService` reacts), **verified live 4/4**: a capture taken straight from the unlock with no data screen visited is in IndexedDB (`outbox: ["1"]`) and a reload's tray still holds it; **(a2) DONE in 4.3.6b**: the composer writes and reads ADR-025 decision 5's taxonomy cache — the **categories and accounts** it names, which the store has carried with no writer since 4.2.2 — so a queued capture carries a real `accountId`. A server-side default account was **not** taken: it would invent a product notion ("the Household's default account") and write money to an account the user never chose, where the cache keeps the composer's own choice. **(a3)**: the pass has been re-run for the capture path — **8/8 live** against the production build: the offline capture drains, the transaction is **written** (zero before), it carries the cached account, nothing is waiting or refused, the durable queue is empty and a reload shows exactly one row. R-27(a) is closed; only (b) remains. The verification instruments are recorded in docs/15: an in-page `fetch`/`XHR` wrapper for the body, and `indexedDB` record counts for the store. The two obvious client-side suspects remain ruled out: `outbox.flush` retries a 5xx correctly, and `GraphqlClient.query` throws for an `errors` body or a 200 with no `data`. | **4.3.6**, before any claim that F-26 works in airplane mode; and before the launch gates, which assert exactly that |
+| **R-27** | ~~The offline pass found two holes in F-26's exit criterion — and 4.3.6's diagnosis found the first one is a store defect, not a payload one.** (a) **An offline capture is written where a reload cannot find it.** Measured in the production build with the lock armed and unlocked: the offline `captureCommit` queues (the chip reads *Waiting to send (1)*), the reconnect flush reaches the server, the server **refuses the whole batch** — `VALIDATION_FAILED`, *a row with no accountId needs a defaultAccountId on the request* — and the tray, **read on the same page**, correctly reports *0 waiting to send, 1 refused* with that message. So the classification is right and the earlier reading (*dropped as sent*) is **refuted**; the *0 refused* the pass saw was read **after a full reload**. What is wrong is the store: `OfflineStoreHolder` **has no `invalidate()`**, although `app-lock.service.ts`'s module doc names one, so the backing leaves the in-memory one only when a *data* consumer calls `repository()` after the unlock — and this path never does (the boot-time flush built the memory backing while locked; the dashboard mounted before the unlock; `/transactions` caches nothing when there are no rows). Measured: IndexedDB's `outbox` is **empty** after that capture, and one fresh dashboard mount after the unlock makes the *same* capture land there (`outbox: ["1"]`). **And a record on disk is still not enough**: after a reload the tray reads *Nothing is waiting to be sent* while IndexedDB holds `outbox: ["1"]`, because the boot builds the outbox over the memory backing while locked and nothing re-reads the queue when the unlock changes it. The refusal has its own cause, and it is a third defect: offline the composer's `accounts` query fails, so it sends `defaultAccountId: null`, and the API will not default it. **The consequence is that ADR-029's and R-23's claim that arming the lock makes an offline capture survive a reload is false as measured.** (b) **An offline reload cannot restore the session**: reloading offline renders *Unlock the app*, the PIN unlocks it, and the router lands on **`/sign-in`** with no way in while the network is down, so the queue that survives on disk is unreachable. **Closed by ADR-033 (4.3.6c)**: an **unlocked** install whose session could not be restored because *nothing answered* now gets a read-only offline shell — the queue and the cached ledger, two links, no navigation — and **nothing is sent without a session**, which is also what keeps a queued capture from being parked as refused across a signed-out reconnect. **Verified live 13/13** against the production build: an offline reload + PIN lands on `/pending` with the capture listed, the cached ledger is reachable under its label, a signed-out reconnect sends and refuses nothing, and the queue drains exactly once after the session returns~~ | 4 | 4 | 16 | (a) is silent by construction: the chip is pending-only, so a refused **capture** looks exactly like a sent one from the header, and the *0 refused* the pass read came from a tray loading a store that dies with the page. **Diagnosis complete (4.3.6).** The earlier suspects stay ruled out — `outbox.flush` retries a 5xx correctly and `GraphqlClient.query` throws for an `errors` body or a 200 with no `data` — and so does the client's refusal handling, which the same-page tray reading proves. The fix is three parts: **(a1)** make the store backing follow the lock state and re-read the queue after the switch — **DONE in 4.3.6a** (ADR-025's amendment: the provider exposes `durability` as a signal, the holder watches it, `generation` is a signal and `SyncService` reacts), **verified live 4/4**: a capture taken straight from the unlock with no data screen visited is in IndexedDB (`outbox: ["1"]`) and a reload's tray still holds it; **(a2) DONE in 4.3.6b**: the composer writes and reads ADR-025 decision 5's taxonomy cache — the **categories and accounts** it names, which the store has carried with no writer since 4.2.2 — so a queued capture carries a real `accountId`. A server-side default account was **not** taken: it would invent a product notion ("the Household's default account") and write money to an account the user never chose, where the cache keeps the composer's own choice. **(a3)**: the pass has been re-run for the capture path — **8/8 live** against the production build: the offline capture drains, the transaction is **written** (zero before), it carries the cached account, nothing is waiting or refused, the durable queue is empty and a reload shows exactly one row. R-27(a) is closed; only (b) remains. The verification instruments are recorded in docs/15: an in-page `fetch`/`XHR` wrapper for the body, and `indexedDB` record counts for the store. The two obvious client-side suspects remain ruled out: `outbox.flush` retries a 5xx correctly, and `GraphqlClient.query` throws for an `errors` body or a 200 with no `data`. | **CLOSED in 4.3.6a/4.3.6b/4.3.6c**; the launch gates that assert F-26 should re-run the pass, which now lives in a harness rather than a committed suite (the Playwright dependency is still an open decision) |
 
 ### Top five by exposure
 1. **R-01 onboarding cold-start (20)** — the single biggest threat, and the one the plan spends the most disproportionate effort on.

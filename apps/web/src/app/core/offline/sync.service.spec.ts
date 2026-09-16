@@ -4,9 +4,10 @@
 import { initAngularTesting } from '@web-test/angular-testing';
 
 import { TestBed } from '@angular/core/testing';
-import { signal } from '@angular/core';
+import { signal, type WritableSignal } from '@angular/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { AuthStore } from '../auth/auth.store';
 import { GraphQLRequestError, GraphqlClient } from '../graphql/graphql.client';
 import { InMemoryOfflineStore } from './offline-store';
 import { OFFLINE_KEY_PROVIDER } from './offline-key-provider';
@@ -113,11 +114,14 @@ const SERVER_ROW = {
   },
 };
 
-function mount(options: { editFails?: unknown } = {}): {
+function mount(options: { editFails?: unknown; token?: string | null } = {}): {
   service: SyncService;
   query: ReturnType<typeof vi.fn>;
+  /** The session, writable: nothing is sent without one (ADR-033 decision 4). */
+  token: WritableSignal<string | null>;
 } {
   commitResult = ACCEPTED;
+  const token = signal<string | null>(options.token === undefined ? 'token-1' : options.token);
   const query = vi.fn((document: string) => {
     if (document.includes('SyncCategoryNames')) {
       return Promise.resolve({ categories: [{ id: 'cat-fuel', name: 'Gorivo' }] });
@@ -139,10 +143,11 @@ function mount(options: { editFails?: unknown } = {}): {
         // The in-memory backing never asks for this key (ADR-025 decision 3).
         useValue: { persistent: false, dataKey: () => Promise.reject(new Error('not used')) },
       },
+      { provide: AuthStore, useValue: { accessToken: token.asReadonly() } },
     ],
   });
 
-  return { service: TestBed.inject(SyncService), query };
+  return { service: TestBed.inject(SyncService), query, token };
 }
 
 /** The construction flush is deliberately not awaited, so let its microtasks (and a macrotask) run. */
@@ -423,6 +428,7 @@ describe('SyncService', () => {
             repository: () => Promise.resolve(current),
           } as unknown as OfflineStoreHolder,
         },
+        { provide: AuthStore, useValue: { accessToken: signal('token-1').asReadonly() } },
       ],
     });
     const service = TestBed.inject(SyncService);
@@ -439,4 +445,40 @@ describe('SyncService', () => {
 
     expect(service.pendingCount()).toBe(1);
   });
+  /**
+   * ADR-033 decision 4: the queue outlives a signed-out page.
+   *
+   * The durable queue made a new failure reachable — a flush that runs while there is no session gets a
+   * `401`, and treating that as the entry's problem parks work the user can fix by signing in. Nothing is
+   * attempted without a token, and a token arriving is itself the trigger that sends it.
+   */
+  it('attempts no send while there is no session, and records no attempt', async () => {
+    const { service, query, token } = mount({ token: null });
+    await settle();
+    await service.enqueueCapture(INPUT, PREVIEW);
+
+    await service.flushNow();
+    await settle();
+
+    expect(token()).toBeNull();
+    // The transport was never reached: the two account/category reads this mount answers are not sends.
+    expect(query.mock.calls.every(([document]) => !String(document).includes('CaptureCommit'))).toBe(true);
+    const [entry] = service.pending();
+    expect(entry?.attempts).toBe(0);
+    expect(entry?.error).toBeUndefined();
+  });
+
+  it('sends the queued capture as soon as a session arrives', async () => {
+    const { service, token } = mount({ token: null });
+    await settle();
+    await service.enqueueCapture(INPUT, PREVIEW);
+
+    token.set('token-2');
+    TestBed.tick();
+    await settle();
+    await service.flushNow();
+
+    expect(service.pending()).toEqual([]);
+  });
+
 });

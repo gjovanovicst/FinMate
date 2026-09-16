@@ -1041,6 +1041,16 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   backing. A fix has to do both halves — rebuild **and** re-read — and the honest test is the user-visible
   one, not a count of IndexedDB records: reload, unlock, open the tray, and see the entry with its state. **Both halves are fixed in 4.3.6a** and verified live 4/4 against the production build.
 
+- **A guard that redirects has already consumed the deep link, so a later state change cannot honour it.**
+  Found while verifying 4.3.6c: a reload offline on `/transactions` runs the router's **initial** navigation
+  while the lock is still `LOCKED`, so `authenticatedGuard` sends it to `/sign-in` — and by the time the PIN
+  unlocks the app, `location.pathname` is `/sign-in` and the requested route is gone. A shell effect that
+  then navigates (`offlineOnly() → /pending`) works, but the user's destination is lost: the cached ledger
+  was reachable **by URL only**, from a screen with no navigation. The fix is not to remember the URL — it is
+  to offer the routes that work as **links** on the state's own screen (ADR-033 decision 2). The general
+  rule: when a guard redirects on a state that can change without a navigation, the destination has to be
+  re-reachable from the new state's UI, or it is gone.
+
 - **An offline capture has no account, so the server refuses the whole batch.** `capture.component.ts`'s
   `load()` reads `accounts` and `categories` together and sets `accountId` from the first live account; when
   that query fails — offline it always does, and the worker answers `504` rather than rejecting — the signal

@@ -77,10 +77,20 @@ describe('isRetryable', () => {
     expect(isRetryable(refusal('BAD_USER_INPUT'))).toBe(false);
   });
 
+  it('retries an unauthenticated response rather than parking the entry (ADR-033)', () => {
+    // A `401` is a session state the user can fix by signing in, so a queued capture must survive it —
+    // parking it as *cannot be sent* would lose work for a reason that is not the row's.
+    expect(isRetryable(failure(401, 'UNAUTHENTICATED'))).toBe(true);
+    // The same code in a `200` body (GraphQL-over-200), which is the other shape it arrives in.
+    expect(
+      isRetryable({ status: 200, errors: [{ code: 'UNAUTHENTICATED', message: 'Sign in.', retryable: false }] }),
+    ).toBe(true);
+  });
+
   it('does not retry any other 4xx', () => {
-    expect(isRetryable(failure(401, 'UNAUTHENTICATED'))).toBe(false);
     expect(isRetryable(failure(404, 'NOT_FOUND'))).toBe(false);
     expect(isRetryable(failure(409, 'CONFLICT'))).toBe(false);
+    expect(isRetryable(failure(403, 'FORBIDDEN'))).toBe(false);
   });
 });
 
