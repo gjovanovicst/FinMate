@@ -300,6 +300,57 @@ export function toSnapshotRow(source: TransactionSnapshotSource): SnapshotRow {
   };
 }
 
+/**
+ * The ledger cache's window: the current period plus **45 days** (ADR-025 decision 5, docs/08 §3.9).
+ *
+ * The store must never be handed an unbounded list. This is the selection, and it lives next to the
+ * whitelist because the two are the same control: what may be kept, and how much of it.
+ */
+export const LEDGER_WINDOW_DAYS = 45;
+
+/**
+ * A hard cap on cached rows, whatever the window contains.
+ *
+ * A Household that logs thirty entries a day would otherwise put ~1 350 rows on a phone. The cap keeps
+ * the record predictable, and `selectLedgerRows` drops the **oldest** first so what survives is what a
+ * person is most likely to be looking at.
+ */
+export const LEDGER_SNAPSHOT_MAX_ROWS = 200;
+
+/** Days between two `YYYY-MM-DD` local dates, so the window is a calendar comparison, not an instant. */
+function daysBetween(from: string, to: string): number {
+  const start = Date.parse(`${from}T00:00:00Z`);
+  const end = Date.parse(`${to}T00:00:00Z`);
+  if (Number.isNaN(start) || Number.isNaN(end)) return Number.NaN;
+  return Math.round((end - start) / 86_400_000);
+}
+
+/**
+ * The rows worth caching, newest first, capped.
+ *
+ * `today` is passed in rather than read from the clock so the window is testable and so a caller can
+ * pin it: a cache written at 23:59 and read at 00:01 must not silently change what it claims to cover.
+ * A row whose date cannot be parsed is **dropped** — a stored row that cannot be placed in the window
+ * is one nobody can reason about, and keeping it would make the window a lie.
+ */
+export function selectLedgerRows(
+  rows: readonly TransactionSnapshotSource[],
+  today: string,
+  options: { readonly windowDays?: number; readonly maxRows?: number } = {},
+): SnapshotRow[] {
+  const windowDays = options.windowDays ?? LEDGER_WINDOW_DAYS;
+  const maxRows = options.maxRows ?? LEDGER_SNAPSHOT_MAX_ROWS;
+
+  return rows
+    .filter((row) => {
+      const age = daysBetween(row.occurredLocalDate, today);
+      return !Number.isNaN(age) && age <= windowDays && age >= -windowDays;
+    })
+    .sort((left, right) => (left.occurredLocalDate < right.occurredLocalDate ? 1 : -1))
+    .slice(0, maxRows)
+    .map(toSnapshotRow);
+}
+
 function toRecord(key: string, sealed: EncryptedValue, expiresAt: number): OfflineRecord {
   return { key, iv: sealed.iv, ciphertext: sealed.ciphertext, expiresAt };
 }
