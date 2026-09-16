@@ -26,6 +26,7 @@ import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core'
 
 import { GraphqlClient } from '../graphql/graphql.client';
 import { OfflineStoreHolder } from './offline-store-holder';
+import { withFlushLock } from './flush-lock';
 import {
   Outbox,
   type FlushResult,
@@ -167,7 +168,7 @@ export class SyncService {
   private readonly destroyRef = inject(DestroyRef);
 
   /** Built on first use, never in a field initialiser — a screen that never syncs never opens a store. */
-  private outboxRef: Outbox | null = null;
+  private outboxRef: { generation: number; outbox: Outbox } | null = null;
 
   private readonly pendingSignal = signal<readonly OutboxEntry[]>([]);
   private readonly rejectedSignal = signal<readonly OutboxEntry[]>([]);
@@ -229,7 +230,7 @@ export class SyncService {
     input: CaptureCommitInput,
     rows: readonly CapturePreviewRow[],
   ): Promise<OutboxEntry> {
-    const entry = await this.outbox().enqueue(CAPTURE_COMMIT, { input }, { preview: rows });
+    const entry = await (await this.outbox()).enqueue(CAPTURE_COMMIT, { input }, { preview: rows });
     await this.refresh();
     return entry;
   }
@@ -239,52 +240,60 @@ export class SyncService {
    *
    * `busy` covers the whole pass so the tray and the chip can say so, and the outbox itself refuses to
    * re-enter: a second trigger while one is in flight joins it rather than double-sending.
+   *
+   * The whole pass runs under the cross-tab flush lock (ADR-026 decision 4): with persistence on, one
+   * IndexedDB backs every tab, and two tabs draining the same queue is two batches and two racing `seq`
+   * counters. A tab that cannot take the lock **skips** — it does not wait and send the same entries a
+   * moment later — so it returns `null` without touching `busy` or the error signal.
    */
   async flushNow(): Promise<FlushResult | null> {
-    this.busySignal.set(true);
-    this.lastErrorSignal.set(null);
-    try {
-      const outbox = this.outbox();
-      const index = previewIndex(await outbox.pending());
-      const collected: SyncDiff[] = [];
-      const result = await outbox.flush((document, variables) =>
-        this.transport(document, variables, index, collected),
-      );
+    const locks = (globalThis.navigator as { locks?: LockManager } | undefined)?.locks;
+    return withFlushLock(locks, async () => {
+      this.busySignal.set(true);
+      this.lastErrorSignal.set(null);
+      try {
+        const outbox = await this.outbox();
+        const index = previewIndex(await outbox.pending());
+        const collected: SyncDiff[] = [];
+        const result = await outbox.flush((document, variables) =>
+          this.transport(document, variables, index, collected),
+        );
 
-      if (collected.length > 0) {
-        this.diffsSignal.update((current) => [...current, ...collected]);
+        if (collected.length > 0) {
+          this.diffsSignal.update((current) => [...current, ...collected]);
+        }
+        if (result.stoppedAt?.error !== undefined) {
+          this.lastErrorSignal.set(result.stoppedAt.error);
+        }
+        await this.refresh();
+        return result;
+      } catch (error) {
+        // A failure to *read* the queue (a store that will not open) is the only thing that reaches
+        // here: per-entry failures are the outbox's to classify and the tray's to show.
+        this.lastErrorSignal.set(error instanceof Error ? error.message : String(error));
+        return null;
+      } finally {
+        this.busySignal.set(false);
       }
-      if (result.stoppedAt?.error !== undefined) {
-        this.lastErrorSignal.set(result.stoppedAt.error);
-      }
-      await this.refresh();
-      return result;
-    } catch (error) {
-      // A failure to *read* the queue (a store that will not open) is the only thing that reaches
-      // here: per-entry failures are the outbox's to classify and the tray's to show.
-      this.lastErrorSignal.set(error instanceof Error ? error.message : String(error));
-      return null;
-    } finally {
-      this.busySignal.set(false);
-    }
+    });
   }
 
   /** Put one entry back in the queue and try again — the tray's per-row *Pokušaj ponovo*. */
   async retry(seq: number): Promise<void> {
-    await this.outbox().retry(seq);
+    await (await this.outbox()).retry(seq);
     await this.refresh();
     await this.flushNow();
   }
 
   /** Drop one entry without sending it. The only action that loses a capture, so it is never implicit. */
   async discard(seq: number): Promise<void> {
-    await this.outbox().discard(seq);
+    await (await this.outbox()).discard(seq);
     await this.refresh();
   }
 
   /** Put every refused entry back and drain the queue — the tray's *Pokušaj sve*. */
   async retryAll(): Promise<void> {
-    const outbox = this.outbox();
+    const outbox = await this.outbox();
     for (const entry of await outbox.rejected()) {
       await outbox.retry(entry.seq);
     }
@@ -300,7 +309,7 @@ export class SyncService {
   /** Re-read both lists. Called after every queue operation so the tray and the chip are never stale. */
   async refresh(): Promise<void> {
     try {
-      const outbox = this.outbox();
+      const outbox = await this.outbox();
       const [pending, rejected] = await Promise.all([outbox.pending(), outbox.rejected()]);
       this.pendingSignal.set(pending);
       this.rejectedSignal.set(rejected);
@@ -367,10 +376,18 @@ export class SyncService {
     return this.names;
   }
 
-  private outbox(): Outbox {
-    // The repository is the app's one store (OfflineStoreHolder), so the queue and the snapshot
-    // share their purge and their expiry sweep (ADR-027 decision 6).
-    this.outboxRef ??= new Outbox(this.stores.repository());
-    return this.outboxRef;
+  /**
+   * The outbox for the store backing that is current **now**.
+   *
+   * Keyed by the holder's generation because the backing can change under us: unlocking the app lock
+   * switches the store from memory to IndexedDB, and an `Outbox` holding a `seq` counter seeded from the
+   * old backing would allocate numbers the durable store has already used. Rebuilt rather than patched.
+   */
+  private async outbox(): Promise<Outbox> {
+    const generation = this.stores.generation();
+    if (this.outboxRef === null || this.outboxRef.generation !== generation) {
+      this.outboxRef = { generation, outbox: new Outbox(await this.stores.repository()) };
+    }
+    return this.outboxRef.outbox;
   }
 }

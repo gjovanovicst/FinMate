@@ -149,13 +149,13 @@ export async function unwrapDataKey(
   return importDataKey(new Uint8Array(material));
 }
 
-function toBase64(bytes: Bytes): string {
+export function toBase64(bytes: Bytes): string {
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary);
 }
 
-function fromBase64(value: string): Bytes {
+export function fromBase64(value: string): Bytes {
   const binary = atob(value);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {

@@ -43,6 +43,7 @@ const SALT = new Uint8Array(16).fill(3);
 /** A test-only `WrappedKeyStore`, mirroring what the `keys` object store holds. */
 class FakeWrappedKeyStore implements WrappedKeyStore {
   private readonly records = new Map<string, EncryptedValue>();
+  private readonly meta = new Map<string, unknown>();
 
   async readWrappedKey(id: string): Promise<EncryptedValue | null> {
     return this.records.get(id) ?? null;
@@ -50,6 +51,23 @@ class FakeWrappedKeyStore implements WrappedKeyStore {
 
   async writeWrappedKey(id: string, record: EncryptedValue): Promise<void> {
     this.records.set(id, record);
+  }
+
+  async readKeyMeta<T>(id: string): Promise<T | null> {
+    return (this.meta.get(id) as T | undefined) ?? null;
+  }
+
+  async writeKeyMeta(id: string, value: unknown): Promise<void> {
+    this.meta.set(id, value);
+  }
+
+  async deleteKeyMeta(id: string): Promise<void> {
+    this.meta.delete(id);
+  }
+
+  async purge(): Promise<void> {
+    this.records.clear();
+    this.meta.clear();
   }
 }
 
@@ -81,12 +99,20 @@ describe('SessionKeyProvider', () => {
     await expect(decryptValue(second, record)).rejects.toBeInstanceOf(OfflineDecryptError);
   });
 
-  it('is what the DI token resolves to by default', () => {
+  it('is never the provider a lockless install gets persisted through', async () => {
+    // The token resolves to the app lock (task 4.2.6), which is the thing that *decides* between this
+    // provider and the wrapped one. What must hold either way: with no lock configured the answer is an
+    // in-memory key and `persistent` is false, so nothing confidential can reach disk (ADR-025
+    // decision 3). Asserted as behaviour rather than as a class, because that is the property the store
+    // branches on.
     TestBed.resetTestingModule();
     const provider = TestBed.inject(OFFLINE_KEY_PROVIDER);
+    await provider.ready?.();
 
-    expect(provider).toBeInstanceOf(SessionKeyProvider);
     expect(provider.persistent).toBe(false);
+    const key = await provider.dataKey();
+    expect(key.extractable).toBe(false);
+    expect(key.algorithm).toMatchObject({ name: 'AES-GCM', length: 256 });
   });
 });
 

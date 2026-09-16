@@ -126,7 +126,7 @@ describe('SnapshotService', () => {
   it('reads an expired record as null, and labels nothing', async () => {
     const { snapshot, stores } = mount();
     // The store's own TTL boundary: a record whose expiry has already passed is invisible.
-    await stores.repository().put(
+    await (await stores.repository()).put(
       'snapshot',
       DASHBOARD_SNAPSHOT_KEY,
       { syncedAt: '2026-09-14T10:00:00.000Z', figures: FIGURES },
@@ -143,7 +143,7 @@ describe('SnapshotService', () => {
     await sync.enqueueCapture(INPUT, PREVIEW);
     expect(sync.pendingCount()).toBe(1);
 
-    await stores.repository().purge();
+    await (await stores.repository()).purge();
 
     expect(await snapshot.readDashboard()).toBeNull();
     await sync.refresh();

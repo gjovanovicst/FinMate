@@ -24,10 +24,40 @@ import { createOfflineStore, type OfflineRepository } from './offline-store';
 export class OfflineStoreHolder {
   private readonly keyProvider = inject(OFFLINE_KEY_PROVIDER);
   private repositoryRef: OfflineRepository | null = null;
+  private builtFor: boolean | null = null;
+  private generationRef = 0;
 
-  /** The one repository this page uses. Built once, then reused by every offline consumer. */
-  repository(): OfflineRepository {
-    this.repositoryRef ??= createOfflineStore(this.keyProvider);
+  /**
+   * The repository this page uses, built for the key provider's current durability.
+   *
+   * `async` because the provider has to answer `persistent` first: the app lock reads one IndexedDB
+   * record at bootstrap to learn whether this install has a lock, and building the backing before that
+   * answer arrives would silently choose the in-memory store and quietly stop persisting for the page.
+   *
+   * The backing is **rebuilt when durability changes** — unlocking the lock switches the store from
+   * memory to IndexedDB, and locking it switches back. That is the honest reading of ADR-025 decision 3:
+   * while locked there is no key in memory, so there is nothing on disk this page may read, and the
+   * store it sees is empty.
+   */
+  async repository(): Promise<OfflineRepository> {
+    await this.keyProvider.ready?.();
+    const persistent = this.keyProvider.persistent;
+    if (this.repositoryRef === null || this.builtFor !== persistent) {
+      this.repositoryRef = createOfflineStore(this.keyProvider);
+      this.builtFor = persistent;
+      this.generationRef += 1;
+    }
     return this.repositoryRef;
+  }
+
+  /**
+   * Bumped whenever the backing is replaced.
+   *
+   * A consumer that caches something derived from a repository — the outbox caches its `seq` counter —
+   * compares this and rebuilds, so a switch cannot leave a queue allocating sequence numbers seeded
+   * from a store that is no longer the one in use.
+   */
+  generation(): number {
+    return this.generationRef;
   }
 }

@@ -869,6 +869,12 @@ user opens, not on first load.
 
 ### 4.18 Settings — F-32, F-01, F-25, F-27, F-28
 
+> **Build note (4.2.6a).** The app lock's core ships — WebAuthn PRF or a 6-digit PIN wraps the offline
+> store's data key, and arming it is what turns persistence on (ADR-029). **This document never drew the
+> control or the re-auth screen**, and there is still no `/settings` route, so both are task **4.2.6b** and
+> belong in the pane above — `Bezbednost`, beside `Podaci`. Until they exist nothing can arm a lock and the
+> offline store stays session-only, which is why 4.2.3's "keep the app open" copy is still accurate.
+
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────────┐
 │ COMPACT (390 px)             │ WIDE (1440 px) — section nav + pane               │

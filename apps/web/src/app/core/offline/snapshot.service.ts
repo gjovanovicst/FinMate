@@ -88,7 +88,12 @@ export class SnapshotService {
    */
   async writeDashboard(figures: DashboardFigures): Promise<void> {
     const record: DashboardSnapshot = { syncedAt: new Date().toISOString(), figures };
-    await this.stores.repository().put('snapshot', DASHBOARD_SNAPSHOT_KEY, record, SNAPSHOT_TTL_MS);
+    await (await this.stores.repository()).put(
+      'snapshot',
+      DASHBOARD_SNAPSHOT_KEY,
+      record,
+      SNAPSHOT_TTL_MS,
+    );
     this.staleAtSignal.set(null);
   }
 
@@ -101,10 +106,21 @@ export class SnapshotService {
    * exists to prevent. A miss clears it instead — there is nothing to label.
    */
   async readDashboard(): Promise<DashboardSnapshot | null> {
-    const record = await this.stores
-      .repository()
-      .get<DashboardSnapshot>('snapshot', DASHBOARD_SNAPSHOT_KEY);
+    const repository = await this.stores.repository();
+    const record = await repository.get<DashboardSnapshot>('snapshot', DASHBOARD_SNAPSHOT_KEY);
     this.staleAtSignal.set(record?.syncedAt ?? null);
     return record ?? null;
+  }
+
+  /**
+   * Forget the provenance this page was showing.
+   *
+   * Called when the store is wiped — a sign-out, a revoke, turning the lock off. `purge()` clears the
+   * records, but {@link staleAt} is a signal: without this the header chip would keep saying *"podaci
+   * od 08:12"* about a snapshot that no longer exists, which is worse than saying nothing (ADR-027
+   * decision 5).
+   */
+  reset(): void {
+    this.staleAtSignal.set(null);
   }
 }

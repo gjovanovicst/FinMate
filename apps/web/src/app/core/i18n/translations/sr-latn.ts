@@ -279,6 +279,17 @@ export const srLatn: Record<keyof typeof en, string> = {
   'notifications.push.error': 'Nije promenjeno. Pokušaj ponovo.',
   'notifications.push.emailFallback': 'Email je pouzdana zamena — uključi Email iznad.',
 
+  // ---- app lock (F-26, task 4.2.6) ----
+  'lock.state.off': 'Brava je isključena, pa se ništa ne čuva na ovom uređaju između poseta.',
+  'lock.state.locked': 'Zaključano. Otključaj da nastaviš da radiš bez veze na ovom uređaju.',
+  'lock.state.unlocked': 'Brava je uključena. Sačuvani unosi prežive ponovno učitavanje na ovom uređaju.',
+  'lock.error.wrongSecret': 'PIN nije tačan.',
+  'lock.error.webauthnUnavailable': 'Ovaj uređaj ne može da koristi svoje otključavanje za bravu, pa koristi PIN.',
+  'lock.error.webauthnCancelled': 'Otključavanje uređaja je otkazano. Pokušaj ponovo ili koristi PIN.',
+  'lock.error.notConfigured': 'Brava nije podešena na ovom uređaju.',
+  'lock.error.queueNotEmpty': 'Pošalji sačekale unose prvo, da uključivanje brave ne može da ih izgubi.',
+  'lock.error.unsupported': 'Ovaj uređaj nije mogao da podesi bravu.',
+
   // ---- session ----
   'session.signOut': 'Odjavi se',
   'session.signingOut': 'Odjavljivanje…',

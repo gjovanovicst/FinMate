@@ -1,6 +1,8 @@
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import {
+  inject,
   isDevMode,
+  provideAppInitializer,
   provideBrowserGlobalErrorListeners,
   provideZonelessChangeDetection,
   type ApplicationConfig,
@@ -9,6 +11,7 @@ import { provideRouter, withComponentInputBinding, withInMemoryScrolling } from 
 import { provideServiceWorker } from '@angular/service-worker';
 
 import { routes } from './app.routes';
+import { AppLockService } from './core/app-lock/app-lock.service';
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { credentialsInterceptor } from './core/auth/credentials.interceptor';
 
@@ -43,6 +46,10 @@ export const appConfig: ApplicationConfig = {
       // Order matters: credentials first (so cookies ride along), then bearer-token attachment.
       withInterceptors([credentialsInterceptor, authInterceptor]),
     ),
+    // The app lock is read **before anything renders**: it decides whether this install persists
+    // anything at all (ADR-025 decision 3), and a store built before that answer would silently be the
+    // in-memory one. One IndexedDB read, awaited once per page load.
+    provideAppInitializer(() => inject(AppLockService).refresh()),
     provideServiceWorker('ngsw-worker.js', {
       enabled: !isDevMode(),
       // The default: register once the app settles, but no later than 30 s, so a slow screen cannot

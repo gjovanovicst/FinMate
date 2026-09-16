@@ -2,12 +2,15 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } 
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 
+import { AppLockService } from './core/app-lock/app-lock.service';
 import { AuthStore } from './core/auth/auth.store';
 import { I18nService } from './core/i18n/i18n.service';
 import type { TranslationKey } from './core/i18n/translations';
 import { NAV_ITEMS, OVERFLOW_ITEMS, badgeAccessibleName, badgeText } from './core/navigation';
 import { NotificationStore } from './core/notifications/notification.store';
 import { PushService } from './core/push/push.service';
+import { SnapshotService } from './core/offline/snapshot.service';
+import { SyncService } from './core/offline/sync.service';
 import { ReviewQueueStore } from './core/review/review-queue.store';
 import { AppUpdateComponent } from './shared/ui/app-update/app-update.component';
 import { LanguageSwitcherComponent } from './shared/ui/language-switcher/language-switcher.component';
@@ -453,6 +456,9 @@ export class AppComponent {
   private readonly reviewQueue = inject(ReviewQueueStore);
   private readonly notificationsStore = inject(NotificationStore);
   private readonly push = inject(PushService);
+  private readonly appLock = inject(AppLockService);
+  private readonly snapshot = inject(SnapshotService);
+  private readonly sync = inject(SyncService);
   readonly i18n = inject(I18nService);
 
   readonly isAuthenticated = this.auth.isAuthenticated;
@@ -552,6 +558,14 @@ export class AppComponent {
     try {
       await this.auth.signOut();
     } finally {
+      // ADR-025 decision 6: a sign-out wipes the offline store — the wrapped key first, then every
+      // record — and the app lock goes with it, because a wrapped key is what the lock *is*. The
+      // snapshot's provenance is a signal, so it is cleared explicitly or the header chip would keep
+      // labelling figures that no longer exist, and the queue is re-read so the chip drops to zero
+      // instead of advertising work that was just discarded.
+      await this.appLock.purge();
+      this.snapshot.reset();
+      await this.sync.refresh();
       this.signingOut.set(false);
     }
   }

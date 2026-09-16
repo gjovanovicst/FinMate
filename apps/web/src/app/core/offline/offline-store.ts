@@ -40,6 +40,15 @@ export interface OfflineRecord extends EncryptedValue {
   readonly key: string;
   /** Epoch ms after which the record is dead, or `null` for a record that never expires. */
   readonly expiresAt: number | null;
+  /**
+   * Plaintext JSON, written **only** into `keys` by {@link WrappedKeyStore.writeKeyMeta}.
+   *
+   * The app lock's install metadata — its method, its KDF salt and a WebAuthn credential id — is not
+   * secret (a salt is not a secret, and a credential id is public by construction), but it has to
+   * survive a reload or the wrapped key can never be unwrapped again. Everything else in this database
+   * is ciphertext; this one field is the documented exception, and `keys` is the store it lives in.
+   */
+  readonly plain?: string;
 }
 
 /**
@@ -140,6 +149,35 @@ export class IndexedDbOfflineStore implements OfflineRepository, WrappedKeyStore
     // Stored unencrypted *by the store*, because it is already wrapped by the app lock and encrypting
     // it under the key it contains is impossible. It never expires: it is the install's data key.
     await db.put('keys', { key: id, iv: record.iv, ciphertext: record.ciphertext, expiresAt: null });
+  }
+
+  async readKeyMeta<T>(id: string): Promise<T | null> {
+    const db = await this.connect();
+    const record = await db.get('keys', id);
+    if (!record?.plain) return null;
+    try {
+      return JSON.parse(record.plain) as T;
+    } catch {
+      // Hand-edited or truncated metadata is not an error worth throwing on a boot path: it means the
+      // install has no lock it can prove, and the caller treats that exactly like "no lock".
+      return null;
+    }
+  }
+
+  async writeKeyMeta(id: string, value: unknown): Promise<void> {
+    const db = await this.connect();
+    await db.put('keys', {
+      key: id,
+      iv: '',
+      ciphertext: '',
+      expiresAt: null,
+      plain: JSON.stringify(value),
+    });
+  }
+
+  async deleteKeyMeta(id: string): Promise<void> {
+    const db = await this.connect();
+    await db.delete('keys', id);
   }
 
   private connect(): Promise<IDBPDatabase<OfflineDbSchema>> {

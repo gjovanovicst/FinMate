@@ -672,6 +672,18 @@ The tables hold platform content beside the Household’s own rows, which is whe
   promise that never resolves and never rejects — no error, no timeout, just a UI stuck on "working".
   Every `SwPush` read must be behind `isEnabled`.
 
+- **`TestBed.inject` needs a DOM even for a service with no template.** A service spec that injects
+  anything the platform browser provides (`DOCUMENT`, and therefore almost everything) fails with
+  `ReferenceError: document is not defined` from `platform-browser`'s factory — *not* with a message about
+  the missing environment. `// @vitest-environment jsdom` on the first line is the fix, and it is needed
+  even when the spec itself never touches the DOM.
+
+- **`openDB(name, version)` without an `upgrade` callback creates an EMPTY database.** The next
+  `db.getAll(store)` throws `NotFoundError: No objectStore named …`, which reads like a corrupted database
+  rather than a missing schema. A spec that wants to inspect the raw database has to mirror the store's own
+  `upgrade` (ADR-025 decision 1) or wait until the app has created it. Do **not** reach for `deleteDB`
+  between tests: it hangs in `fake-indexeddb` (see group 2).
+
 Angular 22 zoneless + signals, and three separate ways a template literal or a type-checker can mislead you.
 
 - **A signal `viewChild()` read inside `afterNextRender` (or `ngAfterViewInit`) is `undefined` under

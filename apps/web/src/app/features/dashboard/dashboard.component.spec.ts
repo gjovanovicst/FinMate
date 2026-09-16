@@ -152,9 +152,8 @@ describe('DashboardComponent (mounted)', () => {
 
     const stores = TestBed.inject(OfflineStoreHolder);
     await vi.waitFor(async () => {
-      const record = await stores
-        .repository()
-        .get<DashboardSnapshot>('snapshot', DASHBOARD_SNAPSHOT_KEY);
+      const repository = await stores.repository();
+      const record = await repository.get<DashboardSnapshot>('snapshot', DASHBOARD_SNAPSHOT_KEY);
       expect(record?.figures).toEqual(LIVE);
     });
   });

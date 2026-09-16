@@ -279,6 +279,17 @@ export const en = {
   'notifications.push.error': 'Could not change the notification setting. Please try again.',
   'notifications.push.emailFallback': 'Email is the reliable alternative — turn on Email above.',
 
+  // ---- app lock (F-26, task 4.2.6) ----
+  'lock.state.off': 'The app lock is off, so nothing is kept on this device between visits.',
+  'lock.state.locked': 'Locked. Unlock to keep working offline on this device.',
+  'lock.state.unlocked': 'The app lock is on. Pending captures survive a reload on this device.',
+  'lock.error.wrongSecret': 'That PIN is not right.',
+  'lock.error.webauthnUnavailable': 'This device cannot use its screen lock for the app lock, so use a PIN instead.',
+  'lock.error.webauthnCancelled': 'The device lock was cancelled. Try again, or use your PIN.',
+  'lock.error.notConfigured': 'The app lock is not set up on this device.',
+  'lock.error.queueNotEmpty': 'Send the queued captures first, so turning the lock on cannot lose them.',
+  'lock.error.unsupported': 'This device could not set up the app lock.',
+
   // ---- session ----
   'session.signOut': 'Sign out',
   'session.signingOut': 'Signing out…',

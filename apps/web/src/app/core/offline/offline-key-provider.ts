@@ -13,6 +13,7 @@
  */
 import { Injectable, InjectionToken, inject } from '@angular/core';
 
+import { AppLockService } from '../app-lock/app-lock.service';
 import { generateDataKey, type EncryptedValue } from './offline-crypto';
 
 /** What the store needs from a key holder: is this key durable, and what is it. */
@@ -25,6 +26,14 @@ export interface OfflineKeyProvider {
 
   /** The per-install data key, generated once and then reused for the life of the provider. */
   dataKey(): Promise<CryptoKey>;
+
+  /**
+   * Resolves once the provider knows whether this install is persistent.
+   *
+   * Optional because a session-only provider has nothing to read; the app lock needs one IndexedDB
+   * read before it can answer `persistent`, and the store must not be built before it has.
+   */
+  ready?(): Promise<void>;
 }
 
 /**
@@ -52,14 +61,15 @@ export class SessionKeyProvider implements OfflineKeyProvider {
 /** The DI token screens inject. Its default is the session provider — see {@link OFFLINE_KEY_PROVIDER}. */
 export const OFFLINE_KEY_PROVIDER = new InjectionToken<OfflineKeyProvider>('OFFLINE_KEY_PROVIDER', {
   providedIn: 'root',
-  // ADR-025 decision 3, deliberately the default: with no app lock there is no wrapping secret, so
-  // the data key must not be persisted and nothing confidential may be written to disk. Persistence
-  // is an explicit opt-in that requires 4.2.6's lock to supply the unwrapper below — never a flag.
-  factory: () => inject(SessionKeyProvider),
+  // The app lock decides which of the two providers this install gets: it reports `persistent` only
+  // while it is unlocked, and delegates to the session provider when no lock is configured. So
+  // ADR-025 decision 3 still holds by construction — with no lock there is no wrapping secret, the key
+  // is never persisted, and nothing confidential is written to disk.
+  factory: () => inject(AppLockService),
 });
 
 /**
- * The current wrapped data key, as it sits in the `keys` object store.
+ * The `keys` object store, as the app lock uses it.
  *
  * Defined next to the provider rather than in `offline-store.ts` so the store depends on the seam
  * (types only) and not the other way round.
@@ -67,6 +77,17 @@ export const OFFLINE_KEY_PROVIDER = new InjectionToken<OfflineKeyProvider>('OFFL
 export interface WrappedKeyStore {
   readWrappedKey(id: string): Promise<EncryptedValue | null>;
   writeWrappedKey(id: string, record: EncryptedValue): Promise<void>;
+  /**
+   * The app lock's install metadata — its method, its KDF salt, a WebAuthn credential id.
+   *
+   * Not secret (a salt is not a secret and a credential id is public), but it must survive a reload or
+   * the wrapped key can never be unwrapped again. The only plaintext this database holds.
+   */
+  readKeyMeta<T>(id: string): Promise<T | null>;
+  writeKeyMeta(id: string, value: unknown): Promise<void>;
+  deleteKeyMeta(id: string): Promise<void>;
+  /** Wipe the whole database: what disabling the lock, a sign-out and a revoke all do. */
+  purge(): Promise<void>;
 }
 
 /** Turns a stored wrapped key back into a usable data key, using the app lock's secret. */

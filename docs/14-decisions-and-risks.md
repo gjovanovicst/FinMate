@@ -1404,6 +1404,113 @@ caused the notification. Nothing else about decisions 1–3 and 5–6 changes.
 
 ---
 
+### ADR-029 — The app lock's WebAuthn secret is the PRF extension, and its policy is five idle minutes
+**Status:** Accepted
+
+**Context.** ADR-025 decision 3 named the app lock as task 4.2.6 and said what it is *for* — the data key is
+persisted **only** wrapped by an app-lock secret — while docs/08 §3.9 fixed the policy (*"Re-auth on cold
+start and after 5 minutes idle. Preferred: WebAuthn platform authenticator. Fallback: 6-digit app PIN"*).
+Two things neither document says, and both are load-bearing:
+
+1. **What a WebAuthn credential contributes.** A credential id, an authenticator's public key and a
+   signature are all public; none of them can wrap a key. A platform authenticator can produce a *secret*
+   through exactly one mechanism — the **PRF extension**, which evaluates a pseudo-random function over a
+   per-install salt and returns 32 stable bytes that only that authenticator can reproduce. Without PRF the
+   WebAuthn path cannot be a key source at all, only a gate over a secret stored somewhere else — which is
+   ADR-025's rejected alternative (a) wearing a costume.
+2. **The cost of getting the state machine wrong.** A lock that cannot reproduce its key is a one-way door
+   on the user's queue; a lock that reports itself armed after an interrupted write gates the user behind a
+   secret nothing can unwrap; and a lock that stays unlocked past its idle window is a lost phone away from
+   T-03 (L4 × I4). None of these are visible in a screen that looks fine.
+
+**Decision.**
+
+1. **The WebAuthn path is the PRF extension, probed rather than assumed.** Registration calls
+   `credentials.create()` with an **empty** `prf` input and treats `prf.enabled !== true` as *this
+   authenticator cannot do PRF*; only then is the salt evaluated through `credentials.get()`, and the
+   output is run through HKDF-SHA-256 with a domain-separation `info` string to become the AES-GCM-256
+   key-wrapping key. The two steps are separate because a `create()` that asked for an evaluation an
+   authenticator ignores returns no output and would look like a bug instead of a capability answer.
+2. **When PRF is unavailable the caller must fall back to the PIN, never to an unwrapped key.** The
+   capability check returns `null` and the service reports `WEBAUTHN_UNAVAILABLE`; nothing is written. The
+   PIN is stretched with PBKDF2-SHA-256 at 600 000 iterations exactly as ADR-025 decision 4 fixed it.
+3. **The install's metadata is the one plaintext record.** The lock's method, its salt and its credential
+   id live in the `keys` store beside the wrapped key, because without them the wrapped key can never be
+   unwrapped again. A salt is not a secret and a credential id is public by construction, so this does not
+   weaken the posture — but it is written down, because "the database is all ciphertext" would otherwise be
+   a claim the code does not keep.
+4. **A half-written lock is not a lock.** Metadata and wrapped key are written together, and the state is
+   derived from **both**: either one missing is `OFF`, never `LOCKED`. An interrupted registration therefore
+   degrades to "no lock" rather than to a screen nobody can get past.
+5. **The lock is opt-in, and enabling it is what turns persistence on.** `OFF` means the session provider
+   and an in-memory store; `UNLOCKED` means the wrapped provider and IndexedDB; `LOCKED` means the
+   in-memory store again, because a page with no key in memory may not read what is on disk. The offline
+   store's backing is rebuilt when that changes, which is what keeps ADR-025 decision 3's sentence true in
+   both directions.
+6. **Arming is refused while the queue is not empty.** The entries in the in-memory store are encrypted
+   under the session key; re-keying them into a durable store is a migration whose failure mode is a lost
+   confirmed capture. Draining first is a step the user can see.
+7. **Policy: locked on cold start and after five idle minutes**, both from docs/08 §3.9. Idle is measured
+   from the last activity and `null` activity is *not* idleness — a lock that has just been opened must not
+   immediately re-lock. The rule is a pure function (`shouldLockOnIdle`) so it is testable without a timer;
+   polling it is the lock screen's job (4.2.6b).
+8. **One flush at a time across tabs.** ADR-026 decision 4 deferred this here because persistence is what
+   makes it real: with one IndexedDB behind every tab, two tabs can see the same queue. The flush runs
+   under a Web Locks mutex (`finmate:offline-flush`, `mode: 'exclusive'`, `ifAvailable: true`), and a tab
+   that cannot take it **skips** rather than waiting to send the same entries a moment later. Without Web
+   Locks it runs: a lock that cannot be taken must not mean a queue that never drains, and ADR-025's
+   implementation notes already record that capture from one tab is the supported configuration.
+9. **`purge()` is one operation with two names' worth of callers** — turning the lock off, sign-out, a
+   `401`/remote revoke, household deletion. It removes the lock configuration with the data, because
+   ADR-025 decision 2 makes the wrapped key the first thing a purge removes; a wipe that left a lock behind
+   would leave a door with no key.
+
+**Consequences.**
+- ✅ T-03's mitigation is real rather than intended: a filesystem dump yields a wrapped key and no secret,
+  and the wrap is an authenticator's PRF output on the path most devices will take.
+- ✅ The lock is a seam: the store, the outbox and the snapshot needed no data migration to gain
+  persistence, and `OFF` is still a fully usable app (ADR-025's rejected alternative (c)).
+- ✅ The failure modes that matter are asserted, not assumed: the cold-start-reload test is a second
+  service instance over the same database, the round trip is proved by decrypting across it, and the wipe
+  is read from the **raw** database rather than through the service's own accessor.
+- ⚠️ **PRF support is uneven.** Chrome/Edge on desktop and Android, and recent Safari, expose it on
+  platform authenticators; Firefox does not. On those devices the PIN is the only path, which is why the
+  PIN is a first-class fallback rather than an error case — and why the UI must offer it (4.2.6b) rather
+  than showing a disabled button.
+- ⚠️ **No browser has driven the real prompt in this build.** The WebAuthn path is tested against a fake
+  authenticator with a deterministic PRF; a real device, a real Face ID prompt and a real cancellation are
+  unverified. A manual pass on a phone is required before beta, and it is named in docs/10's device matrix.
+- ⚠️ **5 idle minutes is a delay, not a lock against a determined attacker with the unlocked device and
+  the PIN** — docs/08 §3.9's honest limit stands unchanged, and the native shell (v2, ADR-012) is the fix.
+- ⚠️ **The device panel that offers all of this does not exist yet** (4.2.6b), so the lock is reachable only
+  from code and tests. Until it ships, no install can arm one and the offline store is still session-only:
+  R-23 stays open, with its checkpoint.
+- ⚠️ `purge()` deletes the lock configuration, so a sign-out on a phone means re-arming (and re-consenting
+  to the biometric prompt) at the next sign-in. That is ADR-025 decision 2's order, and it is the safer
+  reading of docs/08 §3.9's "wipes on logout".
+
+**Alternatives rejected.**
+- **(a) Use WebAuthn as a gate over a key stored unwrapped.** The most common shape in the wild, and the
+  one that makes "encrypted at rest" false while looking true — ADR-025's alternative (a), rejected there
+  and again here.
+- **(b) Derive the wrapping key from the credential id or a signature.** Both are public; this is (a) with
+  extra steps.
+- **(c) A PIN-only lock, with WebAuthn as an unlock convenience over the same PIN-derived key.** It would
+  work everywhere, and it would make the six-digit PIN the only real secret on every device — lowering the
+  weakest device's posture to the lowest common denominator instead of using the authenticator where it
+  exists.
+- **(d) Keep the lock in memory only and never persist the wrapped key.** That is the current state, and it
+  cannot satisfy Sprint 4.2's own exit criterion (offline capture that survives a reload) — the gap R-23
+  records.
+- **(e) Migrate the in-memory queue into the durable store when the lock is armed.** Re-encrypting a
+  user's confirmed captures from one key to another is exactly where a bug loses data, for a case the UI
+  can avoid by asking the user to let the queue drain first.
+- **(f) Elect a leader tab with a `BroadcastChannel` claim.** A claim needs a timeout, a heartbeat and a
+  re-election rule to survive a closed tab — a distributed-systems problem for a mutex the platform
+  already provides.
+
+---
+
 ## Part 2 — Risk register
 
 Scored as **Likelihood (L)** and **Impact (I)** on 1–5; **Exposure = L × I**. Anything ≥ 12 gets an
@@ -1435,7 +1542,7 @@ owner and a checkpoint in [09](09-implementation-plan.md).
 
 | **R-22** | **A stale app shell outlives a deploy** — the service worker serves a cached document whose bundle predates an API or contract change, so the fix never reaches the user (ADR-024) | 3 | 3 | 9 | Non-dismissible update prompt that activates only on the user's click; `ngsw.json`'s generated hash table makes a mixed old/new bundle impossible; activation-when-idle catches closed tabs; API changes stay additive within a release; the per-feature offline matrix in [07 §6](07-platform-strategy-mobile-desktop.md) states what a stale shell may still do | Phase 4.2 + every release |
 
-| **R-23** | **The offline cache depends on an app lock that no task builds** (ADR-025), so F-26's offline capture is session-only and Sprint 4.2's exit criterion cannot be met as written | 4 | 3 | **12** | The store, the outbox and the flush ship now and are tested in Node; the key provider is a seam, so the app lock switches persistence on with no data migration; the copy says "keep the app open" rather than implying durability; the app lock is a named task (4.2.6) with a Phase 5 checkpoint | Phase 4.2 exit + Phase 5 beta gate |
+| **R-23** | **The offline cache depends on an app lock that no task builds** (ADR-025), so F-26's offline capture is session-only and Sprint 4.2's exit criterion cannot be met as written | 4 | 3 | **12** | **The lock's core shipped in 4.2.6a** (ADR-029): the WebAuthn-PRF and PIN secrets, the wrapped-key lifecycle, the state that switches the store between memory and IndexedDB, the cross-tab flush mutex and the wipe — all tested against a real IndexedDB, including a reload. What is left is the **device panel that arms it** (4.2.6b), so no install can persist yet and the iteration stays open: the copy still says "keep the app open" rather than implying durability | 4.2.6b, then Phase 4.2 exit + Phase 5 beta gate |
 | **R-24** | **The push payload is coupled to `ngsw-worker.js`'s undocumented `handlePush`/`onActionClick`** (ADR-028's 4.2.5 amendment), so an `@angular/service-worker` upgrade could make every push silently display nothing — `dispatch` still reports `SENT`, so nothing looks broken server-side | 3 | 3 | 9 | The dependency is pinned and the coupling is written down in the payload module and here; `web-push-payload.spec.ts` pins the exact block the worker reads; the in-app centre is the source of truth and is complete without push (docs/07 §4.8), so a silent failure costs nagging, not data; re-check `ngsw-worker.js` on every Angular major | Every Angular upgrade + Phase 5 beta gate |
 
 ### Top five by exposure
