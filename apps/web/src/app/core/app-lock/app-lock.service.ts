@@ -20,7 +20,11 @@
  * we are through it". That is what `createOfflineStore` branches on: locked (or no lock) means the
  * in-memory backing, unlocked means IndexedDB. The consequence is deliberate — **while locked the store
  * is empty and in memory**, so nothing behind the lock screen can read or leak what it protects, and
- * `OfflineStoreHolder.invalidate()` rebuilds the backing when the state changes.
+ * every transition is announced: {@link durability} is a signal, and `OfflineStoreHolder` watches it and
+ * invalidates its backing. **The holder watches rather than being called** on purpose (R-27(a)): the
+ * state has four exits — an armed install's unlock, `lock()`, `purge()`, and a failed install read — and
+ * a transition a caller forgets is a store that silently stops persisting, which is what the queue did
+ * for two releases.
  *
  * ## Why it builds its own `keys` connection instead of injecting the holder
  *
@@ -33,7 +37,7 @@
  *
  * @module apps/web/src/app/core/app-lock
  */
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal, type Signal } from '@angular/core';
 
 import {
   WRAPPED_DATA_KEY_ID,
@@ -107,6 +111,14 @@ export class AppLockService implements OfflineKeyProvider {
   get persistent(): boolean {
     return this.stateSignal() === 'UNLOCKED';
   }
+
+  /**
+   * {@link persistent} as a signal, so the offline store can **react** to a lock state change.
+   *
+   * Derived rather than a second `signal` set beside the state: two writable copies of one fact is how
+   * they end up disagreeing. `OfflineStoreHolder` is the consumer (R-27(a)).
+   */
+  readonly durability: Signal<boolean> = computed(() => this.persistent);
 
   private unlockedKey: CryptoKey | null = null;
   private metadata: LockMetadata | null = null;

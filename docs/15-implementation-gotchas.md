@@ -1030,7 +1030,7 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   IndexedDB's `outbox` is **empty** after an offline capture the chip counts as queued (*Waiting to send
   (1)*), and one fresh dashboard mount after the unlock makes the *same* capture land there
   (`outbox: ["1"]`). The rule generalises: when a class doc names a method, grep for it — a missing one is
-  invisible to typecheck, lint, and every spec that constructs the class around a working fake.
+  invisible to typecheck, lint, and every spec that constructs the class around a working fake. **Fixed in 4.3.6a** (ADR-025's amendment): the provider announces the change as a `durability` signal, the holder watches it, and `SyncService` reacts by dropping its cached outbox and re-reading. One thing the fix must **not** do: invalidate on the effect's *first* run — that discards an in-memory backing whose contents are the only copy, and the dashboard's mounted spec (which seeds a snapshot before the first change detection) caught exactly that.
 
 - **A record on disk is not a record the app can read.** The other half of the same defect, and it is why
   "the queue survives a reload, on disk" was believed for two releases. In the production build the reload's
@@ -1039,7 +1039,7 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   in-memory backing and `refresh()` reads that one; unlocking changes the durability the holder *would*
   report but nothing re-reads the queue, so the signals stay empty even after a consumer switches the
   backing. A fix has to do both halves — rebuild **and** re-read — and the honest test is the user-visible
-  one, not a count of IndexedDB records: reload, unlock, open the tray, and see the entry with its state.
+  one, not a count of IndexedDB records: reload, unlock, open the tray, and see the entry with its state. **Both halves are fixed in 4.3.6a** and verified live 4/4 against the production build.
 
 - **An offline capture has no account, so the server refuses the whole batch.** `capture.component.ts`'s
   `load()` reads `accounts` and `categories` together and sets `accountId` from the first live account; when

@@ -111,4 +111,47 @@ describe('OfflineStoreHolder', () => {
     expect(afterPurge.persistent).toBe(false);
     expect(await afterPurge.get('outbox', 'probe')).toBeNull();
   });
+
+  /**
+   * R-27(a): the switch must not depend on a consumer asking.
+   *
+   * The queue caches an `Outbox` per generation, and `SyncService.outbox()` reads `generation()` *before*
+   * it calls `repository()` — so a durability change nobody else triggered was invisible to it, and an
+   * offline capture was written to the in-memory backing for the life of the page. Here no `repository()`
+   * call happens between arming the lock and the assertion, which is the whole point.
+   */
+  /**
+   * The other half of R-27(a): a *change* is the only reason to invalidate.
+   *
+   * An effect's first run is not a change, and invalidating there discards a backing whose contents are
+   * the only copy — an in-memory store cannot be rebuilt from disk. The dashboard's mounted spec found
+   * this (it seeds a snapshot, then the first change detection ticks the effect), so it is pinned here
+   * where the mechanism lives.
+   */
+  it('does not invalidate the backing on the effect’s first run', async () => {
+    const { holder, lock } = mount();
+    await lock.refresh();
+
+    const repository = await holder.repository();
+    await repository.put('snapshot', 'probe', { anything: true }, 60_000);
+    TestBed.tick();
+
+    const after = await holder.repository();
+    expect(await after.get('snapshot', 'probe')).toEqual({ anything: true });
+  });
+
+  it('moves the generation when durability changes, with no consumer asking', async () => {
+    const { holder, lock } = mount();
+    await lock.refresh();
+    await holder.repository();
+    const locked = holder.generation();
+
+    expect(await lock.enableWithPin(PIN, 0)).toBe(true);
+    TestBed.tick();
+
+    expect(holder.generation()).toBeGreaterThan(locked);
+    // And the backing the next call gets is the durable one, so the generation is not the only thing
+    // that moved.
+    expect((await holder.repository()).persistent).toBe(true);
+  });
 });

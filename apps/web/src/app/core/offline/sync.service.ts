@@ -22,7 +22,7 @@
  * @module apps/web/src/app/core/offline
  */
 import { DOCUMENT } from '@angular/common';
-import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, effect, inject, signal } from '@angular/core';
 
 import { GraphQLRequestError, GraphqlClient } from '../graphql/graphql.client';
 import { OfflineStoreHolder } from './offline-store-holder';
@@ -256,6 +256,26 @@ export class SyncService {
 
   constructor() {
     const document = this.documentRef;
+
+    // The store backing can be replaced under this page — unlocking the app lock is the case (R-27(a)) —
+    // and the outbox above is exactly the kind of consumer that cannot notice by itself: it is built
+    // once per generation, and `outbox()` reads the generation *before* it ever calls `repository()`, so
+    // a durability change nobody else triggered was invisible to it. Reacting here is what puts a queue
+    // that was written to disk back on screen — and what drains it, since the boot flush ran against the
+    // empty in-memory backing while the app was still locked.
+    //
+    // Only a *change* acts: the first run of an effect happens immediately, and flushing twice at boot
+    // would be two attempts recorded for one reconnect.
+    let seen = this.stores.generation();
+    effect(() => {
+      const generation = this.stores.generation();
+      if (generation === seen) return;
+      seen = generation;
+      this.outboxRef = null;
+      void this.refresh();
+      void this.flushNow();
+    });
+
     // Optional on `defaultView` because a spec is free to provide a minimal document; a missing
     // window must degrade to "no flush triggers", never to a boot failure.
     const view = document?.defaultView ?? null;

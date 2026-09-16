@@ -4,11 +4,15 @@
 import { initAngularTesting } from '@web-test/angular-testing';
 
 import { TestBed } from '@angular/core/testing';
+import { signal } from '@angular/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GraphQLRequestError, GraphqlClient } from '../graphql/graphql.client';
+import { InMemoryOfflineStore } from './offline-store';
 import { OFFLINE_KEY_PROVIDER } from './offline-key-provider';
-import { SyncService } from './sync.service';
+import { OfflineStoreHolder } from './offline-store-holder';
+import { Outbox } from './outbox';
+import { CAPTURE_COMMIT, SyncService } from './sync.service';
 import type { CaptureCommitInput, CapturePreviewRow } from './sync.types';
 
 initAngularTesting();
@@ -384,5 +388,55 @@ describe('SyncService', () => {
 
     expect(service.pending()).toHaveLength(0);
     expect(service.rejected()[0]?.attempts).toBe(0);
+  });
+
+  /**
+   * R-27(a): the page must re-read the queue when the store backing is replaced under it.
+   *
+   * The state a reload leaves behind, in one test: the boot built the outbox over the **in-memory**
+   * backing because the app was locked, and the **durable** backing already holds the queue. Nothing the
+   * user does shows it until the generation moves and the service reacts — which is the fix; before it,
+   * the tray read *Nothing is waiting to be sent* while IndexedDB held the entry.
+   */
+  it('re-reads the queue when the store backing is replaced under it', async () => {
+    const memory = new InMemoryOfflineStore();
+    const durable = new InMemoryOfflineStore();
+    await new Outbox(durable).enqueue(CAPTURE_COMMIT, { input: INPUT }, { preview: PREVIEW });
+
+    let current: InMemoryOfflineStore = memory;
+    const generation = signal(0);
+    // A genuine offline failure: the re-read must be visible whether or not the flush can send.
+    const query = vi.fn(() => Promise.reject(OFFLINE));
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: GraphqlClient, useValue: { query } as unknown as GraphqlClient },
+        {
+          provide: OFFLINE_KEY_PROVIDER,
+          useValue: { persistent: false, dataKey: () => Promise.reject(new Error('not used')) },
+        },
+        {
+          provide: OfflineStoreHolder,
+          useValue: {
+            generation: generation.asReadonly(),
+            repository: () => Promise.resolve(current),
+          } as unknown as OfflineStoreHolder,
+        },
+      ],
+    });
+    const service = TestBed.inject(SyncService);
+    await settle();
+
+    // The durable queue exists and this page cannot see it.
+    expect(service.pendingCount()).toBe(0);
+
+    // The lock is unlocked: the holder swaps the backing, and the generation is what says so.
+    current = durable;
+    generation.set(1);
+    TestBed.tick();
+    await settle();
+
+    expect(service.pendingCount()).toBe(1);
   });
 });

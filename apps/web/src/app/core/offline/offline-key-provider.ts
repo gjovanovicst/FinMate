@@ -11,7 +11,7 @@
  *
  * @module apps/web/src/app/core/offline
  */
-import { Injectable, InjectionToken, inject } from '@angular/core';
+import { Injectable, InjectionToken, inject, type Signal } from '@angular/core';
 
 import { AppLockService } from '../app-lock/app-lock.service';
 import { generateDataKey, type EncryptedValue } from './offline-crypto';
@@ -23,6 +23,17 @@ export interface OfflineKeyProvider {
    * so a store built on it may keep nothing confidential on disk (ADR-025 decision 3).
    */
   readonly persistent: boolean;
+
+  /**
+   * The same fact as a **signal**, for a consumer that has to react to it rather than re-ask.
+   *
+   * Optional because a session-only provider never changes: its answer is `false` for the life of the
+   * page. The app lock implements it, and `OfflineStoreHolder` watches it — which is what makes the
+   * backing follow the lock state *by construction* instead of by luck. Before R-27(a) it followed only
+   * if some data consumer happened to call `repository()` after the unlock, and the queue's own consumer
+   * caches its outbox, so the two could disagree for the life of the page.
+   */
+  readonly durability?: Signal<boolean>;
 
   /** The per-install data key, generated once and then reused for the life of the provider. */
   dataKey(): Promise<CryptoKey>;
