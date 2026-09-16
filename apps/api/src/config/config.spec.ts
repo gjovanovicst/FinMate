@@ -89,3 +89,34 @@ describe('a blank env var means "unset"', () => {
     expect(() => loadConfig({ ...BASE, GEMINI_EU_BASE_URL: 'api.example.com' })).toThrow();
   });
 });
+
+/**
+ * `PUBLIC_API_PREFIX` — the browser's path to this API (R-26, task 4.3.5).
+ *
+ * It scopes the refresh cookie, so a wrong value is not a cosmetic mistake: a prefix the browser never
+ * requests means the cookie is never attached, `restore()` returns an empty token, and every hard reload
+ * signs the user out. That is the failure these cases exist to keep expressible, and to keep *typed
+ * correctly* — a value with a scheme or a trailing slash would be accepted by a looser check and then
+ * produce exactly the same silently-unusable cookie.
+ */
+describe('PUBLIC_API_PREFIX', () => {
+  it('defaults to the root when it is absent or blank', () => {
+    expect(loadConfig({ ...BASE }).PUBLIC_API_PREFIX).toBe('');
+    expect(loadConfig({ ...BASE, PUBLIC_API_PREFIX: '' }).PUBLIC_API_PREFIX).toBe('');
+  });
+
+  it('accepts a plain path prefix', () => {
+    expect(loadConfig({ ...BASE, PUBLIC_API_PREFIX: '/api' }).PUBLIC_API_PREFIX).toBe('/api');
+    expect(loadConfig({ ...BASE, PUBLIC_API_PREFIX: '/services/finmate' }).PUBLIC_API_PREFIX).toBe(
+      '/services/finmate',
+    );
+  });
+
+  it('refuses a value that is not a path prefix, rather than setting a cookie nobody sends', () => {
+    // A scheme/host, a trailing slash, a relative segment, and a query string: each would produce a
+    // `Path` no browser matches, which is R-26 all over again and silent every time.
+    for (const bad of ['https://api.example.com/auth', '/api/', 'api', '/api?v=2', '/api auth']) {
+      expect(() => loadConfig({ ...BASE, PUBLIC_API_PREFIX: bad }), bad).toThrow();
+    }
+  });
+});

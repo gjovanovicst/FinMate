@@ -104,7 +104,7 @@ export class AuthController {
     if (!presented) {
       // No token at all: respond as unauthenticated without touching the AuthService.
       response.clearCookie(ACCESS_TOKEN_COOKIE, { path: '/' });
-      response.clearCookie(REFRESH_TOKEN_COOKIE, { path: '/auth' });
+      response.clearCookie(REFRESH_TOKEN_COOKIE, { path: this.refreshCookiePath() });
       return { accessToken: '', expiresIn: 0 };
     }
 
@@ -130,7 +130,7 @@ export class AuthController {
   async logout(@Res({ passthrough: true }) response: Response): Promise<void> {
     await this.auth.logout(requireSessionId('auth.logout'));
     response.clearCookie(ACCESS_TOKEN_COOKIE, { path: '/' });
-    response.clearCookie(REFRESH_TOKEN_COOKIE, { path: '/auth' });
+    response.clearCookie(REFRESH_TOKEN_COOKIE, { path: this.refreshCookiePath() });
   }
 
 @Public()
@@ -176,6 +176,18 @@ export class AuthController {
     await this.auth.resetPassword(body.token, body.password);
   }
 
+  /**
+   * Where the browser must send the refresh token, in the browser's own terms.
+   *
+   * `/auth` when the API is mounted at the root, `/api/auth` when a proxy exposes it under `/api` — which
+   * is the dev setup, and the reason a hard reload used to sign the user out (R-26, task 4.3.5). The
+   * *clear* has to use the same path: a browser only deletes a cookie whose attributes match, so a logout
+   * that cleared `/auth` while the cookie lived at `/api/auth` would leave the refresh token in place.
+   */
+  private refreshCookiePath(): string {
+    return `${this.config.PUBLIC_API_PREFIX}/auth`;
+  }
+
   private writeCookies(response: Response, tokens: AuthTokens): void {
     const secure = this.config.NODE_ENV === 'production';
 
@@ -187,13 +199,14 @@ export class AuthController {
       maxAge: tokens.accessTokenExpiresIn * 1000,
     });
 
-    // Scoped to /auth so the refresh token is never attached to ordinary data requests — it only
-    // needs to reach refresh and logout.
+    // Scoped to the auth routes so the refresh token is never attached to ordinary data requests — it
+    // only needs to reach refresh and logout — but scoped by the path the *browser* sees, not the one the
+    // API serves internally (R-26).
     response.cookie(REFRESH_TOKEN_COOKIE, tokens.refreshToken, {
       httpOnly: true,
       secure,
       sameSite: 'lax',
-      path: '/auth',
+      path: this.refreshCookiePath(),
       maxAge: this.config.REFRESH_TOKEN_TTL_SECONDS * 1000,
     });
   }

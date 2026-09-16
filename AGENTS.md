@@ -76,8 +76,8 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   turns the same entry into `decidedBy: AI`. That pass also found **R-26**: a full page load signs the
   user out (the refresh cookie is scoped `Path=/auth` while the browser asks the proxy for
   `/api/auth/refresh`, and a browser matches cookie paths against the visible URL) — in-app navigation
-  hides it completely, which is why no test caught it. Scheduled as **4.3.5**; it needs a topology
-  decision, not a patch. The same pass measured the shell overflowing at 320 px by 48 px (the bottom nav
+  hides it completely, which is why no test caught it (fixed in **4.3.5**, below). The same pass measured
+  the shell overflowing at 320 px by 48 px (the bottom nav
   is 368 px wide) — **fixed in 4.3.1a**, which traced it to one missing declaration and audited all 18
   authenticated routes at three widths at zero overflow.
 - **4.3.1 is split in three, and a and b are done.** The layout half (4.3.1a) fixed a **48 px overflow on
@@ -91,9 +91,17 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   not a CSS one-liner — `position: sticky` on that row computes and does nothing, because a bar that is
   the last child of its containing block has no slack to stick into (measured: still 1431 px down a 720 px
   viewport), and docs/02 §4.3's wireframe draws it inline anyway.
+- **And 4.3.5 closed R-26.** A cookie path is an attribute the *browser* checks, so it has to describe the
+  URL the browser requests — and the server never sees the `/api` its proxy strips. The refresh cookie was
+  scoped to `/auth`, the browser asks for `/api/auth/refresh`, so the cookie was never attached and **every
+  hard reload signed the user out**; the in-memory access token hid it from every in-app navigation and
+  every test. Now the scope follows `PUBLIC_API_PREFIX` (default `''`, `/api` in dev, validated so a scheme
+  or trailing slash cannot silently produce a cookie nobody sends), used by the write **and** both clears.
+  **Verified live 9/9**: cookie stored at `/api/auth`, a hard reload stays in the app, a second reload
+  survives the rotation, a deep link holds, logout really removes it.
 - **Next**: **4.3.1c** (the pinned capture bar — two designs, and the choice needs somebody looking at the
-  screen), the **human visual pass** at 320/768/1280 px that no screen has had (Phase 1's own gate),
-  **4.3.5** (the R-26 cookie path), then 4.3.3/4.3.4 and Phase 5.
+  screen), the **human visual pass** at 320/768/1280 px that no screen has had (Phase 1's own gate), then
+  4.3.3 (mobile keyboard) / 4.3.4 (bundle + Lighthouse).
 
 **The long form is in the docs, deliberately.** Each task's decisions, its deviations from these
 specifications and every defect it found live are recorded where they belong: docs/09 §6 for sequencing,
@@ -172,7 +180,9 @@ nx run web:build          # production bundle
 
 **The browser talks to `/api/*`; the dev proxy strips the prefix** before forwarding, because the
 API serves `/auth/*` and `/graphql` without one (docs/06). Changing the prefix on one side only
-produces a 404 that looks like an auth failure.
+produces a 404 that looks like an auth failure — and the same fact, in the other direction, is why
+`PUBLIC_API_PREFIX` exists: anything the browser path-scopes (the refresh cookie) must name the
+*browser's* path, because the API never sees the prefix.
 Verified working: lint 9/9, typecheck 9/9, 2519 tests, `pnpm test:evals` gating green, `web:build`, GraphQL over HTTP through the
 browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, the presign → PUT to MinIO →
 `commitAttachment` → `302` download round trip (verified live, bytes compared), and `prisma migrate diff`

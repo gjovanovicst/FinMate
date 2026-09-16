@@ -124,11 +124,14 @@ Everything here has cost time at least once, and most of it fails in a way that 
   working — only F5, a deep link, or the service worker's own reload exposes it. Diagnose it in one
   command: take the `finmate_refresh` value out of a signup's `Set-Cookie` and send it explicitly —
   `curl -X POST -H 'content-type: application/json' -d '{}' --cookie "finmate_refresh=$REF" /api/auth/refresh`
-  returns a real JWT where the same call with a cookie jar returns an empty one. Recorded as **R-26**,
-  scheduled as **4.3.5**, and **decided**: the cookie path follows the public mount prefix (one config
-  value — default `''`, `/api` in dev — used by the `Set-Cookie` *and* the `clearCookie`), so do not
-  "fix" it in passing by widening the cookie or by giving the client two prefixes. Verify any auth change
-  with a **hard reload** in a browser,
+  returns a real JWT where the same call with a cookie jar returns an empty one. **Fixed in 4.3.5** (R-26):
+  the cookie path now follows `PUBLIC_API_PREFIX` — the path the *browser* reaches the API under, default
+  `''` for a root-mounted API and `/api` in dev — used by the `Set-Cookie` *and* by both `clearCookie`
+  calls, because a browser only deletes a cookie whose attributes match. Do not "fix" it again by widening
+  the cookie to `Path=/` or by giving the client two prefixes. The general lesson is bigger than the bug:
+  **an attribute that describes the API's internal route can be wrong in the browser's terms** — the
+  server never sees the prefix a proxy strips, so anything path-scoped has to be configured, not derived
+  from the controller's own route. Verify any auth change with a **hard reload** in a browser,
   never only through the SPA's own router or a REST call to `/auth/*`.
 
 - **The web dev server does not watch files either — `ng serve` served 15-hour-old CSS, silently.** The

@@ -233,9 +233,26 @@ type ConflictError {
 > The endpoints live under `/auth/*` (`signup`, `login`, `refresh`, `logout`, `verify-email`,
 > `request-password-reset`, `reset-password`, plus a protected `GET /auth/me`). Two reasons:
 > session handling must set and clear `httpOnly` cookies, and cookie semantics sit awkwardly in a
-> GraphQL response where every operation shares one envelope; and scoping the refresh cookie to
-> `/auth` keeps it off ordinary data requests. GraphQL remains the transport for all domain
+> GraphQL response where every operation shares one envelope; and scoping the refresh cookie to the
+> auth routes keeps it off ordinary data requests. GraphQL remains the transport for all domain
 > operations. Recorded here rather than left as a silent divergence.
+>
+> **Cookie deviation, corrected and expanded (task 4.3.5).** The names and the scope below are the
+> sketch, not the build, and the scope was actively wrong until 4.3.5. Shipped: cookies are
+> `finmate_access` and `finmate_refresh` (never `fm_at`/`fm_rt`), the refresh cookie is
+> `HttpOnly; Secure (production only); SameSite=Lax`, and its **`Path` is the path the browser reaches
+> this API under, plus `/auth`** — `/api/auth` in dev, `/auth` when the API is mounted at the root —
+> from the new `PUBLIC_API_PREFIX` setting. `Path=/graphql` in the block below, and docs/08 §3's
+> `__Host-fm_rt; Path=/`, are both stale.
+>
+> Why it matters, and why it is not pedantry: a browser matches a cookie's path against the URL it can
+> **see**, so the previously hard-coded `Path=/auth` never matched the `/api/auth/refresh` the browser
+> actually requests through the dev proxy. The cookie was never sent, `restore()` came back with an
+> empty token, and **every hard reload signed the user out** — R-26, found by 5.2a's browser pass and
+> fixed here. **Still open**: docs/08 §3's `__Host-` prefix is a *different* hardening (it requires
+> `Path=/` and no `Domain`, which a narrow path rules out). The build has no subdomains and prefers the
+> narrow scope; if one is ever added, that choice has to be revisited. Recorded rather than reconciled
+> silently — the security posture is docs/08's to own.
 
 
 ### 2.1 Token strategy
@@ -253,7 +270,8 @@ httpOnly cookie**, passwords hashed with argon2id.
 **Cookie strategy.** The refresh token is issued as:
 
 ```http
-Set-Cookie: fm_rt=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/graphql; Max-Age=2592000
+# The sketch. Shipped names and scope differ — see the deviation note above.
+Set-Cookie: finmate_refresh=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=<PUBLIC_API_PREFIX>/auth; Max-Age=2592000
 ```
 
 - `HttpOnly` — JavaScript cannot read it, so an XSS bug cannot exfiltrate a 30-day session.

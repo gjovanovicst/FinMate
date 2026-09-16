@@ -63,6 +63,30 @@ export const envSchema = z
      * of the app renders, and `formatMoney`'s own default is this value.
      */
     APP_DEFAULT_LOCALE: z.string().default('sr-Latn-RS'),
+    /**
+     * The path prefix the **browser** reaches this API under, or `''` when it is mounted at the root.
+     *
+     * It exists for one thing today: the refresh cookie's `Path`. A browser matches a cookie's path
+     * against the URL it can *see*, and in dev the browser sees `/api/auth/refresh` while the proxy strips
+     * `/api` before the API sees anything — so a cookie scoped to `/auth`, which is what the API's own
+     * route looks like from the inside, was never sent: `restore()` came back with an empty token and
+     * **every hard reload signed the user out** (R-26, task 4.3.5). The scope stays as narrow as it was —
+     * the refresh token still only reaches auth endpoints — it just has to be expressed in the browser's
+     * terms rather than the API's.
+     *
+     * `KEY=` counts as unset, i.e. mounted at the root, which is what a reverse proxy serving the API at
+     * `/` means. Dev sets it to `/api` (see `.env.example`).
+     */
+    PUBLIC_API_PREFIX: z.preprocess(
+      blankIsAbsent,
+      z
+        .string()
+        // A path prefix: leading slash per segment, no trailing one, no scheme or host. A looser check
+        // would accept `https://api.example.com/auth` and then silently produce a cookie no browser ever
+        // sends — the exact failure this setting exists to prevent.
+        .regex(/^(\/[A-Za-z0-9._~-]+)*$/, 'must be a path prefix such as /api, or empty for the root')
+        .default(''),
+    ),
     SMTP_URL: optionalText,
 
     /** Login throttling (docs/08 §3 — credential stuffing is threat T-02). */
