@@ -416,7 +416,9 @@ failing unit test does.
 > migrations and before the suite. Three API integration specs assert the *shipped* global merchant
 > catalogue against the real database and cannot create it (ADR-008 has no unguarded write path), so the
 > seed is part of that environment — see [10 §4.1](10-testing-and-quality.md). Without the step the suite
-> is green on a developer's seeded database and fails on CI's fresh one.
+> is green on a developer's seeded database and fails on CI's fresh one. The service container also passes
+> the dev container's `POSTGRES_INITDB_ARGS` (`--locale=C`), so a text `ORDER BY` behaves the same here as
+> on a developer's machine — the second half of the same lesson.
 
 ### 5.2 Nx affected-graph optimisation
 

@@ -1041,6 +1041,22 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   backing. A fix has to do both halves — rebuild **and** re-read — and the honest test is the user-visible
   one, not a count of IndexedDB records: reload, unlock, open the tray, and see the entry with its state. **Both halves are fixed in 4.3.6a** and verified live 4/4 against the production build.
 
+- **The same suite can differ from CI by *collation*, not by code.** The run right after the seed fix failed
+  on one assertion: `tags.integration.spec.ts` listed `['alpha', 'Beta', '#vanredno']` where the test expected
+  `['#vanredno', 'Beta', 'alpha']`. Nothing in the code had changed — the **database's collation** had. That
+  assertion re-sorted the returned names with JavaScript's `<`/`>` (code-unit order), which is what a `C`
+  cluster returns and *not* what an `en_US.utf8` one does: glibc ignores leading punctuation at the primary
+  level, so `#vanredno` sorts last there and first under `C`, and case is a secondary difference, so
+  `alpha`/`Beta` swap too. `infra/docker/compose.dev.yml` pins `--encoding=UTF8 --locale=C` ("so ORDER BY does
+  not differ between machines"), and CI's service container passed no `POSTGRES_INITDB_ARGS`, so it got the
+  image's `en_US.utf8` default. Reproduced exactly — character for character — by creating one scratch
+  database with `LC_COLLATE 'en_US.utf8'` on the same server; the failure is one file, and the whole API suite
+  passes on that database once the assertion stops assuming a collation. **`ORDER BY` on text is a deployment
+  property, not a contract**: assert it with names every collation agrees on (lowercase ASCII, created in the
+  opposite order to their names so insertion order cannot pass for name order), and pin the *cluster* locale in
+  CI as well as in dev. A "CI-like" reproduction that only matches the database's *contents* is not CI-like —
+  the locale is part of the environment.
+
 - **A suite that needs seeded content is green locally and red in CI — and the failures name the assertions,
   not the seed.** Found by CI on 4.3.6's push: `api:test` failed every run while the same command passed on this
   machine. The difference was the database, not the code: three API integration specs (`global-reads`,

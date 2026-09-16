@@ -203,7 +203,8 @@ browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, the 
 `commitAttachment` → `302` download round trip (verified live, bytes compared), and `prisma migrate diff`
 reporting no drift. **CI seeds the globals (`pnpm db:seed`) before the suite**: three API integration specs
 assert the shipped merchant catalogue and cannot create it (ADR-008), so a fresh database fails them by
-name — see docs/10 §4.1.
+name — see docs/10 §4.1. The service container also takes the dev cluster's `--locale=C`, because a text
+`ORDER BY` is a deployment property and CI's `en_US.utf8` default ordered one tag list differently.
 
 ---
 
@@ -215,7 +216,7 @@ Read the document that owns your task before starting:
 | If you are… | Read first |
 |---|---|
 | starting any task | `docs/05-architecture.md` §2 — monorepo layout + the dependency rule |
-| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 150 entries, each saying what the failure looks like |
+| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 151 entries, each saying what the failure looks like |
 | touching money, Transactions, balances | `docs/03-domain-model.md` — **canonical glossary, DDL, invariants** |
 | adding or changing a feature | `docs/01-product-requirements.md` — the `F-xx` catalogue |
 | touching categorization, rules, prompts, AI | `docs/04-categorization-and-ai-engine.md` |
@@ -310,7 +311,7 @@ A change is not done until (doc 09 §8):
 
 ## Gotchas
 
-**The full list — 150 entries in 10 groups, each written to say what it looks like when it goes wrong —
+**The full list — 151 entries in 10 groups, each written to say what it looks like when it goes wrong —
 is [`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md). Read it before debugging
 anything that "should work".** It was split out because this file had grown past the instruction budget
 and was being truncated on load. The ones below stay here because they are the ones that bite hardest,

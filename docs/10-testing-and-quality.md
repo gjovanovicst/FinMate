@@ -441,6 +441,15 @@ fail the way a unique partial index fails.
 Container start-up uses `postgres -c fsync=off -c synchronous_commit=off` (test-only, and the reason
 the integration suite fits in its 6-minute budget).
 
+**The cluster's collation is part of it too.** `ORDER BY` on text uses the database's collation, and
+[`infra/docker/compose.dev.yml`](../infra/docker/compose.dev.yml) pins `--encoding=UTF8 --locale=C`
+while a host's default is often `en_US.utf8` — glibc ignores leading punctuation and treats case as a
+secondary difference, so `#vanredno`/`Beta`/`alpha` order differently under the two. CI passes the same
+`POSTGRES_INITDB_ARGS` as dev for that reason, and **no spec may assert a text ordering beyond "ordered
+by name"**: a fixture used for ordering should be lowercase ASCII, created in the opposite order to its
+names, so insertion order cannot pass for name order. Found by `tags.integration.spec.ts` failing only in
+CI (docs/15).
+
 **The shipped global catalogue is part of that environment, and the suite says so.** Three specs —
 `global-reads.integration.spec.ts`, `merchants.integration.spec.ts` and `onboarding.integration.spec.ts` —
 assert how the *shipped* merchant reference data behaves: a global row is readable by every Household, a

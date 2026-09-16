@@ -141,17 +141,31 @@ describe('TagsService (integration)', () => {
   });
 
   it('lists Tags name-ordered with a grouped transaction count', async () => {
+    // Created in the opposite order to their names, and **lowercase ASCII only** — because the list is
+    // ordered by `name` under the *database's* collation, and there is no cross-collation rule to
+    // assert. Measured on this suite: a `C` cluster and an `en_US.utf8` one disagree about both
+    // `#vanredno` (glibc ignores leading punctuation at the primary level, so it sorts last there and
+    // first under C) and `Beta`/`alpha` (case). Those two clusters are not hypothetical:
+    // `infra/docker/compose.dev.yml` pins `--locale=C` so a local `ORDER BY` is deterministic, and
+    // CI's service container had no such argument, so this assertion passed here and failed there
+    // with `['alpha','Beta','#vanredno']` versus `['#vanredno','Beta','alpha']`.
+    await asTenant(() => tags.create(householdId, { name: 'zeta' }));
     const beta = await asTenant(() => tags.create(householdId, { name: 'Beta' }));
+    await asTenant(() => tags.create(householdId, { name: 'mika' }));
     const alpha = await asTenant(() => tags.create(householdId, { name: 'alpha', color: '#f00' }));
     await recordSpend([alpha.id]);
     await recordSpend([alpha.id]);
     await recordSpend([beta.id]);
 
     const all = await asTenant(() => tags.list(householdId));
-    // Ordered by name. Compared against a re-sort under the same comparator the database uses is
-    // brittle across collations, so the assertion is that each name is >= the previous one.
     const names = all.map((tag) => tag.name);
-    expect(names).toEqual([...names].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
+    // Every collation agrees on these three, and they were created `zeta`, `mika`, `alpha` — so the
+    // assertion still proves the list is ordered by name rather than by insertion.
+    expect(names.filter((name) => ['alpha', 'mika', 'zeta'].includes(name))).toEqual([
+      'alpha',
+      'mika',
+      'zeta',
+    ]);
     expect(names).toContain('alpha');
     expect(names).toContain('Beta');
 

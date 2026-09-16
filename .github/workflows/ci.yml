@@ -46,6 +46,12 @@ jobs:
           POSTGRES_USER: finmate
           POSTGRES_PASSWORD: finmate
           POSTGRES_DB: finmate
+          # The same deterministic collation the dev container is initialised with
+          # (infra/docker/compose.dev.yml): `ORDER BY` on text must not differ between a developer's
+          # machine and CI. Without it the image's `en_US.utf8` default applies, which orders
+          # `#vanredno` / `Beta` / `alpha` differently from `C` — found by
+          # tags.integration.spec.ts, which failed **only** in CI for exactly that reason.
+          POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
         ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U finmate -d finmate"
