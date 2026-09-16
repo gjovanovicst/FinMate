@@ -13,6 +13,12 @@ export const en = {
   'app.skipToContent': 'Skip to content',
   'app.primaryNav': 'Main navigation',
   'app.language': 'Language',
+  // ADR-024. Two different facts: a newer build is installed and waiting, versus the shell's own
+  // cache missing a file it needs. Only the first has a new version to activate.
+  'app.update.available': 'A newer version of the app is ready.',
+  'app.update.broken': 'Some parts of the app could not be loaded. Reload to continue.',
+  'app.update.reload': 'Reload',
+  'app.update.reloading': 'Reloading…',
 
   // ---- navigation ----
   'nav.dashboard': 'Overview',

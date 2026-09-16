@@ -6,6 +6,11 @@
     "experimentalDecorators": true,
     "module": "preserve",
     "moduleResolution": "bundler",
+    /* `ngsw-config.spec.ts` asserts the service-worker configuration — the privacy boundary ADR-024
+       makes structural — so it imports `ngsw-config.json`. Reading it with `node:fs` instead is not an
+       option: specs are compiled by `web:typecheck` **and** by the production build (see the `include`
+       note below), and neither is a Node program. */
+    "resolveJsonModule": true,
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": [],
     /* `paths` in a child config REPLACES the parent's map rather than merging into it, so the

@@ -15,6 +15,10 @@ export const srLatn: Record<keyof typeof en, string> = {
   'app.skipToContent': 'Preskoči na sadržaj',
   'app.primaryNav': 'Glavna navigacija',
   'app.language': 'Jezik',
+  'app.update.available': 'Spremna je novija verzija aplikacije.',
+  'app.update.broken': 'Neki delovi aplikacije nisu mogli da se učitaju. Ponovo učitaj da nastaviš.',
+  'app.update.reload': 'Ponovo učitaj',
+  'app.update.reloading': 'Učitavam ponovo…',
 
   // ---- navigation ----
   'nav.dashboard': 'Pregled',

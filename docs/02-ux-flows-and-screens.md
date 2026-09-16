@@ -114,6 +114,13 @@ Size classes are [07 §3.1](07-platform-strategy-mobile-desktop.md): `compact` <
 - `medium` keeps the bottom bar to 840 px, then becomes an icon rail ([07 §3.3](07-platform-strategy-mobile-desktop.md)).
 - Header on both: offline chip (offline or stale only), 🔔 unread, ⚙, avatar menu (Profil,
   Podešavanja, Jezik, Tema, Odjavi se).
+- Below the header, above the screen: the **app-update line** (ADR-024) — *"A newer version of the app is
+  ready."* with a *Reload* action, shown only when the service worker has a version installed and waiting.
+  It has **no dismiss control** (docs/08 §12 wants a forced flow rather than an indefinitely stale shell)
+  and it never reloads by itself (docs/10 §8.3 wants a prompt rather than a swap under an active capture),
+  so the reload happens only when the user presses it. A second sentence covers the other case — the
+  shell's own cache missing a file — where reloading is the only fix and there is no version to activate.
+  It is chrome rather than a screen, so it appears over `/onboarding` too, where the nav is hidden.
 - The household switcher exists in the avatar menu **disabled with a tooltip** (*Dostupno uz deljenje
   domaćinstva*) — the schema supports it and v2 enables it (F-29, ADR-008). It is never a broken control.
 

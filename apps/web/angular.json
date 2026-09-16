@@ -21,7 +21,11 @@
             "polyfills": []
           },
           "configurations": {
-            "production": { "optimization": true, "outputHashing": "all" },
+            "production": {
+              "optimization": true,
+              "outputHashing": "all",
+              "serviceWorker": "ngsw-config.json"
+            },
             "development": { "optimization": false, "sourceMap": true }
           },
           "defaultConfiguration": "development"

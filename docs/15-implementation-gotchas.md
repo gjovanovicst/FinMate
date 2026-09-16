@@ -685,11 +685,12 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   Both are JS template literals, so a backtick *terminates the string* and the remainder is parsed as
   code. The error names neither the file nor the real problem: `Failed to resolve styles at position
   N to a string` / `Failed to resolve template at position N`, usually surfacing as
-  `Angular compilation initialization failed`. It has cost real time **six** times — twice from a
+  `Angular compilation initialization failed`. It has cost real time **seven** times — twice from a
   backtick in a CSS comment documenting a property; again in 2.3.2b from *two* HTML comments and a CSS
   comment written in the same sitting; again in 2.3.3b from a comment that quoted `septička jama`,
-  **written minutes after adding this entry**; and again in 3.1.4's follow-up fix, from an HTML comment
-  naming the `NAV_ITEMS` constant while removing a duplicate nav entry. The pattern is that the author knows the rule and does it
+  **written minutes after adding this entry**; again in 3.1.4's follow-up fix, from an HTML comment
+  naming the `NAV_ITEMS` constant while removing a duplicate nav entry; and again in 4.2.1b, from an HTML
+  comment inside the shell template that described the update banner as living inside `main`. The pattern is that the author knows the rule and does it
   anyway, because a comment that names a property — `aria-label`, `1`–`9`, a sample input — reaches for
   backticks by reflex. Two habits that work: describe the example in words (a bill such as septicka jama),
   and run the plain-backtick scan below before believing a template error is something else. Write CSS/HTML
@@ -704,12 +705,17 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   `SyntaxError: Invalid or unexpected token` that names neither the file nor the decorator. This is
   why `apps/web/tsconfig.json` includes specs (and why `web:typecheck` now checks them, which it never
   did before) while `tsconfig.app.json` excludes them again so the production program stays clean.
-  Two consequences worth knowing: `paths` in a child tsconfig **replaces** the parent's map, so the
-  `@finmate/*` aliases are repeated there; and a mounted-component spec needs
+  Three consequences worth knowing. (1) `paths` in a child tsconfig **replaces** the parent's map, so the
+  `@finmate/*` aliases are repeated there. (2) A mounted-component spec needs
   `// @vitest-environment jsdom` plus `initAngularTesting()` from `@web-test/angular-testing` imported
-  **first**, before any other Angular import — `@angular/router` is partially compiled and its module
-  body needs `@angular/compiler` already loaded, or it fails with "The injectable 'PlatformLocation'
-  needs to be compiled using the JIT compiler".
+  **first**, before any other Angular import — the partially compiled Angular packages need
+  `@angular/compiler` already loaded, or it fails with "The injectable 'PlatformLocation' needs to be
+  compiled using the JIT compiler". `@angular/router` is the usual trigger, but `@angular/common` is the
+  one that names it, so importing `Location` or `DOCUMENT` from it directly fails the same way (hit in
+  4.2.1b). (3) **Because the build compiles specs, a spec may not import a Node builtin.** Adding
+  `node:fs` to read a config file type-checked fine under the vitest transform and then failed
+  `web:build` with `TS2591: Cannot find name 'node:fs'` (the web tsconfig has `"types": []`); the fix is
+  to `import` the JSON instead, which needs `resolveJsonModule` (4.2.1b's `ngsw-config.spec.ts`).
 
 - **Angular's JIT does not discover `input()` signal inputs, so a mounted test cannot render
   `fm-money`.** `MoneyComponent.amount` is `input.required`, and under JIT (which is what Vitest runs,
@@ -805,6 +811,45 @@ Short, and load-bearing.
   `apps/api/vitest.config.mts`, so a genuinely heavy integration test needs an explicit
   `it(name, { timeout }, fn)` — and the comment should say the work is real rather than slow code. It
   also failed in a full run and **passed alone**, which is the signature of every load-sensitive flake.
+  The web suite has the same problem now that it mounts 14 components: `onboarding.component.spec.ts`'s
+  *"shows step 1 with the tree it is about to create"* builds the 39-node seed tree in the component
+  (~3.8 s alone) and timed out in 4.2.1b's full run, so it carries an explicit `{ timeout: 20_000 }`
+  too.
+
+- **Piping `nx` into `tail` throws the exit code away.** `npx nx run web:typecheck 2>&1 | tail -4 && nx run web:build`
+  runs the build even when the typecheck failed, because a pipeline's status is the **last** command's —
+  `tail` exits 0. Four real type errors were read past this way in 4.2.1b, and the only reason the build
+  caught them is that the Angular compiler reports them too. Either check `$?` immediately, drop the
+  pipe, or use `set -o pipefail`; when a chained command runs something that "should not have run", this
+  is why.
+
+- **`pnpm install` can split `@nestjs/core` between two workspace projects, and the worker's Nest
+  bootstrap then dies with a misleading dependency error.** The committed lockfile resolved
+  `@nestjs/core` to `12.0.1(@nestjs/common@12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2))(...)` for
+  `apps/api` but to the `(@nestjs/common@…(supports-color@7.2.0))` **peer variant** for
+  `apps/worker`, so the two projects loaded two copies of `@nestjs/core` — and `Reflector` from one
+  instance cannot be injected into a module built by the other. The symptom is not "two NestJS copies":
+  it is Nest aborting the process during `NestFactory.createApplicationContext` with
+  *"Is FilesModule a valid NestJS module? / If Reflector is a provider, is it part of the current
+  FilesModule?"*, which reads like a missing `imports:` line in the API. It is invisible until the
+  layout is rebuilt — the on-disk links happened to agree for several tasks, and the first
+  `pnpm install` (adding a dependency in 4.2.1b) relinked them apart. `pnpm dedupe` collapses the
+  variants (it removed 108 duplicate package instances) and `worker:test` passes again; a `logger:
+  false` bootstrap hides the reason entirely (Nest calls `process.abort()` with no output), so the
+  diagnostic is to boot the module with `logger: ['error']` and `abortOnError: false`. **After any
+  dependency change, run `nx run worker:test`, not just the project you touched** — the worker is the
+  only place the API's module graph and the worker's injector meet (ADR-022).
+
+- **The Angular service worker fails at runtime, never at build time.** A resource listed in an
+  `assetGroups` glob that the build does not emit makes the **whole version install fail** — the app
+  silently keeps the previous version (or nothing, on a first visit) — and a glob that matches nothing
+  caches nothing; neither is an error `ng build` reports. `@angular/pwa`'s default config lists
+  `/favicon.ico`, which this app does not ship, so copying it verbatim is exactly that bug (4.2.1b
+  writes its own list instead). Two checks catch it: every `hashTable` entry in the generated
+  `ngsw.json` must exist on disk, and the `assetGroups` urls must equal the hash table — both are in
+  the service-worker verification. Note also that `ngsw-worker.js`, `safety-worker.js` and
+  `worker-basic.min.js` are deliberately **absent** from the hash table: they must be served unhashed
+  and revalidated rather than cached by the app group.
 
 - **A job-list assertion is a tripwire for every new job.** `apps/worker/src/jobs.integration.spec.ts`
   asserts `JOBS.map(job => job.name).sort()` against a literal list, so adding `files.purge` (4.1.1)

@@ -8,6 +8,7 @@ import type { TranslationKey } from './core/i18n/translations';
 import { NAV_ITEMS, OVERFLOW_ITEMS, badgeAccessibleName, badgeText } from './core/navigation';
 import { NotificationStore } from './core/notifications/notification.store';
 import { ReviewQueueStore } from './core/review/review-queue.store';
+import { AppUpdateComponent } from './shared/ui/app-update/app-update.component';
 import { LanguageSwitcherComponent } from './shared/ui/language-switcher/language-switcher.component';
 
 /**
@@ -27,7 +28,7 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
 @Component({
   selector: 'fm-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, LanguageSwitcherComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, LanguageSwitcherComponent, AppUpdateComponent],
   template: `
     <a class="skip-link" href="#main">{{ i18n.t('app.skipToContent') }}</a>
 
@@ -133,6 +134,10 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
       }
 
       <main id="main" class="content" tabindex="-1">
+        <!-- ADR-024: a newly installed build is waiting, or the shell's own cache is broken. Rendered
+             inside the main region rather than as a fourth grid area, because the layout is named areas
+             and a banner that appears only sometimes must not push the nav out of its row. -->
+        <fm-app-update />
         <router-outlet />
       </main>
     </div>

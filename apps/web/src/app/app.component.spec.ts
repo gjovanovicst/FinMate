@@ -7,6 +7,8 @@ import { initAngularTesting } from '@web-test/angular-testing';
 import { provideZonelessChangeDetection, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { SwUpdate } from '@angular/service-worker';
+import { EMPTY } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthStore } from './core/auth/auth.store';
@@ -51,6 +53,17 @@ async function mount(count: number): Promise<{
     providers: [
       provideZonelessChangeDetection(),
       provideRouter([]),
+      // The shell renders `fm-app-update` (ADR-024), which injects `SwUpdate`. A stub keeps this spec
+      // about navigation: there is no service worker in jsdom, and an update banner is not part of
+      // what it asserts.
+      {
+        provide: SwUpdate,
+        useValue: {
+          versionUpdates: EMPTY,
+          unrecoverable: EMPTY,
+          activateUpdate: () => Promise.resolve(true),
+        },
+      },
       { provide: GraphqlClient, useValue: { query } as unknown as GraphqlClient },
       {
         provide: AuthStore,

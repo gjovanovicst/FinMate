@@ -165,7 +165,11 @@ describe('OnboardingComponent (mounted)', () => {
     TestBed.resetTestingModule();
   });
 
-  it('shows step 1 with the tree it is about to create', async () => {
+  // A mounted test that waits for the seed preview's tree: real work (the 39-node seed content is
+  // built in the component), ~3.8 s alone, and it crossed Vitest's 5 s default in a full parallel
+  // `nx run-many -t test` — a timeout, not a failed assertion. The explicit budget is the same fix the
+  // recurring suite needed; docs/15 records the pattern.
+  it('shows step 1 with the tree it is about to create', { timeout: 20_000 }, async () => {
     const { fixture } = await mount();
     const body = text(fixture);
 
