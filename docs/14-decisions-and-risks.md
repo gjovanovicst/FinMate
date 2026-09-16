@@ -1482,9 +1482,10 @@ Two things neither document says, and both are load-bearing:
   unverified. A manual pass on a phone is required before beta, and it is named in docs/10's device matrix.
 - ⚠️ **5 idle minutes is a delay, not a lock against a determined attacker with the unlocked device and
   the PIN** — docs/08 §3.9's honest limit stands unchanged, and the native shell (v2, ADR-012) is the fix.
-- ⚠️ **The device panel that offers all of this does not exist yet** (4.2.6b), so the lock is reachable only
-  from code and tests. Until it ships, no install can arm one and the offline store is still session-only:
-  R-23 stays open, with its checkpoint.
+- ✅ **The device panel and the re-auth screen shipped in 4.2.6b** (`/settings` → `Bezbednost`, and the
+  gate the shell renders while locked), so a user can arm the lock and F-26's offline capture survives a
+  reload. R-23 is closed: the capability exists, and an install that leaves the lock off still persists
+  nothing — which is a decision, not a gap.
 - ⚠️ `purge()` deletes the lock configuration, so a sign-out on a phone means re-arming (and re-consenting
   to the biometric prompt) at the next sign-in. That is ADR-025 decision 2's order, and it is the safer
   reading of docs/08 §3.9's "wipes on logout".
@@ -1542,7 +1543,7 @@ owner and a checkpoint in [09](09-implementation-plan.md).
 
 | **R-22** | **A stale app shell outlives a deploy** — the service worker serves a cached document whose bundle predates an API or contract change, so the fix never reaches the user (ADR-024) | 3 | 3 | 9 | Non-dismissible update prompt that activates only on the user's click; `ngsw.json`'s generated hash table makes a mixed old/new bundle impossible; activation-when-idle catches closed tabs; API changes stay additive within a release; the per-feature offline matrix in [07 §6](07-platform-strategy-mobile-desktop.md) states what a stale shell may still do | Phase 4.2 + every release |
 
-| **R-23** | **The offline cache depends on an app lock that no task builds** (ADR-025), so F-26's offline capture is session-only and Sprint 4.2's exit criterion cannot be met as written | 4 | 3 | **12** | **The lock's core shipped in 4.2.6a** (ADR-029): the WebAuthn-PRF and PIN secrets, the wrapped-key lifecycle, the state that switches the store between memory and IndexedDB, the cross-tab flush mutex and the wipe — all tested against a real IndexedDB, including a reload. What is left is the **device panel that arms it** (4.2.6b), so no install can persist yet and the iteration stays open: the copy still says "keep the app open" rather than implying durability | 4.2.6b, then Phase 4.2 exit + Phase 5 beta gate |
+| **R-23** | ~~**The offline cache depends on an app lock that no task builds** (ADR-025), so F-26's offline capture is session-only and Sprint 4.2's exit criterion cannot be met as written~~ **CLOSED in 4.2.6b** | 4 | 3 | ~~12~~ **0** | The lock's core shipped in 4.2.6a (ADR-029) and the **device panel and re-auth screen that arm it** in 4.2.6b, so a user can turn persistence on and offline capture survives a reload. An install that leaves the lock off still persists nothing — deliberately (ADR-025's rejected alternative (c)), and the tray's copy now says so instead of claiming *"Nothing here is lost."* | Closed; the residual "the user has not armed it" case is Phase 4.3's onboarding copy, not a risk |
 | **R-24** | **The push payload is coupled to `ngsw-worker.js`'s undocumented `handlePush`/`onActionClick`** (ADR-028's 4.2.5 amendment), so an `@angular/service-worker` upgrade could make every push silently display nothing — `dispatch` still reports `SENT`, so nothing looks broken server-side | 3 | 3 | 9 | The dependency is pinned and the coupling is written down in the payload module and here; `web-push-payload.spec.ts` pins the exact block the worker reads; the in-app centre is the source of truth and is complete without push (docs/07 §4.8), so a silent failure costs nagging, not data; re-check `ngsw-worker.js` on every Angular major | Every Angular upgrade + Phase 5 beta gate |
 
 ### Top five by exposure

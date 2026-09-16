@@ -155,6 +155,15 @@ export const routes: Routes = [
     title: 'Prijem',
   },
   {
+    // docs/02 §4.18's settings shell, with the first section that had no home: the app lock
+    // (task 4.2.6b). Most of the shell's sections already have a screen of their own and are linked
+    // from here; the ones that do not are not built, and are not advertised.
+    path: 'settings',
+    canActivate: [authenticatedGuard],
+    loadComponent: () => import('./features/settings/settings.component').then((m) => m.SettingsComponent),
+    title: 'Podešavanja',
+  },
+  {
     path: 'notifications',
     canActivate: [authenticatedGuard],
     loadComponent: () =>

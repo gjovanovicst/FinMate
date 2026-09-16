@@ -7,7 +7,9 @@ import {
   lockFailureKey,
   lockMessageKey,
   lockState,
+  pendingDurabilityKey,
   shouldLockOnIdle,
+  unlockOffers,
   webauthnAvailable,
   type LockState,
 } from './lock.view';
@@ -84,5 +86,18 @@ describe('app lock policy', () => {
     expect(webauthnAvailable({ credentials: {}, publicKeyCredential: undefined })).toBe(false);
     expect(webauthnAvailable({ credentials: undefined, publicKeyCredential: class {} })).toBe(false);
     expect(webauthnAvailable({})).toBe(false);
+  });
+
+  it('asks for the secret the lock actually has, and never for one it does not', () => {
+    // A credential was never created for a PIN-armed lock, and no PIN was chosen for a WebAuthn one.
+    expect(unlockOffers('PIN')).toEqual({ biometric: false, pin: true });
+    expect(unlockOffers('WEBAUTHN')).toEqual({ biometric: true, pin: false });
+    expect(unlockOffers(null)).toEqual({ biometric: false, pin: false });
+  });
+
+  it('claims durability only while the store is actually persistent', () => {
+    // R-23's copy defect: "Nothing here is lost." was false while the key lived only in the page.
+    expect(pendingDurabilityKey(true)).toBe('pending.subtitleDurable');
+    expect(pendingDurabilityKey(false)).toBe('pending.subtitleVolatile');
   });
 });

@@ -738,12 +738,13 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   Both are JS template literals, so a backtick *terminates the string* and the remainder is parsed as
   code. The error names neither the file nor the real problem: `Failed to resolve styles at position
   N to a string` / `Failed to resolve template at position N`, usually surfacing as
-  `Angular compilation initialization failed`. It has cost real time **seven** times — twice from a
+  `Angular compilation initialization failed`. It has cost real time **eight** times — twice from a
   backtick in a CSS comment documenting a property; again in 2.3.2b from *two* HTML comments and a CSS
   comment written in the same sitting; again in 2.3.3b from a comment that quoted `septička jama`,
   **written minutes after adding this entry**; again in 3.1.4's follow-up fix, from an HTML comment
   naming the `NAV_ITEMS` constant while removing a duplicate nav entry; and again in 4.2.1b, from an HTML
-  comment inside the shell template that described the update banner as living inside `main`. The pattern is that the author knows the rule and does it
+  comment inside the shell template that described the update banner as living inside `main`. The eighth, in 4.2.6b, was
+  an HTML comment naming the new settings route. The pattern is that the author knows the rule and does it
   anyway, because a comment that names a property — `aria-label`, `1`–`9`, a sample input — reaches for
   backticks by reflex. Two habits that work: describe the example in words (a bill such as septicka jama),
   and run the plain-backtick scan below before believing a template error is something else. Write CSS/HTML
@@ -751,6 +752,7 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   error** when it happens in TS: `tsc` reports `TS1005: ',' expected` at the first markup line after the
   comment, and `const X = /* GraphQL */ \`` lines further down show as stray backticks — so a
   plain-backtick scan of the whole file is the reliable check, not a scan of the `template:` region.
+  A backtick in an **HTML comment** inside the template is the same bug and the errors are worse than a parse failure: `nx run web:typecheck` reported `TS2322` and `TS2304: Cannot find name 'settings'` against a `routerLink` two lines below, because everything after the stray backtick parsed as an interpolation. If a template error names an identifier that is obviously fine, count the backticks in the template before anything else.
 
 - **A spec file's decorators need that file to be inside its tsconfig's `include`.** Vite resolves a
   file's tsconfig *by path*, and a file the tsconfig excludes is transformed without

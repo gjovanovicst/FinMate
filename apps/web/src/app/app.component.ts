@@ -1,4 +1,13 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  DOCUMENT,
+  computed,
+  effect,
+  inject,
+  signal,
+} from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 
@@ -12,6 +21,7 @@ import { PushService } from './core/push/push.service';
 import { SnapshotService } from './core/offline/snapshot.service';
 import { SyncService } from './core/offline/sync.service';
 import { ReviewQueueStore } from './core/review/review-queue.store';
+import { AppLockScreenComponent } from './shared/ui/app-lock/app-lock-screen.component';
 import { AppUpdateComponent } from './shared/ui/app-update/app-update.component';
 import { LanguageSwitcherComponent } from './shared/ui/language-switcher/language-switcher.component';
 import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
@@ -39,11 +49,17 @@ import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
     RouterLinkActive,
     LanguageSwitcherComponent,
     AppUpdateComponent,
+    AppLockScreenComponent,
     SyncChipComponent,
   ],
   template: `
     <a class="skip-link" href="#main">{{ i18n.t('app.skipToContent') }}</a>
 
+    @if (appLock.state() === 'LOCKED') {
+      <!-- The gate (ADR-029 decision 5): no nav, no header, no outlet. There is nothing to navigate
+           to, because the data key is not in memory and every offline read is empty by construction. -->
+      <fm-app-lock-screen />
+    } @else {
     <div class="shell" [class.shell--authenticated]="isAuthenticated()">
       @if (showNav()) {
         <nav class="nav" [attr.aria-label]="i18n.t('app.primaryNav')">
@@ -138,6 +154,17 @@ import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
               </span>
             </a>
 
+            <!-- docs/02 §2.2's settings entry. It was the one header control with no route behind
+                 it; the settings route now exists (task 4.2.6b) and hosts the app lock. -->
+            <a
+              class="topbar__button"
+              routerLink="/settings"
+              routerLinkActive="topbar__button--active"
+              [attr.aria-label]="i18n.t('settings.title')"
+            >
+              <span class="topbar__icon" aria-hidden="true">⚙</span>
+            </a>
+
             <button
               type="button"
               class="topbar__signout"
@@ -158,6 +185,7 @@ import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
         <router-outlet />
       </main>
     </div>
+    }
   `,
   styles: [
     `
@@ -456,7 +484,8 @@ export class AppComponent {
   private readonly reviewQueue = inject(ReviewQueueStore);
   private readonly notificationsStore = inject(NotificationStore);
   private readonly push = inject(PushService);
-  private readonly appLock = inject(AppLockService);
+  /** Public because the template gates on it: while LOCKED the shell renders only the lock screen. */
+  readonly appLock = inject(AppLockService);
   private readonly snapshot = inject(SnapshotService);
   private readonly sync = inject(SyncService);
   readonly i18n = inject(I18nService);
@@ -540,6 +569,41 @@ export class AppComponent {
         // was already granted, so this is not a request per navigation.
         void this.push.syncOnStart();
       }
+    });
+
+    // Idle tracking (docs/08 §3.9's five minutes). Activity is noted on the events a person actually
+    // produces — a tap, a key, scrolling back to the tab — and the clock is checked on an interval
+    // plus on every return to visibility, which is the case that matters most: a phone asleep in a
+    // pocket for ten minutes must be locked the moment it is picked up, not up to a minute later.
+    // Only the events, not the state: `noteActivity` ignores everything while the lock is OFF or
+    // LOCKED, so this costs a signal read and never a write.
+    const document = inject(DOCUMENT);
+    const view = document.defaultView;
+    const noteActivity = (): void => this.appLock.noteActivity();
+    const lockIfIdle = (): void => {
+      if (this.appLock.isIdle()) this.appLock.lock();
+    };
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'visible') {
+        noteActivity();
+        lockIfIdle();
+      }
+    };
+    if (view !== null && typeof view.addEventListener === 'function') {
+      view.addEventListener('pointerdown', noteActivity);
+      view.addEventListener('keydown', noteActivity);
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+    // 30 s: fine enough that the 5-minute window is honoured within half a minute, coarse enough to
+    // be invisible next to everything else the page does.
+    const idleTimer = view === null ? null : view.setInterval(lockIfIdle, 30_000);
+    inject(DestroyRef).onDestroy(() => {
+      if (view !== null && typeof view.removeEventListener === 'function') {
+        view.removeEventListener('pointerdown', noteActivity);
+        view.removeEventListener('keydown', noteActivity);
+        document.removeEventListener('visibilitychange', onVisibility);
+      }
+      if (idleTimer !== null && view !== null) view.clearInterval(idleTimer);
     });
 
     this.router.events

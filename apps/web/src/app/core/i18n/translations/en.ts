@@ -290,6 +290,29 @@ export const en = {
   'lock.error.queueNotEmpty': 'Send the queued captures first, so turning the lock on cannot lose them.',
   'lock.error.unsupported': 'This device could not set up the app lock.',
 
+  // ---- app lock screen + settings (task 4.2.6b) ----
+  'lock.screen.title': 'Unlock the app',
+  'lock.screen.body': 'Your saved data is encrypted with this device’s lock.',
+  'lock.screen.unlockWithDevice': 'Unlock with this device',
+  'lock.screen.pinLabel': 'Your 6-digit PIN',
+  'lock.screen.unlock': 'Unlock',
+  'lock.screen.working': 'Checking…',
+  'lock.screen.signOut': 'Sign out instead',
+  'settings.title': 'Settings',
+  'settings.security.title': 'App lock',
+  'settings.security.why': 'With the app lock on, captures you make without a connection survive closing the app. It also keeps what is stored encrypted with your device’s lock or a PIN.',
+  'settings.security.withDevice': 'Use this device’s lock',
+  'settings.security.withPin': 'Use a PIN',
+  'settings.security.pinLabel': 'Choose a 6-digit PIN',
+  'settings.security.pinHint': 'A 6-digit PIN can be guessed by somebody who has the phone and time. The device lock is the stronger option.',
+  'settings.security.lockNow': 'Lock now',
+  'settings.security.turnOff': 'Turn off and delete stored data',
+  'settings.security.turnOffHint': 'Turning the app lock off deletes everything stored on this device, including captures that have not been sent.',
+  'settings.security.queueFirst': 'You have {count} captures waiting to send. Send them first, so turning the lock on cannot lose them.',
+  'settings.security.queueLink': 'Open the queue',
+  'settings.notifications.body': 'What you get told, and where those alerts go.',
+  'settings.notifications.open': 'Open notifications',
+
   // ---- session ----
   'session.signOut': 'Sign out',
   'session.signingOut': 'Signing out…',
@@ -788,7 +811,10 @@ export const en = {
   // for any cached figure (docs/02 section 4.2, and section 10's money.asOf row).
   'money.asOf': 'as of {time}',
   'pending.title': 'Waiting to send',
-  'pending.subtitle': 'Captures that have not reached the server yet. Nothing here is lost.',
+  'pending.subtitleDurable':
+    'Captures that have not reached the server yet. On this device they survive a reload.',
+  'pending.subtitleVolatile':
+    'Captures that have not reached the server yet. They last until this page closes — turn on the app lock to keep them.',
   'pending.loading': 'Reading the queue…',
   'pending.count': '{waiting} waiting to send, {refused} refused',
   'pending.sending': 'Sending…',

@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthStore } from './core/auth/auth.store';
 import { GraphqlClient } from './core/graphql/graphql.client';
 import { SyncService } from './core/offline/sync.service';
+import { AppLockService } from './core/app-lock/app-lock.service';
 import { PushService } from './core/push/push.service';
 import { AppComponent } from './app.component';
 
@@ -45,6 +46,7 @@ const SESSION = {
 async function mount(
   count: number,
   pendingSync = 0,
+  lockState: 'OFF' | 'LOCKED' | 'UNLOCKED' = 'OFF',
 ): Promise<{
   fixture: ReturnType<typeof TestBed.createComponent<AppComponent>>;
 }> {
@@ -78,6 +80,21 @@ async function mount(
       // The real service injects `SwPush`, which does not exist in jsdom; its own behaviour is
       // `core/push/push.service.spec.ts`'s subject.
       { provide: PushService, useValue: { syncOnStart: vi.fn(() => Promise.resolve()) } },
+      // The app lock gates the whole shell (task 4.2.6b). The real one reads IndexedDB and is OFF in a
+      // fresh spec, so the locked case states the state explicitly.
+      {
+        provide: AppLockService,
+        useValue: {
+          state: signal(lockState),
+          method: signal(null),
+          busy: signal(false),
+          failure: signal(null),
+          purge: vi.fn(() => Promise.resolve()),
+          noteActivity: vi.fn(),
+          isIdle: () => false,
+          lock: vi.fn(),
+        },
+      },
       {
         provide: AuthStore,
         useValue: {
@@ -275,5 +292,27 @@ describe('AppComponent nav (mounted)', () => {
       // The receipt library closes the Biblioteka group (docs/02 §2.2).
       '/receipts',
     ]);
+  });
+
+  it('renders ONLY the lock screen while the app lock is locked', async () => {
+    const { fixture } = await mount(3, 0, 'LOCKED');
+    const host = fixture.nativeElement as HTMLElement;
+
+    // The gate is structural: no navigation to leave by, no outlet to render a screen into, and no
+    // header controls — the data key is not in memory, so every screen behind this would be empty.
+    expect(host.querySelector('fm-app-lock-screen')).not.toBeNull();
+    expect(host.querySelector('nav')).toBeNull();
+    expect(host.querySelector('router-outlet')).toBeNull();
+    expect(host.querySelector('.topbar')).toBeNull();
+    // And it is not a dialog over the app: the shell itself is gone.
+    expect(host.querySelector('.shell')).toBeNull();
+  });
+
+  it('renders the shell, not the lock screen, when no lock is armed', async () => {
+    const { fixture } = await mount(3);
+    const host = fixture.nativeElement as HTMLElement;
+
+    expect(host.querySelector('fm-app-lock-screen')).toBeNull();
+    expect(host.querySelector('.shell')).not.toBeNull();
   });
 });

@@ -138,3 +138,28 @@ export function lockFailureKey(failure: LockFailure): TranslationKey {
       return 'lock.error.unsupported';
   }
 }
+
+/**
+ * How the lock screen asks for the secret.
+ *
+ * The method is not a preference at unlock time: a lock armed with the platform authenticator has no
+ * PIN (the PIN is the *fallback*, not a second secret), and a PIN-armed lock cannot conjure a
+ * credential that was never created. Offering both would be offering one that always fails.
+ */
+export function unlockOffers(method: LockMethod | null): { readonly biometric: boolean; readonly pin: boolean } {
+  if (method === 'WEBAUTHN') return { biometric: true, pin: false };
+  if (method === 'PIN') return { biometric: false, pin: true };
+  return { biometric: false, pin: false };
+}
+
+/**
+ * What the tray may claim about the queue it is showing.
+ *
+ * Without a lock the data key lives only in this page, so a reload discards the queue — and 4.2.3's
+ * copy said *"Nothing here is lost."*, which was true of the server's copy and false of this one
+ * (R-23). With the lock armed the records are on disk under the wrapped key, so durability is a fact
+ * rather than a hope. The sentence follows the store, not a setting, because those can disagree.
+ */
+export function pendingDurabilityKey(persistent: boolean): TranslationKey {
+  return persistent ? 'pending.subtitleDurable' : 'pending.subtitleVolatile';
+}

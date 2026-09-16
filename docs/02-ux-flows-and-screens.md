@@ -869,11 +869,13 @@ user opens, not on first load.
 
 ### 4.18 Settings — F-32, F-01, F-25, F-27, F-28
 
-> **Build note (4.2.6a).** The app lock's core ships — WebAuthn PRF or a 6-digit PIN wraps the offline
-> store's data key, and arming it is what turns persistence on (ADR-029). **This document never drew the
-> control or the re-auth screen**, and there is still no `/settings` route, so both are task **4.2.6b** and
-> belong in the pane above — `Bezbednost`, beside `Podaci`. Until they exist nothing can arm a lock and the
-> offline store stays session-only, which is why 4.2.3's "keep the app open" copy is still accurate.
+> **Build note (4.2.6b).** The app lock is reachable: `/settings` exists with one section, `Bezbednost`,
+> and a link to `/notifications` (which owns its own screen). Arm with the device's screen lock (WebAuthn
+> PRF) or a 6-digit PIN, and arming is what turns offline persistence on (ADR-029). The re-auth screen
+> replaces the whole shell while locked — no nav and no outlet, because the data key is not in memory, so
+> every screen behind it would be empty. The rest of §4.18's sections are **not built and are not
+> advertised**: Profil, Domaćinstvo, Prikaz, Jezik, AI podešavanja and Podaci are Phase 3.1.4/5 work, and
+> `Računi`/`Članovi` already have screens or are deferred (F-29).
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────────┐

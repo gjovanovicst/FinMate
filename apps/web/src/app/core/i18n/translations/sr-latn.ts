@@ -290,6 +290,29 @@ export const srLatn: Record<keyof typeof en, string> = {
   'lock.error.queueNotEmpty': 'Pošalji sačekale unose prvo, da uključivanje brave ne može da ih izgubi.',
   'lock.error.unsupported': 'Ovaj uređaj nije mogao da podesi bravu.',
 
+  // ---- app lock screen + settings (task 4.2.6b) ----
+  'lock.screen.title': 'Otključaj aplikaciju',
+  'lock.screen.body': 'Sačuvani podaci su šifrovani bravom ovog uređaja.',
+  'lock.screen.unlockWithDevice': 'Otključaj ovim uređajem',
+  'lock.screen.pinLabel': 'Tvoj PIN od 6 cifara',
+  'lock.screen.unlock': 'Otključaj',
+  'lock.screen.working': 'Proveravam…',
+  'lock.screen.signOut': 'Radije se odjavi',
+  'settings.title': 'Podešavanja',
+  'settings.security.title': 'Brava',
+  'settings.security.why': 'Sa uključenom bravom, unosi koje napraviš bez veze prežive zatvaranje aplikacije. I ono što je sačuvano ostaje šifrovano bravom uređaja ili PIN-om.',
+  'settings.security.withDevice': 'Koristi bravu uređaja',
+  'settings.security.withPin': 'Koristi PIN',
+  'settings.security.pinLabel': 'Izaberi PIN od 6 cifara',
+  'settings.security.pinHint': 'PIN od 6 cifara može da pogodi neko ko ima telefon i vremena. Brava uređaja je jača opcija.',
+  'settings.security.lockNow': 'Zaključaj odmah',
+  'settings.security.turnOff': 'Isključi i obriši sačuvano',
+  'settings.security.turnOffHint': 'Isključivanje brave briše sve sačuvano na ovom uređaju, uključujući unose koji nisu poslati.',
+  'settings.security.queueFirst': 'Imaš {count} unosa koji čekaju slanje. Pošalji ih prvo, da uključivanje brave ne može da ih izgubi.',
+  'settings.security.queueLink': 'Otvori red',
+  'settings.notifications.body': 'Šta dobijaš i gde te te poruke nalaze.',
+  'settings.notifications.open': 'Otvori obaveštenja',
+
   // ---- session ----
   'session.signOut': 'Odjavi se',
   'session.signingOut': 'Odjavljivanje…',
@@ -783,7 +806,10 @@ export const srLatn: Record<keyof typeof en, string> = {
   // ADR-027: the wording docs/02 section 4.2 already uses for a figure that came from the snapshot.
   'money.asOf': 'podaci od {time}',
   'pending.title': 'Čeka slanje',
-  'pending.subtitle': 'Unosi koji još nisu stigli na server. Ništa se odavde ne gubi.',
+  'pending.subtitleDurable':
+    'Unosi koji još nisu stigli na server. Na ovom uređaju prežive ponovno učitavanje.',
+  'pending.subtitleVolatile':
+    'Unosi koji još nisu stigli na server. Traju dok se ova strana ne zatvori — uključi bravu da ostanu.',
   'pending.loading': 'Čitam red čekanja…',
   'pending.count': '{waiting} čeka slanje, {refused} odbijeno',
   'pending.sending': 'Šaljem…',

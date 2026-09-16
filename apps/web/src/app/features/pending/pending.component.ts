@@ -13,8 +13,10 @@
  *
  * @module apps/web/src/app/features/pending
  */
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 
+import { AppLockService } from '../../core/app-lock/app-lock.service';
+import { pendingDurabilityKey } from '../../core/app-lock/lock.view';
 import { I18nService } from '../../core/i18n/i18n.service';
 import { nextAttemptDelay, type OutboxEntry } from '../../core/offline/outbox';
 import { SyncService } from '../../core/offline/sync.service';
@@ -27,7 +29,7 @@ import { categoryLabel, rawInputs, syncedAtLabel, whyKey } from '../../core/offl
   template: `
     <header class="head">
       <h1 class="head__title">{{ i18n.t('pending.title') }}</h1>
-      <p class="head__sub">{{ i18n.t('pending.subtitle') }}</p>
+      <p class="head__sub">{{ i18n.t(subtitleKey()) }}</p>
     </header>
 
     <!-- The count is announced, not only drawn: it is the one number that changes under the user. -->
@@ -356,7 +358,17 @@ import { categoryLabel, rawInputs, syncedAtLabel, whyKey } from '../../core/offl
 })
 export class PendingComponent {
   readonly i18n = inject(I18nService);
+
+  /**
+   * What the page may claim about the queue's durability.
+   *
+   * R-23's copy defect: 4.2.3 said *"Nothing here is lost."*, which was true of the server's copy and
+   * false of this one while the store ran on a session key. The sentence follows the **store**, not a
+   * setting, because the two can disagree — a lock that is configured but locked is not persistence.
+   */
+  readonly subtitleKey = computed(() => pendingDurabilityKey(this.appLock.state() === 'UNLOCKED'));
   readonly sync = inject(SyncService);
+  private readonly appLock = inject(AppLockService);
 
   private readonly exportedText = signal<string | null>(null);
   private readonly loadingSignal = signal(true);
