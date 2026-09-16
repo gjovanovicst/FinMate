@@ -5,12 +5,20 @@ import {
   MAX_RECEIPT_BYTES,
   ReceiptCryptoUnavailableError,
   cameraSupported,
+  canPost,
+  capturedLabel,
+  confidenceBadge,
   messageKeyForStatus,
+  postHintKey,
   receiptNoteKeys,
   receiptProblem,
+  reconciliationLabelKey,
   sha256Hex,
   toHex,
+  toneForState,
   uploadPercent,
+  variantForRounding,
+  varianceLabelKey,
 } from './receipts.view';
 
 /**
@@ -124,5 +132,118 @@ describe('receiptNoteKeys', () => {
       'receipts.note.noPreview',
       'receipts.note.skipped',
     ]);
+  });
+});
+
+describe('reconciliationLabelKey', () => {
+  it('gives every state of I-6 its own words', () => {
+    expect(reconciliationLabelKey('PENDING')).toBe('receipts.state.pending');
+    expect(reconciliationLabelKey('MATCHED')).toBe('receipts.state.matched');
+    expect(reconciliationLabelKey('MISMATCH')).toBe('receipts.state.mismatch');
+    // `MANUAL` is not a degraded `MATCHED`: the numbers agree *because* the user added a line.
+    expect(reconciliationLabelKey('MANUAL')).toBe('receipts.state.manual');
+  });
+});
+
+describe('toneForState', () => {
+  it('does not paint a receipt whose total is merely unknown as a failure', () => {
+    expect(toneForState('PENDING')).toBe('muted');
+    expect(toneForState('MATCHED')).toBe('ok');
+    expect(toneForState('MANUAL')).toBe('warn');
+    expect(toneForState('MISMATCH')).toBe('danger');
+  });
+});
+
+describe('confidenceBadge', () => {
+  it('is green exactly at the 0.90 auto-apply floor', () => {
+    expect(confidenceBadge(0.9)).toEqual({ icon: '🟢', labelKey: 'receipts.confidence.high' });
+    expect(confidenceBadge(1)).toEqual({ icon: '🟢', labelKey: 'receipts.confidence.high' });
+    expect(confidenceBadge(0.899)).toEqual({ icon: '🟡', labelKey: 'receipts.confidence.medium' });
+  });
+
+  it('is yellow exactly at the 0.60 verify floor and red one step below', () => {
+    expect(confidenceBadge(0.6)).toEqual({ icon: '🟡', labelKey: 'receipts.confidence.medium' });
+    expect(confidenceBadge(0.89)).toEqual({ icon: '🟡', labelKey: 'receipts.confidence.medium' });
+    expect(confidenceBadge(0.599)).toEqual({ icon: '🔴', labelKey: 'receipts.confidence.low' });
+    expect(confidenceBadge(0)).toEqual({ icon: '🔴', labelKey: 'receipts.confidence.low' });
+  });
+
+  it('draws a missing measurement as a white circle, never as zero', () => {
+    // `null` means "nothing was recorded"; rendering it as 0 would present a missing fact as a
+    // measurement (the same distinction `shared/confidence.ts` makes).
+    expect(confidenceBadge(null)).toEqual({ icon: '⚪', labelKey: 'receipts.confidence.none' });
+  });
+});
+
+describe('canPost', () => {
+  const categorised = [{ categoryId: 'c1' }, { categoryId: 'c2' }];
+
+  it('allows a matched or hand-reconciled receipt whose lines all have categories', () => {
+    expect(canPost({ reconciliation: 'MATCHED', items: categorised })).toBe(true);
+    expect(canPost({ reconciliation: 'MANUAL', items: categorised })).toBe(true);
+  });
+
+  it('refuses a mismatch or a receipt with no total, whatever the lines say', () => {
+    expect(canPost({ reconciliation: 'MISMATCH', items: categorised })).toBe(false);
+    expect(canPost({ reconciliation: 'PENDING', items: categorised })).toBe(false);
+  });
+
+  it('refuses one uncategorised line, because each becomes a Split (ADR-015, I-1)', () => {
+    expect(
+      canPost({ reconciliation: 'MATCHED', items: [{ categoryId: 'c1' }, { categoryId: null }] }),
+    ).toBe(false);
+  });
+});
+
+describe('postHintKey', () => {
+  it('says which gate is closed, and nothing when the button is live', () => {
+    expect(postHintKey({ reconciliation: 'MATCHED', items: [{ categoryId: 'c1' }] })).toBeNull();
+    expect(postHintKey({ reconciliation: 'MISMATCH', items: [{ categoryId: 'c1' }] })).toBe(
+      'receipts.actions.postNeedsMatch',
+    );
+    // The state wins: a mismatch on an uncategorised receipt is answered by reconciling first.
+    expect(postHintKey({ reconciliation: 'MISMATCH', items: [{ categoryId: null }] })).toBe(
+      'receipts.actions.postNeedsMatch',
+    );
+    expect(postHintKey({ reconciliation: 'MANUAL', items: [{ categoryId: null }] })).toBe(
+      'receipts.actions.postNeedsCategories',
+    );
+  });
+});
+
+describe('varianceLabelKey', () => {
+  it('says which way the disagreement runs, never how big it is', () => {
+    expect(varianceLabelKey('PENDING', -2000n)).toBe('receipts.banner.pending');
+    expect(varianceLabelKey('MATCHED', 0n)).toBe('receipts.banner.matched');
+    expect(varianceLabelKey('MANUAL', 0n)).toBe('receipts.banner.manual');
+  });
+
+  it('reads the sign of the variance', () => {
+    expect(varianceLabelKey('MISMATCH', 1n)).toBe('receipts.banner.mismatchMore');
+    expect(varianceLabelKey('MISMATCH', -1n)).toBe('receipts.banner.mismatchLess');
+    // Unreachable through `receiptTotals` (a zero variance is within tolerance), but a caller that
+    // passed it must not be told the receipt claims more than its lines.
+    expect(varianceLabelKey('MISMATCH', 0n)).toBe('receipts.banner.mismatchLess');
+  });
+});
+
+describe('variantForRounding', () => {
+  it('offers the absorbing line only when the receipt claims more than its lines', () => {
+    // `receipt_items.amount_minor` is non-negative, so only a positive gap has a legal line.
+    expect(variantForRounding(1n)).toBe(true);
+    expect(variantForRounding(0n)).toBe(false);
+    expect(variantForRounding(-1n)).toBe(false);
+  });
+});
+
+describe('capturedLabel', () => {
+  it('formats a captured instant as the reader’s own date', () => {
+    expect(capturedLabel('2026-10-12T10:00:00.000Z', 'en-GB')).toContain('2026');
+    expect(capturedLabel('2026-10-12T10:00:00.000Z', 'en-GB')).toContain('Oct');
+  });
+
+  it('renders nothing rather than "Invalid Date" for a value it cannot read', () => {
+    // The API always sends an instant, so this is a defensive answer, not a state the wire produces.
+    expect(capturedLabel('not-a-date', 'en-GB')).toBe('');
   });
 });

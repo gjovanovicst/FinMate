@@ -61,6 +61,15 @@ export const routes: Routes = [
     title: 'Transakcije',
   },
   {
+    // The drill-in (docs/02 §2.1): the list screen with the edit sheet opened for one row. The id is
+    // read from `ActivatedRoute` alongside the query filters the same screen already owns.
+    path: 'transactions/:id',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/transactions/transactions.component').then((m) => m.TransactionsComponent),
+    title: 'Transakcija',
+  },
+  {
     path: 'goals',
     canActivate: [authenticatedGuard],
     loadComponent: () => import('./features/goals/goals.component').then((m) => m.GoalsComponent),
@@ -128,6 +137,22 @@ export const routes: Routes = [
     canActivate: [authenticatedGuard],
     loadComponent: () => import('./features/rules/rules.component').then((m) => m.RulesComponent),
     title: 'Pravila',
+  },
+  {
+    path: 'receipts',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/receipts/receipts-list.component').then((m) => m.ReceiptsListComponent),
+    title: 'Prijemi',
+  },
+  {
+    // `withComponentInputBinding` binds `id` straight to the detail component's signal input
+    // (app.config.ts), so the screen does not subscribe to the param map.
+    path: 'receipts/:id',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/receipts/receipt-detail.component').then((m) => m.ReceiptDetailComponent),
+    title: 'Prijem',
   },
   {
     path: 'notifications',

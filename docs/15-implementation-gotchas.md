@@ -305,6 +305,17 @@ Code-first GraphQL with custom scalars: most of these are registration problems 
   `content-length-range` needs a POST policy — so nothing enforces the declared size or sha until
   `commitAttachment` `HEAD`s the object; a client that lies is caught there, as `FAILED`, not at upload.
 
+- **A row is not an object: deleting a Household leaves its uploads in the bucket.** `files.purge`
+  walks `attachments` rows, and a cascade delete takes the rows away with the Household, so the
+  object each row pointed at is never listed again — the dev bucket held seven orphaned
+  `household/…/*.png` after a live pass' Households were deleted by hand (found while cleaning up
+  task 4.1.5, then removed with a throwaway script that signs `ListObjects`/`DeleteObject` with the
+  repo's own `signS3Request`; note the signer has no query-string support, so bucket-level `GET`
+  — ListObjects v1 — is the form that verifies). Nothing user-facing deletes a Household yet, so
+  nothing leaks in normal use, but the deletion feature docs/08's retention section implies needs an
+  **object** delete or a bucket lifecycle rule, and it has to run *before* the rows disappear, because
+  nothing records the key once they are gone.
+
 ---
 
 ## 5. Domain: money, dates and Serbian input
@@ -730,6 +741,25 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   alone, red in a full run with the worker up, green again once it was stopped). Stop the worker before
   running the suite, or point it at its own database. The worker's own spec is immune because it calls
   `runJob` directly and never starts the scheduler.
+
+- **A mutation's selection is not the screen's state: a field the mutation does not ask for is
+  `undefined`, not "unchanged".** `reconcileReceipt` is called for five different actions and its
+  document selects no `transactionId` (the published selection is deliberately partial), so a screen
+  that read the link straight off the *response* would draw `DETACH_TRANSACTION` as a no-op — and a
+  caller that asserts `response.transactionId` gets `KeyError`. The receipts screen sidesteps it by
+  re-reading the full `receipt` query after every mutation; a probe that reuses the screen's own
+  document must do the same. Merging a partial answer into screen state is how one row silently loses
+  a field (docs/02 §4.11, `receipt-detail.component.ts`'s class doc).
+
+- **A spec that dispatches on the query string can serve the wrong document, so it proves nothing about
+  the real schema.** `transactions.component.spec.ts` mocked `GraphqlClient` by matching
+  `document.includes('query Transactions')`, which also matches the drill-in's `query Transaction(`;
+  the mock needs the parenthesis, and the list filter needs the closing one. This is a second face of
+  the 3.2.4 defect (a `money { amountMinor }` selection set on a **scalar**, which every mock accepted
+  and the API refused with a 400). Until a test parses every feature's documents against
+  `apps/api/schema.gql`, a mounted spec proves wiring and **not** that the API will answer — so any new
+  document still needs one live call (task 4.1.5 ran its own documents out of the component source
+  against a fresh Household for exactly this reason).
 
 
 ---

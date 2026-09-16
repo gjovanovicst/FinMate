@@ -163,6 +163,8 @@ describe('AppComponent nav (mounted)', () => {
       '/counterparties',
       '/tags',
       '/rules',
+      // The receipt library closes the Biblioteka group (docs/02 §2.2).
+      '/receipts',
     ]);
   });
 
@@ -223,6 +225,8 @@ describe('AppComponent nav (mounted)', () => {
       '/counterparties',
       '/tags',
       '/rules',
+      // The receipt library closes the Biblioteka group (docs/02 §2.2).
+      '/receipts',
     ]);
   });
 });

@@ -342,6 +342,12 @@ Mobile collapses Account and date into one summary chip (*Kartica · danas*); de
 always-visible column. `📷` moves to overflow when the field is non-empty, so it never competes with
 commit.
 
+> **Build state.** The screen ships without the `📷 Račun` affordance, at every size. A photo does not
+> belong to a *fragment*: it belongs to a Receipt, which is a separate row with its own lines and its
+> own reconciliation, and the receipt flow's entry point shipped as the library's capture action
+> (§4.11, task 4.1.5) — the screen that can then itemise what was photographed. Attaching a photo to an
+> already-captured Transaction is the sheet's own section (§4.5, 4.1.2).
+
 ### 4.4 Transactions list — F-24, F-04, F-25, F-12
 
 ```text
@@ -397,14 +403,24 @@ commit.
   diff with *Zadrži moje* / *Prihvati novo* per field. Money fields are never silently clobbered.
 - **Delete** is a soft delete with an undo toast; Restore lives in the history panel.
 
+> **Build state — the route half of task 1.2.6 (`/transactions/:id`, completed with 4.1.5).** docs/02 §2.1 has listed
+> this drill-in since the route map was written, and the sheet shipped without it: the list screen now
+> serves it too — same component, same URL contract — and fetches **that** row by id rather than
+> hoping it is on the current page, because a posted receipt's Transaction routinely is not. The row is
+> selected with the list query's node **verbatim** (a narrower projection compiles and then fails on a
+> field the sheet reads), and dismissing the sheet **leaves the URL** when the URL opened it, so a
+> reload does not reopen a row the user just closed. docs/07 §(5) draws this as a full page on
+> `compact`; the build opens the same edit sheet over the list at every size, which is the detail-pane
+> half of that target and not yet the compact one.
+
 > **Build state (task 4.1.2).** F-34 ships as an **attachment section in this sheet**: it shows the photo
 > when one is attached, offers *Priloži račun* (camera through `getUserMedia`, a file-input fallback,
 > and an explanation rather than a dead button when the camera is denied), runs the
 > presign → PUT → `commitAttachment` pipeline with upload progress, and removes with *Ukloni*. The photo
 > is linked to **this Transaction**, which is exactly what `commitAttachment(transactionId)` does.
-> The wireframe's `📷 Račun` on `/capture` (§4.3) and the receipts library (§4.11) are **not built**:
-> both belong to the receipt flow, and nothing produces a `Receipt` until 4.1.3 — an upload there would
-> have nothing to attach to and would be swept by `files.purge` as an orphan after 24 h. The section
+> The wireframe's `📷 Račun` on `/capture` (§4.3) is **still not built**: the receipt flow's entry point
+> shipped as the library's own capture action (§4.11, 4.1.5) instead, because a Receipt needs a
+> destination to be itemised at, and `/capture` is a one-line composer rather than a shelf. The section
 > states plainly that an upload is **not virus-scanned** in this build (`scanState: SKIPPED`) instead of
 > showing a reassuring badge it has not earned (docs/08 §9.4).
 
@@ -565,19 +581,32 @@ with `source = 'RECEIPT'`, and sets `receipts.transaction_id`; it is enabled wit
 *Uskladi ručno*. Items stream in with ⚪ badges while OCR runs, and manual itemisation is offered
 rather than a spinner page.
 
-> **Build state (tasks 4.1.3–4.1.4a).** The **backend** ships: a Receipt is opened over an uploaded attachment
+> **Build state (tasks 4.1.3–4.1.5).** The **backend** ships: a Receipt is opened over an uploaded attachment
 > (`createReceipt`), OCR writes its lines as items and each item is categorised by the Household's own
 > rules through the same pipeline a typed fragment uses (`extractReceipt`), the ordinary item mutations
 > exist (`addReceiptItem`, `updateReceiptItem`, `removeReceiptItem`), and I-6 is recomputed after every
-> change (`reconcileReceipt`). **This screen is 4.1.5 and does not exist yet**, so nothing in the app
-> calls those operations — they are verified by integration tests and live GraphQL, not by a view.
+> change (`reconcileReceipt`). The **screens** ship too: `/receipts` is the library — the list, and the
+> capture action that runs 4.1.2's upload pipeline and opens a Receipt over the photo — and
+> `/receipts/:id` is this section's mismatch screen. *Napravi transakciju* posts through
+> `commitReceipt` (one CONFIRMED Transaction with a Split per Category, refused until I-6 reconciles and
+> every line has a Category) and links to the created row through `/transactions/:id`; *Otkači* unlinks
+> the photo and leaves the Transaction alone.
+>
 > **No OCR provider is configured**, so `extractReceipt` answers `{extracted: false, reason:
 > "AI_UNAVAILABLE:no-provider-configured"}` and the receipt is itemised by hand; that is the state the
-> sentence above describes, and it is reported rather than faked. *Napravi transakciju* is
-> live too (`commitReceipt`: one CONFIRMED Transaction with a Split per Category, refused until I-6
-> reconciles and every line has a Category). What is **not** built is this **screen** — the mismatch
-> banner, the item table with its category pickers and the two buttons — which is 4.1.4b, and the
-> Receipt library list, which is 4.1.5.
+> sentence above describes, and it is reported rather than faked. The detail screen therefore does
+> **not** call `extractReceipt` (a button that always fails for a missing provider is a control this
+> build cannot honour) and the item rows are typed in rather than streamed with ⚪ badges while OCR runs.
+> Also **not** built: a per-item `quantity`/`unitPrice` UI; *Uskladi ručno* offers `ADJUST_TOTAL` (the
+> **absolute** new total) and `ADD_ROUNDING_LINE` rather than a per-item adjust dialog, and the second
+> is offered only while the lines fall **short**, because `receipt_items.amount_minor` cannot be
+> negative; the confidence badge reads the **stored** confidence rather than a live estimate; and the
+> library reads the **first 50** receipts with no paging control, saying `{count} shown, newest first`
+> rather than claiming a total the query does not return (docs/06 §5.9). The capture pipeline is
+> **duplicated** between `fm-receipt-attachment` and the library on purpose — the two differ only in the
+> presign purpose and whether a Transaction is attached, and the parts that go silently wrong already
+> live in `receipts.view.ts` under test; a shared service is the extraction that would remove the copy.
+> **Neither screen has had a human pass at 320/768/1280 px** (the standing gap since `/review`).
 
 ### 4.12 Budgets — F-17
 

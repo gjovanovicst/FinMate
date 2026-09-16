@@ -54,6 +54,9 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { path: '/counterparties', labelKey: 'nav.counterparties', icon: '👤', primary: false },
   { path: '/tags', labelKey: 'nav.tags', icon: '🏷️', primary: false },
   { path: '/rules', labelKey: 'nav.rules', icon: '⚙️', primary: false },
+  // docs/02 §2.2's **Biblioteka** group ends with Prijemi (Kategorije, Prodavci, Osobe, Pravila,
+  // Prijemi), so the receipt library sits last in the list rather than beside the ledger it feeds.
+  { path: '/receipts', labelKey: 'nav.receipts', icon: '📷', primary: false },
 ];
 
 export const PRIMARY_ITEMS: readonly NavItem[] = NAV_ITEMS.filter((item) => item.primary);

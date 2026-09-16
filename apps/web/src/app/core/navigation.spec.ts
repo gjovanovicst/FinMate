@@ -47,6 +47,8 @@ describe('navigation destinations', () => {
       '/counterparties',
       '/tags',
       '/rules',
+      // Biblioteka's last entry (docs/02 §2.2): the receipt library.
+      '/receipts',
     ]);
 
     // The notification centre is deliberately **not** here: docs/02 §2.2 draws it as the header bell,

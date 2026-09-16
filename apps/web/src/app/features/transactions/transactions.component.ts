@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
-import { ActivatedRoute, RouterLink, type ParamMap } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink, type ParamMap } from '@angular/router';
 
 import { equalsMoney, parseAmount, type Money } from '@finmate/domain';
 
@@ -153,6 +153,39 @@ const PROPOSE_EQUAL_SPLITS = /* GraphQL */ `
   }
 `;
 
+/**
+ * One Transaction, for the `/transactions/:id` drill-in.
+ *
+ * The selection is the list query's node **verbatim**, because `fm-transaction-detail` takes a
+ * `TransactionRow`: a narrower projection would compile and then fail on a missing field the sheet
+ * reads. Nothing is inferred from the row the list already has, either — a deep link can point at a
+ * row that is not on the current page (an old receipt's Transaction, say), so the row is fetched.
+ */
+const TRANSACTION = /* GraphQL */ `
+  query Transaction($id: ID!) {
+    transaction(id: $id) {
+      id
+      kind
+      status
+      amount
+      description
+      note
+      occurredAt
+      occurredLocalDate
+      categoryId
+      accountId
+      needsReview
+      attachmentId
+      version
+      splits {
+        id
+        amount
+        categoryId
+      }
+    }
+  }
+`;
+
 const SEARCH_DEBOUNCE_MS = 300;
 
 /**
@@ -172,6 +205,10 @@ const SEARCH_DEBOUNCE_MS = 300;
  *
  * Splits are offered on create only. `updateTransaction` does not accept them, so the edit sheet
  * shows the parts read-only rather than pretending they can be changed.
+ *
+ * The screen also serves **`/transactions/:id`** (docs/02 §2.1) — the drill-in a posted receipt or a
+ * drill-through link needs. That row is fetched by id, not looked up in the loaded page, because a
+ * deep link routinely points at a Transaction the current filter and cursor do not include.
  */
 @Component({
   selector: 'fm-transactions',
@@ -525,7 +562,7 @@ const SEARCH_DEBOUNCE_MS = 300;
         [categories]="categories()"
         (saved)="reload()"
         (deleted)="reload()"
-        (closed)="editing.set(null); reload()"
+        (closed)="closeDetail()"
       />
     }
   `,
@@ -837,6 +874,7 @@ export class TransactionsComponent {
   private readonly errors = inject(ErrorMessageService);
   private readonly fb = inject(FormBuilder);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   readonly rows = signal<readonly TransactionRow[]>([]);
   readonly categories = signal<readonly CategoryOption[]>([]);
@@ -965,7 +1003,50 @@ export class TransactionsComponent {
       void this.reload();
     });
 
+    // The `/transactions/:id` drill-in (docs/02 §2.1). It is read from the same `ActivatedRoute` the
+    // filters come from rather than split across two mechanisms: this screen owns one URL contract,
+    // and a deep link has to work for a row that is not on the current page — a posted receipt's
+    // Transaction, an old correction — so it is fetched by id rather than looked up in `rows()`.
+    this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const id = params.get('id');
+      if (id !== null) void this.openById(id);
+    });
+
     void this.load();
+  }
+
+  /**
+   * Open one Transaction in the edit sheet, fetched by id.
+   *
+   * A row the list does not hold is the normal case for a deep link, so a miss is not an error here;
+   * an id the API refuses is, and it lands in the screen's banner like every other failure.
+   */
+  private async openById(id: string): Promise<void> {
+    this.error.set(null);
+    try {
+      const data = await this.graphql.query<{ transaction: TransactionRow }>(TRANSACTION, { id });
+      // A slow response for a previous id must not replace the row the user is looking at.
+      if (this.route.snapshot.paramMap.get('id') !== id) return;
+      this.editing.set(data.transaction);
+    } catch (error) {
+      this.error.set(this.errors.for(error));
+    }
+  }
+
+  /**
+   * Close the edit sheet.
+   *
+   * When the sheet was opened **by URL**, dismissing it must also leave that URL: the id addresses a
+   * row the user has just dismissed, and a reload would otherwise reopen it. Opening the same screen
+   * from the list stays a filter edit — no navigation, no history entry.
+   */
+  closeDetail(): void {
+    if (this.route.snapshot.paramMap.get('id') !== null) {
+      void this.router.navigate(['/transactions']);
+      return;
+    }
+    this.editing.set(null);
+    void this.reload();
   }
 
   // -------------------------------------------------------------------------------------------
