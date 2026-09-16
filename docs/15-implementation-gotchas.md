@@ -928,29 +928,40 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   Both are JS template literals, so a backtick *terminates the string* and the remainder is parsed as
   code. The error names neither the file nor the real problem: `Failed to resolve styles at position
   N to a string` / `Failed to resolve template at position N`, usually surfacing as
-  `Angular compilation initialization failed`. It has cost real time **eleven** times — twice from a
-  backtick in a CSS comment documenting a property; again in 2.3.2b from *two* HTML comments and a CSS
-  comment written in the same sitting; again in 2.3.3b from a comment that quoted `septička jama`,
-  **written minutes after adding this entry**; again in 3.1.4's follow-up fix, from an HTML comment
-  naming the `NAV_ITEMS` constant while removing a duplicate nav entry; and again in 4.2.1b, from an HTML
-  comment inside the shell template that described the update banner as living inside `main`. The eighth, in 4.2.6b, was
-  an HTML comment naming the new settings route; the ninth, in 4.2.7b, was one quoting the tray's own *Zašto* line
-  while adding the conflict panel — in the same week the entry above was extended with the tally; the
-  tenth, in 4.2.8b, quoted the word `null` inside an HTML comment in the cached-list branch; and the
-  **eleventh, in 5.2a, quoted a computed's name** in a comment explaining why the template must call it —
-  a comment *about* the trap, which is now the second time the entry has been extended by a comment
-  written within minutes of reading it. That one is
-  worth reading twice, because the error was **exactly** the shape predicted two paragraphs down:
-  `tsc` reported `TS1005: ',' expected` at the first markup line *after* the comment, naming neither the
-  file's template nor the comment. The pattern is that the author knows the rule and does it
-  anyway, because a comment that names a property — `aria-label`, `1`–`9`, a sample input — reaches for
-  backticks by reflex. Two habits that work: describe the example in words (a bill such as septicka jama),
-  and run the plain-backtick scan below before believing a template error is something else. Write CSS/HTML
-  comment prose without them, or use quotes. **The failure looks like a syntax error, not a template
-  error** when it happens in TS: `tsc` reports `TS1005: ',' expected` at the first markup line after the
-  comment, and `const X = /* GraphQL */ \`` lines further down show as stray backticks — so a
-  plain-backtick scan of the whole file is the reliable check, not a scan of the `template:` region.
-  A backtick in an **HTML comment** inside the template is the same bug and the errors are worse than a parse failure: `nx run web:typecheck` reported `TS2322` and `TS2304: Cannot find name 'settings'` against a `routerLink` two lines below, because everything after the stray backtick parsed as an interpolation. If a template error names an identifier that is obviously fine, count the backticks in the template before anything else.
+  `Angular compilation initialization failed`. **It has cost real time sixteen times**, and the shape of
+  the cause never changes: a comment that names a property, a class or a CSS value reaches for backticks
+  by reflex. Twice from a CSS comment documenting a property; three times in 2.3.2b from *two* HTML
+  comments and a CSS comment written in the same sitting; again in 2.3.3b from a comment quoting
+  `septička jama`, **written minutes after adding this entry**; again in 3.1.4's follow-up from an HTML
+  comment naming the `NAV_ITEMS` constant; again in 4.2.1b from an HTML comment inside the shell
+  template; again in 4.2.6b naming the new settings route; again in 4.2.7b quoting the tray's own *Zašto*
+  line; again in 4.2.8b quoting the word `null` in the cached-list branch; again in 5.2a quoting a
+  computed's name in a comment *about* this trap; and then **five times in 4.3.1 alone** — five comment
+  blocks in one task, three of them in `styles:` blocks quoting a CSS value (`minmax(0, 1fr)`, `100vh`,
+  `flex-end`).
+  Two failure shapes, and they look different. When the stray backtick pairs with a *later* delimiter
+  into something syntactically invalid, `tsc` reports `TS1005: ',' expected` or oxc reports
+  `PARSE_ERROR` **at the first markup line after the comment** — naming neither the file's template nor
+  the comment — and `const X = /* GraphQL */ \`` lines further down show as stray backticks. When it
+  pairs into a valid *interpolation*, the file compiles and Angular fails later with the position-N
+  message above, naming no file at all (that is the 4.3.1 shape). In an **HTML comment** inside a
+  template the errors are worse than a parse failure: `web:typecheck` reported `TS2322` and
+  `TS2304: Cannot find name 'settings'` against a `routerLink` two lines below, because everything after
+  the stray backtick parsed as an interpolation. If a template error names an identifier that is
+  obviously fine, count the backticks in the file before anything else. **Scan the whole file, not the
+  `template:` region** — 4.3.1 proved why: a targeted scanner desynchronises on the `grid-template:`
+  shorthand, which looks like a `template:` property, and then cheerfully reports zero strays on a file
+  that has one. Two habits still worth having: describe an example in words (a bill such as septicka
+  jama), and write CSS/HTML comment prose with no backticks at all.
+
+  **Guarded since 4.3.1.** `eslint.config.mjs` carries a local rule, `local/no-interpolation`, which
+  errors on any `template:` or `styles:` literal containing an interpolation — precisely what the
+  compiling variant of this bug produces, and therefore the case Angular reports without a location. It
+  was verified to fire on a fixture and verified to have **no false positives** across all 9 projects:
+  the app has zero legitimate interpolations in those two properties, because Angular's syntax is
+  `{{ }}`, `[x]` and `@if` while CSS has no `${`. The non-compiling variant remains a parse error that
+  oxc reports with a location. `pnpm lint` runs in CI, so this class cannot reach `main` again — but the
+  cause is a reflex, so the guard is a net, not a licence.
 
 - **A spec file's decorators need that file to be inside its tsconfig's `include`.** Vite resolves a
   file's tsconfig *by path*, and a file the tsconfig excludes is transformed without

@@ -10,6 +10,54 @@
 import nxPlugin from '@nx/eslint-plugin';
 import tseslint from 'typescript-eslint';
 
+/**
+ * Stop the single most-repeated defect in this repository, mechanically.
+ *
+ * A backtick inside a `template:` or `styles:` literal terminates the template literal early, and the
+ * result is *valid TypeScript*: the region up to the next backtick becomes an interpolation, so the
+ * compiler's complaint is `Failed to resolve template/styles at position N to a string` — naming no file
+ * and no line (docs/15 §9). It has cost real time **sixteen** times, five of them in the single task that
+ * added this rule. Prose proved insufficient; the invariant is mechanical:
+ *
+ *   **A `template:` or `styles:` literal never contains an interpolation.**
+ *
+ * Angular's own syntax is `{{ }}`, `[x]`, `@if`; CSS has no `${`. The application has zero legitimate
+ * interpolations in these two properties, so an expression in one of them is a stray backtick — or a
+ * genuinely dynamic template, which should not be one either, because Angular cannot compile it: a
+ * non-static `styles`/`template` fails the AOT build with the same diagnostic. Both are errors here.
+ *
+ * It cannot catch a stray backtick that pairs with a *later* delimiter into a syntactically invalid file
+ * (oxc reports those with a location) — only the variant that compiles.
+ */
+const noInterpolationInComponentLiterals = {
+  rules: {
+    'no-interpolation': {
+      create(context) {
+        return {
+          Property(node) {
+            const name = node.key?.name ?? node.key?.value;
+            if (name !== 'template' && name !== 'styles') return;
+            const elements =
+              node.value.type === 'ArrayExpression' ? node.value.elements : [node.value];
+            for (const element of elements) {
+              if (element?.type === 'TemplateLiteral' && element.expressions.length > 0) {
+                context.report({
+                  node: element,
+                  message:
+                    'A template:/styles: literal contains an interpolation. The usual cause is a stray ' +
+                    'backtick inside the literal — it ends the string early, and everything up to the ' +
+                    'next backtick parses as an expression (docs/15 section 9). Remove the backtick; ' +
+                    'Angular cannot compile a dynamic template or styles property either way.',
+                });
+              }
+            }
+          },
+        };
+      },
+    },
+  },
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -29,8 +77,9 @@ export default tseslint.config(
 
   {
     files: ['**/*.ts'],
-    plugins: { '@nx': nxPlugin },
+    plugins: { '@nx': nxPlugin, local: noInterpolationInComponentLiterals },
     rules: {
+      'local/no-interpolation': 'error',
       '@nx/enforce-module-boundaries': [
         'error',
         {
