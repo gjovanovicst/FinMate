@@ -1,4 +1,4 @@
-import type { LocalDate } from './dates';
+import { daysBetween, type LocalDate } from './dates';
 
 /**
  * Subscription detection — F-16, docs/02 §4.14, docs/09 task 3.3.4.
@@ -199,10 +199,4 @@ function medianOf(values: readonly bigint[]): bigint {
   const sorted = [...values].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
   const index = Math.floor((sorted.length - 1) / 2);
   return sorted[index] as bigint;
-}
-
-function daysBetween(from: LocalDate, to: LocalDate): number {
-  const start = Date.parse(`${from}T00:00:00.000Z`);
-  const end = Date.parse(`${to}T00:00:00.000Z`);
-  return Math.round((end - start) / 86_400_000);
 }

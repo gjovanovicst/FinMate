@@ -74,6 +74,8 @@ describe('deepLinkFor', () => {
     expect(deepLinkFor('BUDGET_PACE')).toBe('/budgets');
     expect(deepLinkFor('CATEGORY_SPIKE')).toBe('/transactions');
     expect(deepLinkFor('UNUSUAL_SPEND')).toBe('/transactions');
+    // A due charge points at the rules screen, where the schedule and the amount can actually be fixed.
+    expect(deepLinkFor('RECURRING_DUE')).toBe('/recurring');
   });
 
   it('returns null rather than a link to nowhere when the kind is unknown', () => {
@@ -96,6 +98,8 @@ describe('label keys', () => {
     expect(statusLabelKey('QUEUED')).toBe('notifications.status.QUEUED');
     expect(channelLabelKey('WEB_PUSH')).toBe('notifications.channel.WEB_PUSH');
     expect(kindLabelKey('PACE_OVERRUN')).toBe('notifications.kind.PACE_OVERRUN');
+    expect(kindLabelKey('RECURRING_DUE')).toBe('notifications.kind.RECURRING_DUE');
+    expect(CONFIGURABLE_KINDS).toContain('RECURRING_DUE');
     // An unknown kind still gets a label, so the list cannot render a raw enum.
     expect(kindLabelKey('GOAL_REACHED')).toBe('notifications.kind.unknown');
     expect(CONFIGURABLE_KINDS).not.toContain('GOAL_REACHED');

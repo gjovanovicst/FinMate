@@ -241,6 +241,7 @@ export const en = {
   'notifications.channel.PUSH': 'Push',
   'notifications.kind.PACE_OVERRUN': 'A budget is heading over its limit',
   'notifications.kind.UNUSUAL_SPEND': 'Spending is unusual',
+  'notifications.kind.RECURRING_DUE': 'A scheduled payment is due',
   'notifications.kind.unknown': 'Other',
   'notifications.settings.title': 'What you get told',
   'notifications.settings.kinds': 'Alerts',

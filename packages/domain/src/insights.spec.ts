@@ -8,10 +8,12 @@ import {
   medianMinor,
   periodsWithSpend,
   positiveTrendInsights,
+  recurringDueInsights,
   unusualSpendInsights,
   INSIGHT_THRESHOLDS,
   type BudgetPaceFact,
   type CategoryTrendFact,
+  type RecurringDueFact,
   type UnusualSpendFact,
 } from './insights';
 import type { LocalDate } from './dates';
@@ -70,6 +72,21 @@ function unusualFact(overrides: Partial<UnusualSpendFact> = {}): UnusualSpendFac
     amountMinor: 100_000n,
     occurredOn: '2026-09-14' as LocalDate,
     historyMinor: [10_000n, 10_000n, 10_000n, 10_000n, 10_000n],
+    ...period('2026-09-01'),
+    ...overrides,
+  };
+}
+
+function dueFact(overrides: Partial<RecurringDueFact> = {}): RecurringDueFact {
+  return {
+    ruleId: 'rule-netflix',
+    description: 'Netflix',
+    categoryId: null,
+    categoryPath: null,
+    currency: 'RSD',
+    amountMinor: 1_299_00n,
+    occurredOn: '2026-09-21' as LocalDate,
+    daysUntil: 1,
     ...period('2026-09-01'),
     ...overrides,
   };
@@ -277,16 +294,68 @@ describe('positiveTrendInsights', () => {
   });
 });
 
+describe('recurringDueInsights', () => {
+  it('announces a charge due today or tomorrow, and stays silent past the horizon', () => {
+    // Both sides of the boundary: today (0) and tomorrow (1) speak; the day after (2) and an overdue
+    // fact (-1) do not. The horizon is a named threshold, so this test is the only place it is pinned.
+    expect(recurringDueInsights([dueFact({ daysUntil: 0 })])).toHaveLength(1);
+    expect(recurringDueInsights([dueFact({ daysUntil: 1 })])).toHaveLength(1);
+    expect(recurringDueInsights([dueFact({ daysUntil: 2 })])).toEqual([]);
+    expect(recurringDueInsights([dueFact({ daysUntil: -1 })])).toEqual([]);
+    expect(INSIGHT_THRESHOLDS.recurringDueHorizonDays).toBe(1);
+  });
+
+  it('is informational, because an expected charge is not a warning', () => {
+    const [draft] = recurringDueInsights([dueFact()]);
+    expect(draft?.kind).toBe('RECURRING_DUE');
+    expect(draft?.severity).toBe('INFO');
+  });
+
+  it('carries the amount as a minor-unit string and never as a JSON number (ADR-003)', () => {
+    const [draft] = recurringDueInsights([dueFact()]);
+    expect(draft?.payload['amountMinor']).toBe('129900');
+    expect(typeof draft?.payload['amountMinor']).toBe('string');
+    // The rule's own words are carried for the in-app copy; the lock-screen rule is the copy module's.
+    expect(draft?.payload['description']).toBe('Netflix');
+    expect(draft?.payload['daysUntil']).toBe(1);
+    expect(draft?.payload['occurredOn']).toBe('2026-09-21');
+  });
+
+  it('keys on the occurrence, so two dates of one rule are two conditions', () => {
+    const first = recurringDueInsights([dueFact({ occurredOn: '2026-09-21' as LocalDate })])[0];
+    const second = recurringDueInsights([dueFact({ occurredOn: '2026-09-28' as LocalDate })])[0];
+    expect(first?.dedupeKey).toBe('RECURRING_DUE:2026-09-21:rule-netflix');
+    expect(second?.dedupeKey).toBe('RECURRING_DUE:2026-09-28:rule-netflix');
+    expect(first?.dedupeKey).not.toBe(second?.dedupeKey);
+  });
+
+  it('refuses a non-positive amount rather than announcing a zero charge', () => {
+    expect(recurringDueInsights([dueFact({ amountMinor: 0n })])).toEqual([]);
+  });
+
+  it('keeps the Category breadcrumb for the copy, and null when the rule has no Category', () => {
+    const withCategory = recurringDueInsights([
+      dueFact({ categoryId: 'cat-fun', categoryPath: ['Zabava', 'Pretplate'] }),
+    ])[0];
+    expect(withCategory?.payload['categoryPath']).toBe('Zabava / Pretplate');
+    expect(withCategory?.payload['categoryId']).toBe('cat-fun');
+
+    const without = recurringDueInsights([dueFact()])[0];
+    expect(without?.payload['categoryPath']).toBeNull();
+  });
+});
+
 describe('generateInsights', () => {
   it('runs every generator and returns a deterministic order', () => {
     const facts = {
       budgets: [budgetFact({ limitMinor: 10_000n, spentMinor: 6_000n, daysElapsed: 15 })],
       categories: [
         trendFact({ currentMinor: 30_000n }),
-        // A second category that came *down*, so all four generators are exercised in one run.
+        // A second category that came *down*, so all four month-scoped generators are exercised.
         trendFact({ categoryId: 'cat-fuel', categoryPath: ['Automobil', 'Gorivo'], currentMinor: 5_000n }),
       ],
       unusual: [unusualFact({ amountMinor: 100_000n })],
+      recurring: [dueFact()],
     };
     const first = generateInsights(facts);
     const second = generateInsights(facts);
@@ -295,6 +364,7 @@ describe('generateInsights', () => {
       'BUDGET_PACE',
       'CATEGORY_SPIKE',
       'POSITIVE_TREND',
+      'RECURRING_DUE',
       'UNUSUAL_SPEND',
     ]);
     expect(first.map((draft) => draft.dedupeKey)).toEqual(second.map((draft) => draft.dedupeKey));
@@ -302,17 +372,33 @@ describe('generateInsights', () => {
   });
 
   it('is silent on empty facts rather than throwing', () => {
-    expect(generateInsights({ budgets: [], categories: [], unusual: [] })).toEqual([]);
+    expect(generateInsights({ budgets: [], categories: [], unusual: [], recurring: [] })).toEqual([]);
   });
 
-  it('gives every draft a dedupe key namespaced by kind and period', () => {
+  it('gives every month-scoped draft a dedupe key namespaced by kind and period', () => {
     const drafts = generateInsights({
       budgets: [budgetFact({ limitMinor: 10_000n, spentMinor: 6_000n, daysElapsed: 15 })],
       categories: [trendFact({ currentMinor: 30_000n })],
       unusual: [],
+      recurring: [],
     });
     for (const draft of drafts) {
       expect(draft.dedupeKey.startsWith(`${draft.kind}:2026-09-01:`)).toBe(true);
     }
+  });
+
+  it('names the occurrence, not the period, in a recurring due key', () => {
+    // The one generator whose condition is a single day rather than a month: two occurrences of one
+    // rule inside one period must produce two keys, which a period-scoped key could not express.
+    const drafts = generateInsights({
+      budgets: [],
+      categories: [],
+      unusual: [],
+      recurring: [dueFact({ occurredOn: '2026-09-21' as LocalDate }), dueFact({ occurredOn: '2026-09-28' as LocalDate })],
+    });
+    expect(drafts.map((draft) => draft.dedupeKey)).toEqual([
+      'RECURRING_DUE:2026-09-21:rule-netflix',
+      'RECURRING_DUE:2026-09-28:rule-netflix',
+    ]);
   });
 });

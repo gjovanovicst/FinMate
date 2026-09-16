@@ -2424,7 +2424,7 @@ month must not silently consume budget (I-7).
 | Catch-up | Every occurrence inside the rule's own window is posted, then the rule retires | A job that missed two months still owes those rows; the RRULE plus `ends_on` define exactly which occurrences exist. Dropping them would silently lose months of a bill the household paid. |
 | `next_occurrence_on` when a rule finishes | Set to the **last occurrence it posted**, not left stale | A stale date makes the row read as if that occurrence were still pending, and reactivating the rule would re-post from there. |
 | The write path | `TransactionsService.create` | A materialised row gets I-3's category/kind check, ADR-011's currency, the local-day derivation and I-10's idempotency from the same code a hand-typed row uses. |
-| Not built | The `recurring.materialise` **job** (no worker), subscription **detection** (`is_detected`, `confirmDetectedSubscription`, 3.3.4), and the `RECURRING_DUE` alert producer | The mutation calls exactly the service method the job will, so wiring the scheduler later changes nothing here. |
+| Jobs | `recurring.materialise` (hourly) and `recurring.detect` (daily) since 3.4.1, over the **same** service methods the mutations call | ADR-022's rule: a job is a schedule plus a written idempotency story, and these two inherit the mutation's — materialisation is idempotent per `(rule, occurrence)`, detection by identity. |
 
 #### 5.8.2 Subscription detection (task 3.3.4)
 
@@ -2438,8 +2438,8 @@ client something to accept, and what makes a dismissal stick.
 | `dismissDetectedSubscription` | Soft-deletes the row | The detector skips an identity the Household already rules on, already has a proposal for, **or has dismissed** — a dismissal that could be re-proposed is a nag. It is also refused for a rule the Household made, because dismissing one would look like a delete. |
 | The candidate rules (`@finmate/domain/src/subscriptions.ts`) | ≥ 3 charges, amounts within 2 % of the median, gaps within 4 days (+3 for the calendar's slack in a month), last charge within 45 days | Three is where a coincidence becomes a pattern; the tolerance absorbs a price rise but not a different purchase; the recency window is why a cancelled subscription stops being one. The **period is chosen from the gaps** (weekly/monthly/quarterly/yearly) rather than assumed — assuming monthly is how a weekly delivery becomes a monthly bill. |
 | Identity | The resolved Merchant, else the **folded** description | The same fold the classifier and the entity ladder use, so `NETFLIX` and `Netflix` are one bill. |
-| No scheduled job | `recurring.detect` does not exist (no worker) | The mutation calls the same service method the job will; the screen has an explicit *Look for subscriptions* action meanwhile. |
-| Not built | The `RECURRING_DUE` alert producer, and `committedMinor` for a budget's pace insight | Both are wiring 3.1.x to 3.3.3's data; recorded in AGENTS. |
+| Scheduled | `recurring.detect` runs daily at 03:30 since 3.4.1, over the same `detect` method | The mutation stays as the on-demand entry point the screen's *Look for subscriptions* action uses; both are idempotent by identity, so a run never re-proposes what is already known or dismissed. |
+| Built since | `committedMinor` (3.4.2) and the `RECURRING_DUE` insight + alert (3.4.3) | The projection and the alert read one `pendingOccurrences`, so they cannot disagree about a bill; the alert is `INFO`, one day ahead, and keyed on the occurrence. Recorded in §5.13/§5.14 and AGENTS. |
 
 ### 5.9 `commitReceipt` and `reconcileReceipt`
 
@@ -2674,12 +2674,24 @@ against the wrong window; whether the app should roll it automatically belongs t
 `BUDGET_PACE` insight maps to `PACE_OVERRUN`, and a "% of budget used" alert would be a second
 generator.
 
-**Two facts the generators do not yet see, recorded rather than hidden.** `committedMinor` is `0n` for
-every budget: per-budget committed charges need the recurring rules of 3.3.3, and the Household-level
-`reserved` figure belongs to the Household budget scope, so the pace insight is currently a **pace-only**
-projection for a category budget. And an `UNUSUAL_SPEND` candidate is still a **direct** Transaction
-row: comparing a whole purchase against a split's *portion* would compare two different things, so the
-check reads `SpendReadModel.directExpenseRows` on purpose rather than the split-aware aggregate.
+**`committedMinor` is wired (3.4.2), and the same read powers the due alert (3.4.3).** A budget's
+projection carries the recurring EXPENSE occurrences still to be posted inside its period —
+subtree-scoped for a Category budget, everything for the whole-Household one, and excluding occurrences
+that already have a Transaction behind them, because those are `spent`. `InsightsService` and the new
+`RECURRING_DUE` generator read the **same** `RecurringService` occurrences (one private
+`pendingOccurrences`, with `committed` summing it and `dueSoon` listing it), so the projection and the
+alert cannot disagree about what is still due — the reconciliation 3.3.1 did for spend. An
+`UNUSUAL_SPEND` candidate is still a **direct** Transaction row: comparing a whole purchase against a
+split's *portion* would compare two different things, so the check reads
+`SpendReadModel.directExpenseRows` on purpose rather than the split-aware aggregate.
+
+**One generator is not month-scoped: `RECURRING_DUE` (3.4.3).** Its condition is a single occurrence
+(`RECURRING_DUE:<occurredOn>:<ruleId>`), and the row may therefore be filed under a **different month**
+than the run's period — a bill on the 1st is announced on the last day of the month before. That made
+the writer's dedupe lookup wrong: it fetched existing insights for the run's `period_start` only, so
+that condition was re-inserted on every retry. The writer now looks the key up over the periods its
+drafts actually use. The alternative — filing the draft under the run's month — was rejected because
+the row's period is what the feed groups and links by.
 
 **Reconciled in 3.3.1.** The category **trend** baseline is no longer built from direct rows: it reads
 `SpendReadModel.byCategory`, the same split-aware aggregate the budget tile and the assistant use
@@ -2704,13 +2716,13 @@ contract. The pipeline is docs/05 §9's, and the storage is docs/03 §4's two ta
 | Quiet hours | `{ "start": "HH:MM", "end": "HH:MM" }`, may cross midnight; `start === end` means never | docs/05 §9 puts the check before the channel fan-out: nothing is delivered inside the window. A crossing window inverts if written as `>= start && < end`, and `start === end` read as "always" would silently switch every alert off. |
 | Quiet hours outcome | `status = 'QUEUED'` | docs/05 §8's `notifications.dispatch` job drains queued rows, so quiet hours **delay**. Dropping would answer "do not interrupt me" with "keep me ignorant". |
 | Rate limit | 10 notifications per user per rolling 24 h; `CRITICAL` exempt | Not previously specified. A cap exists for noise, and a cap that can swallow the one alert that mattered does more damage than the noise it prevents. |
-| Insight → rule mapping | `BUDGET_PACE → PACE_OVERRUN`; `CATEGORY_SPIKE`/`UNUSUAL_SPEND → UNUSUAL_SPEND` | One question ("is this normal?") at two grains; two switches for one intention is configuration nobody understands. `RECURRING_DUE` and `GOAL_REACHED` stay in the vocabulary with **no producer** until 3.3.3 and 3.3.2 — the §5.5 precedent. |
+| Insight → rule mapping | `BUDGET_PACE → PACE_OVERRUN`; `CATEGORY_SPIKE`/`UNUSUAL_SPEND → UNUSUAL_SPEND`; `RECURRING_DUE → RECURRING_DUE` | One question ("is this normal?") at two grains; two switches for one intention is configuration nobody understands. A due bill is its own intention — *"tell me before a charge lands"* — so it keeps its own switch. `GOAL_REACHED` stays in the vocabulary with **no producer** until 3.3.2's goals surface grows one — the §5.5 precedent. |
 | `POSITIVE` delivery | In-app only, and only when `positiveFeedback` is on | Good news is not worth a push, and docs/02 §7.1 gives it its own tab rather than the interrupt path. |
 | `AlertRule.version` | **Not implemented** | docs/06 §3.2 declares `version: Int!` and `AlertRuleUpdateInput.version`, but neither docs/03 §4's DDL nor the migrated table has the column. Rather than invent a migration for optimistic concurrency on a settings list nobody edits concurrently, the field is omitted and this line is the record. Adding it later is one migration and one input field. |
 | Notification copy | **English only, rendered server-side** | `notifications.title`/`body` are `TEXT NOT NULL` and the API has no i18n catalogue — the web's lives in `apps/web`. This is a **Definition-of-Done breach** of the same shape as `fm-money`'s hardcoded label: it is recorded here, and the fix is either a shared catalogue in a package or storing a key plus payload parameters and rendering at read time. `NotificationPreferencesInput.locale` exists and is not yet honoured. |
 | `EMAIL`/`PUSH`/`WEB_PUSH` | Rows are written; nothing is sent | Channel fan-out is task 3.1.3. The evaluator already decides per channel, so 3.1.3 changes only the writer. |
 | Rule CRUD | `alerts`, `createAlertRule`, `updateAlertRule`, `deleteAlertRule` | Without one, the evaluator is unconfigurable and unverifiable end to end. The settings **screen** is 3.1.4. |
-| Defaults | Two rows written by `ensureDefaultRules` on the first run (`PACE_OVERRUN`, `UNUSUAL_SPEND`; `IN_APP`; active) | docs/02 §7.1 shows alerts arriving without the user visiting settings, so "no rules" cannot mean "no alerts". They are **rows, not hidden code defaults**, so the screen shows what is actually on and editing a rule edits the thing that decides. Written once, only for a Household that has configured nothing. |
+| Defaults | Three rows written by `ensureDefaultRules` on the first run (`PACE_OVERRUN`, `UNUSUAL_SPEND`, `RECURRING_DUE`; `IN_APP`; active) | docs/02 §7.1 shows alerts arriving without the user visiting settings, so "no rules" cannot mean "no alerts". They are **rows, not hidden code defaults**, so the screen shows what is actually on and editing a rule edits the thing that decides. Written once, only for a Household that has configured nothing. |
 | `SUPPRESSED` decisions | **Not persisted** | `notifications` is `UNIQUE (user_id, dedupe_key)`. Writing a rate-limited row burns the key and makes that condition **permanently undeliverable** once the cap resets — the notification equivalent of poisoning a cache. Only `SENT` and `QUEUED` become rows; suppression is reported in the `runAlerts` summary instead. `QUEUED` occupies the key correctly: the row exists and will be delivered. |
 | Non-in-app channels | Stored `QUEUED`, never `SENT` | The evaluator's `SENT` means "deliverable". Only `IN_APP` can actually be delivered in this build, so an email/push row waits for 3.1.3's fan-out rather than claiming a delivery that has not happened. |
 | `markNotificationRead` | Returns `{ notification, unreadNotificationCount }` | The badge is on every screen; making it a second round trip is a badge that lags. `markAllNotificationsRead` returns how many rows changed. |
@@ -2722,7 +2734,7 @@ contract. The pipeline is docs/05 §9's, and the storage is docs/03 §4's two ta
 | `notificationReceived` subscription | **Not built** | It needs a pub/sub transport the API does not have (docs/06 §6). The bell polls on auth and on navigation, and a mark-read applies the count the mutation returns — the same mechanism the review-queue badge uses (docs/02 §2.3). |
 | `Notification.insightKind` / `insightSeverity` | Flattened scalars, added in 3.1.4 | The screen needs two things from the insight behind a row — its **tone** and where the row **links** — and a nested `insight { … }` field would invite a join per row on a list the bell reads constantly. Two scalars cost one `include`. |
 | The notification centre's screen | `/notifications`, with the preferences beneath the list | docs/02 §4.18 files notification preferences under a **Settings shell that does not exist yet**. Rather than invent one for a single section, "what you get told" sits under "what you were told"; when the settings shell lands it hosts the same panel unchanged. The header bell (docs/02 §2.2) is the entry point and carries the unread count; the nav's one badged **slot** remains the review queue. |
-| `runAlerts` | A mutation, not a scheduled job | docs/05 §8 defines `insights.generate` and `notifications.dispatch`; the worker and its scheduler do not exist, so this calls the **same** service method the worker will (insights first, then evaluation, in the pipeline's order) and is idempotent. |
+| `runAlerts` | A mutation, and the method the daily job calls | The worker exists since 3.4.1, and since 3.4.4 `insights.generate` calls the **same** `NotificationsService.run` this mutation does — generate, then evaluate against the rules, in the pipeline's order. Both are idempotent (insight dedupe keys, `notifications.dedupe_key`), and `notifications.dispatch` remains the per-minute drain. Before 3.4.4 the job called `InsightsService.generate` alone, so a scheduled run wrote insight rows that nothing ever turned into a notification. |
 
 ---
 

@@ -131,7 +131,8 @@ function quietHoursValue(value: Record<string, unknown> | null | undefined): Pri
  *
  * Written as **rows**, not as hidden code defaults, so `/settings/alerts` (3.1.4) shows the user what is
  * actually on and `PATCH`ing a rule edits the thing that decides. `BUDGET_THRESHOLD` and
- * `RECURRING_DUE`/`GOAL_REACHED` are absent because nothing produces them yet.
+ * `GOAL_REACHED` are absent because no insight produces them: a `BUDGET_PACE` insight is mapped to
+ * `PACE_OVERRUN`, and a "% of budget used" arm would be a second generator (docs/06 §5.13).
  */
 /** How many queued rows one drain pass handles. The job runs every minute (docs/05 §8). */
 export const DISPATCH_BATCH = 200;
@@ -139,6 +140,9 @@ export const DISPATCH_BATCH = 200;
 export const DEFAULT_ALERT_RULES: readonly AlertRuleInputShape[] = [
   { kind: 'PACE_OVERRUN', threshold: {}, channels: ['IN_APP'], isActive: true },
   { kind: 'UNUSUAL_SPEND', threshold: {}, channels: ['IN_APP'], isActive: true },
+  // A due bill is the one alert a user is *glad* to receive, so it is on by default (F-22's bills arm,
+  // task 3.4.3). `INFO` severity means it never consumes a `CRITICAL` exemption or a positive-toggle.
+  { kind: 'RECURRING_DUE', threshold: {}, channels: ['IN_APP'], isActive: true },
 ];
 
 @Injectable()
@@ -216,9 +220,10 @@ export class NotificationsService {
   /**
    * Run the whole F-22 chain for one period: generate insights, then evaluate them against the rules.
    *
-   * Both halves in one method on purpose. docs/05 §8 has two jobs (`insights.generate` daily at 06:00
-   * and `notifications.dispatch` every minute), and neither is scheduled yet; until they are, this is
-   * the single entry point a resolver — or the future worker — calls, and the order is the pipeline's.
+   * Both halves in one method on purpose, and it is the method the **daily job** calls as well as the
+   * `runAlerts` mutation — a scheduled pass and a user-triggered one must not be two implementations of
+   * the pipeline. The order is docs/05 §9's: generate, then evaluate. `notifications.dispatch` is the
+   * separate per-minute drain that delivers what this wrote.
    */
   async run(householdId: string, userId: string, asOf?: string): Promise<AlertRunResult> {
     const generated = await this.insights.generate(householdId, asOf);

@@ -95,6 +95,8 @@ describe('alertKindForInsight', () => {
     expect(alertKindForInsight('BUDGET_PACE')).toBe('PACE_OVERRUN');
     expect(alertKindForInsight('CATEGORY_SPIKE')).toBe('UNUSUAL_SPEND');
     expect(alertKindForInsight('UNUSUAL_SPEND')).toBe('UNUSUAL_SPEND');
+    // A bill due soon is its own intention, so it gets its own switch rather than riding on UNUSUAL_SPEND.
+    expect(alertKindForInsight('RECURRING_DUE')).toBe('RECURRING_DUE');
   });
 
   it('returns null for a kind no rule governs, rather than guessing one', () => {

@@ -33,7 +33,7 @@ import type { LocalDate } from './dates';
  * @module @finmate/domain
  */
 
-/** docs/03 §4's `alert_rules.kind` vocabulary. `RECURRING_DUE`/`GOAL_REACHED` have no producer yet. */
+/** docs/03 §4's `alert_rules.kind` vocabulary. `GOAL_REACHED` has no producer yet. */
 export type AlertKind =
   | 'BUDGET_THRESHOLD'
   | 'PACE_OVERRUN'
@@ -226,8 +226,8 @@ function uniqueChannels(channels: readonly NotificationChannel[]): readonly Noti
  * question ("is this normal?") at two grains, and giving them separate rules to configure would be two
  * switches for one intention.
  *
- * `RECURRING_DUE` and `GOAL_REACHED` are in the vocabulary with no producer yet — the recurring rules
- * (3.3.3) and savings goals (3.3.2) do not exist, and docs/06 §5.5's precedent is to declare the arm
+ * `GOAL_REACHED` is in the vocabulary with no producer yet — savings goals (3.3.2) exist but nothing
+ * turns one reaching its target into an insight, and docs/06 §5.5's precedent is to declare the arm
  * only when something can produce it.
  */
 export function alertKindForInsight(insightKind: string): AlertKind | null {
@@ -237,6 +237,8 @@ export function alertKindForInsight(insightKind: string): AlertKind | null {
     case 'CATEGORY_SPIKE':
     case 'UNUSUAL_SPEND':
       return 'UNUSUAL_SPEND';
+    case 'RECURRING_DUE':
+      return 'RECURRING_DUE';
     default:
       return null;
   }

@@ -262,6 +262,15 @@ Code-first GraphQL with custom scalars: most of these are registration problems 
   than a failure: the suite reports **18 skipped** tests, because a spec whose module cannot compile
   skips. When you add a provider, grep for every other module whose providers construct that service.
 
+- **An insight generator whose condition is not month-scoped breaks the writer's dedupe lookup, and the
+  symptom is duplicate rows rather than an error.** `InsightsService.generate` loaded the existing
+  conditions with `period_start = <this run's month>`, which was safe only while every generator filed
+  its draft under that month. `RECURRING_DUE` (3.4.3) files under the **occurrence's** month, so a bill
+  dated the 1st was announced on the last day of the month before and then re-inserted on every run —
+  the notification's `dedupe_key` hid it, so the user saw one alert while the `insights` table grew. The
+  writer now looks the key up over the periods its own drafts use. When you add a generator, ask which
+  period its row is filed under before assuming the run's.
+
 ---
 
 ## 5. Domain: money, dates and Serbian input
@@ -716,6 +725,14 @@ Short, and load-bearing.
   **Vitest runs under SWC and does not typecheck**, so the mistake reaches Postgres and fails as
   `Unknown field 'needs_review' for select statement on model 'classification_decisions'`. Assert the
   confidence on the decision row and the flag on the transaction.
+
+- **A scheduled job that calls "generate" without "evaluate" writes rows that never become anything.**
+  `insights.generate` called `InsightsService.generate`, while the pipeline's second half — turning an
+  insight into a notification — lived only in `NotificationsService.run`, which only the `runAlerts`
+  mutation called. The scheduler was green, the `insights` table filled, and no user was ever told
+  anything. A scheduled job must call the **pipeline's** entry point (`run`), not its first stage;
+  docs/05 §8 now says so for this job, and `apps/worker/src/jobs.integration.spec.ts` asserts a condition
+  reaches the notification table.
 
 ---
 

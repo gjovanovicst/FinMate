@@ -37,8 +37,13 @@ import { balance, type CurrencyCode } from './money';
  * @module @finmate/domain
  */
 
-/** The four generators task 3.1.1 ships. `insights.kind` is an open `TEXT` column (docs/03 §4). */
-export type InsightKind = 'BUDGET_PACE' | 'CATEGORY_SPIKE' | 'UNUSUAL_SPEND' | 'POSITIVE_TREND';
+/** The generators this build ships. `insights.kind` is an open `TEXT` column (docs/03 §4). */
+export type InsightKind =
+  | 'BUDGET_PACE'
+  | 'CATEGORY_SPIKE'
+  | 'UNUSUAL_SPEND'
+  | 'POSITIVE_TREND'
+  | 'RECURRING_DUE';
 
 /** Mirrors the `insights.severity` CHECK constraint (docs/03 §4). */
 export type InsightSeverity = 'INFO' | 'POSITIVE' | 'WARNING' | 'CRITICAL';
@@ -79,6 +84,14 @@ export const INSIGHT_THRESHOLDS = {
   positiveReductionRatio: 0.2,
   /** …and the baseline must be worth reacting to at all. */
   positiveMinBaselineMinor: 1000n,
+  /**
+   * How many days ahead a recurring charge is announced. One day is docs/02 §4.17's *"Netflix sutra"*,
+   * and it is the honest reading of JTBD-7's "warned in advance": the charge is expected, so the job is
+   * to put it on the user's radar the day before, not to re-announce it for a week. A longer horizon is
+   * a one-line change with no dedupe consequence, because the condition's identity is the occurrence —
+   * raising it makes each bill speak earlier, never twice.
+   */
+  recurringDueHorizonDays: 1,
 } as const;
 
 /** A payload value: JSON-safe, with money as a string (ADR-003). */
@@ -158,6 +171,24 @@ export interface UnusualSpendFact {
   readonly periodEnd: LocalDate;
   /** Amounts of the category's transactions in the trailing window, excluding this one. */
   readonly historyMinor: readonly bigint[];
+}
+
+/** A recurring charge that has **not** been posted yet and falls near the Household's today. */
+export interface RecurringDueFact {
+  readonly ruleId: string;
+  /** The rule's own words (`Netflix`). Free text, so it is in-app copy only (docs/08 T-09). */
+  readonly description: string;
+  readonly categoryId: string | null;
+  readonly categoryPath: readonly string[] | null;
+  readonly currency: string;
+  readonly amountMinor: bigint;
+  /** The day the charge is scheduled for. The condition's identity is `(ruleId, occurredOn)`. */
+  readonly occurredOn: LocalDate;
+  /** `0` = today, `1` = tomorrow. Negative (overdue) facts are refused by the generator. */
+  readonly daysUntil: number;
+  /** The month the occurrence falls in; the insight row is filed there, like every other generator. */
+  readonly periodStart: LocalDate;
+  readonly periodEnd: LocalDate;
 }
 
 /**
@@ -379,11 +410,54 @@ export function positiveTrendInsights(facts: readonly CategoryTrendFact[]): read
   });
 }
 
+/**
+ * A recurring charge that is still to be posted, announced before it lands.
+ *
+ * This is F-22's *bills* arm and JTBD-7 — *"be warned in advance"* — and it is deliberately **not**
+ * alarming: the charge is expected, so the severity is `INFO` and the copy says *when*, not *how bad*.
+ * The horizon is one day (`INSIGHT_THRESHOLDS.recurringDueHorizonDays`), and the caller only hands over
+ * charges that are **not already posted** — an occurrence with a Transaction behind it is spend, and
+ * announcing it would be the false alarm that teaches a user to ignore the feed.
+ *
+ * Unlike the four month-scoped generators, this one's identity is the **occurrence**: a weekly rule
+ * produces several conditions in one month and each deserves its own warning, which is why the dedupe
+ * key's middle segment is the occurrence day rather than the period start.
+ */
+export function recurringDueInsights(facts: readonly RecurringDueFact[]): readonly InsightDraft[] {
+  return facts.flatMap((fact) => {
+    if (fact.amountMinor <= 0n) return [];
+    // Overdue is not "due": the caller's window starts at the Household's today, and a negative
+    // distance means the caller handed over something already past — say nothing rather than guess.
+    if (fact.daysUntil < 0 || fact.daysUntil > INSIGHT_THRESHOLDS.recurringDueHorizonDays) return [];
+
+    return [
+      {
+        kind: 'RECURRING_DUE' as const,
+        severity: 'INFO' as const,
+        periodStart: fact.periodStart,
+        periodEnd: fact.periodEnd,
+        payload: {
+          ruleId: fact.ruleId,
+          description: fact.description,
+          categoryId: fact.categoryId,
+          categoryPath: fact.categoryPath === null ? null : fact.categoryPath.join(' / '),
+          currency: fact.currency,
+          amountMinor: fact.amountMinor.toString(),
+          occurredOn: fact.occurredOn,
+          daysUntil: fact.daysUntil,
+        },
+        dedupeKey: `RECURRING_DUE:${fact.occurredOn}:${fact.ruleId}`,
+      },
+    ];
+  });
+}
+
 /** Facts for one generation run. Every field is already loaded and summed by the caller. */
 export interface InsightFacts {
   readonly budgets: readonly BudgetPaceFact[];
   readonly categories: readonly CategoryTrendFact[];
   readonly unusual: readonly UnusualSpendFact[];
+  readonly recurring: readonly RecurringDueFact[];
 }
 
 /**
@@ -398,5 +472,6 @@ export function generateInsights(facts: InsightFacts): readonly InsightDraft[] {
     ...categorySpikeInsights(facts.categories),
     ...unusualSpendInsights(facts.unusual),
     ...positiveTrendInsights(facts.categories),
+    ...recurringDueInsights(facts.recurring),
   ].sort((left, right) => left.dedupeKey.localeCompare(right.dedupeKey));
 }

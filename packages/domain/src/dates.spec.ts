@@ -4,6 +4,7 @@ import {
   addDays,
   addMonths,
   DateError,
+  daysBetween,
   instantForLocalNoon,
   localDate,
   toLocalDate,
@@ -191,6 +192,22 @@ describe('addDays', () => {
 
   it('refuses a malformed date rather than returning NaN', () => {
     expect(() => addDays('14/09/2026', 1)).toThrow(DateError);
+  });
+});
+
+describe('daysBetween', () => {
+  it('counts whole days, signed, across month ends and a DST day', () => {
+    expect(daysBetween('2026-09-14', '2026-09-15')).toBe(1);
+    expect(daysBetween('2026-09-15', '2026-09-15')).toBe(0);
+    expect(daysBetween('2026-09-21', '2026-09-14')).toBe(-7);
+    expect(daysBetween('2026-09-30', '2026-10-01')).toBe(1);
+    expect(daysBetween('2026-12-31', '2027-01-01')).toBe(1);
+    // Europe/Belgrade loses an hour on 2026-10-25; a local-time subtraction would report 0.958 days.
+    expect(daysBetween('2026-10-24', '2026-10-26')).toBe(2);
+  });
+
+  it('refuses a malformed date rather than returning NaN', () => {
+    expect(() => daysBetween('2026-09-14', '14/09/2026')).toThrow(DateError);
   });
 });
 

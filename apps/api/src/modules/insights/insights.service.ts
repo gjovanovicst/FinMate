@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import {
   addDays,
   addMonths,
+  daysBetween,
   elapsedDays,
   generateInsights,
   monthPeriod,
@@ -10,10 +11,12 @@ import {
   todayIn,
   totalDays,
   uuidv7,
+  INSIGHT_THRESHOLDS,
   type BudgetPeriod,
   type BudgetPaceFact,
   type CategoryTrendFact,
   type LocalDate,
+  type RecurringDueFact,
   type UnusualSpendFact,
 } from '@finmate/domain';
 
@@ -21,7 +24,7 @@ import type { CursorPage } from '../../graphql/pagination';
 import { normalisePageSize } from '../../graphql/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BudgetsService } from '../budgeting/budgets.service';
-import { RecurringService } from '../recurring/recurring.service';
+import { RecurringService, type DueOccurrence } from '../recurring/recurring.service';
 import { SpendReadModel, type CategorySpendRow } from '../ledger/spend-read-model';
 
 /**
@@ -110,11 +113,11 @@ export class InsightsService {
   /**
    * Generate and persist the insights for one Household's current period.
    *
-   * Idempotent per `(dedupeKey, period)`: a condition already recorded for the period is not written
-   * again, so the daily job can run as often as it likes. It is **writer-enforced** — `insights` has no
-   * unique constraint on the key, which lives inside `payload` (docs/06 §5.13) — so a concurrent
-   * double-run could duplicate; the job is single-run, and 3.1.2's notification `dedupe_key` work is
-   * where a real constraint belongs.
+   * Idempotent per `dedupeKey`: a condition already recorded for its own period is not written again,
+   * so the daily job can run as often as it likes. It is **writer-enforced** — `insights` has no unique
+   * constraint on the key, which lives inside `payload` (docs/06 §5.13) — so a concurrent double-run
+   * could duplicate; the job is single-run, and 3.1.2's notification `dedupe_key` work is where a real
+   * constraint belongs.
    */
   async generate(householdId: string, asOf?: string): Promise<GenerateResult> {
     const zone = await this.timeZoneFor(householdId);
@@ -126,36 +129,60 @@ export class InsightsService {
     // (docs/06 §5.13).
     const baselines = [3, 2, 1].map((months) => monthPeriod(addMonths(period.start, -months)));
 
-    const [budgets, categoryNames, rows, existing, currentSpend, ...baselineSpend] = await Promise.all([
+    const [budgets, categoryNames, rows, currentSpend, ...baselineSpend] = await Promise.all([
       this.budgets.list(householdId, today),
       this.categoryNames(householdId),
       this.transactionRows(householdId, addMonths(period.start, -3), period.end),
-      this.prisma.client.insights.findMany({
-        where: { household_id: householdId, period_start: this.date(period.start) },
-        select: { payload: true },
-      }),
       this.spend.byCategory(householdId, { from: period.start, to: period.end }, { kind: 'EXPENSE' }),
       ...baselines.map((month) =>
         this.spend.byCategory(householdId, { from: month.start, to: month.end }, { kind: 'EXPENSE' }),
       ),
     ]);
 
-    const currency = await this.ledgerCurrency(householdId);
-    // What each budget still has coming in this period, from the Household's own recurring rules. A
-    // Category budget counts its **subtree** (its rules and its children's); the whole-Household budget
-    // counts every expense rule. Before this, every projection was pace-only (docs/06 §5.13).
-    const committedByBudget = await this.committedByBudget(householdId, budgets, period, today);
+    // What is still to be charged, and what each budget still has coming, from the Household's own
+    // recurring rules. A Category budget counts its **subtree** (its rules and its children's); the
+    // whole-Household budget counts every expense rule (task 3.4.2). The same read feeds the due-alert
+    // facts (task 3.4.3), so a bill cannot be "committed" to one projection and absent from its alert.
+    const [currency, committedByBudget, dueOccurrences] = await Promise.all([
+      this.ledgerCurrency(householdId),
+      this.committedByBudget(householdId, budgets, period, today),
+      this.recurring.dueSoon(householdId, {
+        asOf: today,
+        withinDays: INSIGHT_THRESHOLDS.recurringDueHorizonDays,
+      }),
+    ]);
 
     const drafts = generateInsights(
-      this.buildFacts(budgets, currency, today, period, categoryNames, rows, committedByBudget, {
-        current: currentSpend,
-        baselines: baselineSpend,
-        baselineStarts: baselines.map((month) => month.start),
-      }),
+      this.buildFacts(
+        budgets,
+        currency,
+        today,
+        period,
+        categoryNames,
+        rows,
+        committedByBudget,
+        dueOccurrences,
+        {
+          current: currentSpend,
+          baselines: baselineSpend,
+          baselineStarts: baselines.map((month) => month.start),
+        },
+      ),
     );
 
+    // Every period a draft is filed under, not just this run's month. A charge dated the 1st of next
+    // month is announced while the run's own period is still this one, and looking the key up under the
+    // run's month alone would write that condition again on every retry (docs/15).
     const recorded = new Set(
-      existing
+      (
+        await this.prisma.client.insights.findMany({
+          where: {
+            household_id: householdId,
+            period_start: { in: [...new Set(drafts.map((draft) => this.date(draft.periodStart)))] },
+          },
+          select: { payload: true },
+        })
+      )
         .map((row) => (row.payload as { dedupeKey?: unknown } | null)?.dedupeKey)
         .filter((key): key is string => typeof key === 'string'),
     );
@@ -262,6 +289,7 @@ export class InsightsService {
     paths: ReadonlyMap<string, string>,
     rows: readonly TransactionRow[],
     committedByBudget: ReadonlyMap<string, bigint>,
+    due: readonly DueOccurrence[],
     trend: {
       readonly current: readonly CategorySpendRow[];
       readonly baselines: readonly (readonly CategorySpendRow[])[];
@@ -271,6 +299,7 @@ export class InsightsService {
     budgets: readonly BudgetPaceFact[];
     categories: readonly CategoryTrendFact[];
     unusual: readonly UnusualSpendFact[];
+    recurring: readonly RecurringDueFact[];
   } {
     // ---- budgets: only the ones whose period *is* the current month, and only expense-side ones.
     //
@@ -369,7 +398,27 @@ export class InsightsService {
       });
     }
 
-    return { budgets: budgetFacts, categories: trendFacts, unusual: unusualFacts };
+    // ---- recurring due: charges the Household's own rules will still post near today. Filed under the
+    // **occurrence's** month rather than the run's, because a charge on the 1st of next month is
+    // announced on the last day of this one; the identity is the occurrence day (see `insights.ts`).
+    const dueFacts: RecurringDueFact[] = due.map((occurrence) => {
+      const bounds = monthPeriod(occurrence.occurredOn);
+      const path = occurrence.categoryId === null ? null : (paths.get(occurrence.categoryId) ?? null);
+      return {
+        ruleId: occurrence.ruleId,
+        description: occurrence.description,
+        categoryId: occurrence.categoryId,
+        categoryPath: path === null ? null : path.split(' / '),
+        currency,
+        amountMinor: occurrence.amountMinor,
+        occurredOn: occurrence.occurredOn,
+        daysUntil: daysBetween(today, occurrence.occurredOn),
+        periodStart: bounds.start,
+        periodEnd: bounds.end,
+      };
+    });
+
+    return { budgets: budgetFacts, categories: trendFacts, unusual: unusualFacts, recurring: dueFacts };
   }
 
   /**

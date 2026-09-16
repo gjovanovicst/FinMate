@@ -452,6 +452,108 @@ describe('recurring rules (integration)', () => {
   });
 
   // ---------------------------------------------------------------------------------------------
+  // What is still to be charged — the projection (3.4.2) and the due alert (3.4.3) share it
+  // ---------------------------------------------------------------------------------------------
+
+  it('lists a charge still to be posted, and drops it the moment a Transaction exists (F-22)', async () => {
+    const rule = await create({ rrule: 'FREQ=MONTHLY;BYMONTHDAY=27', startsOn: '2026-01-27' });
+    const asOf = '2026-01-26' as LocalDate;
+
+    const due = await asTenant(() => recurring.dueSoon(householdId, { asOf, withinDays: 1 }));
+    const mine = due.filter((occurrence) => occurrence.ruleId === rule.id);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]?.occurredOn).toBe('2026-01-27');
+    expect(mine[0]?.amountMinor).toBe(129_900n);
+    expect(mine[0]?.description).toBe('Netflix');
+
+    // The projection and the alert read the **same** list, so they cannot disagree: `committed` sums it.
+    const committed = await asTenant(() =>
+      recurring.committed(householdId, { from: asOf, to: '2026-01-31', asOf }),
+    );
+    expect(committed.occurrences).toBeGreaterThanOrEqual(1);
+    expect(committed.minor).toBeGreaterThanOrEqual(129_900n);
+
+    // A charge two days out is not yet "due soon" at a one-day horizon.
+    const tooEarly = await asTenant(() =>
+      recurring.dueSoon(householdId, { asOf: '2026-01-25' as LocalDate, withinDays: 1 }),
+    );
+    expect(tooEarly.some((occurrence) => occurrence.ruleId === rule.id)).toBe(false);
+
+    // Post the occurrence without advancing the rule: it is spend now, and an alert about a charge that
+    // has already landed is the false alarm that trains a user to ignore the feed.
+    await asTenant(() =>
+      prisma.client.transactions.create({
+        data: {
+          id: uuidv7(),
+          household_id: householdId,
+          account_id: accountId,
+          kind: 'EXPENSE',
+          amount_minor: 129_900n,
+          currency: 'RSD',
+          category_id: expenseCategoryId,
+          description: 'Netflix',
+          source: 'RECURRING',
+          status: 'CONFIRMED',
+          recurring_rule_id: rule.id,
+          occurred_at: new Date('2026-01-27T10:00:00.000Z'),
+          occurred_local_date: new Date('2026-01-27T00:00:00.000Z'),
+        },
+      }),
+    );
+
+    const afterPosting = await asTenant(() => recurring.dueSoon(householdId, { asOf, withinDays: 1 }));
+    expect(afterPosting.some((occurrence) => occurrence.ruleId === rule.id)).toBe(false);
+  });
+
+  it('never announces an income rule, an inactive one, or another Household’s charge', async () => {
+    const asOf = '2026-02-04' as LocalDate;
+    const income = await create({
+      kind: 'INCOME',
+      categoryId: incomeCategoryId,
+      description: 'Plata',
+      rrule: 'FREQ=MONTHLY;BYMONTHDAY=5',
+      startsOn: '2026-02-05',
+    });
+    const inactive = await create({
+      description: 'Ugašeno',
+      rrule: 'FREQ=MONTHLY;BYMONTHDAY=5',
+      startsOn: '2026-02-05',
+    });
+    await asTenant(() => recurring.update(householdId, { ruleId: inactive.id, isActive: false }));
+
+    const foreign = await runWithTenant(otherContext, () =>
+      prisma.client.recurring_rules.create({
+        data: {
+          id: uuidv7(),
+          household_id: otherHouseholdId,
+          account_id: otherAccountId,
+          kind: 'EXPENSE',
+          amount_minor: 999_00n,
+          currency: 'RSD',
+          description: 'Tuđi račun',
+          rrule: 'RRULE:FREQ=MONTHLY;BYMONTHDAY=5',
+          next_occurrence_on: new Date('2026-02-05T00:00:00.000Z'),
+          auto_confirm: false,
+          is_detected: false,
+          is_active: true,
+        },
+      }),
+    );
+
+    const due = await asTenant(() => recurring.dueSoon(householdId, { asOf, withinDays: 1 }));
+    const ids = due.map((occurrence) => occurrence.ruleId);
+    expect(ids).not.toContain(income.id);
+    expect(ids).not.toContain(inactive.id);
+    expect(ids).not.toContain(foreign.id);
+
+    // The other Household's fixture is shared with the isolation test below, which asserts it has no
+    // rules of its own — so this one is removed rather than left behind.
+    await runWithTenant(otherContext, () =>
+      prisma.client.recurring_rules.deleteMany({ where: { id: foreign.id } }),
+    );
+  });
+
+  // ---------------------------------------------------------------------------------------------
   // Detection (3.3.4)
   // ---------------------------------------------------------------------------------------------
 

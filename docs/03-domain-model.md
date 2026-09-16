@@ -815,6 +815,7 @@ test in [10](10-testing-and-quality.md).
 | Budget remaining | Budget − consumption | On read, Redis-cached 60 s |
 | Safe-to-spend today | Budget − spent − remaining recurring obligations, spread over remaining days | On read |
 | Month-end projection | Pace over elapsed days, adjusted for known recurring | On read |
+| Recurring charges still to be charged | Active expense `RecurringRule`s × unposted occurrences in the window | On read — **one** read feeds both a budget's `committed` figure and the `RECURRING_DUE` alert (3.4.2/3.4.3), so a projection and an alert cannot disagree about a bill |
 | RecurringRule `generatedCount` | `COUNT(transactions WHERE recurring_rule_id)` | On read |
 | RecurringRule `next_occurrence_on` | Advanced by the materialiser to the next unposted occurrence, or pinned to the **last posted** one when the rule finishes | Stored, but derived from the rule plus what it has posted |
 | Savings required per month | (target − contributed) / months remaining, rounded **up** | On read |

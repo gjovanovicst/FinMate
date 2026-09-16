@@ -89,6 +89,22 @@ export interface OccurrenceView {
   readonly nextOccurrenceOn: LocalDate | null;
 }
 
+/**
+ * One occurrence that has **no Transaction behind it yet** — the unit both the projection and the
+ * "due soon" alert are built from.
+ *
+ * It carries the rule's own words so a notification can name the bill without a second read, and the
+ * Category only so a caller can scope or group; the amount is minor units like every other money value
+ * (ADR-003).
+ */
+export interface DueOccurrence {
+  readonly ruleId: string;
+  readonly description: string;
+  readonly categoryId: string | null;
+  readonly amountMinor: bigint;
+  readonly occurredOn: LocalDate;
+}
+
 export interface PreviewView {
   readonly ruleId: string;
   readonly occurredOn: LocalDate;
@@ -218,7 +234,8 @@ export class RecurringService {
    * What is **still to be charged** inside a window — the `committed` figure docs/03 §6 puts in a
    * projection (F-21) and the number a due-bill alert is about.
    *
-   * Three rules make it honest:
+   * Three rules make it honest, and they live in `pendingOccurrences` so that the projection and the
+   * alert cannot disagree about them:
    *
    * 1. **Only what is still ahead.** The window is intersected with `asOf`, because a charge whose day
    *    has passed is either already posted or overdue — either way it is not "committed".
@@ -240,10 +257,59 @@ export class RecurringService {
     },
   ): Promise<{ readonly minor: bigint; readonly occurrences: number }> {
     const asOf = window.asOf ?? (await this.today(householdId));
-    if (compareLocalDates(asOf, window.to) > 0) return { minor: 0n, occurrences: 0 };
+    const occurrences = await this.pendingOccurrences(householdId, {
+      from: window.from,
+      to: window.to,
+      asOf,
+      categoryIds: window.categoryIds,
+    });
+    return {
+      minor: occurrences.reduce((sum, occurrence) => sum + occurrence.amountMinor, 0n),
+      occurrences: occurrences.length,
+    };
+  }
 
-    const from = compareLocalDates(asOf, window.from) > 0 ? asOf : window.from;
-    const scoped = window.categoryIds !== undefined && window.categoryIds !== null && window.categoryIds.length > 0;
+  /**
+   * The charges a **due-soon alert** is about (F-22's bills arm): unposted EXPENSE occurrences from the
+   * Household's today through `asOf + withinDays`, each with the rule's own words.
+   *
+   * A thin read over `pendingOccurrences`, deliberately: the moment an alert and the projection it sits
+   * beside could disagree about what is still due, one of them is lying to the user about a bill. The
+   * caller decides the horizon and the copy; this method only answers *what is due and for how much*.
+   */
+  async dueSoon(
+    householdId: string,
+    options: { readonly asOf?: LocalDate; readonly withinDays: number },
+  ): Promise<readonly DueOccurrence[]> {
+    const asOf = options.asOf ?? (await this.today(householdId));
+    return this.pendingOccurrences(householdId, {
+      from: asOf,
+      to: addDays(asOf, options.withinDays),
+      asOf,
+    });
+  }
+
+  /**
+   * Every occurrence inside a window with no Transaction behind it, oldest first.
+   *
+   * The single implementation of "still to be charged": `committed` sums it, `dueSoon` lists it, and
+   * both therefore inherit the same three rules (see `committed`). The order is deterministic — day,
+   * then rule id — so two runs over the same rules produce the same facts.
+   */
+  private async pendingOccurrences(
+    householdId: string,
+    window: {
+      readonly from: LocalDate;
+      readonly to: LocalDate;
+      readonly asOf: LocalDate;
+      readonly categoryIds?: readonly string[] | null;
+    },
+  ): Promise<readonly DueOccurrence[]> {
+    if (compareLocalDates(window.asOf, window.to) > 0) return [];
+
+    const from = compareLocalDates(window.asOf, window.from) > 0 ? window.asOf : window.from;
+    const scoped =
+      window.categoryIds !== undefined && window.categoryIds !== null && window.categoryIds.length > 0;
 
     const rules = await this.prisma.client.recurring_rules.findMany({
       where: {
@@ -253,9 +319,17 @@ export class RecurringService {
         kind: 'EXPENSE',
         ...(scoped ? { category_id: { in: [...(window.categoryIds ?? [])] } } : {}),
       },
-      select: { id: true, amount_minor: true, rrule: true, next_occurrence_on: true, ends_on: true },
+      select: {
+        id: true,
+        amount_minor: true,
+        description: true,
+        category_id: true,
+        rrule: true,
+        next_occurrence_on: true,
+        ends_on: true,
+      },
     });
-    if (rules.length === 0) return { minor: 0n, occurrences: 0 };
+    if (rules.length === 0) return [];
 
     const [counts, posted] = await Promise.all([
       this.generatedCounts(householdId, rules.map((rule) => rule.id)),
@@ -273,8 +347,7 @@ export class RecurringService {
       posted.map((row) => `${row.recurring_rule_id}:${this.iso(row.occurred_local_date)}`),
     );
 
-    let minor = 0n;
-    let occurrences = 0;
+    const pending: DueOccurrence[] = [];
     for (const rule of rules) {
       const spec = parseRRule(rule.rrule);
       if (!spec.ok) continue;
@@ -286,12 +359,23 @@ export class RecurringService {
       });
       for (const date of dates) {
         if (postedKeys.has(`${rule.id}:${date}`)) continue;
-        minor += rule.amount_minor;
-        occurrences += 1;
+        pending.push({
+          ruleId: rule.id,
+          description: rule.description,
+          categoryId: rule.category_id,
+          amountMinor: rule.amount_minor,
+          occurredOn: date,
+        });
       }
     }
 
-    return { minor, occurrences };
+    return pending.sort((left, right) =>
+      left.occurredOn === right.occurredOn
+        ? left.ruleId.localeCompare(right.ruleId)
+        : left.occurredOn < right.occurredOn
+          ? -1
+          : 1,
+    );
   }
 
   async create(householdId: string, input: CreateRuleInput): Promise<RecurringRuleView> {

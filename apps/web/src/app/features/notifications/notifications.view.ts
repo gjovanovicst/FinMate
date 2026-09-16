@@ -71,11 +71,10 @@ export const CHANNELS: readonly NotificationChannel[] = ['IN_APP', 'EMAIL', 'WEB
 /**
  * The alert kinds the settings list offers.
  *
- * `BUDGET_THRESHOLD`, `RECURRING_DUE` and `GOAL_REACHED` are in the vocabulary (docs/03 §4) but no
- * insight produces them yet, so the screen shows the two that do — a toggle that cannot fire is a
- * control that lies.
+ * `BUDGET_THRESHOLD` and `GOAL_REACHED` are in the vocabulary (docs/03 §4) but no insight produces
+ * them, so the screen shows the three that do — a toggle that cannot fire is a control that lies.
  */
-export const CONFIGURABLE_KINDS = ['PACE_OVERRUN', 'UNUSUAL_SPEND'] as const;
+export const CONFIGURABLE_KINDS = ['PACE_OVERRUN', 'UNUSUAL_SPEND', 'RECURRING_DUE'] as const;
 
 /** `true` when the row still wants attention. */
 export function isUnread(row: NotificationRow): boolean {
@@ -110,6 +109,9 @@ export function notificationBadgeName(count: number, one: string, many: string):
 export function deepLinkFor(kind: string | null): string | null {
   if (kind === 'BUDGET_PACE') return '/budgets';
   if (kind === 'CATEGORY_SPIKE' || kind === 'UNUSUAL_SPEND') return '/transactions';
+  // A due charge is about a rule, and the screen that owns the rules is where a user turns it off or
+  // fixes the amount.
+  if (kind === 'RECURRING_DUE') return '/recurring';
   // The insight exists but this build has no screen for its kind: better to render the row without a
   // link than a link to nowhere.
   return kind === null ? null : '/transactions';

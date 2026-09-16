@@ -225,6 +225,19 @@ export function addDays(date: LocalDate, days: number): LocalDate {
 }
 
 /**
+ * How many whole days lie between two calendar days, signed (`to - from`).
+ *
+ * `Date.UTC` on both ends, for the same reason {@link addDays} uses it: the process timezone must not
+ * decide how long a billing window is. The division is exact because both ends are UTC midnights and a
+ * UTC day has no DST hour to lose.
+ */
+export function daysBetween(from: LocalDate, to: LocalDate): number {
+  const start = Date.parse(`${localDate(from)}T00:00:00.000Z`);
+  const end = Date.parse(`${localDate(to)}T00:00:00.000Z`);
+  return Math.round((end - start) / 86_400_000);
+}
+
+/**
  * Shift a calendar day by `months`, clamping the day to the target month's length.
  *
  * `2026-03-31` minus one month is `2026-02-28`, not `2026-03-03`: the sliding that `Date.UTC` does when

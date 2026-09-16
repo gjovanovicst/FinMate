@@ -243,6 +243,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'notifications.channel.PUSH': 'Push',
   'notifications.kind.PACE_OVERRUN': 'Budžet ide preko limita',
   'notifications.kind.UNUSUAL_SPEND': 'Potrošnja je neuobičajena',
+  'notifications.kind.RECURRING_DUE': 'Naplata dospeva',
   'notifications.kind.unknown': 'Ostalo',
   'notifications.settings.title': 'Šta ti se javlja',
   'notifications.settings.kinds': 'Upozorenja',

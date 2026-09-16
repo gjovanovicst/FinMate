@@ -29,6 +29,7 @@ export {
   addMonths,
   compareLocalDates,
   dayOfMonth,
+  daysBetween,
   daysInMonth,
   daysRemainingInMonth,
   DEFAULT_TIME_ZONE,
@@ -157,6 +158,7 @@ export {
   medianMinor,
   periodsWithSpend,
   positiveTrendInsights,
+  recurringDueInsights,
   unusualSpendInsights,
   INSIGHT_THRESHOLDS,
   type BudgetPaceFact,
@@ -167,6 +169,7 @@ export {
   type InsightPayload,
   type InsightSeverity,
   type PeriodSpend,
+  type RecurringDueFact,
   type UnusualSpendFact,
 } from './insights';
 

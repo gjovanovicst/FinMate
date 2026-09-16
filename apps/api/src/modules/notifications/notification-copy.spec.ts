@@ -24,6 +24,14 @@ const spikePayload = {
   multiple: 3,
 };
 
+const duePayload = {
+  currency: 'RSD',
+  description: 'Netflix',
+  categoryPath: null,
+  amountMinor: '129900',
+  daysUntil: 1,
+};
+
 describe('composeNotification', () => {
   it('gives the in-app row the figures, formatted in the ledger currency', () => {
     const copy = composeNotification('BUDGET_PACE', pacePayload, 'IN_APP', 'Ostava');
@@ -47,13 +55,69 @@ describe('composeNotification', () => {
   });
 
   it('holds for every kind the generators produce, not just the one with a test', () => {
-    const payloads = [pacePayload, spikePayload, { currency: 'RSD' }];
-    for (const kind of ['BUDGET_PACE', 'CATEGORY_SPIKE', 'UNUSUAL_SPEND', 'POSITIVE_TREND', 'SOMETHING_NEW']) {
+    const payloads = [pacePayload, spikePayload, duePayload, { currency: 'RSD' }];
+    for (const kind of [
+      'BUDGET_PACE',
+      'CATEGORY_SPIKE',
+      'UNUSUAL_SPEND',
+      'POSITIVE_TREND',
+      'RECURRING_DUE',
+      'SOMETHING_NEW',
+    ]) {
       for (const payload of payloads) {
         const copy = composeNotification(kind, payload, 'WEB_PUSH', 'Ostava');
         expect(isLockScreenSafe(copy.body), `${kind} on WEB_PUSH: ${copy.body}`).toBe(true);
+        expect(isLockScreenSafe(copy.title), `${kind} on WEB_PUSH: ${copy.title}`).toBe(true);
       }
     }
+  });
+
+  it('names a due bill in-app and never repeats the payee on a lock screen (T-09)', () => {
+    const inApp = composeNotification('RECURRING_DUE', duePayload, 'IN_APP', 'Ostava');
+    expect(inApp.full).toBe(true);
+    expect(inApp.title).toBe('Bill due tomorrow: Netflix');
+    expect(inApp.body).toBe('1299.00 is charged tomorrow.');
+
+    // The rule's description is free text and is usually the payee, so it is the one subject T-09
+    // forbids outside the app — even though the amount is what actually makes the row useful.
+    for (const channel of ['EMAIL', 'PUSH', 'WEB_PUSH'] as const) {
+      const copy = composeNotification('RECURRING_DUE', duePayload, channel, 'Ostava');
+      expect(copy.title).toBe('A scheduled payment is due');
+      expect(copy.body).toBe('Open Ostava to see the details.');
+      expect(isLockScreenSafe(copy.title)).toBe(true);
+      expect(isLockScreenSafe(copy.body)).toBe(true);
+      expect(copy.body).not.toContain('Netflix');
+    }
+  });
+
+  it('says "today" for a charge due today, and stays honest past the day words', () => {
+    const today = composeNotification('RECURRING_DUE', { ...duePayload, daysUntil: 0 }, 'IN_APP', 'Ostava');
+    expect(today.title).toBe('Bill due today: Netflix');
+    expect(today.body).toBe('1299.00 is charged today.');
+
+    // The generator's horizon is one day, so this is only reachable if the horizon widens; the point is
+    // that neither branch invents a date or a figure, and neither leaks a digit to a lock screen.
+    const later = composeNotification('RECURRING_DUE', { ...duePayload, daysUntil: 5 }, 'IN_APP', 'Ostava');
+    expect(later.title).toBe('Bill due: Netflix');
+    expect(later.body).toBe('1299.00 is scheduled.');
+  });
+
+  it('falls back to the Category for an in-app due bill, and to a generic title without one', () => {
+    const withCategory = composeNotification(
+      'RECURRING_DUE',
+      { ...duePayload, description: null, categoryPath: 'Zabava / Pretplate' },
+      'IN_APP',
+      'Ostava',
+    );
+    expect(withCategory.title).toBe('Bill due tomorrow: Zabava / Pretplate');
+
+    const withoutAnything = composeNotification(
+      'RECURRING_DUE',
+      { currency: 'RSD', amountMinor: '129900', daysUntil: 1 },
+      'IN_APP',
+      'Ostava',
+    );
+    expect(withoutAnything.title).toBe('Bill due tomorrow: a scheduled payment');
   });
 
   it('names the app from the caller, never a hardcoded brand', () => {

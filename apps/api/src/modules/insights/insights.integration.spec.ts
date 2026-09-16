@@ -168,6 +168,7 @@ describe('insights (integration)', () => {
     ] as const) {
       await runWithTenant(ctx, async () => {
         await prisma.client.insights.deleteMany({ where: { household_id: id } });
+        await prisma.client.recurring_rules.deleteMany({ where: { household_id: id } });
         await prisma.client.budgets.deleteMany({ where: { household_id: id } });
         await prisma.client.households.deleteMany({ where: { id } });
       });
@@ -346,6 +347,124 @@ describe('insights (integration)', () => {
     await asTenant(() =>
       prisma.client.recurring_rules.deleteMany({ where: { household_id: householdId, id: ruleId } }),
     );
+  });
+
+  it('announces a recurring charge that is still to be posted (task 3.4.3)', async () => {
+    const ruleId = uuidv7();
+    await asTenant(() =>
+      prisma.client.recurring_rules.create({
+        data: {
+          id: ruleId,
+          household_id: householdId,
+          account_id: accountId,
+          kind: 'EXPENSE',
+          amount_minor: 1_299_00n,
+          currency: 'RSD',
+          category_id: null,
+          description: 'Netflix',
+          rrule: 'RRULE:FREQ=MONTHLY;BYMONTHDAY=21',
+          next_occurrence_on: new Date('2026-09-21T00:00:00.000Z'),
+          auto_confirm: true,
+          is_detected: false,
+          is_active: true,
+        },
+      }),
+    );
+
+    const read = () =>
+      asTenant(() =>
+        prisma.client.insights.findMany({ where: { household_id: householdId, kind: 'RECURRING_DUE' } }),
+      );
+
+    await asTenant(() => prisma.client.insights.deleteMany({ where: { household_id: householdId } }));
+    await asTenant(() => insights.generate(householdId, TODAY));
+
+    const rows = await read();
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    // A charge that is expected is information, not a warning.
+    expect(row.severity).toBe('INFO');
+    const payload = row.payload as Record<string, unknown>;
+    expect(payload['description']).toBe('Netflix');
+    expect(payload['amountMinor']).toBe('129900');
+    expect(payload['occurredOn']).toBe('2026-09-21');
+    expect(payload['daysUntil']).toBe(1);
+    expect(payload['dedupeKey']).toBe(`RECURRING_DUE:2026-09-21:${ruleId}`);
+
+    // A re-run writes nothing new — the writer looks the key up under the draft's own period.
+    const again = await asTenant(() => insights.generate(householdId, TODAY));
+    expect(again.created).toBe(0);
+    expect(await read()).toHaveLength(1);
+
+    // Post it, and the condition is gone: an occurrence with a Transaction behind it is spend.
+    await asTenant(() =>
+      prisma.client.transactions.create({
+        data: {
+          id: uuidv7(),
+          household_id: householdId,
+          account_id: accountId,
+          kind: 'EXPENSE',
+          amount_minor: 1_299_00n,
+          currency: 'RSD',
+          category_id: null,
+          description: 'Netflix',
+          source: 'RECURRING',
+          status: 'CONFIRMED',
+          recurring_rule_id: ruleId,
+          occurred_at: new Date('2026-09-21T10:00:00.000Z'),
+          occurred_local_date: new Date('2026-09-21T00:00:00.000Z'),
+        },
+      }),
+    );
+    await asTenant(() => prisma.client.insights.deleteMany({ where: { household_id: householdId } }));
+    await asTenant(() => insights.generate(householdId, TODAY));
+    expect(await read()).toEqual([]);
+
+    await asTenant(() => prisma.client.recurring_rules.deleteMany({ where: { id: ruleId } }));
+  });
+
+  it('files a charge dated next month under next month’s period, and still de-duplicates it', async () => {
+    // The one draft whose period is not the run's own: a bill on the 1st is announced on the last day of
+    // the month before, and a writer that looked the key up under the run's month would re-insert it on
+    // every retry (the defect this test pins).
+    const ruleId = uuidv7();
+    await asTenant(() =>
+      prisma.client.recurring_rules.create({
+        data: {
+          id: ruleId,
+          household_id: householdId,
+          account_id: accountId,
+          kind: 'EXPENSE',
+          amount_minor: 10_000n,
+          currency: 'RSD',
+          description: 'Kirija',
+          rrule: 'RRULE:FREQ=MONTHLY;BYMONTHDAY=1',
+          next_occurrence_on: new Date('2026-10-01T00:00:00.000Z'),
+          auto_confirm: true,
+          is_detected: false,
+          is_active: true,
+        },
+      }),
+    );
+
+    const read = () =>
+      asTenant(() =>
+        prisma.client.insights.findMany({ where: { household_id: householdId, kind: 'RECURRING_DUE' } }),
+      );
+
+    await asTenant(() => prisma.client.insights.deleteMany({ where: { household_id: householdId } }));
+    await asTenant(() => insights.generate(householdId, '2026-09-30'));
+
+    const rows = await read();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.period_start.toISOString().slice(0, 10)).toBe('2026-10-01');
+    expect((rows[0]?.payload as Record<string, unknown>)['daysUntil']).toBe(1);
+
+    const again = await asTenant(() => insights.generate(householdId, '2026-09-30'));
+    expect(again.created).toBe(0);
+    expect(await read()).toHaveLength(1);
+
+    await asTenant(() => prisma.client.recurring_rules.deleteMany({ where: { id: ruleId } }));
   });
 
   it('keeps every amount in the payload as a minor-unit string (ADR-003)', async () => {

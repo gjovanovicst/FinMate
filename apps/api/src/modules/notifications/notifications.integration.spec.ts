@@ -178,6 +178,7 @@ describe('notifications (integration)', () => {
         await prisma.client.notifications.deleteMany({ where: { household_id: id } });
         await prisma.client.insights.deleteMany({ where: { household_id: id } });
         await prisma.client.alert_rules.deleteMany({ where: { household_id: id } });
+        await prisma.client.recurring_rules.deleteMany({ where: { household_id: id } });
         await prisma.client.budgets.deleteMany({ where: { household_id: id } });
         await prisma.client.households.deleteMany({ where: { id } });
       });
@@ -192,12 +193,16 @@ describe('notifications (integration)', () => {
     expect(first.notificationsCreated).toBeGreaterThan(0);
 
     const rules = await asTenant(() => notifications.alerts(householdId));
-    expect(rules.map((rule) => rule.kind).sort()).toEqual(['PACE_OVERRUN', 'UNUSUAL_SPEND']);
+    expect(rules.map((rule) => rule.kind).sort()).toEqual([
+      'PACE_OVERRUN',
+      'RECURRING_DUE',
+      'UNUSUAL_SPEND',
+    ]);
     expect(rules.every((rule) => rule.isActive)).toBe(true);
     expect(rules.every((rule) => rule.channels.includes('IN_APP'))).toBe(true);
 
     await asTenant(() => notifications.run(householdId, userId, TODAY));
-    expect(await asTenant(() => notifications.alerts(householdId))).toHaveLength(2);
+    expect(await asTenant(() => notifications.alerts(householdId))).toHaveLength(3);
   });
 
   it('writes copy whose numbers come from the insight payload, formatted in the ledger currency', async () => {
@@ -213,6 +218,51 @@ describe('notifications (integration)', () => {
     expect(pace?.title).toContain('Supermarket');
     expect(pace?.status).toBe('SENT');
     expect(pace?.sent_at).not.toBeNull();
+  });
+
+  it('turns a due charge into an in-app notification with the bill’s own words (F-22, T-09)', async () => {
+    const ruleId = uuidv7();
+    await asTenant(() =>
+      prisma.client.recurring_rules.create({
+        data: {
+          id: ruleId,
+          household_id: householdId,
+          account_id: accountId,
+          kind: 'EXPENSE',
+          amount_minor: 1_299_00n,
+          currency: 'RSD',
+          description: 'Netflix',
+          rrule: 'RRULE:FREQ=MONTHLY;BYMONTHDAY=21',
+          next_occurrence_on: new Date('2026-09-21T00:00:00.000Z'),
+          auto_confirm: true,
+          is_detected: false,
+          is_active: true,
+        },
+      }),
+    );
+
+    const run = await asTenant(() => notifications.run(householdId, userId, TODAY));
+    expect(run.insightsCreated).toBeGreaterThan(0);
+
+    const row = await asTenant(() =>
+      prisma.client.notifications.findFirst({
+        where: { household_id: householdId, dedupe_key: { startsWith: 'RECURRING_DUE:2026-09-21' } },
+      }),
+    );
+    expect(row).not.toBeNull();
+    expect(row?.channel).toBe('IN_APP');
+    // `IN_APP` means the row *is* the delivery.
+    expect(row?.status).toBe('SENT');
+    expect(row?.title).toBe('Bill due tomorrow: Netflix');
+    expect(row?.body).toBe('1299.00 is charged tomorrow.');
+
+    // The producer is reachable only because it is mapped to a rule and that rule exists by default.
+    const rules = await asTenant(() => notifications.alerts(householdId));
+    expect(rules.some((rule) => rule.kind === 'RECURRING_DUE' && rule.isActive)).toBe(true);
+
+    // Remove the rule: the rest of this suite shares the Household and asserts exact notification counts
+    // for later months, which a live monthly rule would silently add to.
+    await asTenant(() => prisma.client.recurring_rules.deleteMany({ where: { id: ruleId } }));
   });
 
   it('does not send the same condition twice: the unique key is the dedupe', async () => {

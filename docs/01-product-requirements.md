@@ -256,11 +256,24 @@ Scenario: Positive trend (F-22 requires this explicitly)
     because the spending has not happened yet. A spike still fires mid-period: there is time to act on
     an increase, and there is nothing to act on in a reduction that is really a delay.
 
+Scenario: A bill is due soon (task 3.4.3)
+  Given an active expense RecurringRule
+  And an occurrence inside the next day (INSIGHT_THRESHOLDS.recurringDueHorizonDays) that has no
+    Transaction behind it
+  When the insight generators run
+  Then one RECURRING_DUE insight is emitted for that occurrence, with severity INFO — an expected
+    charge is information, not a warning
+  And its dedupeKey names the occurrence, not the period, so a weekly rule speaks once per charge
+  And an occurrence that is already posted produces nothing: it is spend, not a charge still to come
+  And it maps to its own RECURRING_DUE alert kind, on by default, and the payee's name is in-app only
+    (docs/08 T-09)
+
 Scenario: Determinism and re-runs
   Given the same facts
   When the generators run twice
   Then the output is identical, in a fixed order
-  And each insight carries a dedupeKey of "<kind>:<periodStart>:<subject>"
+  And each insight carries a dedupeKey of "<kind>:<periodStart>:<subject>", except the one
+    occurrence-scoped generator, whose middle segment is the occurrence day
   And a re-run for the same period writes nothing new for a condition already recorded
 ```
 

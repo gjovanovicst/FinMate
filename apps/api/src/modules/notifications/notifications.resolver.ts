@@ -28,8 +28,9 @@ import { NotificationsService } from './notifications.service';
  * In v1 a Household has exactly one Member, so the two coincide today — writing the predicate now is
  * what makes F-29 (sharing) a schema change rather than a security review.
  *
- * `runAlerts` is the dev entry point for the two jobs docs/05 §8 defines but nothing schedules yet
- * (`insights.generate` and `notifications.dispatch`). It calls the same service method the worker will.
+ * `runAlerts` is the manual entry point for the daily `insights.generate` job — the same
+ * `NotificationsService.run` the worker calls, so an on-demand pass and a scheduled one cannot drift.
+ * `notifications.dispatch` (every minute) is the drain that delivers what the pass wrote.
  *
  * @module apps/api/src/modules/notifications
  */
