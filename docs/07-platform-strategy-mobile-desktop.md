@@ -519,10 +519,16 @@ local write
    └─ permanent (4xx validation) → stays in the tray as "ne može se poslati", never dropped
 ```
 
-Tray requirements: a badge count on the nav at every size class (never a hidden queue); each row shows the
-raw input, local time, attempt count and the last error class in plain language; per-row retry plus "Pokušaj
+Tray requirements: a count visible at **every size class** (never a hidden queue); each row shows the raw
+input, local time, attempt count and the last error class in plain language; per-row retry plus "Pokušaj
 sve" plus "Izvezi kao tekst" (a last-resort escape hatch no user should need — which is exactly why it
-exists); reachable from the offline banner, the nav badge and Settings. Server-side re-classification of an
+exists); reachable from the offline banner and Settings. **ADR-026 corrects the count's home**: it is the
+header's **sync chip** (`Čeka slanje (n)` → `/pending`), not a second badged nav destination, because
+[02 §2.3](02-ux-flows-and-screens.md) deliberately keeps the review slot as the only badged one and two
+badges on a five-slot bar is how a count stops meaning anything. The tray is a route without a nav slot,
+the same shape as `/notifications`.
+<!-- Superseded wording, kept because it is what the build was measured against: "a badge count on the nav
+     at every size class". --> Server-side re-classification of an
 offline row surfaces as a **reviewable diff** in the review queue, exactly as
 [05 §7](05-architecture.md#7-offline--multi-device-sync-f-26) requires, and `sync.pending_age`
 ([05 §10](05-architecture.md#10-observability-hooks-built-in-from-day-one)) is the telemetry that says

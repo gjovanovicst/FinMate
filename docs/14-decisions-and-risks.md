@@ -1103,6 +1103,89 @@ Three things those documents leave open, which task 4.2.2 is where they become r
 - **(f) Argon2-wasm for the PIN, as §3.9 words it.** See decision 4 — a new wasm dependency does not fix
   20 bits of entropy, and PBKDF2 is in the platform.
 
+### ADR-026 — The pending tray: a route reached from the header, whole capture batches, and a diff the server explains
+**Status:** Accepted
+
+**Context.** ADR-016 fixed the outbox semantics, ADR-025 the store and the key, and task 4.2.2b built the
+layer. Task 4.2.3 is the **UX** on top of it, and four things it needs are not decided by any document:
+
+1. **Where the tray lives and how it is reached.** [07 §6](07-platform-strategy-mobile-desktop.md) asks
+   for "a badge count on the nav at every size class (never a hidden queue)", while
+   [02 §2.3](02-ux-flows-and-screens.md) says the review slot is **the only badged destination** — and
+   [02 §2.1](02-ux-flows-and-screens.md)'s route map has no pending route at all. The two documents
+   disagree, and the nav has five slots precisely so that badges stay meaningful.
+2. **What the queue may carry.** [02 §4.3](02-ux-flows-and-screens.md)'s offline sequence ends with
+   *"409 + version on an edited row → money-field diff"*, but nothing queues an edit: 4.2.2b queues
+   whole `captureCommit` batches, which are append-only and idempotent, so no version conflict can arise
+   from them.
+3. **What the user is told while it waits, and what a retry costs.** [07 §6](07-platform-strategy-mobile-desktop.md)
+   names the flush triggers, an attempt count and a capped backoff; [02 §4.3](02-ux-flows-and-screens.md)
+   names a *"Pregledaj razlike (n)"* diff with a *Zašto* line for the server's decision.
+4. **Which tab flushes.** [07 §6](07-platform-strategy-mobile-desktop.md) says "leader tab only", which is
+   a multi-tab concern.
+
+**Decision.**
+
+1. **`/pending` is a route reached from the header, not a nav destination** — the same shape as
+   `/notifications`, which is header-only by [02 §2.2](02-ux-flows-and-screens.md). A **sync chip** in the
+   header renders `Čeka slanje (n)` only while something is queued and links to the tray, so the count is
+   visible at every size class without a second badged nav slot. **docs/07 §6 is corrected**: its "badge
+   count on the nav" is satisfied by the header chip, because [02 §2.3](02-ux-flows-and-screens.md)
+   deliberately keeps one badged destination and two badges on a five-slot bar is how a count stops
+   meaning anything.
+2. **The queue carries whole `captureCommit` batches, plus a client-only `meta`.** The outbox already
+   stores `document` + `variables`; it gains an optional `meta` that is stored and never sent, which is
+   where the local preview lives so the diff in decision 5 can be built. Queuing **edits** (and with them
+   the money-field conflict diff) is **task 4.2.7**, deferred with a reason rather than half-built: nothing
+   queues an edit yet, the online version-conflict path already exists in the Transaction sheet, and
+   deciding *which* mutations may be queued offline is a product decision about what "offline" means
+   (docs/07 §6's matrix draws the line at capture and review).
+3. **An entry records its attempts and its last error**, and the retry delay is a pure, capped
+   exponential — so the tray can say "3 attempts, last: no connection" and the flush cannot hammer a
+   server that is down. Auto-flush runs on app start, on `online`, on `visibility → visible`, and after
+   each write ([07 §6](07-platform-strategy-mobile-desktop.md)); a **retryable** failure leaves the queue
+   intact and stops the flush, a **refusal** parks that entry as *ne može se poslati* and never drops it.
+4. **Flush leadership is deferred to the persistent store.** In this build the store runs on a
+   session-only key (ADR-025 decision 3), so two tabs cannot even see each other's queue and there is
+   nothing to elect a leader for. Leader election (Web Locks or a `BroadcastChannel` claim) becomes a real
+   requirement only when 4.2.6 turns persistence on, and it is recorded there rather than guessed here.
+5. **The diff is built client-side from the queued preview and the server's own answer**, and it shows
+   *before → after* per row plus the server's **`Zašto`** line, so a changed category is explainable
+   rather than merely applied ([02 §4.3](02-ux-flows-and-screens.md) point 3). It is offered as
+   *Pregledaj razlike (n)* and never applied silently; a row the server did **not** change shows no diff.
+
+**Consequences.**
+- ✅ The queue is visible at every size class without diluting the nav badge, and the tray is one tap from
+  the chip that announces it.
+- ✅ A server-side re-classification of an offline capture is **explainable**: the queued preview and the
+  committed row are both on hand, so the diff is a comparison, not a reconstruction.
+- ✅ Attempt counts and capped backoff make "it is not sending" a state the user can read instead of a
+  spinner that never resolves; the escape hatch (*Izvezi kao tekst*) means no queue is ever a dead end.
+- ⚠️ **The money-field conflict diff the plan names is not built** (task 4.2.7). Nothing queues an edit, so
+  it would be a flow with no producer — the pattern this repo declines. Recorded in docs/09 and AGENTS.md.
+- ⚠️ **docs/07 §6's review-queue half of the diff is not built either**: it says a re-classified row
+  "surfaces as a reviewable diff in the review queue", which needs a `ReviewReason` arm and a producer on
+  the API (`ReviewItemKind.RECEIPT_ITEM` has no producer today either). The tray's diff is where the user
+  sees it in this build; the review-queue route is the API change's own task.
+- ⚠️ Auto-flush on `visibility → visible` and `online` means a queue drains while the user is looking at
+  any screen, so the tray can change under them. That is the honest behaviour — the alternative is a queue
+  that only drains when someone opens a particular screen — but it is why the tray re-reads the queue
+  rather than holding a snapshot.
+- ⚠️ `meta` makes the outbox slightly more than a queue: it is now a place a caller can stash client-only
+  state. Kept to one optional field with no semantics inside the outbox, and the tray is its only reader.
+
+**Alternatives rejected.**
+- **(a) A badged nav slot for pending sync** (what docs/07 §6 literally asks): two badged destinations in a
+  five-slot bar, against docs/02 §2.3, for a queue that is usually empty.
+- **(b) A section on `/capture` only**: invisible from anywhere else, and the user who queued a capture is
+  usually not on it when the network returns.
+- **(c) Queue edits now, so the money-field conflict diff has a producer**: it would decide offline-editing
+  semantics inside a capture-UX task, and a version conflict has no UI to resolve it offline yet.
+- **(d) Apply the diff silently** (last-write-wins with no surfacing): docs/05 §7 and docs/02 §4.3 both
+  forbid it — a changed category the user never saw is exactly the surprise the offline design exists to
+  avoid.
+- **(e) Leader-tab election now**: there is nothing shared to lead until the store persists (ADR-025).
+
 ---
 
 ## Part 2 — Risk register

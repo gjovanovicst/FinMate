@@ -75,6 +75,7 @@ Household is resolved from the session, never the URL (ADR-008).
 | `/counterparties`, `/counterparties/:id` | Counterparties | F-11 | Više › Biblioteka |
 | `/rules`, `/rules/:id` | Rules manager | F-09 | Više › Biblioteka |
 | `/receipts`, `/receipts/:id` | Receipts | F-14, F-34 | Više › Biblioteka |
+| `/pending` | Pending sync (the offline outbox) | F-26 | — (header sync chip) |
 | `/budgets` | Budgets | F-17 | Više › Plan |
 | `/goals` | Savings goals | F-18 | Više › Plan |
 | `/recurring` | Recurring rules | F-16 | Više › Plan |
@@ -114,6 +115,12 @@ Size classes are [07 §3.1](07-platform-strategy-mobile-desktop.md): `compact` <
 - `medium` keeps the bottom bar to 840 px, then becomes an icon rail ([07 §3.3](07-platform-strategy-mobile-desktop.md)).
 - Header on both: offline chip (offline or stale only), 🔔 unread, ⚙, avatar menu (Profil,
   Podešavanja, Jezik, Tema, Odjavi se).
+- The offline chip's `pendingCount` renders as **`Čeka slanje (n)`** and is the entry point to
+  `/pending` (ADR-026) — a route without a nav slot, like `/notifications`, so the nav keeps its one
+  badged destination (docs/02 §2.3). The tray itself is §4.3's offline half: rows with the raw input,
+  local time, attempt count and the last error in plain language, per-row *Pokušaj ponovo* and *Odbaci*,
+  *Pokušaj sve*, *Izvezi kao tekst*, and *Pregledaj razlike (n)* when the server classified a queued row
+  differently — before → after per row, with the server's *Zašto* line, never applied silently.
 - Below the header, above the screen: the **app-update line** (ADR-024) — *"A newer version of the app is
   ready."* with a *Reload* action, shown only when the service worker has a version installed and waiting.
   It has **no dismiss control** (docs/08 §12 wants a forced flow rather than an indefinitely stale shell)
