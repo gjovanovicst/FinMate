@@ -253,11 +253,17 @@ would give it. Four jobs are registered today — `recurring.materialise`, `recu
 `insights.generate`, `notifications.dispatch`; the rest of the table is unbuilt, and each entry below
 says what makes a second run safe, which ADR-022 makes a precondition for adding one.
 
+**`insights.generate` is the whole daily pipeline, not only its first half** (3.4.4): it calls
+`NotificationsService.run`, which generates the insights **and** evaluates them against the alert rules
+to write the notification rows — the same method the `runAlerts` mutation calls. `notifications.dispatch`
+(every minute) is only the drain that delivers what that pass wrote. Before 3.4.4 the job called
+`InsightsService.generate` alone, so a scheduled run's insights were never turned into an alert.
+
 | Job | Schedule | Responsibility |
 |---|---|---|
 | `recurring.materialise` | hourly | Materialise due `recurring_rules` into transactions (respecting `auto_confirm`) |
 | `recurring.detect` | daily | Infer probable subscriptions from history; propose, never auto-create |
-| `insights.generate` | daily 06:00 local | Deterministic insight generation per household |
+| `insights.generate` | daily 06:00 local | Generate the Household's deterministic insights, **then evaluate them against its alert rules** — the pipeline's two halves |
 | `notifications.dispatch` | every minute | Drain queued notifications, respect quiet hours and `dedupe_key` |
 | `budget.rollups` | hourly | Refresh period rollups used by dashboard tiles |
 | `ledger.reconcile` | nightly | Recompute balances from the transaction log; alert on drift (I-4) |

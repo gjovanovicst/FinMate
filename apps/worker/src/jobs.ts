@@ -2,7 +2,6 @@ import type { INestApplicationContext } from '@nestjs/common';
 
 import { runAsSystem, runWithTenant, type TenantContext } from '@finmate/api/common/tenancy/tenant-context';
 import { PrismaService } from '@finmate/api/prisma/prisma.service';
-import { InsightsService } from '@finmate/api/modules/insights/insights.service';
 import { NotificationsService } from '@finmate/api/modules/notifications/notifications.service';
 import { RecurringService } from '@finmate/api/modules/recurring/recurring.service';
 
@@ -49,7 +48,7 @@ export interface JobDefinition {
   /** What makes a second run safe. Required reading for the next job author. */
   readonly idempotentBecause: string;
   /** Do the work for one Household. */
-  readonly perHousehold: (app: INestApplicationContext, householdId: string) => Promise<unknown>;
+  readonly perHousehold: (app: INestApplicationContext, household: HouseholdRow) => Promise<unknown>;
 }
 
 export interface HouseholdOutcome {
@@ -80,7 +79,7 @@ export const JOBS: readonly JobDefinition[] = [
     idempotentBecause:
       'each occurrence is written through TransactionsService with the derived key ' +
       '`recurring:{rule}:{date}`, so a second run of the same hour posts nothing',
-    perHousehold: (app, householdId) => app.get(RecurringService).materialise(householdId, {}),
+    perHousehold: (app, household) => app.get(RecurringService).materialise(household.id, {}),
   },
   {
     name: 'recurring.detect',
@@ -88,21 +87,29 @@ export const JOBS: readonly JobDefinition[] = [
     description: 'Propose probable subscriptions from history — never auto-create them.',
     idempotentBecause:
       'a proposal is skipped when the identity already has a rule, an open proposal or a dismissal',
-    perHousehold: (app, householdId) => app.get(RecurringService).detect(householdId),
+    perHousehold: (app, household) => app.get(RecurringService).detect(household.id),
   },
   {
     name: 'insights.generate',
     schedule: '0 6 * * *',
-    description: 'Deterministic insight generation for the Household, once a day.',
-    idempotentBecause: 'the writer looks the dedupe key up before inserting, so a re-run is a no-op',
-    perHousehold: (app, householdId) => app.get(InsightsService).generate(householdId),
+    description:
+      'Generate the Household’s deterministic insights, then evaluate them into notifications.',
+    idempotentBecause:
+      'each insight condition is looked up by its dedupe key before inserting, and a notification is ' +
+      '`UNIQUE (user_id, dedupe_key)` per condition per channel',
+    // The whole daily pipeline, not only its first half: `run` generates the insights **and** evaluates
+    // them against the alert rules, writing the notification rows. `notifications.dispatch` (every
+    // minute) then delivers what this wrote. Generating without evaluating was the wiring gap 3.4.4
+    // closed — the rows existed and nothing ever turned them into an alert.
+    perHousehold: (app, household) =>
+      app.get(NotificationsService).run(household.id, household.owner_user_id),
   },
   {
     name: 'notifications.dispatch',
     schedule: '* * * * *',
     description: 'Drain queued notifications, respecting quiet hours and the daily cap.',
     idempotentBecause: 'a delivery is a status transition on a row that already carries `dedupe_key`',
-    perHousehold: (app, householdId) => app.get(NotificationsService).dispatch(householdId),
+    perHousehold: (app, household) => app.get(NotificationsService).dispatch(household.id),
   },
 ];
 
@@ -151,7 +158,7 @@ export async function runJob(
     };
 
     try {
-      await runWithTenant(context, () => definition.perHousehold(app, row.id));
+      await runWithTenant(context, () => definition.perHousehold(app, row));
       outcomes.push({ householdId: row.id, ok: true });
     } catch (error) {
       // One Household failing must not stop the run: the others still need their nightly work, and

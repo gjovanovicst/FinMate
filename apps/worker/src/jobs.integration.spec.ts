@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { uuidv7 } from '@finmate/domain';
+import { addDays, todayIn, uuidv7 } from '@finmate/domain';
 
 import {
   TenancyError,
@@ -117,6 +117,53 @@ describe('the worker (integration)', () => {
     expect(result.households).toBe(1);
     expect(result.succeeded).toBe(1);
     expect(result.failed).toBe(0);
+  });
+
+  it('generates and evaluates in one pass, so a condition becomes a notification (task 3.4.4)', async () => {
+    // The daily job used to call `InsightsService.generate` alone, so it wrote insight rows that nothing
+    // ever turned into a notification — the alert pipeline's second half had no scheduled caller. It now
+    // calls `NotificationsService.run`, the same method the `runAlerts` mutation calls.
+    const account = await asTenant(() =>
+      prisma.client.accounts.create({
+        data: { id: uuidv7(), household_id: householdId, name: 'Tekući', kind: 'BANK', currency: 'RSD' },
+      }),
+    );
+    // Due tomorrow, which is inside the one-day horizon.
+    const tomorrow = addDays(todayIn('Europe/Belgrade'), 1);
+    const dayOfMonth = Number(tomorrow.slice(8, 10));
+    await asTenant(() =>
+      prisma.client.recurring_rules.create({
+        data: {
+          id: uuidv7(),
+          household_id: householdId,
+          account_id: account.id,
+          kind: 'EXPENSE',
+          amount_minor: 1_299_00n,
+          currency: 'RSD',
+          description: 'Netflix',
+          rrule: `RRULE:FREQ=MONTHLY;BYMONTHDAY=${dayOfMonth}`,
+          next_occurrence_on: new Date(`${tomorrow}T00:00:00.000Z`),
+          auto_confirm: true,
+          is_detected: false,
+          is_active: true,
+        },
+      }),
+    );
+
+    await runJob(app, 'insights.generate', { requestId: 'worker-it', householdIds: [householdId] });
+
+    // The defaults are a side effect of the **evaluation** half, so their presence is proof that `run`
+    // ran rather than `generate`.
+    expect(
+      await asTenant(() => prisma.client.alert_rules.count({ where: { household_id: householdId } })),
+    ).toBe(3);
+    const notification = await asTenant(() =>
+      prisma.client.notifications.findFirst({
+        where: { household_id: householdId, user_id: userId, dedupe_key: { startsWith: 'RECURRING_DUE:' } },
+      }),
+    );
+    expect(notification).not.toBeNull();
+    expect(notification?.title).toContain('Netflix');
   });
 
   it('reports a Household that throws without stopping the run', async () => {
