@@ -990,8 +990,11 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   Timeout*. So a client that classifies "we are offline" by catching a thrown `TypeError`/`net::ERR_*` will
   mis-read it, and one that classifies by status has to treat `504` as retryable. Measured in 4.3.6 while
   verifying F-26 offline: `/graphql` is deliberately outside the worker's `navigationUrls` and has no
-  `dataGroups`, so every offline GraphQL call came back **504**, and that is the difference between a
-  capture being queued (which worked) and a queued capture being **dropped on flush** (which did not).
+  `dataGroups`, so every offline GraphQL call came back **504**, and that is what makes the offline capture
+  take the queue path at all (the capture's own commit sees a retryable failure and queues). ⚠️ The first
+  reading of that pass — *a queued capture is dropped on flush* — is **refuted by 4.3.6's diagnosis**: the
+  flush was refused by the server, the client parked it as *cannot be sent*, and the tray said so on the
+  page that flushed it. What was missing was the **store** it was parked in: see the two entries below.
   A second consequence worth knowing before writing an offline test: `context.setOffline(true)` in
   Playwright *plus* a service worker means the page still gets HTTP responses — the app is not "offline"
   in the sense of "no responses", which is exactly why the shell can boot at all.
@@ -1014,6 +1017,38 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   Two lessons worth keeping: when the app consumes a response body, **Playwright cannot read it afterwards** — record it in the
   page or not at all; and a *fetch/XHR* wrapper is agnostic to both the transport and the service worker, which is what a
   client/server disagreement needs.
+
+- **A documented method that was never written is a silent hole.** `app-lock.service.ts`'s module doc says
+  "`OfflineStoreHolder.invalidate()` rebuilds the backing when the state changes" — and `OfflineStoreHolder`
+  has no such method; its whole API is `repository()` and `generation()`. Found by 4.3.6's diagnosis of
+  R-27, after the offline pass showed a queued capture that survived nothing. The backing is chosen from
+  `keyProvider.persistent` **when `repository()` is called**, so while the app is locked the boot builds the
+  in-memory backing — and after the unlock it stays in memory unless some *data* consumer (the dashboard's
+  snapshot, the ledger cache, a taxonomy record) happens to call `repository()` again. The queue's own
+  consumer never does: `SyncService.outbox()` reads `generation()` **before** it calls `repository()`, so it
+  cannot notice a change nobody triggered. Measured in the production build, lock armed and unlocked:
+  IndexedDB's `outbox` is **empty** after an offline capture the chip counts as queued (*Waiting to send
+  (1)*), and one fresh dashboard mount after the unlock makes the *same* capture land there
+  (`outbox: ["1"]`). The rule generalises: when a class doc names a method, grep for it — a missing one is
+  invisible to typecheck, lint, and every spec that constructs the class around a working fake.
+
+- **A record on disk is not a record the app can read.** The other half of the same defect, and it is why
+  "the queue survives a reload, on disk" was believed for two releases. In the production build the reload's
+  tray reads *0 waiting to send, 0 refused — Nothing is waiting to be sent* **while IndexedDB holds
+  `outbox: ["1"]`**. The boot happens locked, so `SyncService`'s constructor flush builds an outbox over the
+  in-memory backing and `refresh()` reads that one; unlocking changes the durability the holder *would*
+  report but nothing re-reads the queue, so the signals stay empty even after a consumer switches the
+  backing. A fix has to do both halves — rebuild **and** re-read — and the honest test is the user-visible
+  one, not a count of IndexedDB records: reload, unlock, open the tray, and see the entry with its state.
+
+- **An offline capture has no account, so the server refuses the whole batch.** `capture.component.ts`'s
+  `load()` reads `accounts` and `categories` together and sets `accountId` from the first live account; when
+  that query fails — offline it always does, and the worker answers `504` rather than rejecting — the signal
+  stays `''` and `commit()` sends `defaultAccountId: null`. The online path hides it completely, because
+  there the same query answered a moment earlier. The API will not default it (docs/06 §5.2.1) and refuses
+  the whole atomic batch with its own message (*a row with no accountId needs a defaultAccountId on the
+  request*), so an offline capture can never land until the composer has an account offline. Found by R-27's
+  diagnosis, 4.3.6.
 
 - **No hardcoded user-facing copy.** Every string goes through `I18nService.t('key')`. English is
   primary and is the source of the key set: add the string to `translations/en.ts` first, then to

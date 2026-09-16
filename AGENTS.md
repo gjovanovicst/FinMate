@@ -42,9 +42,10 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   cross-tab flush mutex ADR-026 deferred here, and the wipe — **ADR-029** (4.2.6a); and the control that
   arms it — `/settings`' one section, the re-auth screen the shell renders while locked, and the idle
   gate — which is what turns offline persistence on for F-26 (4.2.6b). ⚠️ **R-23 was closed on a claim that
-  4.3.6 has now measured false**: the queue does survive a reload *on disk*, but an **offline** reload
-  cannot restore the session, so the re-auth screen unlocks straight into `/sign-in` and the queued work
-  is unreachable — see **R-27**, scheduled as 4.3.6;
+  4.3.6 has now measured false**: arming the lock does not make the queue durable, because the store backing
+  never follows the unlock, and a record that does reach IndexedDB is not read back after a reload — see
+  **R-27(a)**. An **offline** reload separately cannot restore the session, so the re-auth screen unlocks
+  straight into `/sign-in` and the queued work is unreachable — **R-27(b)**, scheduled as 4.3.6;
   and queued **edits**, version-checked and dispatched by entry kind, with a conflict diff that shows
   the two versions instead of inventing a reason — **ADR-030** (4.2.7a), plus the sheet that queues an
   offline edit and the tray panel that explains a refusal (4.2.7b); and the **ledger-rows** record — the
@@ -95,30 +96,32 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   **Verified live 9/9**: cookie stored at `/api/auth`, a hard reload stays in the app, a second reload
   survives the rotation, a deep link holds, logout really removes it.
 - **4.3.1d measured every screen instead of assuming, and it paid twice.** A browser instrument walked all
-  20 authenticated routes at 320/768/1280 px **and in the light theme**, computing text contrast against
-  each element's effective background, and capturing a screenshot per screen for the human pass
-  (`.artifacts/visual-audit/contact-sheet.md`). It found a **systemic contrast defect** —
-  `--color-text-subtle` at **3.31:1** across **153 element-route pairs** (hints, row metadata, the role
-  label, row badges) — and **three anchors with no colour at all**, rendering the browser's `#0000EE` at
-  **2.02:1**. Both fixed at the class level (`styles.css`: the token value, and a global
-  `a { color: var(--color-primary) }` that stops the next one). After the fixes: **0 contrast failures,
-  0 overflow**, with the two inactive controls correctly **exempt** (WCAG 1.4.3) rather than skipped.
-  It also **measured** the tap-target gap instead of assuming it: **17 controls are under WCAG 2.2 AA's
-  24 px floor** (11 real buttons at 21 px, including the consent sheet's *Allow*/*Decline*) and 37 more
-  miss this repo's own 44 px compact rule — open as **4.3.1e**, because the fix is one shared control
-  metric and it changes every screen's rhythm.
-- **4.3.6 ran the offline pass F-26's exit criterion rests on, and it does not hold yet.** The harness serves
-  the **production build** (the worker is production-only) and drives a real browser with the network cut.
-  What works: the shell boots offline from the cache, an offline capture queues, and the queue drains on
-  reconnect. What does not, measured: the drained batch wrote **zero transactions and zero decisions**
-  while the tray reported *0 waiting to send, 0 refused* — so the entry was dropped as sent, not refused,
-  and the **diagnosis has since ruled out both obvious suspects** — `outbox.flush` retries a 5xx
-  correctly and `GraphqlClient.query` throws for an `errors` body or a 200 with no `data`, so neither can
-  remove an entry; the flush's POST returned 200, so the client accepted something success-shaped while the
-  server wrote nothing, and the next step is to capture that response *body* (the API keeps no request log
-  to cross-check against); and an **offline reload** renders the lock screen, unlocks, and lands on
-  `/sign-in` with no way in, so the queued work is on disk and unreachable. Recorded as **R-27** (4.3.6).
-- **Next**: **R-27's two findings** (4.3.6 — the first half is diagnosis, not a fix), then **the human visual pass** — now a review rather than a click-through, because 4.3.1d produced
+  20 routes at 320/768/1280 px **and in the light theme** and captured a contact sheet for the human pass
+  (`.artifacts/visual-audit/contact-sheet.md`). It found a systemic contrast defect — `--color-text-subtle`
+  at **3.31:1** over **153 element-route pairs**, plus **three anchors with no colour at all** rendering the
+  UA `#0000EE` at **2.02:1** — both fixed at the class level (`styles.css`), after which **0 contrast
+  failures and 0 overflow** remain (the two inactive controls are correctly **exempt**, WCAG 1.4.3). It also
+  **measured** the tap-target gap: **17 controls sit under WCAG 2.2 AA's 24 px floor** (11 real buttons at
+  21 px, incl. the consent sheet's *Allow*/*Decline*) and 37 more miss this repo's 44 px rule — open as
+  **4.3.1e**. docs/09's row and docs/02 §9 carry the measurements.
+- **4.3.6 ran the offline pass F-26's exit criterion rests on, and it does not hold yet — for a store
+  reason, not a payload one.** The harness serves the **production build** (the worker is production-only)
+  and drives a real browser with the network cut. What works: the shell boots offline from the cache, an
+  offline capture queues, and the queue drains on reconnect. **The diagnosis is complete**: the flush does
+  reach the server, which **refuses the whole batch** (`VALIDATION_FAILED` — *a row with no accountId needs
+  a defaultAccountId on the request*), and the tray **on the flushing page** says *0 waiting to send,
+  1 refused* with that message — so the client's classification is right and the earlier reading (*dropped
+  as sent*) is **refuted**. Three defects, each measured: **(1)** `OfflineStoreHolder` has **no
+  `invalidate()`**, though `app-lock.service.ts`'s doc names one, so the backing leaves memory only when a
+  *data* consumer calls `repository()` after the unlock — IndexedDB's `outbox` is **empty** after an
+  offline capture the chip counts as queued, while one fresh dashboard mount after the unlock makes the
+  same capture land there (`outbox: ["1"]`); **(2)** a record on disk is still not read back — after a
+  reload the tray says *Nothing is waiting to be sent* while IndexedDB holds it, because the boot builds
+  the outbox while locked and nothing re-reads the queue when the unlock changes the backing; **(3)**
+  offline the composer's `accounts` query fails, so it sends `defaultAccountId: null`. And an **offline
+  reload** renders the lock screen, unlocks, and lands on `/sign-in` with no way in. Recorded as **R-27**.
+- **Next**: **R-27's fix** — (a1) the store backing and the queue re-read, then (a2) an account for the offline
+  composer (client-side cache, or a server default, which is docs/06 §5.2.1's decision) — then **the human visual pass** — now a review rather than a click-through, because 4.3.1d produced
   a contact sheet of all 20 screens at three widths plus the light theme, with the mechanical defects
   already found and fixed. **4.3.1e** (control sizes) and **4.3.1c** (the pinned capture bar) are the two
   decisions that pass feeds. Then 4.3.3 (mobile keyboard) / 4.3.4 (bundle + Lighthouse).
@@ -163,7 +166,7 @@ narrative above does not repeat them.
 | Worker | `apps/worker` **boots and is scheduled** (ADR-022, task 3.4.1): five BullMQ jobs over the API's own services — `recurring.materialise`, `recurring.detect`, `insights.generate` (generate *and* evaluate since 3.4.4), `notifications.dispatch`, `files.purge` (4.1.1) — `nx run worker:serve`. The remaining jobs in docs/05 §8's table are unbuilt, and ADR-022 makes stating what makes a job idempotent a precondition for adding one |
 | Receipts (F-14) | `apps/api/src/modules/receipts` **implemented in 4.1.3**: `createReceipt`, `extractReceipt`, `addReceiptItem`/`updateReceiptItem`/`removeReceiptItem`, `reconcileReceipt`, `receipts`/`receipt`. Item categories come from the **same** `ClassificationService.parse` a typed fragment uses (auditable in `classification_decisions`); I-6 lives in `@finmate/domain/src/receipts.ts` with both sides of the tolerance asserted. **No `OCR` endpoint is routed** (ADR-032 decision 3 leaves `EMBEDDINGS` inert and routes only the endpoints the config names), so extraction honestly reports `AI_UNAVAILABLE:no-provider-configured` and manual itemisation is the path, and the detail screen therefore does not offer extraction at all; the **OCR webhook (§9.5)** is not built. `commitReceipt` and `DETACH_TRANSACTION` are (4.1.4a) and both screens that call them are (4.1.4b/4.1.5, `/receipts` + `/receipts/:id`). `CreateReceiptInput.attachmentId` is **required**, so a Receipt exists only over a photo — the library's capture action is the only way in. `receipts` is a plain list with no `filter`/`totalCount`, so the library reads the first 50 and says `{count} shown, newest first` rather than claiming a total |
 | Service worker (F-26) | `apps/web/ngsw-config.json` + `@angular/service-worker`, **ADR-024**. It caches the **app shell only** — `/index.html`, `/*.js`, `/*.css`, 39 built URLs in all — and declares **no `dataGroups`**, so no API response can enter the HTTP cache (the offline data cache is IndexedDB, docs/08 §3.9); `navigationUrls` explicitly excludes `/graphql`, `/api/**`, `/auth/**`, `/v1/**` and the health paths, so the shell never answers for the API. Registered in the **production build only** (`enabled: !isDevMode()`), so `web:serve` has no worker and the built `dist` is what gets verified. The update flow is a **non-dismissible banner** that activates only on the user's click. ⚠️ **Not installable yet** — no manifest and no icons (4.3.2, and a manifest carries the undecided product name), and the Playwright offline pass docs/10 §8.3 specifies does not exist, so the cache strategy is verified by inspecting and serving the build rather than by throttling a browser. ⚠️ The deploy path has to serve `ngsw-worker.js`/`ngsw.json` unhashed and revalidated over HTTPS; nothing does yet (docs/11 §5, Q-7) |
-| Offline store (F-26) | `apps/web/src/app/core/offline/` — **ADR-025**. `offline-crypto` (AES-GCM-256, `OfflineDecryptError`, PBKDF2 key wrapping), `offline-key-provider` (the `OFFLINE_KEY_PROVIDER` token now resolves to the **app lock**, which reports `persistent = true` only while it is unlocked and delegates to `SessionKeyProvider` when no lock is configured), `offline-store` (encrypted `idb` over `outbox`/`snapshot`/`taxonomy` + a separate in-memory backing, TTLs 24 h/24 h/30 d, `sweep` on open, `purge`, the snapshot whitelist mapper) and `outbox` (ordered, idempotent flush with a pure retry/refusal classifier). `SnapshotService` (`core/offline/snapshot.service.ts`) is the same store's other consumer, and both go through one root-provided `OfflineStoreHolder`. ⚠️ **nothing confidential reaches disk until the app lock is armed** (ADR-025 decision 3): with no wrapping secret the store runs in memory and the outbox dies with the page. Arming it — `/settings` → `Bezbednost`, WebAuthn PRF or a PIN (ADR-029) — switches the backing to IndexedDB, which is what makes F-26's offline capture survive a reload (4.2.6b). `idb` + `fake-indexeddb` are the only new dependencies |
+| Offline store (F-26) | `apps/web/src/app/core/offline/` — **ADR-025**. `offline-crypto` (AES-GCM-256, `OfflineDecryptError`, PBKDF2 key wrapping), `offline-key-provider` (the `OFFLINE_KEY_PROVIDER` token now resolves to the **app lock**, which reports `persistent = true` only while it is unlocked and delegates to `SessionKeyProvider` when no lock is configured), `offline-store` (encrypted `idb` over `outbox`/`snapshot`/`taxonomy` + a separate in-memory backing, TTLs 24 h/24 h/30 d, `sweep` on open, `purge`, the snapshot whitelist mapper) and `outbox` (ordered, idempotent flush with a pure retry/refusal classifier). `SnapshotService` (`core/offline/snapshot.service.ts`) is the same store's other consumer, and both go through one root-provided `OfflineStoreHolder`. ⚠️ **nothing confidential reaches disk until the app lock is armed** (ADR-025 decision 3): with no wrapping secret the store runs in memory and the outbox dies with the page. Arming it — `/settings` → `Bezbednost`, WebAuthn PRF or a PIN (ADR-029) — is *meant* to switch the backing to IndexedDB and make F-26's offline capture survive a reload (4.2.6b); ⚠️ **as measured in 4.3.6 it does not, because the switch never fires and the queue is not re-read after it (R-27(a))**. `idb` + `fake-indexeddb` are the only new dependencies |
 | Attachments (F-34) | `apps/api/src/modules/files` **implemented in 4.1.1**: `POST /v1/files/presign`, `GET /v1/files/:id`, `attachment`/`commitAttachment`/`deleteAttachment`, and `files.purge`. Signing is in-repo SigV4 (**no vendor SDK**, ADR-023), storage is an injected seam that is inert without `S3_*`, and `pnpm storage:init` creates the bucket. ⚠️ **No virus scanner**: an accepted upload is `SKIPPED` (*not scanned*), never `CLEAN`; magic-byte sniffing, `Content-Disposition`/`nosniff` and re-encoding are unbuilt (docs/08 §9.4) |
 | Not yet built | the remaining background jobs; production build for apps/api (its own decision); a **web app manifest and icons** — so the PWA is still not *installable* even though the worker ships (4.3.2, blocked on the undecided product name, ADR-014); the dashboard's **pending strip** (the query selects no pending count; the queue's own count is the header chip); and the review-queue route for a re-classified offline row (it needs its own `ReviewReason` arm) |
 | Known gap → task 2.3.3 | **COMPLETE in 2.3.3a + 2.3.3b.** The content ships from `packages/domain/src/seed/` (**39** category nodes, 131 distinct keywords, **62** merchants) and `/onboarding` seeds it: six steps, resume-at-step, Skip at every one, and a redirect from the dashboard for a Household that has not finished. **What is deliberately NOT in the wizard**, each recorded in docs/02 §4.1: step 1 previews the tree rather than editing it (the shipped `/categories` editor owns that, with I-11/I-12 enforced); step 5 writes a whole-household monthly Budget instead of "monthly income + savings target", because SavingGoal is task 3.3.2 and the budget model is expense-side; step 3 has a category picker the wireframe does not show, without which it could only learn a bill and never a person. Still open and **not** part of F-13: the classifier cannot resolve a *global* seed merchant (`loadContext` filters `merchants WHERE household_id`), which docs/02 §4.1 used to promise for a skipped step 4 — fixing it needs a precedence rule for a Household's copy-on-write duplicate, so onboarding step 4 avoids the question by creating the Household's own rows |
@@ -218,7 +221,7 @@ Read the document that owns your task before starting:
 | If you are… | Read first |
 |---|---|
 | starting any task | `docs/05-architecture.md` §2 — monorepo layout + the dependency rule |
-| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 144 entries, each saying what the failure looks like |
+| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 147 entries, each saying what the failure looks like |
 | touching money, Transactions, balances | `docs/03-domain-model.md` — **canonical glossary, DDL, invariants** |
 | adding or changing a feature | `docs/01-product-requirements.md` — the `F-xx` catalogue |
 | touching categorization, rules, prompts, AI | `docs/04-categorization-and-ai-engine.md` |
@@ -313,7 +316,7 @@ A change is not done until (doc 09 §8):
 
 ## Gotchas
 
-**The full list — 144 entries in 10 groups, each written to say what it looks like when it goes wrong —
+**The full list — 147 entries in 10 groups, each written to say what it looks like when it goes wrong —
 is [`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md). Read it before debugging
 anything that "should work".** It was split out because this file had grown past the instruction budget
 and was being truncated on load. The ones below stay here because they are the ones that bite hardest,

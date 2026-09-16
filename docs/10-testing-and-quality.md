@@ -1087,8 +1087,12 @@ a mocked `navigator.serviceWorker` cannot prove the real cache strategy works.
 > **Status (4.3.6).** The pass **has now been run**, as an ad-hoc harness (serve the production build —
 > the worker is production-only — then drive a real browser with the network cut). It answered the phase's
 > exit criterion and then some: the shell boots offline from the cache, an offline capture queues, and the
-> queue drains on reconnect, but **the drained batch wrote nothing** while the tray reported *0 waiting to
-> send, 0 refused*, and **an offline reload unlocks into `/sign-in`** with the queued work unreachable.
+> queue drains on reconnect. What it read next was wrong in one place and right in another: *the drained
+> batch wrote nothing* is real but the cause is the server's **refusal** (no `accountId` on the queued
+> rows), not a dropped entry — the tray on the flushing page shows *1 refused* — while the *0 waiting, 0
+> refused* it recorded came from a reload whose store had never reached IndexedDB (see R-27(a), whose
+> diagnosis measured that directly). And **an offline reload unlocks into `/sign-in`** with the queued
+> work unreachable.
 > Both are **R-27** / task 4.3.6. A reusable version belongs in CI precisely because it found this on its
 > first run — which is the argument for deciding the dependency below.
 >
