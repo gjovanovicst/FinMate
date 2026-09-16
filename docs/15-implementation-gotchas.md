@@ -859,6 +859,19 @@ Short, and load-bearing.
   server kept the old figure. A changed payload needs a new key (which is what a fresh `clientRowId` +
   `idempotencyKey` from a new capture gives it).
 
+- **`AGENTS.md` has a hard size budget, and per-task narratives grow it back.** It was split into this
+  file at task 2.3.3 because it had passed 64 KB and the harness was silently truncating it — dropping
+  the end of the file, including *Do not build without asking*. By 4.2.5 it had grown back to
+  **66 773 bytes** and was being truncated again (the session reports "truncated AGENTS.md from … to
+  …"), because every task appended a paragraph to the build-state line: that one line reached **20 KB**.
+  The rule the file's own doctrine already states is the fix: the build state is **phase-level**, one
+  bullet per phase, plus a `Next:` line — and the per-task decisions, deviations and defects belong in
+  the doc that owns them (docs/09 §6 for sequencing, docs/02's per-screen build-state notes, docs/06 §5's
+  implementation notes, docs/14 for ADRs and risks, this file for gotchas). Compressing that line back to
+  a summary cut the file to **49 KB** without losing a fact. **Check `wc -c AGENTS.md` when you touch it
+  and keep it under ~55 KB**, so the next task has room; a file that has to be truncated cannot be
+  obeyed, and the truncated part is always the rules at the end.
+
 - **`deleteDB` hangs in a `fake-indexeddb` spec, so the test times out with no error worth reading.**
   `idb`'s `deleteDB` waits for every open connection to close, and a connection only closes on a
   `versionchange` event — which `idb` reports through the `blocking` callback the store has to opt into.
