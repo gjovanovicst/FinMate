@@ -483,6 +483,12 @@ This implements [F-26](01-product-requirements.md) and **must not contradict
 [05 §7](05-architecture.md#7-offline--multi-device-sync-f-26)**: 05 states the policy, this states the
 platform behaviour. Legend: ✅ works offline · 📖 read-only offline · ⏳ partial · 🌐 requires network.
 
+The shell these capabilities live in is cached by the service worker
+([ADR-024](14-decisions-and-risks.md)): it holds the document, the bundles and the icons, **never** a
+response from the API, so a row marked 📖 below is read from the encrypted IndexedDB snapshot and not
+from anything the worker kept. Until 4.2.2 lands there is no snapshot at all, so a 📖 row is not even
+that yet: the shell opens and the screen shows its own failure.
+
 | Capability | State | Notes |
 |---|---|---|
 | Capture single / bulk ([F-05](01-product-requirements.md), [F-06](01-product-requirements.md)) | ✅ | Local segmentation via `packages/nlp`; committed to the outbox with `idempotency_key` + `client_id` |

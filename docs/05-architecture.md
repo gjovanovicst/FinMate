@@ -10,7 +10,7 @@ the number of moving parts that must be operated by a team of 1–2 people.
 | Layer | Choice | Why this, and not the alternative |
 |---|---|---|
 | **Web client** | **Angular 20+** (standalone components, signals, typed forms, `@defer`) | Team fluency; signals give fine-grained reactivity for a live dashboard; first-class PWA support covers mobile. React would be an option but adds no capability we lack. |
-| **Mobile** | **PWA first**, `@angular/pwa` + service worker; **Capacitor** shell in v2 | One codebase, instant updates, no store review for v1. Capacitor adds native camera/push/store presence later without a rewrite. See [07](07-platform-strategy-mobile-desktop.md). |
+| **Mobile** | **PWA first**, `@angular/pwa` + service worker; **Capacitor** shell in v2 | One codebase, instant updates, no store review for v1. Capacitor adds native camera/push/store presence later without a rewrite. See [07](07-platform-strategy-mobile-desktop.md). The worker itself — first-party, app-shell-only, production-only, prompted update — is [ADR-024](14-decisions-and-risks.md), because it is the one component that sees every request from the origin and therefore the one that can accidentally cache a household's ledger |
 | **Client state** | Signals + a thin store (`@ngrx/signals` or hand-rolled feature stores) | Full NgRx is ceremony we do not need; the domain is small and mostly server-owned. |
 | **API** | **NestJS + GraphQL (code-first, Apollo driver)** + a small REST surface | GraphQL fits the nested read shapes (transaction + splits + tags + receipt items) and avoids over-fetching on mobile. REST for file upload, OCR webhook, and health. |
 | **Realtime** | GraphQL subscriptions over WebSocket (or SSE) | Multi-device sync updates; notification badge counts. |
@@ -237,6 +237,13 @@ Mobile reality: capture must work on the metro. Design:
 - **Read model cache:** the ledger snapshot is stored with a `syncedAt` timestamp and every offline
   figure in the UI is labelled `as of <time>`. Showing a stale "safe to spend" without a timestamp is
   a trust bug.
+
+Two caches, deliberately different, and they must not be confused ([ADR-024](14-decisions-and-risks.md)):
+
+| Cache | Holds | Why it is that one |
+|---|---|---|
+| **Service worker** (`ngsw`, app shell only) | The document, the hashed bundles, the icons | It is what makes the app *open* offline. It never holds a response body from the API — no `dataGroups` entry may match `/graphql`, `/api/**`, `/auth/**` or `/v1/**` — so a household's ledger cannot land in an unencrypted HTTP cache by accident |
+| **IndexedDB** (encrypted, [08 §3.9](08-security-privacy-and-compliance.md)) | The outbox, the last-synced snapshot, the taxonomy cache | The only place household data may rest offline, because it is AES-GCM encrypted under an in-memory key, minimised to the fields a figure needs, and TTL'd |
 
 ---
 

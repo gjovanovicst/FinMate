@@ -884,6 +884,109 @@ left open and are not answerable from ADR-018:
 
 ---
 
+### ADR-024 — One service worker, first-party, app-shell-only, and enabled in production only
+**Status:** Accepted
+
+**Context.** [ADR-006](#adr-006--angular-spa--pwa-first-no-ssr-in-v1) promised "installable as a PWA, with
+a service worker for app-shell caching and offline capture", and [ADR-016](#adr-016--offline-capture-via-client-generated-ids-and-an-outbox-not-a-local-first-framework)
+fixed the offline **data** design (client-generated ids, an IndexedDB outbox, last-write-wins with a
+`version` column). Task 4.2.1 is the first piece of that to be built, and it introduces the first runtime
+component this repo has that sees every request from its own origin. Three constraints collide inside it:
+
+- [08 §3.9](08-security-privacy-and-compliance.md) and its service-worker row: household ledger data must
+  never rest in the HTTP cache — the only offline copy is the **encrypted, minimised, TTL'd** IndexedDB
+  snapshot — so the worker must "never cache API responses with ledger data beyond the encrypted snapshot".
+- [10 §8.3](10-testing-and-quality.md): an app-shell update must **prompt** "rather than swapping under an
+  active capture", because a swap reloads the page and a half-typed fragment lives only in the DOM.
+- [08 §12](08-security-privacy-and-compliance.md): "a **forced** update flow rather than an indefinitely
+  stale shell" — which, read literally, forbids declining. **The two sentences disagree**, and the
+  disagreement is worth resolving on purpose rather than discovering in a code review: *forced* and
+  *prompted* can only both hold if force means "cannot be dismissed into staleness" rather than "cannot be
+  consented to".
+
+Rule 9 also applies: a service worker and its client library are a new dependency and a new runtime
+service, so the choice is recorded before it is made.
+
+**Decision.**
+
+1. **Angular's first-party service worker is the implementation** — `@angular/service-worker` (the `ngsw`
+   runtime) with a checked-in `apps/web/ngsw-config.json` — enabled in the **production** build
+   configuration only. No third-party caching library is added.
+2. **The worker caches the app shell and nothing else.** Its `assetGroups` cover the build's own static
+   artifacts (the document, the hashed scripts and styles, the icons); a navigation request outside the
+   cache falls back to the cached document. **No `dataGroups` entry may match `/graphql`, `/api/**`,
+   `/auth/**` or `/v1/**`, and there is no runtime caching of responses at all.** A test reads this
+   config and fails if such an entry appears. Offline *data* is IndexedDB under [08 §3.9](08-security-privacy-and-compliance.md),
+   exactly as ADR-016 says.
+3. **Registration is production-only** (`enabled: !isDevMode()`): in development the worker would serve a
+   stale shell and fight the dev server's module graph. The honest cost is that `web:serve` cannot
+   exercise the worker — verification is `web:build` plus a static server over `dist/browser`.
+4. **The update flow is a non-dismissible prompt.** `SwUpdate.versionUpdates` → the shell renders a banner;
+   `activateUpdate()` is called **only** from its button, so nothing swaps a page under an in-flight
+   capture: there is no timer, no `skipWaiting`, no automatic reload. "Forced" is realised as *no
+   dismissal* rather than *no consent* — the banner stays until the user reloads — which is the only
+   reading under which [08 §12](08-security-privacy-and-compliance.md) and [10 §8.3](10-testing-and-quality.md)
+   are both true.
+5. **Activation-when-idle is accepted.** With no client running, `ngsw` may activate an installed version
+   by itself, so the next launch is the current build. No client is running, so no capture can be
+   interrupted, and this is the mechanism that keeps the fleet from staying stale behind a prompt nobody
+   clicks.
+
+**Consequences.**
+- ✅ The app opens with no network and shows its own shell instead of the browser's error page, which is
+  the precondition for 4.2.2's outbox and 4.2.3's pending tray.
+- ✅ The privacy constraint is **structural**: with no `dataGroups`, there is nothing to forget, and the
+  assertion is a test rather than a review habit. An HTTP cache of a household's ledger cannot be created
+  by accident.
+- ✅ No hand-rolled cache versioning. `ngsw.json`'s hash table is generated from the build, and
+  `ngsw-worker.js`/`ngsw.json` are served unhashed and revalidated, so a stale asset cannot be paired with
+  a fresh document once a version is activated.
+- ✅ 4.2.5's push has a worker to deliver to; without this task it had none.
+- ⚠️ **`ngsw` fails quietly.** A resource listed in `assetGroups` that the build does not emit makes the
+  whole install fail **at runtime** (the classic instance is `/favicon.ico` from the `@angular/pwa`
+  default config) and a glob that matches nothing caches nothing — neither is a build error. The
+  mitigation is this task's verification: every `hashTable` entry is resolved against the built output.
+- ⚠️ **A cached shell can outlive a deploy and talk to a newer API.** The prompt is the only defence, so a
+  tab left open for days keeps the old bundle until it is clicked. API changes must therefore stay
+  additive within a release, which [06](06-api-specification.md) already requires.
+- ⚠️ **Production serving is now part of the contract and is not built.** The worker needs HTTPS (or
+  `localhost`), origin scope, and `ngsw-worker.js`/`ngsw.json` served unhashed and revalidated rather than
+  cached for a year. The deploy path ([11 §5](11-devops-and-observability.md)) does not exist yet — the
+  hosting decision is Q-7 — so this is a written requirement for whoever builds it, not a tested one.
+- ⚠️ **Still not installable.** No web app manifest and no icons ship in this task: installability is
+  4.3.2, and a manifest carries the product **name**, which ADR-014 leaves undecided. Until then the
+  worker improves reloads and gives an offline shell, but the browser will not offer to install the app.
+- ⚠️ **The offline experience is still mostly error states.** GraphQL calls fail offline and each screen
+  shows its own failure; queueing a capture is 4.2.2–4.2.3 and `as of <time>` labelling (with the header's
+  offline chip) is 4.2.4. Nothing in this task writes offline.
+- ⚠️ **The Playwright offline suite [10 §8.3](10-testing-and-quality.md) promises does not exist** — the
+  repo has no Playwright — so the real cache strategy is verified by inspecting and serving the built
+  manifest, not by throttling a browser to offline. A stubbed `SwUpdate` proves the banner's logic and
+  nothing about `ngsw` itself.
+- ⚠️ Reversal is cheap in code (delete the config and the registration) but not in the field: an installed
+  worker must be unregistered before the feature is removed, or existing clients keep serving a cached
+  shell.
+
+**Alternatives rejected.**
+- **(a) A hand-written service worker on the Cache API.** Full control over the fallback and the update,
+  but we would own cache versioning by hand, and the failure it produces — a shell pinned to an old build,
+  silently — is exactly what our verification recipe cannot see. Nothing in F-26's offline scope needs
+  request rewriting, which is the only thing `ngsw` cannot do.
+- **(b) Workbox directly.** The same primitives with a build integration of its own and a third-party
+  dependency, while we rebuild Angular's `SwUpdate` integration on top.
+- **(c) A `dataGroups` runtime cache for `GET` API traffic.** Rejected outright: it puts household ledger
+  responses in an unencrypted HTTP cache, contradicts 08 §3.9's minimisation and TTL, and duplicates a
+  cache we already own in IndexedDB. 3.9's snapshot is deliberately *less* than the API returns.
+- **(d) Cache-then-network for the GraphQL POST.** A POST is not cacheable by a generic strategy without
+  inventing a key, and the key would be the query plus its variables — a per-household data cache, see (c).
+- **(e) `skipWaiting` plus an automatic reload.** Simplest, and it never leaves anyone stale, but it
+  reloads a page the user is typing into; [10 §8.3](10-testing-and-quality.md) forbids exactly that.
+- **(f) Defer the worker to Phase 5.** 4.2.2's outbox can be *stored* without a worker, but 4.2.3's
+  pending tray is only honest if the shell opens offline, and 4.2.5's push is impossible without one —
+  deferring moves two tasks and blocks a third.
+
+---
+
 ## Part 2 — Risk register
 
 Scored as **Likelihood (L)** and **Impact (I)** on 1–5; **Exposure = L × I**. Anything ≥ 12 gets an
@@ -913,12 +1016,14 @@ owner and a checkpoint in [09](09-implementation-plan.md).
 | **R-20** | **Data loss or silent corruption** in offline sync (duplicate or dropped captures) | 2 | 5 | **10** | Unique `(household_id, client_id)` index, idempotency keys on every write, outbox never discards a failed item, sync integration tests including replay and conflict | Phase 4.2 |
 | **R-21** | **Rung 5 (embeddings) is inert until a local model is chosen** (ADR-021), so the semantic entity match 04 §4 promises is unexercised in the shipped build and the F-09 shorthand depends on an alias | 4 | 2 | 8 | The alias route works today and is what onboarding step 3 creates; the rung is provider-injected, so enabling it is a one-line swap once a model is chosen; the plumbing is integration-tested at the schema's width | Before the first deployment that claims semantic matching; revisit with the Part 4 model decision |
 
+| **R-22** | **A stale app shell outlives a deploy** — the service worker serves a cached document whose bundle predates an API or contract change, so the fix never reaches the user (ADR-024) | 3 | 3 | 9 | Non-dismissible update prompt that activates only on the user's click; `ngsw.json`'s generated hash table makes a mixed old/new bundle impossible; activation-when-idle catches closed tabs; API changes stay additive within a release; the per-feature offline matrix in [07 §6](07-platform-strategy-mobile-desktop.md) states what a stale shell may still do | Phase 4.2 + every release |
+
 ### Top five by exposure
 1. **R-01 onboarding cold-start (20)** — the single biggest threat, and the one the plan spends the most disproportionate effort on.
 2. **R-12 retention (16)** — a working product that people stop using is still a failed product.
 3. **R-03 / R-04 / R-05 / R-06 / R-07 / R-08 / R-14 / R-15 / R-16 (12 each)** — a cluster of medium-high risks, all addressed by decisions already taken above.
 4. **R-02 / R-09 / R-10 / R-20 (10 each)** — low-likelihood, catastrophic-impact; these justify the reconciliation job, backup rehearsal and tenancy tests even though they are unlikely.
-5. **R-11 / R-13 / R-17 / R-19 (8–9)** — monitor, do not over-invest.
+5. **R-11 / R-13 / R-17 / R-19 / R-22 (8–9)** — monitor, do not over-invest.
 
 ---
 

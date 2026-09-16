@@ -1079,7 +1079,7 @@ and editing one fragment does not re-request the others.
 | Conflict diff | Server returns a different category than the optimistic local value | A reviewable diff for the money field, never a silent clobber ([05 §7](05-architecture.md)) |
 | Stale labelling | Cached ledger snapshot rendered | Every figure carries `as of <timestamp>`; the test fails if any offline figure lacks it |
 | Retry tray | A failed flush | Surfaces with retry; never silently dropped |
-| App-shell update | New service worker available | Prompts rather than swapping under an active capture |
+| App-shell update | New service worker available | Prompts rather than swapping under an active capture — asserted on the banner's own logic (a `VERSION_READY` event shows it and does **not** activate; the button does), since the worker's real behaviour needs the Playwright pass below. [ADR-024](14-decisions-and-risks.md) |
 
 The service worker itself is exercised end-to-end in Playwright with the network throttled to offline —
 a mocked `navigator.serviceWorker` cannot prove the real cache strategy works.
