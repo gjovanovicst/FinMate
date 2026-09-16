@@ -840,6 +840,22 @@ Short, and load-bearing.
   dependency change, run `nx run worker:test`, not just the project you touched** — the worker is the
   only place the API's module graph and the worker's injector meet (ADR-022).
 
+  Operational rule after any dependency change: **`pnpm install` rewrites the peer-variant assignment**
+  (the split came back on the very next install, 4.2.2b, and `auto-install-peers=false` did **not** fix
+  it — the two variants are a valid resolution for two different closures, not a mis-set option). Run
+  `pnpm dedupe` afterwards, which collapses them, and then `nx run worker:test`. CI already installs with
+  `--frozen-lockfile`, so the committed (deduped) lockfile is what CI builds and CI is unaffected — but a
+  developer who runs a plain `pnpm install` and then the suite will see the worker fail with the
+  *Reflector* message above, and the cure is `pnpm dedupe`.
+
+- **`deleteDB` hangs in a `fake-indexeddb` spec, so the test times out with no error worth reading.**
+  `idb`'s `deleteDB` waits for every open connection to close, and a connection only closes on a
+  `versionchange` event — which `idb` reports through the `blocking` callback the store has to opt into.
+  A store that memoises its connection (as the offline repository does, deliberately) therefore blocks
+  its own deletion, and the failure looks like a hanging test rather than a database problem. The
+  offline store's spec **purges instead of deleting**, which is also what the app does on logout; assert
+  the purge empties every store and leave `deleteDB` alone (task 4.2.2b).
+
 - **The Angular service worker fails at runtime, never at build time.** A resource listed in an
   `assetGroups` glob that the build does not emit makes the **whole version install fail** — the app
   silently keeps the previous version (or nothing, on a first visit) — and a glob that matches nothing

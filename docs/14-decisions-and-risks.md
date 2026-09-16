@@ -1022,6 +1022,10 @@ Three things those documents leave open, which task 4.2.2 is where they become r
    ciphertext }`, plus the cleartext keys a lookup needs (a household UUID, a `clientRowId`), which is
    metadata we accept because we cannot index ciphertext. The data key is generated with
    `crypto.getRandomValues` and used as a **non-extractable** `CryptoKey`; nothing writes it in the clear.
+   The one record that is **not** encrypted under the data key is the data key itself: the `keys` store
+   holds it *wrapped* by the app-lock secret, which is its ciphertext already, and encrypting it under
+   the key it contains would be circular. It is stored raw, has no expiry, and is the first thing
+   `purge()` removes.
 3. **The data key is persisted only wrapped by an app-lock secret** — and the app lock is a **new task**
    (4.2.6, plus risk R-23), WebAuthn's platform authenticator preferred with a 6-digit PIN as the fallback.
    Until it ships the store runs on an **in-memory** key: the outbox works for the life of the page (a
@@ -1067,6 +1071,21 @@ Three things those documents leave open, which task 4.2.2 is where they become r
   even when the ciphertext is unreadable. Minimised, not eliminated.
 - ⚠️ TTLs are enforced on read and on open, so a profile left closed for months keeps ciphertext until it
   is opened once. The encryption is what makes that acceptable, and it is another reason not to weaken it.
+
+**Implementation notes (task 4.2.2b).** Three limits the code has and the decision text does not:
+- **The snapshot mapper exists; the window does not.** `toSnapshotRow` enforces the field whitelist, but
+  nothing yet selects "the current period plus 45 days" from the ledger — that belongs to whichever task
+  first *fills* the snapshot (4.2.4's labelling needs something to label), and the store must never be
+  handed an unbounded list. Recorded rather than implied.
+- **`seq` is monotonic within a tab, not across tabs.** It is allocated synchronously from a counter
+  seeded with the durable maximum, so two Confirm presses in the same millisecond keep their order and a
+  reload cannot reuse a number — but two tabs sharing the database could allocate the same one. Capture
+  from one tab is the supported configuration (ADR-016 is deliberately not collaborative-grade), and
+  ADR-008 defers sharing; an atomic append is a migration, not an oversight.
+- **A record that fails to authenticate is a loud failure, not a miss.** `decryptValue` throws
+  `OfflineDecryptError` rather than returning `null`, so a caller cannot read a wrong figure out of a
+  tampered record; `get`/`list` therefore surface it. The alternative — skip and carry on — would hide
+  exactly the event the encryption exists to detect.
 
 **Alternatives rejected.**
 - **(a) Store the data key unwrapped, or derive it from a device constant.** Makes "encrypted at rest"
