@@ -655,6 +655,23 @@ The tables hold platform content beside the Household’s own rows, which is whe
   `DOCUMENT` factory. A *pure* spec (no `TestBed`) needs neither, which is why most specs do not show
   the pattern — and why a service spec that injects `GraphqlClient` (which injects `HttpClient`) does.
 
+- **`ngsw-worker.js` shows nothing at all unless the push payload has `notification.title`.** Its
+  `Driver.handlePush` broadcasts the payload to any open client and *then* returns early —
+  `if (!data.notification || !data.notification.title) return;` — so a "minimal" payload of
+  `{notificationId, kind, deepLink}` produces a silent no-op when the app is closed, which is the only
+  moment push exists for. The title has to come from the payload because the SPA (and its i18n
+  catalogue) is not running, and the click target has to be
+  `notification.data.onActionClick.default = {operation: 'navigateLastFocusedOrOpen', url}` — those two
+  shapes are implementation, not documented API, so read the installed worker before changing a
+  payload (ADR-028's 4.2.5 amendment, R-24).
+
+- **`SwPush.subscription` is `NEVER` when the service worker is disabled, so `firstValueFrom` on it
+  never settles.** `provideServiceWorker(…, {enabled: false})` is every dev build (`!isDevMode()`), and
+  in that state `SwPush` sets all four observables to `NEVER` and `requestSubscription` rejects with
+  `ERR_SW_NOT_SUPPORTED`. An unguarded `await firstValueFrom(this.swPush.subscription)` is therefore a
+  promise that never resolves and never rejects — no error, no timeout, just a UI stuck on "working".
+  Every `SwPush` read must be behind `isEnabled`.
+
 Angular 22 zoneless + signals, and three separate ways a template literal or a type-checker can mislead you.
 
 - **A signal `viewChild()` read inside `afterNextRender` (or `ngAfterViewInit`) is `undefined` under

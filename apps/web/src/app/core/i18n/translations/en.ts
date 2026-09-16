@@ -263,7 +263,21 @@ export const en = {
   'notifications.settings.save': 'Save',
   'notifications.settings.saved': 'Saved.',
   'notifications.settings.error': 'Could not save. Please try again.',
-  'notifications.settings.queuedNote': 'Push is not set up on this device yet, so those notifications wait in the app.',
+  'notifications.settings.channelsNote': 'Browser push reaches a device only when it is turned on below; otherwise it waits in the app.',
+
+  // ---- push on this device (F-22, task 4.2.5) ----
+  'notifications.push.title': 'Notifications on this device',
+  'notifications.push.explain': 'Get a short alert here. The message on the lock screen never shows amounts or names.',
+  'notifications.push.unsupported': 'This browser cannot show notifications from the app.',
+  'notifications.push.serverOff': 'This deployment has not set up push, so notifications wait in the app.',
+  'notifications.push.iosInstall': 'On iPhone and iPad, notifications work only from the app added to the Home Screen (Share → Add to Home Screen).',
+  'notifications.push.blocked': 'Notifications are blocked for this site. Allow them in your browser settings for this site, then try again.',
+  'notifications.push.subscribed': 'This device receives push notifications.',
+  'notifications.push.enable': 'Turn on notifications',
+  'notifications.push.disable': 'Turn off notifications',
+  'notifications.push.working': 'Working…',
+  'notifications.push.error': 'Could not change the notification setting. Please try again.',
+  'notifications.push.emailFallback': 'Email is the reliable alternative — turn on Email above.',
 
   // ---- session ----
   'session.signOut': 'Sign out',

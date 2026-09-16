@@ -858,6 +858,15 @@ channels (`IN_APP` / `EMAIL` / `WEB_PUSH`) and quiet hours. `severity = POSITIVE
 own tab and are never styled as warnings. Web-push permission is requested after the first alert the
 user opens, not on first load.
 
+> **Build note (4.2.5).** The settings shell does not exist yet, so the preferences live on
+> `/notifications`, and the push permission is behind a **device panel** there rather than after the
+> first alert the user opens. One sentence states which of six states the device is in (ready,
+> subscribed, blocked, iOS-needs-install, deployment-has-no-push, browser-unsupported) and at most one
+> button acts on it — so a prompt is never raised unless the user pressed a button, which is a stricter
+> reading of the same rule and the only one iOS's gesture requirement allows (docs/07 §4.8). The states
+> where push cannot be established offer **email** instead, which docs/07 §4.8's binding consequence (2)
+> requires. When the settings shell lands, the panel moves unchanged.
+
 ### 4.18 Settings — F-32, F-01, F-25, F-27, F-28
 
 ```text

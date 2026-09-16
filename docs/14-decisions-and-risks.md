@@ -1326,6 +1326,39 @@ Three constraints shape the decision:
 6. **`SENT` means "accepted by the push service"**, not "seen". Push has no receipt, so the notification
    row remains the record and the copy never claims delivery to a person.
 
+**Amendment — task 4.2.5, when the client half was built (decision 4 corrected).** Decision 4 assumed the
+*client* could turn `kind` into the generic sentence the lock screen shows. It cannot. `@angular/service-worker`'s
+`ngsw-worker.js` handles a `push` event in `Driver.handlePush` by broadcasting the payload to any open
+client and then —
+
+```js
+if (!data.notification || !data.notification.title) return;
+await this.scope.registration.showNotification(data.notification.title, options);
+```
+
+— so a payload of `{ notificationId, kind, deepLink }` shows **no notification when the app is closed**,
+which is the only moment push exists for; and the title it would show has to come from the payload,
+because the SPA — and therefore the i18n catalogue decision 4 relied on — is not running. Amended, the
+payload is:
+
+```json
+{
+  "notificationId": "…", "kind": "BUDGET_PACE", "deepLink": "/budgets",
+  "notification": {
+    "title": "<APP_NAME>",
+    "data": { "onActionClick": { "default": { "operation": "navigateLastFocusedOrOpen", "url": "/budgets" } } }
+  }
+}
+```
+
+The only text that reaches a lock screen is the **brand**, `APP_NAME` from configuration (ADR-014) — not a
+sentence, so it needs no translation and does not put unreviewed copy on a lock screen, which was rejected
+alternative (c)'s actual objection. T-09 stays structural: the title is a constant chosen by the sender, the
+row's own `title`/`body` are still never read, and `web-push-payload.spec.ts` now asserts that **every
+string in the serialised payload** is one of the values this file itself decided. `data.onActionClick` is how
+`ngsw`'s own `Driver.handleClick` opens the deep link, and it is what makes a tap land on the screen that
+caused the notification. Nothing else about decisions 1–3 and 5–6 changes.
+
 **Consequences.**
 - ✅ F-22's push finally has a path: subscription → sender → delivered, with the seams this repo already
   uses for every unconfigured integration, so a CI without VAPID keys still tests the whole dispatch flow.
@@ -1341,6 +1374,11 @@ Three constraints shape the decision:
   invalidates every existing subscription — so a rotation is a re-subscribe campaign, not a redeploy.
 - ⚠️ **Delivery is best-effort and unobservable.** A `SENT` row may never have reached a device, so the
   in-app centre must remain the canonical list and no screen may say "sent to your phone".
+- ⚠️ **The payload shape is coupled to `ngsw`'s handler, which is not a public contract.** `handlePush`
+  and `onActionClick` are implementation, not documentation; an `@angular/service-worker` upgrade that
+  renames either would make push *silently* show nothing (R-24). Anything that changes the payload must be
+  re-checked against the installed `ngsw-worker.js`, and the unit test's "every string is one of ours"
+  assertion is what catches an accidental copy leak in the meantime.
 - ⚠️ **iOS delivers push only to an installed PWA** and **the PWA is not installable yet** (no manifest —
   4.3.2, blocked on the product name). Until then web push is effectively Android/desktop only, which is a
   capability gap to state in the UI rather than discover.
@@ -1398,6 +1436,7 @@ owner and a checkpoint in [09](09-implementation-plan.md).
 | **R-22** | **A stale app shell outlives a deploy** — the service worker serves a cached document whose bundle predates an API or contract change, so the fix never reaches the user (ADR-024) | 3 | 3 | 9 | Non-dismissible update prompt that activates only on the user's click; `ngsw.json`'s generated hash table makes a mixed old/new bundle impossible; activation-when-idle catches closed tabs; API changes stay additive within a release; the per-feature offline matrix in [07 §6](07-platform-strategy-mobile-desktop.md) states what a stale shell may still do | Phase 4.2 + every release |
 
 | **R-23** | **The offline cache depends on an app lock that no task builds** (ADR-025), so F-26's offline capture is session-only and Sprint 4.2's exit criterion cannot be met as written | 4 | 3 | **12** | The store, the outbox and the flush ship now and are tested in Node; the key provider is a seam, so the app lock switches persistence on with no data migration; the copy says "keep the app open" rather than implying durability; the app lock is a named task (4.2.6) with a Phase 5 checkpoint | Phase 4.2 exit + Phase 5 beta gate |
+| **R-24** | **The push payload is coupled to `ngsw-worker.js`'s undocumented `handlePush`/`onActionClick`** (ADR-028's 4.2.5 amendment), so an `@angular/service-worker` upgrade could make every push silently display nothing — `dispatch` still reports `SENT`, so nothing looks broken server-side | 3 | 3 | 9 | The dependency is pinned and the coupling is written down in the payload module and here; `web-push-payload.spec.ts` pins the exact block the worker reads; the in-app centre is the source of truth and is complete without push (docs/07 §4.8), so a silent failure costs nagging, not data; re-check `ngsw-worker.js` on every Angular major | Every Angular upgrade + Phase 5 beta gate |
 
 ### Top five by exposure
 1. **R-01 onboarding cold-start (20)** — the single biggest threat, and the one the plan spends the most disproportionate effort on.

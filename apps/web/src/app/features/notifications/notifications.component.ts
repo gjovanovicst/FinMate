@@ -4,6 +4,8 @@ import { RouterLink } from '@angular/router';
 import { NotificationStore } from '../../core/notifications/notification.store';
 import { I18nService } from '../../core/i18n/i18n.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
+import { PushService } from '../../core/push/push.service';
+import { offersEmailFallback, pushActionKey, pushMessageKey } from '../../core/push/push.view';
 import {
   CHANNELS,
   channelLabelKey,
@@ -192,7 +194,26 @@ import {
           <span>{{ i18n.t('notifications.settings.positive') }}</span>
         </label>
 
-        <p class="muted small">{{ i18n.t('notifications.settings.queuedNote') }}</p>
+        <p class="muted small">{{ i18n.t('notifications.settings.channelsNote') }}</p>
+
+        <section class="devpush" aria-labelledby="push-heading">
+          <h3 id="push-heading">{{ i18n.t('notifications.push.title') }}</h3>
+          <p class="muted small">{{ i18n.t(pushMessageKey()) }}</p>
+          @if (pushActionKey(); as action) {
+            <button type="button" class="btn" [disabled]="push.busy()" (click)="togglePush()">
+              {{ i18n.t(action) }}
+            </button>
+          }
+          @if (pushOffersEmail()) {
+            <p class="muted small">{{ i18n.t('notifications.push.emailFallback') }}</p>
+          }
+          @if (push.busy()) {
+            <span class="muted small" role="status">{{ i18n.t('notifications.push.working') }}</span>
+          }
+          @if (push.error()) {
+            <p class="error" role="alert">{{ i18n.t('notifications.push.error') }}</p>
+          }
+        </section>
 
         <button
           type="button"
@@ -360,6 +381,23 @@ import {
       margin-inline-start: 0.5rem;
       color: var(--fm-positive, #1a7f37);
     }
+    /* The device-level push panel: a plain block, no fixed widths, wraps at 320 px. */
+    .devpush {
+      margin-block: 1rem 0.5rem;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid var(--fm-border, #ddd);
+      border-radius: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      align-items: flex-start;
+    }
+    .devpush h3 {
+      margin: 0;
+    }
+    .devpush p {
+      margin: 0;
+    }
     .sr-only {
       position: absolute;
       inline-size: 1px;
@@ -374,6 +412,8 @@ export class NotificationsComponent {
   private readonly graphql = inject(GraphqlClient);
   private readonly notificationStore = inject(NotificationStore);
   readonly i18n = inject(I18nService);
+  /** This device's push state (task 4.2.5). The panel below the channels is its only renderer. */
+  readonly push = inject(PushService);
 
   readonly channels = CHANNELS;
   readonly channelLabelKey = channelLabelKey;
@@ -395,8 +435,24 @@ export class NotificationsComponent {
   readonly unreadCount = computed(() => this.rowsSignal().filter((row) => row.readAt === null).length);
   readonly quietProblem = computed(() => quietHoursProblem(this.quiet()));
 
+  /**
+   * The push panel is a pure function of the service's state (docs/07 §4.8's platform truth).
+   *
+   * The copy is chosen here rather than in the template so a state added later cannot render as a
+   * blank paragraph: `pushMessageKey` is exhaustive over the union.
+   */
+  readonly pushMessageKey = computed(() => pushMessageKey(this.push.state()));
+  readonly pushActionKey = computed(() => pushActionKey(this.push.state()));
+  readonly pushOffersEmail = computed(() => offersEmailFallback(this.push.state()));
+
   constructor() {
     void this.load();
+  }
+
+  /** Ask for permission and register this browser — only ever from this button (ADR-028 decision 5). */
+  async togglePush(): Promise<void> {
+    if (this.push.state() === 'SUBSCRIBED') await this.push.disable();
+    else await this.push.enable();
   }
 
   tone(row: NotificationRow): string {
@@ -526,6 +582,9 @@ export class NotificationsComponent {
       this.positiveFeedback.set(preferences.notificationPreferences.positiveFeedback);
       this.preferencesChannelsSignal.set(preferences.notificationPreferences.channels);
       this.notificationStore.setCount(this.rowsSignal().filter((row) => row.readAt === null).length);
+      // The push panel's facts are environment reads plus one query; a failure inside `refresh` is
+      // reported as "push is not set up", never as a screen error (see `PushService.readPublicKey`).
+      await this.push.refresh();
     } catch {
       this.error.set(true);
     } finally {

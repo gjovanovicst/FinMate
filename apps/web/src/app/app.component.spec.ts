@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthStore } from './core/auth/auth.store';
 import { GraphqlClient } from './core/graphql/graphql.client';
 import { SyncService } from './core/offline/sync.service';
+import { PushService } from './core/push/push.service';
 import { AppComponent } from './app.component';
 
 initAngularTesting();
@@ -73,6 +74,10 @@ async function mount(
       // the shell rather than mounting the whole offline stack — the real service's own behaviour is
       // `sync.service.spec.ts`'s subject.
       { provide: SyncService, useValue: { pendingCount: signal(pendingSync) } },
+      // The shell re-registers the push subscription on every app start (docs/07 §4.8, task 4.2.5).
+      // The real service injects `SwPush`, which does not exist in jsdom; its own behaviour is
+      // `core/push/push.service.spec.ts`'s subject.
+      { provide: PushService, useValue: { syncOnStart: vi.fn(() => Promise.resolve()) } },
       {
         provide: AuthStore,
         useValue: {

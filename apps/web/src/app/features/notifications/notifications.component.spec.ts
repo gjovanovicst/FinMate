@@ -11,6 +11,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { NotificationStore } from '../../core/notifications/notification.store';
+import { PushService } from '../../core/push/push.service';
+import type { PushState } from '../../core/push/push.view';
 import { NotificationsComponent } from './notifications.component';
 
 initAngularTesting();
@@ -58,10 +60,30 @@ const RULES = [
   { id: 'r1', kind: 'PACE_OVERRUN', channels: ['IN_APP'], quietHours: null, isActive: true },
 ];
 
-async function mount(): Promise<{
+/**
+ * A stand-in for `PushService`.
+ *
+ * The real one reads `SwPush`, `Notification` and `PushManager`, none of which exist here; the state
+ * machine itself is asserted in `core/push/push.view.spec.ts` and the flow in `push.service.spec.ts`.
+ * What this file proves is the rendering: the sentence, the one button, and that the button is the
+ * only thing that asks for permission.
+ */
+function fakePush(state: PushState = 'READY', overrides: { busy?: boolean; error?: boolean } = {}) {
+  return {
+    state: () => state,
+    busy: () => overrides.busy ?? false,
+    error: () => overrides.error ?? false,
+    refresh: vi.fn(() => Promise.resolve()),
+    enable: vi.fn(() => Promise.resolve()),
+    disable: vi.fn(() => Promise.resolve()),
+  };
+}
+
+async function mount(push: ReturnType<typeof fakePush> = fakePush()): Promise<{
   fixture: ReturnType<typeof TestBed.createComponent<NotificationsComponent>>;
   client: { query: ReturnType<typeof vi.fn> };
   store: NotificationStore;
+  push: ReturnType<typeof fakePush>;
 }> {
   const client = {
     query: vi.fn((query: string) => {
@@ -96,12 +118,13 @@ async function mount(): Promise<{
       // `RouterLink` is in the template (the deep link on each row), and it needs a router.
       provideRouter([]),
       { provide: GraphqlClient, useValue: client },
+      { provide: PushService, useValue: push },
     ],
   });
   const fixture = TestBed.createComponent(NotificationsComponent);
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, client, store: TestBed.inject(NotificationStore) };
+  return { fixture, client, store: TestBed.inject(NotificationStore), push };
 }
 
 function rows(fixture: { nativeElement: unknown }): HTMLElement[] {
@@ -201,6 +224,82 @@ describe('NotificationsComponent (mounted)', () => {
 
     expect(client.query).toHaveBeenCalledWith(expect.stringContaining('updateAlertRule'), {
       input: { id: 'r1', isActive: false },
+    });
+  });
+
+  describe('the push panel (task 4.2.5)', () => {
+    function pushButton(fixture: { nativeElement: unknown }): HTMLButtonElement | undefined {
+      return Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('.devpush button'),
+      )[0];
+    }
+
+    it('explains what push does and offers the one action that state allows', async () => {
+      const { fixture } = await mount(fakePush('READY'));
+
+      expect(text(fixture)).toContain('Notifications on this device');
+      // The explanation is what the permission prompt is asked *after* (ADR-028 decision 5).
+      expect(text(fixture)).toContain('never shows amounts or names');
+      expect(pushButton(fixture)?.textContent).toContain('Turn on notifications');
+      // Reading the facts must not prompt: nothing was asked for by rendering the screen.
+      expect(text(fixture)).not.toContain('Turn off notifications');
+    });
+
+    it('offers Turn off, and no email nudge, once the device is subscribed', async () => {
+      const { fixture } = await mount(fakePush('SUBSCRIBED'));
+
+      expect(text(fixture)).toContain('receives push notifications');
+      expect(pushButton(fixture)?.textContent).toContain('Turn off notifications');
+      expect(text(fixture)).not.toContain('Email is the reliable alternative');
+    });
+
+    it('states the iOS install requirement instead of offering a button that cannot work', async () => {
+      const { fixture } = await mount(fakePush('IOS_INSTALL'));
+
+      expect(text(fixture)).toContain('Home Screen');
+      expect(pushButton(fixture)).toBeUndefined();
+      // docs/07 §4.8's binding consequence: offer email where push cannot be established.
+      expect(text(fixture)).toContain('Email is the reliable alternative');
+    });
+
+    it('says the deployment has no push rather than blaming the device', async () => {
+      const { fixture } = await mount(fakePush('SERVER_OFF'));
+
+      expect(text(fixture)).toContain('has not set up push');
+      expect(pushButton(fixture)).toBeUndefined();
+    });
+
+    it('asks for permission only when the button is pressed, then calls the service', async () => {
+      const push = fakePush('READY');
+      const { fixture } = await mount(push);
+
+      expect(push.enable).not.toHaveBeenCalled();
+      pushButton(fixture)!.click();
+      await fixture.whenStable();
+
+      expect(push.enable).toHaveBeenCalledTimes(1);
+      expect(push.disable).not.toHaveBeenCalled();
+    });
+
+    it('turns the device off from the subscribed state', async () => {
+      const push = fakePush('SUBSCRIBED');
+      const { fixture } = await mount(push);
+
+      pushButton(fixture)!.click();
+      await fixture.whenStable();
+
+      expect(push.disable).toHaveBeenCalledTimes(1);
+      expect(push.enable).not.toHaveBeenCalled();
+    });
+
+    it('shows the failure and the working state without touching the list', async () => {
+      const push = fakePush('READY', { busy: true, error: true });
+      const { fixture } = await mount(push);
+
+      expect(text(fixture)).toContain('Working…');
+      expect(text(fixture)).toContain('Could not change the notification setting');
+      // A failed push toggle is not a failed load: the notification rows are still on screen.
+      expect(rows(fixture)).toHaveLength(2);
     });
   });
 });

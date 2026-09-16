@@ -7,6 +7,7 @@ import { I18nService } from './core/i18n/i18n.service';
 import type { TranslationKey } from './core/i18n/translations';
 import { NAV_ITEMS, OVERFLOW_ITEMS, badgeAccessibleName, badgeText } from './core/navigation';
 import { NotificationStore } from './core/notifications/notification.store';
+import { PushService } from './core/push/push.service';
 import { ReviewQueueStore } from './core/review/review-queue.store';
 import { AppUpdateComponent } from './shared/ui/app-update/app-update.component';
 import { LanguageSwitcherComponent } from './shared/ui/language-switcher/language-switcher.component';
@@ -451,6 +452,7 @@ export class AppComponent {
   private readonly router = inject(Router);
   private readonly reviewQueue = inject(ReviewQueueStore);
   private readonly notificationsStore = inject(NotificationStore);
+  private readonly push = inject(PushService);
   readonly i18n = inject(I18nService);
 
   readonly isAuthenticated = this.auth.isAuthenticated;
@@ -526,6 +528,11 @@ export class AppComponent {
       if (this.isAuthenticated()) {
         void this.reviewQueue.refresh();
         void this.notificationsStore.refresh();
+        // docs/07 §4.8: `pushsubscriptionchange` is unreliable, so the subscription is re-registered
+        // on every app start — which is also what revives a row the server retired after a 404/410.
+        // `syncOnStart` guards itself to one attempt per page load and does nothing unless permission
+        // was already granted, so this is not a request per navigation.
+        void this.push.syncOnStart();
       }
     });
 

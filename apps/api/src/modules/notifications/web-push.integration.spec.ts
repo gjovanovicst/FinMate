@@ -239,12 +239,20 @@ describe('web push (integration)', () => {
     ]);
     expect(await notificationStatus(id)).toBe('SENT');
 
-    // SENT means "the push service accepted it", and the payload it accepted is the minimal one.
+    // SENT means "the push service accepted it", and the payload it accepted carries the row's
+    // identity, the deep link, and — because `ngsw-worker.js` shows nothing without it — the brand as
+    // the notification title. Never the row's own copy (ADR-028 decision 4, T-09).
     const payload = JSON.parse(sender.sent[0]!.payload) as Record<string, unknown>;
     expect(payload['notificationId']).toBe(id);
-    expect(Object.keys(payload).sort()).toEqual(['deepLink', 'kind', 'notificationId']);
+    expect(Object.keys(payload).sort()).toEqual([
+      'deepLink',
+      'kind',
+      'notification',
+      'notificationId',
+    ]);
     expect(sender.sent[0]!.payload).not.toContain('Supermarket');
     expect(sender.sent[0]!.payload).not.toContain('45000');
+    expect(sender.sent[0]!.payload).not.toContain('Projected');
   });
 
   it('treats PUSH as the same channel from the client\'s point of view', async () => {

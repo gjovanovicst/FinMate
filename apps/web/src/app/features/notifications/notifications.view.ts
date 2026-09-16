@@ -105,7 +105,15 @@ export function notificationBadgeName(count: number, one: string, many: string):
   return count === 0 ? null : badgeAccessibleName(count, one, many);
 }
 
-/** Where a row takes the user, or `null` when there is nothing useful to open. */
+/**
+ * Where a row takes the user, or `null` when there is nothing useful to open.
+ *
+ * **This mapping has a second home.** A push payload has to name its destination before the SPA is
+ * running, so the API's `pushDeepLink` (`apps/api/src/modules/notifications/web-push-payload.ts`)
+ * carries the same table and the same fallback; the Android/iOS notification tap and the in-app row
+ * must land in the same place. Task 4.2.5 aligned the two on this function's answers — change one and
+ * change the other, and change `web-push-payload.spec.ts` with them.
+ */
 export function deepLinkFor(kind: string | null): string | null {
   if (kind === 'BUDGET_PACE') return '/budgets';
   if (kind === 'CATEGORY_SPIKE' || kind === 'UNUSUAL_SPEND') return '/transactions';
@@ -116,7 +124,6 @@ export function deepLinkFor(kind: string | null): string | null {
   // link than a link to nowhere.
   return kind === null ? null : '/transactions';
 }
-
 /**
  * The tone a severity renders as. `POSITIVE` is its own tone, not a shade of `INFO`: F-22 requires
  * good news to look like good news (docs/02 §7.1).

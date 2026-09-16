@@ -448,14 +448,18 @@ export class NotificationsService {
           continue;
         }
 
-        const payload = buildWebPushPayload({
-          id: row.id,
-          // Deliberately passed and deliberately unread: the T-09 test is the proof that neither
-          // can reach the payload (ADR-028 decision 4).
-          title: row.title,
-          body: row.body,
-          insightKind: row.insights?.kind ?? null,
-        });
+        const payload = buildWebPushPayload(
+          {
+            id: row.id,
+            // Deliberately passed and deliberately unread: the T-09 test is the proof that neither
+            // can reach the payload (ADR-028 decision 4). What does reach a lock screen is the brand,
+            // which is not a sentence and needs no catalogue (ADR-028's 4.2.5 amendment).
+            title: row.title,
+            body: row.body,
+            insightKind: row.insights?.kind ?? null,
+          },
+          this.config.APP_NAME,
+        );
 
         let accepted = 0;
         let pruned = 0;

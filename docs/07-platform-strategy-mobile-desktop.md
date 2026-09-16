@@ -314,6 +314,15 @@ whose subscription cannot be established gets a one-time offer; (3) no Alert is 
 quiet hours stay server-side ([05 §9](05-architecture.md#9-notification-pipeline)) and a dropped delivery
 changes nothing about the ledger; (4) delivery status is recorded from day one, so T2 is evidence-based.
 
+> **Built in 4.2.5.** The client half implements this table as a six-state device panel on
+> `/notifications` (`apps/web/src/app/core/push/`): `READY`, `SUBSCRIBED`, `BLOCKED`, `IOS_INSTALL`
+> (iOS outside an installed PWA — the row above that would otherwise read as "unsupported"),
+> `SERVER_OFF` (no VAPID pair) and `UNSUPPORTED`. Nothing prompts without a button press, which is the
+> gesture requirement; the states where a subscription cannot be established offer email, per
+> consequence (2); and `PushService.syncOnStart` re-registers an existing subscription once per app
+> start, which is the last row of the table. What is **not** built is the A2HS install funnel itself
+> (`T3`, docs/02 §4.1's install prompt — 4.3.2, blocked on the product name).
+
 ### 4.9 Storage eviction risk (IndexedDB)
 
 IndexedDB is **not durable storage**; treating it as such is how offline capture silently loses data. iOS

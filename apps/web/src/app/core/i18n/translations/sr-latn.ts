@@ -263,7 +263,21 @@ export const srLatn: Record<keyof typeof en, string> = {
   'notifications.settings.save': 'Sačuvaj',
   'notifications.settings.saved': 'Sačuvano.',
   'notifications.settings.error': 'Nije sačuvano. Pokušaj ponovo.',
-  'notifications.settings.queuedNote': 'Push još nije podešen na ovom uređaju, pa ta obaveštenja čekaju u aplikaciji.',
+  'notifications.settings.channelsNote': 'Push u pregledaču stiže na uređaj samo ako je uključen ispod; inače čeka u aplikaciji.',
+
+  // ---- push na ovom uređaju (F-22, zadatak 4.2.5) ----
+  'notifications.push.title': 'Obaveštenja na ovom uređaju',
+  'notifications.push.explain': 'Dobijaj kratko obaveštenje ovde. Poruka na zaključanom ekranu nikad ne prikazuje iznose ni nazive.',
+  'notifications.push.unsupported': 'Ovaj pregledač ne može da prikaže obaveštenja iz aplikacije.',
+  'notifications.push.serverOff': 'Push nije podešen na ovom serveru, pa obaveštenja čekaju u aplikaciji.',
+  'notifications.push.iosInstall': 'Na iPhone-u i iPad-u obaveštenja rade samo iz aplikacije dodate na početni ekran (Podeli → Dodaj na početni ekran).',
+  'notifications.push.blocked': 'Obaveštenja su blokirana za ovaj sajt. Dozvoli ih u podešavanjima pregledača za ovaj sajt, pa pokušaj ponovo.',
+  'notifications.push.subscribed': 'Ovaj uređaj prima push obaveštenja.',
+  'notifications.push.enable': 'Uključi obaveštenja',
+  'notifications.push.disable': 'Isključi obaveštenja',
+  'notifications.push.working': 'Radim…',
+  'notifications.push.error': 'Nije promenjeno. Pokušaj ponovo.',
+  'notifications.push.emailFallback': 'Email je pouzdana zamena — uključi Email iznad.',
 
   // ---- session ----
   'session.signOut': 'Odjavi se',
