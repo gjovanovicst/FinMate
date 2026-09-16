@@ -965,6 +965,26 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   — or to leave the flow entirely with `position: fixed`, offset by whatever sits below. Recorded for
   `/capture` as task 4.3.1c.
 
+- **A colour can be *defined* and still be unreadable — and an *undefined* one falls back to the user
+  agent's blue.** The phantom-token entry above is about `var(--x, fallback)` where `--x` does not exist.
+  4.3.1d's audit found the two neighbouring shapes, and both look like working CSS:
+  - `--color-text-subtle` **was** defined, at `#6e6e80` — **3.31:1** on `--color-surface-raised`, below
+    the 4.5:1 docs/02 §9 requires, across **153 element-route pairs** on 20 screens (hints, row metadata,
+    the topbar role, the capture examples label, account and merchant row badges). No test, typecheck or
+    build can see it: a token's *value* is only wrong relative to the surfaces it lands on.
+  - **three anchors had no `color` at all** (`fm-budgets`' footnote link, `analytics.controls__csv`,
+    `settings`' `a.btn`) and therefore rendered the browser default `#0000EE` — **2.02:1** on
+    `--color-bg`, i.e. invisible. There was no global `a` rule; the app's convention was a per-component
+    `.link { color: var(--color-primary) }`, so every new anchor was one omission away from the same bug.
+    Fixed at the class level, not the instance level: a single `a { color: var(--color-primary) }` in
+    `styles.css`, which component classes still override.
+  **The instrument is the only thing that finds this**, and it is cheap: resolve each text element's
+  computed `color` and its nearest non-transparent ancestor background, compute the ratio, compare it
+  against 4.5 (or 3 for large text). Two details that keep such a report honest: **disabled controls are
+  exempt** (WCAG 1.4.3) and must be *reported as exempt* rather than dropped, or the exemption looks like
+  a pass; and a token swap has **two** halves, so a light theme has to be measured separately — a fix that
+  darkens text for the dark theme can as easily fail on white.
+
 - **No hardcoded user-facing copy.** Every string goes through `I18nService.t('key')`. English is
   primary and is the source of the key set: add the string to `translations/en.ts` first, then to
   `sr-latn.ts` (typed, so a miss is a compile error). `sr-Cyrl` is generated — never edit it. A

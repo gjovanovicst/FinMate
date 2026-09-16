@@ -99,9 +99,23 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   or trailing slash cannot silently produce a cookie nobody sends), used by the write **and** both clears.
   **Verified live 9/9**: cookie stored at `/api/auth`, a hard reload stays in the app, a second reload
   survives the rotation, a deep link holds, logout really removes it.
-- **Next**: **4.3.1c** (the pinned capture bar — two designs, and the choice needs somebody looking at the
-  screen), the **human visual pass** at 320/768/1280 px that no screen has had (Phase 1's own gate), then
-  4.3.3 (mobile keyboard) / 4.3.4 (bundle + Lighthouse).
+- **4.3.1d measured every screen instead of assuming, and it paid twice.** A browser instrument walked all
+  20 authenticated routes at 320/768/1280 px **and in the light theme**, computing text contrast against
+  each element's effective background, and capturing a screenshot per screen for the human pass
+  (`.artifacts/visual-audit/contact-sheet.md`). It found a **systemic contrast defect** —
+  `--color-text-subtle` at **3.31:1** across **153 element-route pairs** (hints, row metadata, the role
+  label, row badges) — and **three anchors with no colour at all**, rendering the browser's `#0000EE` at
+  **2.02:1**. Both fixed at the class level (`styles.css`: the token value, and a global
+  `a { color: var(--color-primary) }` that stops the next one). After the fixes: **0 contrast failures,
+  0 overflow**, with the two inactive controls correctly **exempt** (WCAG 1.4.3) rather than skipped.
+  It also **measured** the tap-target gap instead of assuming it: **17 controls are under WCAG 2.2 AA's
+  24 px floor** (11 real buttons at 21 px, including the consent sheet's *Allow*/*Decline*) and 37 more
+  miss this repo's own 44 px compact rule — open as **4.3.1e**, because the fix is one shared control
+  metric and it changes every screen's rhythm.
+- **Next**: **the human visual pass** — now a review rather than a click-through, because 4.3.1d produced
+  a contact sheet of all 20 screens at three widths plus the light theme, with the mechanical defects
+  already found and fixed. **4.3.1e** (control sizes) and **4.3.1c** (the pinned capture bar) are the two
+  decisions that pass feeds. Then 4.3.3 (mobile keyboard) / 4.3.4 (bundle + Lighthouse).
 
 **The long form is in the docs, deliberately.** Each task's decisions, its deviations from these
 specifications and every defect it found live are recorded where they belong: docs/09 §6 for sequencing,
@@ -198,7 +212,7 @@ Read the document that owns your task before starting:
 | If you are… | Read first |
 |---|---|
 | starting any task | `docs/05-architecture.md` §2 — monorepo layout + the dependency rule |
-| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 140 entries, each saying what the failure looks like |
+| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 141 entries, each saying what the failure looks like |
 | touching money, Transactions, balances | `docs/03-domain-model.md` — **canonical glossary, DDL, invariants** |
 | adding or changing a feature | `docs/01-product-requirements.md` — the `F-xx` catalogue |
 | touching categorization, rules, prompts, AI | `docs/04-categorization-and-ai-engine.md` |
@@ -293,7 +307,7 @@ A change is not done until (doc 09 §8):
 
 ## Gotchas
 
-**The full list — 140 entries in 10 groups, each written to say what it looks like when it goes wrong —
+**The full list — 141 entries in 10 groups, each written to say what it looks like when it goes wrong —
 is [`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md). Read it before debugging
 anything that "should work".** It was split out because this file had grown past the instruction budget
 and was being truncated on load. The ones below stay here because they are the ones that bite hardest,

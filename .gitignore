@@ -56,3 +56,6 @@ prisma/*.db
 
 # Evaluation-harness artefacts (docs/10 §5). The runner writes a report; nothing in it is source.
 apps/api/.evals/
+
+# Verification artifacts (screenshots, reports). Regenerate with the audit script; never committed.
+.artifacts/

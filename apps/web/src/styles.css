@@ -60,7 +60,12 @@
   --color-border: #2b2b36;
   --color-text: #ececf1;
   --color-text-muted: #a0a0b0;
-  --color-text-subtle: #6e6e80;
+  /* 4.3.1d. Was #6e6e80 — 3.31:1 on `--color-surface-raised`, i.e. below the 4.5:1 docs/02 §9
+     requires, across 153 element-route pairs measured on 20 screens (hints, row metadata, the
+     role label, the capture examples label, account/merchant row badges). Subtle means "dimmer
+     than muted", not "unreadable": this still sits below `--color-text-muted` (6.42:1) at 5.1:1
+     on the lightest surface it is used on. */
+  --color-text-subtle: #8f8fa4;
 
   /* Brand: indigo-violet, chosen to stay clear of the reserved status hues. */
   --color-primary: #7c6cf5;
@@ -85,7 +90,8 @@
   --color-border: #dcdce5;
   --color-text: #16161c;
   --color-text-muted: #5a5a6b;
-  --color-text-subtle: #85859a;
+  /* 4.3.1d: #85859a was 3.35:1 on white; this is 4.93:1 and still dimmer than muted (6.26:1). */
+  --color-text-subtle: #6a6a78;
   --color-primary: #5b48e0;
   --color-primary-hover: #4b39cf;
   --color-primary-contrast: #ffffff;
@@ -108,6 +114,14 @@ body {
   margin: 0;
   padding: 0;
   min-block-size: 100%;
+}
+
+/* Every link is the brand colour unless a component says otherwise (a class beats this: `.btn`,
+   `.link` and `.nav__link` all set their own). Without this rule an anchor with no colour class
+   inherits the user agent's `#0000EE`, which is **2.02:1** on `--color-bg` — invisible. Three
+   anchors shipped that way and the audit found them (4.3.1d); the rule is what stops the fourth. */
+a {
+  color: var(--color-primary);
 }
 
 body {
