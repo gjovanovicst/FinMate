@@ -120,8 +120,11 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   What works: the shell boots offline from the cache, an offline capture queues, and the queue drains on
   reconnect. What does not, measured: the drained batch wrote **zero transactions and zero decisions**
   while the tray reported *0 waiting to send, 0 refused* — so the entry was dropped as sent, not refused,
-  and the worker answers `/graphql` with a synthetic **504** offline, which makes `outbox.flush`'s
-  classifier the suspect; and an **offline reload** renders the lock screen, unlocks, and lands on
+  and the **diagnosis has since ruled out both obvious suspects** — `outbox.flush` retries a 5xx
+  correctly and `GraphqlClient.query` throws for an `errors` body or a 200 with no `data`, so neither can
+  remove an entry; the flush's POST returned 200, so the client accepted something success-shaped while the
+  server wrote nothing, and the next step is to capture that response *body* (the API keeps no request log
+  to cross-check against); and an **offline reload** renders the lock screen, unlocks, and lands on
   `/sign-in` with no way in, so the queued work is on disk and unreachable. Recorded as **R-27** (4.3.6).
 - **Next**: **R-27's two findings** (4.3.6 — the first half is diagnosis, not a fix), then **the human visual pass** — now a review rather than a click-through, because 4.3.1d produced
   a contact sheet of all 20 screens at three widths plus the light theme, with the mechanical defects
