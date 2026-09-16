@@ -1171,6 +1171,12 @@ layer. Task 4.2.3 is the **UX** on top of it, and four things it needs are not d
   any screen, so the tray can change under them. That is the honest behaviour — the alternative is a queue
   that only drains when someone opens a particular screen — but it is why the tray re-reads the queue
   rather than holding a snapshot.
+- ⚠️ **A queued entry is immutable, and that is a server property rather than a UI preference.** Verified
+  live in 4.2.3: an identical replay collapses to one Transaction (`wasReplayed: true`), but a resend
+  under the **same** `idempotencyKey` with a *different* amount also returns the original row — the first
+  payload wins, with no refusal. The tray therefore offers retry and discard and **never** "edit and
+  resend": editing a queued payload would show a success while the server kept the old figure, and a
+  changed row needs a new key. docs/15 carries the measurement.
 - ⚠️ `meta` makes the outbox slightly more than a queue: it is now a place a caller can stash client-only
   state. Kept to one optional field with no semantics inside the outbox, and the tray is its only reader.
 

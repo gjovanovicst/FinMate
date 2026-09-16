@@ -10,6 +10,7 @@ import { NotificationStore } from './core/notifications/notification.store';
 import { ReviewQueueStore } from './core/review/review-queue.store';
 import { AppUpdateComponent } from './shared/ui/app-update/app-update.component';
 import { LanguageSwitcherComponent } from './shared/ui/language-switcher/language-switcher.component';
+import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
 
 /**
  * The application shell: navigation plus a content outlet.
@@ -28,7 +29,14 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
 @Component({
   selector: 'fm-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, LanguageSwitcherComponent, AppUpdateComponent],
+  imports: [
+    RouterOutlet,
+    RouterLink,
+    RouterLinkActive,
+    LanguageSwitcherComponent,
+    AppUpdateComponent,
+    SyncChipComponent,
+  ],
   template: `
     <a class="skip-link" href="#main">{{ i18n.t('app.skipToContent') }}</a>
 
@@ -106,6 +114,11 @@ import { LanguageSwitcherComponent } from './shared/ui/language-switcher/languag
 
           <div class="topbar__actions">
             <fm-language-switcher />
+
+            <!-- ADR-026 decision 1: the pending queue's count lives beside the bell, at every size
+                 class, so the nav keeps its one badged destination (docs/02 section 2.3). It renders
+                 nothing while the queue is empty. -->
+            <fm-sync-chip />
 
             <a
               class="topbar__button"

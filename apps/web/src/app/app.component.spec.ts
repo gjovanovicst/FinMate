@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthStore } from './core/auth/auth.store';
 import { GraphqlClient } from './core/graphql/graphql.client';
+import { SyncService } from './core/offline/sync.service';
 import { AppComponent } from './app.component';
 
 initAngularTesting();
@@ -40,7 +41,10 @@ const SESSION = {
   sessionId: 's-1',
 };
 
-async function mount(count: number): Promise<{
+async function mount(
+  count: number,
+  pendingSync = 0,
+): Promise<{
   fixture: ReturnType<typeof TestBed.createComponent<AppComponent>>;
 }> {
   const query = vi.fn((document: string) => {
@@ -65,6 +69,10 @@ async function mount(count: number): Promise<{
         },
       },
       { provide: GraphqlClient, useValue: { query } as unknown as GraphqlClient },
+      // The header's sync chip (ADR-026) injects the sync service. Stubbing it keeps this spec about
+      // the shell rather than mounting the whole offline stack — the real service's own behaviour is
+      // `sync.service.spec.ts`'s subject.
+      { provide: SyncService, useValue: { pendingCount: signal(pendingSync) } },
       {
         provide: AuthStore,
         useValue: {
@@ -122,6 +130,27 @@ describe('AppComponent nav (mounted)', () => {
     // The spec mounts with the English catalogue, which is the product's primary language (ADR-019).
     expect(header?.textContent).toContain('Sign out');
     expect((fixture.nativeElement as HTMLElement).querySelector('.session')).toBeNull();
+  });
+
+  it('keeps the pending-sync chip in the header, beside the bell (ADR-026 decision 1)', async () => {
+    // docs/02 §2.3 keeps the review slot as the only badged nav destination, so the queue's count is
+    // chrome rather than a destination: a header chip that links to the tray at every size class.
+    const { fixture } = await mount(0, 2);
+    const host = fixture.nativeElement as HTMLElement;
+    const chip = host.querySelector('header.topbar a[href="/pending"]');
+
+    expect(chip).not.toBeNull();
+    expect(chip?.textContent).toContain('Waiting to send (2)');
+    // Not a nav destination — the nav must not gain a pending slot.
+    expect(host.querySelector('nav a[href="/pending"]')).toBeNull();
+  });
+
+  it('draws no sync chip while nothing is queued', async () => {
+    const { fixture } = await mount(0, 0);
+    const host = fixture.nativeElement as HTMLElement;
+
+    expect(host.querySelector('fm-sync-chip')).not.toBeNull();
+    expect(host.querySelector('a[href="/pending"]')).toBeNull();
   });
 
   afterEach(() => {

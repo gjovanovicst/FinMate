@@ -18,6 +18,7 @@ import {
   summariseCommit,
   suspectTransactionIds,
   toCommitRows,
+  toPreviewRows,
   type CaptureProposal,
   type CaptureRow,
 } from './capture.view';
@@ -262,6 +263,37 @@ describe('toCommitRows', () => {
     expect(directionUnsure(rows[0]!)).toBe(true);
     // `TransactionKind` has no UNKNOWN arm: the preview must ask rather than commit a guess.
     expect(toCommitRows(rows)[0]!.kind).toBe('EXPENSE');
+  });
+});
+
+describe('toPreviewRows', () => {
+  it('carries the local category the user was shown, so a diff has a before side', () => {
+    const rows = applyFragments(parse('Lidl 2000'), [proposal({ categoryId: 'cat-food' })]);
+    const preview = toPreviewRows(rows, (id) => (id === 'cat-food' ? 'Hrana' : null));
+
+    expect(preview).toEqual([
+      {
+        clientRowId: rows[0]!.clientRowId,
+        rawText: 'Lidl 2000',
+        localCategoryId: 'cat-food',
+        localCategoryName: 'Hrana',
+      },
+    ]);
+  });
+
+  it('prefers the user’s own category and leaves an unclassified row with none', () => {
+    const overridden = parse('Lidl 2000').map((row) => ({ ...row, categoryId: 'cat-other' }));
+    expect(toPreviewRows(overridden, () => 'Drugo')[0]?.localCategoryName).toBe('Drugo');
+    expect(toPreviewRows(parse('Lidl 2000'), () => 'Drugo')[0]?.localCategoryId).toBeNull();
+  });
+
+  it('covers exactly the rows the commit sends', () => {
+    const rows = parse('Lidl 2000, gorivo 3500');
+    const withRemoved: readonly CaptureRow[] = [{ ...rows[0]!, removed: true }, rows[1]!];
+
+    expect(toPreviewRows(withRemoved, () => null).map((row) => row.clientRowId)).toEqual(
+      toCommitRows(withRemoved).map((row) => row.clientRowId),
+    );
   });
 });
 

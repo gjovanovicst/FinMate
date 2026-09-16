@@ -1245,7 +1245,7 @@ a string.
 | `capture.row.ambiguous` | Dva moguća iznosa — koji je? | Two possible amounts — which one? | The parser never guesses |
 | `capture.duplicate` | Izgleda kao duplikat · Ipak dodaj · Prikaži postojeću | Looks like a duplicate · Add anyway · Show the existing one | Heuristic warning, not an error |
 | `capture.undo` | Dodato {n} · Poništi | Added {n} · Undo | 10 s |
-| `capture.queued` | Čeka slanje ({n}) | Waiting to sync ({n}) | Offline |
+| `capture.queued` | Sačuvano, čeka slanje ({n}) | Saved, waiting to send ({n}) | Offline. **4.2.3 added *sačuvano***: the composer clears exactly as it does on a success, so the sentence has to say the capture is safe — *"čeka slanje"* alone leaves the user unsure whether it was accepted. (*Čeka slanje ({n})* is the **chip's** copy, which is `sync.chip` — a different key for a different fact.) |
 | `confidence.auto` | Sigurno | Confident | ≥ 0.90 |
 | `confidence.verify` | Proveri | Verify | 0.60–0.89 |
 | `confidence.ask` | Potrebna potvrda | Needs confirmation | < 0.60 |

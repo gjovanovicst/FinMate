@@ -848,6 +848,17 @@ Short, and load-bearing.
   developer who runs a plain `pnpm install` and then the suite will see the worker fail with the
   *Reflector* message above, and the cure is `pnpm dedupe`.
 
+- **An `idempotencyKey` owns its row: a resend with *different* money returns the ORIGINAL, not an
+  error.** Verified live in 4.2.3 against `captureCommit`: the same batch twice collapses to one
+  Transaction with `wasReplayed: true` and `replayed: true` (I-10 working exactly as designed), but a
+  third call with the **same key and a different amount** also returns the original row — 200000, not
+  the 999900 that was sent — with `wasReplayed: true` and no refusal. So a replay is safe **only if the
+  payload never changes**: the first payload wins, silently. The consequence for the outbox is a design
+  constraint, not a nicety — **a queued entry is immutable**, and the pending tray offers retry and
+  discard but never "edit and resend", because editing one would show the user a success while the
+  server kept the old figure. A changed payload needs a new key (which is what a fresh `clientRowId` +
+  `idempotencyKey` from a new capture gives it).
+
 - **`deleteDB` hangs in a `fake-indexeddb` spec, so the test times out with no error worth reading.**
   `idb`'s `deleteDB` waits for every open connection to close, and a connection only closes on a
   `versionchange` event — which `idb` reports through the `blocking` callback the store has to opt into.

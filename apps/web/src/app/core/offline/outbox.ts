@@ -38,6 +38,21 @@ export interface OutboxEntry {
   readonly variables: Record<string, unknown>;
   readonly status: OutboxStatus;
   readonly error?: string;
+  /**
+   * How many times a **retryable** failure has stopped the flush at this entry.
+   *
+   * ADR-026 decision 3 makes the count user-visible ("3 attempts, last: no connection") and feeds
+   * {@link nextAttemptDelay}. A refusal never increments it: retrying a refusal produces the same
+   * refusal, so counting it as an attempt would misdescribe the queue.
+   */
+  readonly attempts: number;
+  /**
+   * Client-only state the queue carries and **never sends** — the local preview a diff is built from
+   * (ADR-026 decisions 2 and 5). Stored whole so the tray can compare the queued preview with the
+   * server's own answer after a reload, and deliberately without semantics inside the outbox: it is a
+   * place a caller may stash something, and the tray is its only reader.
+   */
+  readonly meta?: Record<string, unknown>;
 }
 
 /**
@@ -137,6 +152,24 @@ export function isRetryable(error: unknown): boolean {
   return true;
 }
 
+/** The first retry waits this long. */
+export const BACKOFF_BASE_MS = 2_000;
+/** No retry ever waits longer than this, however many times it has failed. */
+export const BACKOFF_CAP_MS = 60_000;
+
+/**
+ * How long the next attempt for an entry with `attempts` failures should wait: 2 s doubling, capped
+ * at 60 s (ADR-026 decision 3). Pure and exported so the policy can be asserted directly rather than
+ * observed through a timer — this build drives flushes from events (app start, `online`,
+ * `visibilitychange`), not from a scheduled timer, and the tray shows this figure as the wait the
+ * policy intends.
+ */
+export function nextAttemptDelay(attempts: number): number {
+  // `NaN` is treated as no attempt at all, and an infinite count clamps to the cap by definition.
+  const steps = Number.isNaN(attempts) ? 0 : Math.max(0, Math.floor(attempts));
+  return Math.min(BACKOFF_CAP_MS, BACKOFF_BASE_MS * 2 ** steps);
+}
+
 /**
  * The queue itself, backed by the offline store.
  *
@@ -148,11 +181,21 @@ export function isRetryable(error: unknown): boolean {
 export class Outbox {
   private seeded: Promise<void> | null = null;
   private nextSeq = 0;
+  /**
+   * The flush currently in flight, so a second caller joins it instead of sending the same entry
+   * twice (ADR-026 decision 3). `online` and `visibilitychange` routinely fire a few milliseconds
+   * apart, and two overlapping flushes would race the same `seq` through the transport.
+   */
+  private inFlight: Promise<FlushResult> | null = null;
 
   constructor(private readonly store: OfflineRepository) {}
 
   /** Queue one mutation. Returns the entry, so a caller can surface its `seq` immediately. */
-  async enqueue(document: string, variables: Record<string, unknown>): Promise<OutboxEntry> {
+  async enqueue(
+    document: string,
+    variables: Record<string, unknown>,
+    meta?: Record<string, unknown>,
+  ): Promise<OutboxEntry> {
     await this.seed();
     const seq = ++this.nextSeq;
     const entry: OutboxEntry = {
@@ -161,6 +204,8 @@ export class Outbox {
       document,
       variables,
       status: 'pending',
+      attempts: 0,
+      ...(meta === undefined ? {} : { meta }),
     };
     await this.store.put(OUTBOX_STORE, keyFor(seq), entry, PENDING_CAPTURE_TTL_MS);
     return entry;
@@ -180,12 +225,17 @@ export class Outbox {
   async retry(seq: number): Promise<void> {
     const entry = await this.store.get<OutboxEntry>(OUTBOX_STORE, keyFor(seq));
     if (!entry) return;
+    // `error` is dropped on purpose: it described the previous failure, and a row the user asked to
+    // try again is not still reporting it. `attempts` survives — it is the entry's history, not the
+    // last attempt's outcome.
     const next: OutboxEntry = {
       seq: entry.seq,
       enqueuedAt: entry.enqueuedAt,
       document: entry.document,
       variables: entry.variables,
       status: 'pending',
+      attempts: entry.attempts,
+      ...(entry.meta === undefined ? {} : { meta: entry.meta }),
     };
     await this.store.put(OUTBOX_STORE, keyFor(seq), next, remainingTtl(entry));
   }
@@ -200,9 +250,25 @@ export class Outbox {
    *
    * A success removes the entry; a refusal marks it rejected and the flush carries on; a retryable
    * failure stops the flush and leaves it and everything after it pending, so the queue's order is
-   * never reordered by a partial failure.
+   * never reordered by a partial failure. A retryable failure also records the attempt and the last
+   * error, which is what the tray reads.
+   *
+   * **Not re-entrant.** A second call while one is in flight returns the same promise rather than
+   * re-reading the queue: `online` and `visibilitychange` can both fire for one reconnection.
    */
   async flush(send: OutboxSend): Promise<FlushResult> {
+    if (this.inFlight !== null) return this.inFlight;
+
+    const running = this.drain(send);
+    this.inFlight = running;
+    try {
+      return await running;
+    } finally {
+      this.inFlight = null;
+    }
+  }
+
+  private async drain(send: OutboxSend): Promise<FlushResult> {
     let sent = 0;
     let rejected = 0;
 
@@ -215,15 +281,22 @@ export class Outbox {
         await this.store.remove(OUTBOX_STORE, keyFor(entry.seq));
         sent += 1;
       } catch (error) {
+        // Keep the original 30-day window rather than restarting it on every failure.
+        const ttl = remainingTtl(entry);
         if (isRetryable(error)) {
-          return { sent, rejected, stoppedAt: entry };
+          const attempted: OutboxEntry = {
+            ...entry,
+            attempts: entry.attempts + 1,
+            error: describe(error),
+          };
+          await this.store.put(OUTBOX_STORE, keyFor(entry.seq), attempted, ttl);
+          return { sent, rejected, stoppedAt: attempted };
         }
         await this.store.put(
           OUTBOX_STORE,
           keyFor(entry.seq),
           { ...entry, status: 'rejected', error: describe(error) },
-          // Keep the original 30-day window rather than restarting it on every refusal.
-          remainingTtl(entry),
+          ttl,
         );
         rejected += 1;
       }

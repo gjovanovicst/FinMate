@@ -1,21 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
 
+// `import type` only: the annotation is erased, so no Angular code is loaded into this Node-only spec
+// while the compiler still links the real class to the structural shape below.
+import type { GraphQLRequestError } from '../graphql/graphql.client';
+
 import { InMemoryOfflineStore } from './offline-store';
 import {
+  BACKOFF_CAP_MS,
   Outbox,
   isRetryable,
+  nextAttemptDelay,
   type GraphQLFailure,
   type OutboxSend,
 } from './outbox';
 
 /**
- * The real error whose *shape* {@link GraphQLFailure} models. `import type` is erased at runtime, so
- * no Angular code is loaded into this Node-only spec, but the assignment below still makes the
- * compiler check the two against each other: if `GraphQLRequestError` ever stops having a numeric
- * `status` and an `errors` array, this file stops type-checking instead of the classifier quietly
- * treating every failure as retryable.
+ * The real error whose *shape* {@link GraphQLFailure} models. The import above is a type-only import,
+ * so nothing Angular is loaded at runtime, while the assignment below still makes the compiler check
+ * the two against each other: if `GraphQLRequestError` ever stops having a numeric `status` and an
+ * `errors` array, this file stops type-checking instead of the classifier quietly treating every
+ * failure as retryable.
  */
-type RealGraphQLFailure = import('../graphql/graphql.client').GraphQLRequestError;
+type RealGraphQLFailure = GraphQLRequestError;
 type ShapeIsPinned = RealGraphQLFailure extends GraphQLFailure ? true : never;
 
 const shapeIsPinned: ShapeIsPinned = true;
@@ -77,6 +83,27 @@ describe('isRetryable', () => {
   });
 });
 
+describe('nextAttemptDelay', () => {
+  // ADR-026 decision 3: 2 s base, doubling, 60 s cap — the policy the tray displays.
+  it('starts at two seconds and doubles', () => {
+    expect(nextAttemptDelay(0)).toBe(2_000);
+    expect(nextAttemptDelay(1)).toBe(4_000);
+    expect(nextAttemptDelay(2)).toBe(8_000);
+    expect(nextAttemptDelay(4)).toBe(32_000);
+  });
+
+  it('caps at sixty seconds however many times it has failed', () => {
+    expect(nextAttemptDelay(5)).toBe(BACKOFF_CAP_MS);
+    expect(nextAttemptDelay(50)).toBe(BACKOFF_CAP_MS);
+    expect(nextAttemptDelay(Number.POSITIVE_INFINITY)).toBe(BACKOFF_CAP_MS);
+  });
+
+  it('never returns a negative or fractional delay', () => {
+    expect(nextAttemptDelay(-3)).toBe(2_000);
+    expect(nextAttemptDelay(1.9)).toBe(4_000);
+  });
+});
+
 describe('Outbox', () => {
   it('Outbox flush order: sends whole entries in seq order', async () => {
     const outbox = queued();
@@ -115,6 +142,65 @@ describe('Outbox', () => {
       'mutation Two',
       'mutation Three',
     ]);
+  });
+
+  it('records the attempt and the last error on a retryable failure (ADR-026 decision 3)', async () => {
+    const outbox = queued();
+    await outbox.enqueue('mutation One', {});
+
+    const down = vi.fn<OutboxSend>().mockRejectedValue(serverFault());
+    await outbox.flush(down);
+    await outbox.flush(down);
+
+    const [entry] = await outbox.pending();
+    expect(entry?.status).toBe('pending');
+    expect(entry?.attempts).toBe(2);
+    // The tray renders this as "2 attempts, last: ..." — the server's own message, not a code.
+    expect(entry?.error).toBe('refused');
+
+    // A success still deletes the entry, attempts and all.
+    await outbox.flush(vi.fn<OutboxSend>().mockResolvedValue(undefined));
+    expect(await outbox.pending()).toEqual([]);
+  });
+
+  it('does not re-enter: a second concurrent flush joins the one in flight', async () => {
+    const outbox = queued();
+    await outbox.enqueue('mutation One', {});
+    await outbox.enqueue('mutation Two', {});
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const send = vi.fn<OutboxSend>(async () => {
+      await gate;
+    });
+
+    const first = outbox.flush(send);
+    const second = outbox.flush(send);
+    release();
+    await Promise.all([first, second]);
+
+    // Without the guard each call would drain the queue and send twice per entry.
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(await outbox.pending()).toEqual([]);
+  });
+
+  it('stores client-only meta and never sends it', async () => {
+    const outbox = queued();
+    const entry = await outbox.enqueue(
+      'mutation One',
+      { row: '1' },
+      { preview: [{ clientRowId: 'r1' }] },
+    );
+
+    expect(entry.attempts).toBe(0);
+    expect(entry.meta).toEqual({ preview: [{ clientRowId: 'r1' }] });
+
+    const send = vi.fn<OutboxSend>(async () => {});
+    await outbox.flush(send);
+    // Exactly the two transport arguments: the preview stays client-side (ADR-026 decision 2).
+    expect(send).toHaveBeenCalledWith('mutation One', { row: '1' });
   });
 
   it('marks a refusal rejected and carries on with the rest', async () => {

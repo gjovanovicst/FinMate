@@ -752,6 +752,44 @@ export const en = {
   'capture.match.merchant': 'same merchant',
   'capture.match.description': 'similar description',
   'capture.match.date': 'nearby date',
+  // ADR-026: a retryable failure is not an error — the batch is queued and the composer clears.
+  'capture.queued': 'Saved, waiting to send ({count})',
+
+  // ---- pending sync (F-26; ADR-026, docs/02 section 4.3, docs/07 section 6) ----
+  // The header chip's count. It renders only while something is queued.
+  'sync.chip': 'Waiting to send ({count})',
+  'sync.chipLabel': 'Waiting to send, {count} entries',
+  'pending.title': 'Waiting to send',
+  'pending.subtitle': 'Captures that have not reached the server yet. Nothing here is lost.',
+  'pending.loading': 'Reading the queue…',
+  'pending.count': '{waiting} waiting to send, {refused} refused',
+  'pending.sending': 'Sending…',
+  'pending.flushError': 'The last attempt did not go through: {message}',
+  'pending.retryAll': 'Try all',
+  'pending.retry': 'Try again',
+  'pending.discard': 'Discard',
+  'pending.export': 'Export as text',
+  'pending.exportLabel': 'The queue as text — copy it somewhere safe if you need it.',
+  'pending.empty': 'Nothing is waiting to be sent',
+  'pending.emptyBody': 'Captures you make without a connection appear here until they are sent.',
+  'pending.rejectedTitle': 'The server refused these',
+  'pending.rejectedBody':
+    'Retrying them unchanged would produce the same refusal. Discard them, or record them again.',
+  'pending.pendingTitle': 'Waiting to send',
+  'pending.statusPending': 'Waiting to send',
+  'pending.statusRejected': 'Cannot be sent',
+  'pending.attemptsOne': '1 attempt',
+  'pending.attemptsMany': '{count} attempts',
+  'pending.lastError': 'Last error: {message}',
+  'pending.errorUnknown': 'The attempt did not go through.',
+  'pending.nextAttempt': 'The next attempt waits about {seconds} s.',
+  'pending.diffTitle': 'Review the differences ({count})',
+  'pending.diffBody':
+    'The server classified a queued row differently. Nothing was changed silently.',
+  'pending.diffBefore': 'Before',
+  'pending.diffAfter': 'After',
+  'pending.diffWhy': 'Why: {why}',
+  'pending.diffNoCategory': 'No category',
 
   'transactions.remember': 'Remember this for next time',
   'transactions.rememberHint':

@@ -7,6 +7,9 @@ import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
+import { CAPTURE_COMMIT, SyncService } from '../../core/offline/sync.service';
+import type { CaptureCommitInput } from '../../core/offline/sync.types';
+import { isRetryable } from '../../core/offline/outbox';
 import { toMajorString } from '../../shared/money-text';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import {
@@ -24,6 +27,7 @@ import {
   summariseCommit,
   suspectTransactionIds,
   toCommitRows,
+  toPreviewRows,
   todayLocally,
   type CaptureLane,
   type CaptureProposal,
@@ -57,49 +61,6 @@ const CAPTURE_PARSE = /* GraphQL */ `
         alternatives {
           categoryId
           confidence
-        }
-      }
-    }
-  }
-`;
-
-/** The atomic write (docs/06 §5.2). A union, so both arms must be selected explicitly. */
-const CAPTURE_COMMIT = /* GraphQL */ `
-  mutation CaptureCommit($input: CaptureCommitInput!) {
-    captureCommit(input: $input) {
-      __typename
-      ... on CaptureCommitSuccessModel {
-        replayed
-        reviewQueueCount
-        committed {
-          clientRowId
-          wasReplayed
-          transaction {
-            id
-          }
-        }
-        duplicateSuspects {
-          clientRowId
-          transactionId
-          existingTransactionId
-          similarity
-          matchedOn
-          existingTransaction {
-            id
-            description
-            occurredLocalDate
-            amount
-          }
-        }
-      }
-      ... on CaptureCommitRejectedModel {
-        code
-        message
-        rejected {
-          clientRowId
-          code
-          message
-          field
         }
       }
     }
@@ -862,6 +823,7 @@ export class CaptureComponent {
   readonly i18n = inject(I18nService);
   private readonly graphql = inject(GraphqlClient);
   private readonly errors = inject(ErrorMessageService);
+  private readonly sync = inject(SyncService);
 
   readonly text = signal('');
   readonly rows = signal<readonly CaptureRow[]>([]);
@@ -1141,12 +1103,31 @@ export class CaptureComponent {
     this.lastCommit.set(null);
   }
 
-  /** One `captureCommit` call for the whole batch (docs/06 §5.2). Atomic and idempotent. */
+  /**
+   * One `captureCommit` call for the whole batch (docs/06 §5.2). Atomic and idempotent.
+   *
+   * A **retryable** failure (offline, a timeout, a 5xx) does not fail the user's capture: the exact
+   * batch is queued with its local preview and the composer clears as if it had been saved, because
+   * docs/02 §4.3's rule is that further captures are never blocked. A **refusal** keeps today's
+   * behaviour — every offending row is named and nothing is cleared, because retrying it unchanged
+   * would produce the identical refusal.
+   */
   async commit(): Promise<void> {
     const rowsAtCommit = this.rows();
     const payload = toCommitRows(rowsAtCommit);
     if (payload.length === 0) return;
     const blockedBefore = blockedRows(rowsAtCommit).length;
+
+    // Built once and reused: the online call and a queued retry must send byte-identical variables,
+    // or the `idempotencyKey`s the rows carry stop collapsing the replay (I-10).
+    const input: CaptureCommitInput = {
+      parseId: this.parseId,
+      rows: payload,
+      defaultAccountId: this.accountId() === '' ? null : this.accountId(),
+      occurredLocalDate: null,
+      discardProposalIds: this.discardedProposalIds(),
+      allowAi: true,
+    };
 
     this.busy.set(true);
     this.error.set(null);
@@ -1156,16 +1137,7 @@ export class CaptureComponent {
     this.lastCommit.set(null);
 
     try {
-      const response = await this.graphql.query<CommitResponse>(CAPTURE_COMMIT, {
-        input: {
-          parseId: this.parseId,
-          rows: payload,
-          defaultAccountId: this.accountId() === '' ? null : this.accountId(),
-          occurredLocalDate: null,
-          discardProposalIds: this.discardedProposalIds(),
-          allowAi: true,
-        },
-      });
+      const response = await this.graphql.query<CommitResponse>(CAPTURE_COMMIT, { input });
 
       const result = response.captureCommit;
       if (result.__typename === 'CaptureCommitRejectedModel') {
@@ -1201,16 +1173,49 @@ export class CaptureComponent {
           : head,
       );
 
-      // The field is cleared only on success: a failed commit must leave the user's text exactly
-      // where it was, and the rows' `idempotencyKey`s are what make the retry safe.
-      this.text.set('');
-      this.rows.set([]);
-      this.parseId = null;
+      this.clearDraft();
     } catch (error) {
+      if (isRetryable(error)) {
+        // The queue owns the batch from here. Clearing the composer is the point (docs/02 §4.3):
+        // the user's next capture must not be blocked by a network they cannot see.
+        try {
+          await this.sync.enqueueCapture(
+            input,
+            toPreviewRows(rowsAtCommit, (id) => this.categoryName(id)),
+          );
+        } catch (queueError) {
+          // Queueing itself failed, which with a session-only store cannot happen and with a
+          // persistent one can (a blocked IndexedDB). The draft is deliberately **kept** and the
+          // failure shown: R-20's rule is that a capture is never dropped silently, and the user's
+          // text is the only remaining copy.
+          this.error.set(this.errors.for(queueError));
+          return;
+        }
+        this.saved.set(this.i18n.t('capture.queued', { count: payload.length }));
+        this.clearDraft();
+        return;
+      }
       this.error.set(this.errors.for(error));
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /** The category's own name, for the queued preview the diff reads. `null` when it is unknown. */
+  private categoryName(categoryId: string): string | null {
+    return this.categories().find((category) => category.id === categoryId)?.name ?? null;
+  }
+
+  /**
+   * Drop the draft after a commit that landed or was queued.
+   *
+   * The field clears in both cases, and the rows go with it — their `idempotencyKey`s live on in the
+   * queue entry, which is what makes the eventual retry idempotent.
+   */
+  private clearDraft(): void {
+    this.text.set('');
+    this.rows.set([]);
+    this.parseId = null;
   }
 
   /**

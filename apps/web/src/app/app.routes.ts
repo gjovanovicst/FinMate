@@ -164,6 +164,15 @@ export const routes: Routes = [
     title: 'Obaveštenja',
   },
   {
+    // ADR-026 decision 1: the pending tray is a route reached from the header's sync chip, not a nav
+    // destination — the same shape as `/notifications`, so the review slot stays the only badged one.
+    path: 'pending',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/pending/pending.component').then((m) => m.PendingComponent),
+    title: 'Čeka slanje',
+  },
+  {
     path: 'budgets',
     canActivate: [authenticatedGuard],
     loadComponent: () =>

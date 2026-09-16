@@ -1,6 +1,10 @@
 import { toLocalDate, uuidv7, type LocalDate } from '@finmate/domain';
 import { extractFragments, type TransactionFragment } from '@finmate/nlp';
 
+import type {
+  CaptureCommitRowInput,
+  CapturePreviewRow,
+} from '../../core/offline/sync.types';
 import { AUTO_APPLY_MIN, VERIFY_MIN } from '../../shared/confidence';
 
 /**
@@ -257,28 +261,8 @@ export function canCommit(rows: readonly CaptureRow[]): boolean {
   return confirmableRows(rows).length > 0 && ambiguousRows(rows).length === 0;
 }
 
-/** One row of `captureCommit`'s `rows` argument (docs/06 §5.2). */
-export interface CommitRowPayload {
-  readonly clientRowId: string;
-  readonly idempotencyKey: string;
-  readonly clientId: string;
-  readonly kind: 'EXPENSE' | 'INCOME';
-  readonly amount: { readonly amountMinor: string; readonly currency: string };
-  readonly categoryId: string | null;
-  readonly description: string;
-  readonly occurredOn: string | null;
-  readonly acceptedProposalId: string | null;
-  /**
-   * The entities the preview resolved, echoed back so the committed row records them.
-   *
-   * The server resolution is returned in the proposal and is **not** re-derived at commit time, so
-   * these are the only source. A row the server classified itself therefore still needs them sent
-   * back — which is why they come from the proposal rather than from the row's own state.
-   */
-  readonly merchantId: string | null;
-  readonly counterpartyId: string | null;
-  readonly confirmDespiteLowConfidence: boolean;
-}
+/** One row of `captureCommit`'s `rows` argument (docs/06 §5.2). The queue stores the same shape. */
+export type CommitRowPayload = CaptureCommitRowInput;
 
 /**
  * Build the commit payload.
@@ -323,6 +307,30 @@ export function toCommitRows(rows: readonly CaptureRow[]): readonly CommitRowPay
 /** True when a row's direction is a guess the user should look at (docs/04 §3.1). */
 export function directionUnsure(row: CaptureRow): boolean {
   return row.needsDirectionConfirmation || row.kind === 'UNKNOWN';
+}
+
+/**
+ * The local preview the queue carries alongside a batch, so a server-side re-classification can be
+ * shown as before → after (ADR-026 decision 5).
+ *
+ * Only the rows `toCommitRows` sends are included, so a preview row's `clientRowId` always matches a
+ * committed row's. The name is resolved through the composer's own category list: the tray names the
+ * *local* side from this snapshot, and the server side from the category query, because the commit
+ * response carries only ids.
+ */
+export function toPreviewRows(
+  rows: readonly CaptureRow[],
+  categoryName: (categoryId: string) => string | null,
+): readonly CapturePreviewRow[] {
+  return confirmableRows(rows).map((row) => {
+    const localCategoryId = row.categoryId ?? row.proposal?.categoryId ?? null;
+    return {
+      clientRowId: row.clientRowId,
+      rawText: row.rawText,
+      localCategoryId,
+      localCategoryName: localCategoryId === null ? null : categoryName(localCategoryId),
+    };
+  });
 }
 
 /** How the row's category was chosen, for the provenance line (docs/02 §3). */

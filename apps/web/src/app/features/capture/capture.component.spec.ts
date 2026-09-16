@@ -11,6 +11,7 @@ import { provideRouter } from '@angular/router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GraphqlClient } from '../../core/graphql/graphql.client';
+import { SyncService } from '../../core/offline/sync.service';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import { CaptureComponent } from './capture.component';
 
@@ -139,7 +140,10 @@ function duplicateCommitResponse() {
   };
 }
 
-async function mount(client: GraphqlClient): Promise<{
+async function mount(
+  client: GraphqlClient,
+  sync?: Partial<SyncService>,
+): Promise<{
   fixture: ReturnType<typeof TestBed.createComponent<CaptureComponent>>;
   component: CaptureComponent;
 }> {
@@ -149,6 +153,9 @@ async function mount(client: GraphqlClient): Promise<{
       provideZonelessChangeDetection(),
       provideRouter([]),
       { provide: GraphqlClient, useValue: client },
+      // A stub only where the queue's behaviour is the subject; otherwise the real service is mounted,
+      // which is harmless because an empty queue sends nothing.
+      ...(sync ? [{ provide: SyncService, useValue: sync as SyncService }] : []),
     ],
   });
   // `fm-money` is a custom element here; see the file header.
@@ -271,6 +278,68 @@ describe('CaptureComponent (mounted)', () => {
     expect(component.text()).toBe('');
     expect(component.rows()).toHaveLength(0);
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Added 1.');
+  });
+
+  it('queues the batch and clears the draft when the commit fails retryably (F-26)', async () => {
+    // An offline commit is not an error the user must resolve: the batch goes to the outbox with the
+    // ids it was built with, the composer clears, and the next capture is never blocked (docs/02 §4.3).
+    const client = stubClient();
+    (client.query as ReturnType<typeof vi.fn>).mockImplementation((document: string) => {
+      if (document.includes('CaptureAccounts')) return Promise.resolve(ACCOUNTS);
+      if (document.includes('CaptureCategories')) return Promise.resolve(CATEGORIES);
+      if (document.includes('CaptureParse')) return Promise.resolve(PARSE);
+      // How a genuinely offline client fails: status 0, which `isRetryable` treats as retryable.
+      return Promise.reject({ status: 0, message: 'Failed to fetch', errors: [] });
+    });
+
+    const enqueueCapture = vi.fn().mockResolvedValue({ seq: 1 });
+    const { fixture, component } = await mount(client.client, { enqueueCapture });
+    component.onInput('Lidl 2000');
+    fixture.detectChanges();
+
+    await component.commit();
+    fixture.detectChanges();
+
+    expect(enqueueCapture).toHaveBeenCalledTimes(1);
+    const call = enqueueCapture.mock.calls[0];
+    const input = call?.[0] as { readonly rows: readonly { readonly idempotencyKey: string }[] };
+    const preview = call?.[1] as readonly { readonly rawText: string; readonly localCategoryId: string | null }[];
+    expect(input.rows).toHaveLength(1);
+    expect(preview[0]?.rawText).toBe('Lidl 2000');
+
+    expect(component.text()).toBe('');
+    expect(component.rows()).toHaveLength(0);
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Saved, waiting to send (1)');
+  });
+
+  it('never queues a refused commit, and keeps the draft', async () => {
+    const client = stubClient();
+    (client.query as ReturnType<typeof vi.fn>).mockImplementation((document: string) => {
+      if (document.includes('CaptureAccounts')) return Promise.resolve(ACCOUNTS);
+      if (document.includes('CaptureCategories')) return Promise.resolve(CATEGORIES);
+      if (document.includes('CaptureParse')) return Promise.resolve(PARSE);
+      return Promise.resolve({
+        captureCommit: {
+          __typename: 'CaptureCommitRejectedModel',
+          code: 'NOT_FOUND',
+          message: '1 row(s) could not be committed, so none were.',
+          rejected: [
+            { clientRowId: 'whatever', code: 'NOT_FOUND', message: 'Category not found.', field: 'categoryId' },
+          ],
+        },
+      });
+    });
+
+    const enqueueCapture = vi.fn();
+    const { fixture, component } = await mount(client.client, { enqueueCapture });
+    component.onInput('Lidl 2000');
+    fixture.detectChanges();
+
+    await component.commit();
+    fixture.detectChanges();
+
+    expect(enqueueCapture).not.toHaveBeenCalled();
+    expect(component.text()).toBe('Lidl 2000');
   });
 
   it('shows the duplicate chip against the row the user typed, and undoes it in one call', async () => {
