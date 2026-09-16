@@ -83,9 +83,9 @@ import { ConsentPurposeComponent } from '../consent-purpose/consent-purpose.comp
       flex-direction: column;
       gap: 0.5rem;
       padding: 0.75rem 1rem;
-      border: 1px solid var(--fm-border, #ddd);
+      border: 1px solid var(--color-border);
       border-radius: 0.5rem;
-      background: var(--fm-surface, #fff);
+      background: var(--color-surface-raised);
     }
     .sheet__title {
       font-size: 1.1rem;
@@ -95,7 +95,7 @@ import { ConsentPurposeComponent } from '../consent-purpose/consent-purpose.comp
       margin: 0;
     }
     .muted {
-      color: var(--fm-muted, #666);
+      color: var(--color-text-muted);
     }
     .small {
       font-size: 0.85rem;

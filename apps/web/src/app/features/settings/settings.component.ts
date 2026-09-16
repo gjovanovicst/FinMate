@@ -171,7 +171,7 @@ import { SyncService } from '../../core/offline/sync.service';
       margin: 0;
     }
     .card {
-      border: 1px solid var(--fm-border, #ddd);
+      border: 1px solid var(--color-border);
       border-radius: 0.5rem;
       padding: 0.75rem 1rem;
       display: flex;
@@ -187,7 +187,7 @@ import { SyncService } from '../../core/offline/sync.service';
       margin: 0;
     }
     .muted {
-      color: var(--fm-muted, #666);
+      color: var(--color-text-muted);
     }
     .small {
       font-size: 0.85rem;
@@ -211,14 +211,14 @@ import { SyncService } from '../../core/offline/sync.service';
       gap: 0.5rem;
     }
     .error {
-      color: var(--fm-critical, #b42318);
+      color: var(--color-danger);
     }
     .purpose {
       display: flex;
       flex-direction: column;
       gap: 0.25rem;
       padding-block: 0.5rem;
-      border-block-start: 1px solid var(--fm-border, #ddd);
+      border-block-start: 1px solid var(--color-border);
     }
     .purpose h3 {
       font-size: 1rem;

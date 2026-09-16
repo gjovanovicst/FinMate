@@ -103,7 +103,7 @@ import { syncedAtLabel } from '../../../core/offline/sync.view';
       margin: 0;
     }
     .muted {
-      color: var(--fm-muted, #666);
+      color: var(--color-text-muted);
     }
     .small {
       font-size: 0.85rem;

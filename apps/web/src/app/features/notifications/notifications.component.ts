@@ -249,7 +249,7 @@ import {
       margin-block: 1rem 0.35rem;
     }
     .muted {
-      color: var(--fm-muted, #666);
+      color: var(--color-text-muted);
     }
     .small {
       font-size: 0.85rem;
@@ -270,7 +270,7 @@ import {
       gap: 0.5rem;
     }
     .row {
-      border: 1px solid var(--fm-border, #ddd);
+      border: 1px solid var(--color-border);
       border-radius: 0.5rem;
       padding: 0.6rem 0.75rem;
       display: flex;
@@ -278,16 +278,16 @@ import {
       gap: 0.35rem;
     }
     .row--unread {
-      border-inline-start: 4px solid var(--fm-accent, #2b6cb0);
+      border-inline-start: 4px solid var(--color-primary);
     }
     .row[data-tone='positive'] .row__title {
-      color: var(--fm-positive, #1a7f37);
+      color: var(--color-success);
     }
     .row[data-tone='critical'] .row__title {
-      color: var(--fm-critical, #b42318);
+      color: var(--color-danger);
     }
     .row[data-tone='warning'] .row__title {
-      color: var(--fm-warning, #9a6700);
+      color: var(--color-warning);
     }
     .row__head {
       display: flex;
@@ -302,7 +302,7 @@ import {
     }
     .row__meta {
       font-size: 0.8rem;
-      color: var(--fm-muted, #666);
+      color: var(--color-text-muted);
     }
     .row__body {
       margin: 0;
@@ -316,7 +316,7 @@ import {
     }
     .settings {
       margin-block-start: 2rem;
-      border-block-start: 1px solid var(--fm-border, #ddd);
+      border-block-start: 1px solid var(--color-border);
       padding-block-start: 0.5rem;
     }
     .rule {
@@ -356,7 +356,7 @@ import {
       font: inherit;
       padding: 0.35rem 0.7rem;
       border-radius: 0.375rem;
-      border: 1px solid var(--fm-border, #ccc);
+      border: 1px solid var(--color-border);
       background: transparent;
       cursor: pointer;
     }
@@ -366,26 +366,28 @@ import {
       text-decoration: underline;
     }
     .btn--primary {
-      background: var(--fm-accent, #2b6cb0);
-      color: #fff;
-      border-color: transparent;
+      /* The canonical primary pair (see capture.component.ts): --color-primary alone leaves white text
+         below 4.5:1, which is why the app pairs it with --color-primary-contrast. */
+      background: var(--color-primary);
+      border-color: var(--color-primary);
+      color: var(--color-primary-contrast);
     }
     .btn[disabled] {
       opacity: 0.6;
       cursor: not-allowed;
     }
     .error {
-      color: var(--fm-critical, #b42318);
+      color: var(--color-danger);
     }
     .ok {
       margin-inline-start: 0.5rem;
-      color: var(--fm-positive, #1a7f37);
+      color: var(--color-success);
     }
     /* The device-level push panel: a plain block, no fixed widths, wraps at 320 px. */
     .devpush {
       margin-block: 1rem 0.5rem;
       padding: 0.6rem 0.75rem;
-      border: 1px solid var(--fm-border, #ddd);
+      border: 1px solid var(--color-border);
       border-radius: 0.5rem;
       display: flex;
       flex-direction: column;

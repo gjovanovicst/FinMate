@@ -90,7 +90,7 @@ import { SyncService } from '../../../core/offline/sync.service';
     }
     .lock__body {
       margin: 0;
-      color: var(--fm-muted, #666);
+      color: var(--color-text-muted);
     }
     .lock__form {
       display: flex;
@@ -115,18 +115,18 @@ import { SyncService } from '../../../core/offline/sync.service';
       cursor: pointer;
     }
     .lock__muted {
-      color: var(--fm-muted, #666);
+      color: var(--color-text-muted);
       margin: 0;
     }
     .lock__error {
-      color: var(--fm-critical, #b42318);
+      color: var(--color-danger);
       margin: 0;
     }
     .lock__signout {
       margin-block-start: 0.5rem;
       background: none;
       border: 0;
-      color: var(--fm-muted, #666);
+      color: var(--color-text-muted);
       text-decoration: underline;
       cursor: pointer;
     }

@@ -910,6 +910,33 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   `href` is what catches it; the pure "what URL should this be" function cannot, because the bug is in
   what Angular does with the string.
 
+- **A CSS custom property nobody defines still resolves — to its fallback, silently — and for a colour
+  that means picking a theme.** The app's tokens are `--color-*` (`apps/web/src/styles.css`). Four
+  components — `notifications`, `settings`, `consent-purpose`, `consent-sheet` — referenced `--fm-muted`,
+  `--fm-border`, `--fm-surface`, `--fm-critical`, `--fm-positive`, `--fm-warning` and `--fm-accent`, and
+  **not one of those is defined anywhere in the repository**. Every use carried a light-theme fallback, so
+  the fallback always won: in the dark default theme the consent sheet drew `#fff` behind text set in
+  `--color-text` (`#ececf1`) — a measured **1.18:1**, an invisible heading — and the settings and
+  notifications muted text came out at **3.31:1**, under the 4.5:1 the DoD requires. Nothing caught it,
+  for four compounding reasons: no test asserts colour; jsdom has neither layout nor computed custom
+  properties; the mounted specs and the live pass asserted `textContent`, which is non-empty even when
+  the text cannot be seen; and `typecheck`, `lint` and `web:build` are all indifferent to CSS values.
+  The 25 occurrences were mostly **copied** — the two consent components were written from the settings
+  and notifications styles — which is how a phantom token spreads.
+  The fix is a token swap (`--fm-muted`/`--fm-border`/`--fm-surface`/`--fm-accent`/`--fm-critical`/
+  `--fm-positive`/`--fm-warning` → `--color-text-muted`/`--color-border`/`--color-surface-raised`/
+  `--color-primary`/`--color-danger`/`--color-success`/`--color-warning`), after which the same
+  measurements read 14.06:1 dark and 18.02:1 light for the sheet's heading, 7.37:1 and 6.26:1 for
+  settings' muted text. **The rule: never write `var(--x, fallback)` for a token you have not seen
+  defined** — grep it in `apps/web/src/styles.css` first. A fallback is a silent default, and a silent
+  default for a colour is a theme nobody chose. Note the asymmetry that makes this nastier than a typo:
+  an *undefined* token with no fallback is also silent (the declaration is dropped) but fails loudly on
+  screen, whereas one *with* a fallback renders something plausible. **There is no automated guard**, and
+  the honest reason is that tokens are legitimately defined outside `styles.css` — component-local custom
+  properties, inline `[style.--x]` bindings — so a "every referenced token is defined" check has real
+  false positives. The instrument is the measurement: resolve the computed `color` and the nearest
+  non-transparent ancestor background and compute the ratio (a few lines, run through Playwright).
+
 - **No hardcoded user-facing copy.** Every string goes through `I18nService.t('key')`. English is
   primary and is the source of the key set: add the string to `translations/en.ts` first, then to
   `sr-latn.ts` (typed, so a miss is a compile error). `sr-Cyrl` is generated — never edit it. A
