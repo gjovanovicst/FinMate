@@ -125,8 +125,10 @@ Everything here has cost time at least once, and most of it fails in a way that 
   command: take the `finmate_refresh` value out of a signup's `Set-Cookie` and send it explicitly —
   `curl -X POST -H 'content-type: application/json' -d '{}' --cookie "finmate_refresh=$REF" /api/auth/refresh`
   returns a real JWT where the same call with a cookie jar returns an empty one. Recorded as **R-26**,
-  scheduled as **4.3.5**; it needs a topology decision (move the client path, the cookie path, or the API
-  off `/api`), so do not "fix" it in passing. Verify any auth change with a **hard reload** in a browser,
+  scheduled as **4.3.5**, and **decided**: the cookie path follows the public mount prefix (one config
+  value — default `''`, `/api` in dev — used by the `Set-Cookie` *and* the `clearCookie`), so do not
+  "fix" it in passing by widening the cookie or by giving the client two prefixes. Verify any auth change
+  with a **hard reload** in a browser,
   never only through the SPA's own router or a REST call to `/auth/*`.
 
 ## 2. Prisma and the database
