@@ -331,6 +331,15 @@ type HouseholdSettings {
 # is what a *screen* may render as a summary of it. `AiRoutingEntry.effectiveProvider` is also unbuilt:
 # the composition root logs the routes at boot (`AiSeams`) and no query exposes them, so an operator reads
 # the log rather than a field. Both deviations are recorded in docs/14 ADR-032.
+#
+# `aiConsents` has two consumers since task 5.2a: `/settings`' AI section and the **first-use sheet** the
+# capture screen opens when `captureParse` comes back `degraded`. They share one client-side card
+# (`ui-consent-purpose`), so the provider/region disclosure the server sends is rendered identically by
+# both. Two properties of this document matter to a client and are easy to get wrong: the list
+# **enumerates every exposed kind**, so a purpose nobody has decided arrives as `NOT_ASKED` with
+# `recordedAt: null` rather than being absent (the table is append-only and has no "asked and unanswered"
+# row); and `state` is derived from the newest row, so a client must re-read rather than assume what its
+# own write did.
 
 type AiRoutingEntry {
   task: AiTask!

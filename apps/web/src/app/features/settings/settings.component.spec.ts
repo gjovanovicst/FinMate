@@ -2,7 +2,7 @@
 // FIRST import, deliberately: it loads the JIT compiler before any Angular import (docs/15 §9).
 import { initAngularTesting } from '@web-test/angular-testing';
 
-import { computed, provideZonelessChangeDetection, signal } from '@angular/core';
+import { CUSTOM_ELEMENTS_SCHEMA, computed, provideZonelessChangeDetection, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -13,6 +13,7 @@ import { ConsentService } from '../../core/consent/consent.service';
 import type { AiEgressEntry, ConsentRecord } from '../../core/consent/consent.view';
 import { purposeToAsk, stateOf } from '../../core/consent/consent.view';
 import { SyncService } from '../../core/offline/sync.service';
+import { ConsentPurposeComponent } from '../../shared/ui/consent-purpose/consent-purpose.component';
 import { SettingsComponent } from './settings.component';
 
 initAngularTesting();
@@ -27,6 +28,7 @@ initAngularTesting();
  */
 interface Mounted {
   readonly fixture: ReturnType<typeof TestBed.createComponent<SettingsComponent>>;
+  readonly component: SettingsComponent;
   readonly consent: ReturnType<typeof consentStub>;
   readonly lock: {
     state: ReturnType<typeof vi.fn>;
@@ -118,10 +120,20 @@ async function mount(
       },
     ],
   });
+  // The purpose card is opaque in this spec; see the AI-section suite's header below.
+  TestBed.overrideComponent(SettingsComponent, {
+    remove: { imports: [ConsentPurposeComponent] },
+    add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
+  });
   const fixture = TestBed.createComponent(SettingsComponent);
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, lock, consent: options.consent ?? consentStub([]) };
+  return {
+    fixture,
+    component: fixture.componentInstance,
+    lock,
+    consent: options.consent ?? consentStub([]),
+  };
 }
 
 function text(fixture: { nativeElement: unknown }): string {
@@ -135,23 +147,16 @@ function button(fixture: { nativeElement: unknown }, label: string): HTMLButtonE
 }
 
 /**
- * One purpose's card, found by the name it renders.
+ * The purpose cards the section rendered, in document order.
  *
- * Scoping matters here: the section lists **every** purpose the deployment needs permission for, so a
- * screen-wide `querySelector('button')` finds the *other* purposes' buttons and a test that asserts
- * "Decline is gone" passes or fails for reasons that have nothing to do with the purpose under test.
+ * The card is opaque here (see the AI-section suite), so a card is an element and not a tree: the
+ * sentences *inside* one — the provider, the region, the state, the verbs — are pinned in
+ * `consent-purpose.component.spec.ts`, which mounts it directly. What this spec proves is that the
+ * section asks for the right cards and offers none of its own.
  */
-function purpose(fixture: { nativeElement: unknown }, name: string): HTMLElement {
-  const card = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('article')).find(
-    (entry) => entry.querySelector('h3')?.textContent?.includes(name) === true,
-  );
-  if (card === undefined) throw new Error(`no purpose card named ${name}`);
-  return card as HTMLElement;
-}
-
-function purposeButton(card: HTMLElement, label: string): HTMLButtonElement | undefined {
-  return Array.from(card.querySelectorAll('button')).find((entry) =>
-    entry.textContent?.includes(label),
+function cards(fixture: { nativeElement: unknown }): readonly HTMLElement[] {
+  return Array.from(
+    (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>('fm-consent-purpose'),
   );
 }
 
@@ -235,82 +240,55 @@ describe('SettingsComponent (mounted)', () => {
  * the buttons — the provider and region the server would use, what is never sent, what declining costs —
  * and about a MEMBER seeing the state without a control.
  */
+/**
+ * `/settings`' AI consent section — docs/02 §4.18, docs/08 §6.6, task 4.2.6b's follow-up.
+ *
+ * The section is a *list of purposes plus its own framing*: which purposes exist, that the deployment
+ * routes nothing, the §6.4 never-sent list, the §6.1 trade, the MEMBER line and a refused write. The
+ * disclosure inside a card is the card's, and it is asserted where it renders.
+ */
 describe('SettingsComponent — the AI consent section', () => {
-  it('says where the text would go, naming the provider and the region from the server', async () => {
+  it('frames the section with what it is for and what never leaves the device', async () => {
     const { fixture } = await mount('OFF', { consent: consentStub([record('AI_DATA_PROCESSING', 'NOT_ASKED')]) });
 
-    const body = text(fixture);
-    expect(body).toContain('Sending text to an AI model');
-    // The disclosure is the server's, not client copy: `DEEPSEEK` and "outside the European Economic
-    // Area" come from `aiEgress`. A hardcoded provider name would be a claim (ADR-031).
-    expect(body).toContain('DEEPSEEK');
-    expect(body).toContain('outside the European Economic Area');
-    expect(body).toContain('transfer outside the EEA');
+    const section = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('#ai-heading')!.parentElement!;
+    expect(section.querySelector('h2')?.textContent).toBe('AI');
+    expect(text(fixture)).toContain('Some of the app can use an AI model');
     // The §6.4 assertion list and the §6.1 trade, both required by §6.6.
-    expect(body).toContain('Never sent:');
-    expect(body).toContain('If you decline');
-    expect(body).toContain('Not asked');
+    expect(text(fixture)).toContain('Never sent:');
+    expect(text(fixture)).toContain('If you decline');
   });
 
-  it('offers Allow and Decline while the question is open, and records the answer', async () => {
-    const { fixture, consent } = await mount('OFF', {
+  it('asks about every purpose the deployment needs, and offers no control of its own', async () => {
+    const { fixture } = await mount('OFF', { consent: consentStub([record('AI_DATA_PROCESSING', 'NOT_ASKED')]) });
+
+    // One card per purpose, so a purpose added to `CONSENT_KINDS` cannot be silently unaskable.
+    expect(cards(fixture)).toHaveLength(3);
+    // The section frames; the cards decide. A button here would be a second, undated place to consent.
+    const section = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('#ai-heading')!.parentElement!;
+    expect(section.querySelectorAll('button')).toHaveLength(0);
+  });
+
+  it('hands each card the purpose"s own stored record, and nothing when there is none', async () => {
+    const { fixture, component } = await mount('OFF', {
+      consent: consentStub([record('AI_DATA_PROCESSING', 'GRANTED')]),
+    });
+
+    expect(component.recordFor('AI_DATA_PROCESSING')?.state).toBe('GRANTED');
+    // The absence of a row is the question being open, not an error.
+    expect(component.recordFor('CLOUD_OCR')).toBeNull();
+    expect(cards(fixture)).toHaveLength(3);
+  });
+
+  it('records a card"s answer on the settings surface', async () => {
+    const { component, consent } = await mount('OFF', {
       consent: consentStub([record('AI_DATA_PROCESSING', 'NOT_ASKED')]),
     });
 
-    const card = purpose(fixture, 'Sending text to an AI model');
-    expect(purposeButton(card, 'Decline')).toBeDefined();
-    purposeButton(card, 'Allow')?.click();
-    await fixture.whenStable();
+    await component.record('AI_DATA_PROCESSING', 'GRANTED');
 
     // The surface is recorded as evidence, so a record can be traced to the screen that showed the copy.
     expect(consent.record).toHaveBeenCalledWith('AI_DATA_PROCESSING', 'GRANTED', 'settings');
-  });
-
-  it('replaces the pair with Withdraw once permission is held, and drops Decline', async () => {
-    const { fixture, consent } = await mount('OFF', {
-      consent: consentStub([record('AI_DATA_PROCESSING', 'GRANTED')]),
-    });
-
-    const card = purpose(fixture, 'Sending text to an AI model');
-    expect(card.textContent).toContain('Allowed');
-    // `Decline` again would set a state this purpose is already in — and the section's other purposes,
-    // still unasked, keep theirs.
-    expect(purposeButton(card, 'Decline')).toBeUndefined();
-
-    purposeButton(card, 'Withdraw permission')?.click();
-    await fixture.whenStable();
-
-    expect(consent.record).toHaveBeenCalledWith('AI_DATA_PROCESSING', 'WITHDRAWN', 'settings');
-  });
-
-  it('does not offer Decline again after somebody has declined', async () => {
-    // A button that sets a state it is already in is a control that does nothing.
-    const { fixture } = await mount('OFF', {
-      consent: consentStub([record('AI_DATA_PROCESSING', 'DECLINED')]),
-    });
-
-    const card = purpose(fixture, 'Sending text to an AI model');
-    expect(card.textContent).toContain('Declined');
-    expect(purposeButton(card, 'Decline')).toBeUndefined();
-    // …and the way back is still there.
-    expect(purposeButton(card, 'Allow')).toBeDefined();
-  });
-
-  it('shows a MEMBER the state and whose decision it is, with no control at all', async () => {
-    // docs/08 §3.7 and Q-11: granting or withdrawing consent is an OWNER act, because the record is the
-    // lawful-basis evidence. A MEMBER is entitled to know what their Household decided.
-    const { fixture, consent } = await mount('OFF', {
-      role: 'MEMBER',
-      consent: consentStub([record('AI_DATA_PROCESSING', 'GRANTED')]),
-    });
-
-    expect(text(fixture)).toContain('Allowed');
-    expect(text(fixture)).toContain('Only the owner of this household can change these.');
-    // No consent control anywhere on the screen — not just on the granted purpose.
-    expect(button(fixture, 'Withdraw permission')).toBeUndefined();
-    expect(button(fixture, 'Allow')).toBeUndefined();
-    expect(button(fixture, 'Decline')).toBeUndefined();
-    expect(consent.record).not.toHaveBeenCalled();
   });
 
   it('says there is nothing to allow when the deployment routes nothing', async () => {
@@ -318,20 +296,21 @@ describe('SettingsComponent — the AI consent section', () => {
     const { fixture } = await mount('OFF', { consent: consentStub([], []) });
 
     expect(text(fixture)).toContain('no AI model configured');
+    expect(cards(fixture)).toHaveLength(0);
     expect(button(fixture, 'Allow')).toBeUndefined();
-    expect(button(fixture, 'Decline')).toBeUndefined();
   });
 
-  it('marks the eval opt-in as recorded-but-unused rather than pretending it works', async () => {
-    const { fixture } = await mount('OFF', {
-      consent: consentStub([
-        record('AI_DATA_PROCESSING', 'NOT_ASKED'),
-        record('EVAL_DATASET', 'NOT_ASKED'),
-      ]),
+  it('tells a MEMBER whose decision it is, and asks them nothing', async () => {
+    // docs/08 §3.7 and Q-11: granting or withdrawing consent is an OWNER act, because the record is the
+    // lawful-basis evidence. A MEMBER is entitled to know what their Household decided.
+    const { fixture, component, consent } = await mount('OFF', {
+      role: 'MEMBER',
+      consent: consentStub([record('AI_DATA_PROCESSING', 'GRANTED')]),
     });
 
-    expect(text(fixture)).toContain('Helping improve accuracy');
-    expect(text(fixture)).toContain('nothing reads it yet');
+    expect(component.mayChange()).toBe(false);
+    expect(text(fixture)).toContain('Only the owner of this household can change these.');
+    expect(consent.record).not.toHaveBeenCalled();
   });
 
   it('reports a refused write instead of appearing to have recorded it', async () => {
@@ -341,5 +320,15 @@ describe('SettingsComponent — the AI consent section', () => {
 
     expect(text(fixture)).toContain('Your role does not permit this action.');
     expect(fixture.nativeElement.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  it('still offers the cards while the first read is in flight', async () => {
+    // The section is not gated on the read: `routes()` is empty until it lands, so gating on it would
+    // flash "no AI model configured" — a claim about the deployment — before the answer arrives.
+    const stub = consentStub([record('AI_DATA_PROCESSING', 'NOT_ASKED')]);
+    stub.loading.set(true);
+    const { fixture } = await mount('OFF', { consent: stub });
+
+    expect(text(fixture)).not.toContain('no AI model configured');
   });
 });

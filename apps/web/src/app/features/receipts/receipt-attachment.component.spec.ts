@@ -1,12 +1,10 @@
 // @vitest-environment jsdom
 // FIRST import, deliberately: it loads `@angular/compiler`, and the partially compiled Angular packages
 // used below need the JIT compiler to already be present (see `capture.component.spec.ts`).
-import { initAngularTesting } from '@web-test/angular-testing';
+import { initAngularTesting, setSignalInput } from '@web-test/angular-testing';
 
 import {
   provideZonelessChangeDetection,
-  ɵSIGNAL,
-  type ɵInputSignalNode,
 } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
@@ -104,17 +102,9 @@ type Fixture = ReturnType<typeof TestBed.createComponent<ReceiptAttachmentCompon
 /**
  * Write a value onto a signal input, bypassing Angular's input machinery.
  *
- * See the module doc: the JIT runner cannot register `input()` signal inputs, so `setInput` is a
- * no-op here. `ɵSIGNAL` is the node every signal carries; applying the value the way the framework
- * would keeps the component's own effect and change detection behaving normally.
+ * The implementation now lives in `@web-test/angular-testing`, because three specs need it — see its
+ * doc for why the JIT runner cannot register `input()` signal inputs.
  */
-function setSignalInput<T>(component: object, name: string, value: T): void {
-  const field = Reflect.get(component, name) as unknown;
-  if (typeof field !== 'function') throw new Error(`"${name}" is not a signal input.`);
-  const node = Reflect.get(field, ɵSIGNAL) as ɵInputSignalNode<T, T> | undefined;
-  if (node === undefined) throw new Error(`"${name}" has no signal node.`);
-  node.applyValueToInputSignal(node, value);
-}
 
 interface Mounted {
   readonly fixture: Fixture;

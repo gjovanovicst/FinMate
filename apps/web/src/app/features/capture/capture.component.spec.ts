@@ -5,14 +5,16 @@
 // "The injectable 'PlatformLocation' needs to be compiled using the JIT compiler".
 import { initAngularTesting } from '@web-test/angular-testing';
 
-import { CUSTOM_ELEMENTS_SCHEMA, provideZonelessChangeDetection } from '@angular/core';
+import { CUSTOM_ELEMENTS_SCHEMA, provideZonelessChangeDetection, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { AuthStore } from '../../core/auth/auth.store';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { SyncService } from '../../core/offline/sync.service';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
+import { ConsentSheetComponent } from '../../shared/ui/consent-sheet/consent-sheet.component';
 import { CaptureComponent } from './capture.component';
 
 initAngularTesting();
@@ -143,6 +145,7 @@ function duplicateCommitResponse() {
 async function mount(
   client: GraphqlClient,
   sync?: Partial<SyncService>,
+  role = 'OWNER',
 ): Promise<{
   fixture: ReturnType<typeof TestBed.createComponent<CaptureComponent>>;
   component: CaptureComponent;
@@ -153,14 +156,18 @@ async function mount(
       provideZonelessChangeDetection(),
       provideRouter([]),
       { provide: GraphqlClient, useValue: client },
+      { provide: AuthStore, useValue: { role: signal(role) } },
       // A stub only where the queue's behaviour is the subject; otherwise the real service is mounted,
       // which is harmless because an empty queue sends nothing.
       ...(sync ? [{ provide: SyncService, useValue: sync as SyncService }] : []),
     ],
   });
-  // `fm-money` is a custom element here; see the file header.
+  // `fm-money` and the consent sheet are custom elements here; see the file header. The sheet is opaque
+  // for the same reason `fm-money` is — the JIT renderer cannot bind an `input()` signal child, so a
+  // mounted sheet would throw NG0950. Its own copy and verbs are `consent-sheet.component.spec.ts`'s
+  // subject; what a *capture* test can prove is the trigger, which is this component's `askKind`.
   TestBed.overrideComponent(CaptureComponent, {
-    remove: { imports: [MoneyComponent] },
+    remove: { imports: [MoneyComponent, ConsentSheetComponent] },
     add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
 
@@ -393,5 +400,246 @@ describe('CaptureComponent (mounted)', () => {
       String(call[0]).includes('UndoCapture'),
     );
     expect(undoCall?.[1]).toEqual({ transactionIds: ['tx-1'] });
+  });
+});
+
+/**
+ * The first-use consent sheet's trigger — docs/08 §6.6, ADR-032, task 5.2a.
+ *
+ * §6.6 asks for the question "at **first use**, not buried in onboarding", and the first use is the first
+ * fragment rules resolution cannot finish. So the trigger is asserted here, at the moment a degraded
+ * preview lands, and the four ways it must stay silent are each a test: a preview that was *not* degraded
+ * has no question in it, a Household that has already decided is not asked again (asking a settled
+ * question is the nagging §6.6 names as a dark pattern), a deployment that routes nothing has nothing to
+ * permit, and a MEMBER cannot decide it and would only be interrupted to be told so.
+ *
+ * The sheet's own copy is not re-asserted: it is a custom element here, and
+ * `consent-sheet.component.spec.ts` mounts it directly. What is proved below is the trigger and the two
+ * ways out — a recorded answer and a deferral.
+ */
+
+/** The egress table a deployment that needs permission has: DeepSeek's own platform, outside the EEA. */
+const CONSENT_ROUTE = {
+  purpose: 'AI_DATA_PROCESSING',
+  task: 'CLASSIFY',
+  endpoint: 'DEEPSEEK_GLOBAL',
+  provider: 'DEEPSEEK',
+  region: 'NON_EEA',
+  requiresConsent: true,
+};
+
+/**
+ * The same preview as `PARSE`, with the server reporting that it fell through to a degraded path.
+ *
+ * `rawText` is filled in from the request, as the API echoes it: the component discards an answer whose
+ * `rawText` is no longer the field's text, so a fixture with a fixed name would be dropped as stale.
+ */
+function degradedParse(rawText: string) {
+  return { captureParse: { ...PARSE.captureParse, rawText, degraded: true, usedAi: false } };
+}
+
+interface ConsentOptions {
+  readonly routes?: readonly unknown[];
+  readonly records?: readonly { kind: string; state: string }[];
+  /** Reject the write, to prove a refused decision does not look recorded. */
+  readonly refuseWrite?: boolean;
+}
+
+/**
+ * A client that also answers the consent documents, with the state the API would hold.
+ *
+ * `recordAiConsent` appends to the same list `aiConsents` reads, because that is what the table does
+ * (append-only, newest row wins) — so a test can watch a *grant* turn the next question off for the
+ * right reason rather than because the stub was told to.
+ */
+function consentClient(options: ConsentOptions = {}) {
+  const records = [...(options.records ?? [])];
+  const routes = options.routes ?? [CONSENT_ROUTE];
+  const base = stubClient();
+  const query = vi.fn((document: string, variables?: Record<string, unknown>) => {
+    if (document.includes('CaptureParse')) {
+      return Promise.resolve(degradedParse((variables as { text: string }).text));
+    }
+    if (document.includes('RecordAiConsent')) {
+      if (options.refuseWrite === true) return Promise.reject(new Error('refused'));
+      const input = (variables as { input: { kind: string; state: string } }).input;
+      records.push({ kind: input.kind, state: input.state });
+      return Promise.resolve({ recordAiConsent: { kind: input.kind, state: input.state } });
+    }
+    if (document.includes('Consent')) {
+      // A **copy**, because a real answer arrives as freshly parsed JSON: `signal.set` ignores an
+      // identical reference, so handing back the same array would leave `askable` cached on the state
+      // the first read returned and hide the very transition under test.
+      return Promise.resolve({ aiConsents: [...records], aiEgress: routes });
+    }
+    return (base.query as (d: string, v?: Record<string, unknown>) => unknown)(document, variables);
+  });
+  return { client: { query } as unknown as GraphqlClient, query, records };
+}
+
+/** Type the text and let the 250 ms debounce fire for real, then let the render settle. */
+async function typeAndParse(
+  fixture: { whenStable: () => Promise<void>; detectChanges: () => void },
+  component: CaptureComponent,
+  text = 'Lidl mesec',
+): Promise<void> {
+  component.onInput(text);
+  await new Promise((resolve) => setTimeout(resolve, 320));
+  await fixture.whenStable();
+  fixture.detectChanges();
+}
+
+describe('CaptureComponent — the first-use consent question', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    TestBed.resetTestingModule();
+  });
+
+  it('asks when a degraded preview could have used a model it has no permission for', async () => {
+    const { client } = consentClient();
+    const { fixture, component } = await mount(client);
+
+    await typeAndParse(fixture, component);
+
+    expect(component.degraded()).toBe(true);
+    expect(component.askKind()).toBe('AI_DATA_PROCESSING');
+    // The sheet is on screen, and it is the screen's own question — not a settings link.
+    expect((fixture.nativeElement as HTMLElement).querySelector('fm-consent-sheet')).not.toBeNull();
+  });
+
+  it('stays silent when the rules finished the job without a model', async () => {
+    const client = stubClient();
+    const { fixture, component } = await mount(client.client);
+
+    await typeAndParse(fixture, component);
+
+    expect(component.degraded()).toBe(false);
+    expect(component.askKind()).toBeNull();
+  });
+
+  it('does not ask a Household that has already decided', async () => {
+    // Declined, then the same entry typed again: the way back is /settings, not a second interruption.
+    const { client } = consentClient({ records: [{ kind: 'AI_DATA_PROCESSING', state: 'DECLINED' }] });
+    const { fixture, component } = await mount(client);
+
+    await typeAndParse(fixture, component);
+
+    expect(component.askKind()).toBeNull();
+  });
+
+  it('does not ask when the deployment routes nothing', async () => {
+    // The inert deployment: there is no permission to request, so a question would advertise a decision
+    // that does not exist.
+    const { client } = consentClient({ routes: [] });
+    const { fixture, component } = await mount(client);
+
+    await typeAndParse(fixture, component);
+
+    expect(component.askKind()).toBeNull();
+  });
+
+  it('does not ask a MEMBER, who cannot answer it', async () => {
+    const { client } = consentClient();
+    const { fixture, component } = await mount(client, undefined, 'MEMBER');
+
+    await typeAndParse(fixture, component);
+
+    expect(component.mayChangeConsent()).toBe(false);
+    expect(component.askKind()).toBeNull();
+  });
+
+  it('asks about the purpose the server routes, not one this screen assumes', async () => {
+    // Only receipts need permission here, so a hardcoded "text" question would ask about traffic this
+    // deployment does not send.
+    const { client } = consentClient({
+      routes: [{ ...CONSENT_ROUTE, purpose: 'CLOUD_OCR', task: 'OCR' }],
+    });
+    const { fixture, component } = await mount(client);
+
+    await typeAndParse(fixture, component);
+
+    expect(component.askKind()).toBe('CLOUD_OCR');
+  });
+
+  it('records an answer on the capture surface and closes the question', async () => {
+    const { client, query } = consentClient();
+    const { fixture, component } = await mount(client);
+    await typeAndParse(fixture, component);
+
+    await component.answerConsent('AI_DATA_PROCESSING', 'GRANTED');
+    fixture.detectChanges();
+
+    const write = query.mock.calls.find((call) => String(call[0]).includes('RecordAiConsent'));
+    // The surface is evidence: a record can be traced to the screen that showed the copy.
+    expect(write?.[1]).toMatchObject({
+      input: { kind: 'AI_DATA_PROCESSING', state: 'GRANTED', surface: 'capture' },
+    });
+    expect(component.askKind()).toBeNull();
+    // And the grant is read back, so the next degraded preview finds a decided question.
+    expect(component.consent.states().some((entry) => entry.state === 'GRANTED')).toBe(true);
+  });
+
+  it('asks the next purpose once the first one is answered', async () => {
+    // Two permissions needed: the question is held as a purpose, so answering one cannot swallow the
+    // other.
+    const { client } = consentClient({
+      routes: [CONSENT_ROUTE, { ...CONSENT_ROUTE, purpose: 'CLOUD_OCR', task: 'OCR' }],
+    });
+    const { fixture, component } = await mount(client);
+    await typeAndParse(fixture, component);
+    expect(component.askKind()).toBe('AI_DATA_PROCESSING');
+
+    await component.answerConsent('AI_DATA_PROCESSING', 'GRANTED');
+    await typeAndParse(fixture, component, 'Lidl mesec 2');
+
+    expect(component.askKind()).toBe('CLOUD_OCR');
+  });
+
+  it('writes nothing for "Not now", and does not ask again in this visit', async () => {
+    const { client, query } = consentClient();
+    const { fixture, component } = await mount(client);
+    await typeAndParse(fixture, component);
+
+    component.dismissConsent('AI_DATA_PROCESSING');
+    fixture.detectChanges();
+    expect(component.askKind()).toBeNull();
+
+    await typeAndParse(fixture, component, 'Lidl mesec 2');
+
+    // A deferral is not a decision: no row was written for it...
+    expect(query.mock.calls.some((call) => String(call[0]).includes('RecordAiConsent'))).toBe(false);
+    // ...and the second degraded preview does not reopen the question this visit.
+    expect(component.askKind()).toBeNull();
+  });
+
+  it('says nothing about consent when the read failed on a screen that works offline', async () => {
+    // The capture screen queues offline, so a failed consent *read* must not turn into a red alert on it:
+    // nothing was attempted and the user has nothing to retry. The message belongs to a refused write.
+    const client = stubClient();
+    (client.query as ReturnType<typeof vi.fn>).mockImplementation((document: string) => {
+      if (document.includes('Consent')) return Promise.reject(new Error('offline'));
+      return (stubClient().query as (d: string) => unknown)(document);
+    });
+    const { fixture, component } = await mount(client.client);
+
+    await typeAndParse(fixture, component);
+
+    expect(component.askKind()).toBeNull();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('keeps the question open when the write is refused', async () => {
+    const { client } = consentClient({ refuseWrite: true });
+    const { fixture, component } = await mount(client);
+    await typeAndParse(fixture, component);
+
+    await component.answerConsent('AI_DATA_PROCESSING', 'GRANTED');
+    fixture.detectChanges();
+
+    // Closing it would look like the decision had been recorded — the one thing this screen must not
+    // appear to have done.
+    expect(component.askKind()).toBe('AI_DATA_PROCESSING');
+    expect(component.consent.error()).not.toBeNull();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[role="alert"]')).not.toBeNull();
   });
 });

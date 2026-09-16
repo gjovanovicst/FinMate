@@ -114,6 +114,21 @@ Everything here has cost time at least once, and most of it fails in a way that 
   single representation. The general rule: when a seam decides by `=== undefined`, the schema must make
   blank mean undefined, not the seam.
 
+- **A full page load signs the user out on this dev setup, and the cause is a cookie *path*, not a
+  prefix or an auth bug.** The API scopes the refresh cookie to `Path=/auth` on purpose (the token must
+  not ride ordinary data requests), but the browser has to ask the dev proxy for `/api/auth/refresh`,
+  and **a browser matches a cookie's path against the URL it can see**. `/api/auth/refresh` does not
+  start with `/auth`, so the cookie is never attached; `AuthStore.restore()` gets
+  `{"accessToken":"","expiresIn":0}`, clears itself, and `authenticatedGuard` redirects to `/sign-in`.
+  What makes it hide for so long is that the access token lives in memory, so *in-app navigation* keeps
+  working — only F5, a deep link, or the service worker's own reload exposes it. Diagnose it in one
+  command: take the `finmate_refresh` value out of a signup's `Set-Cookie` and send it explicitly —
+  `curl -X POST -H 'content-type: application/json' -d '{}' --cookie "finmate_refresh=$REF" /api/auth/refresh`
+  returns a real JWT where the same call with a cookie jar returns an empty one. Recorded as **R-26**,
+  scheduled as **4.3.5**; it needs a topology decision (move the client path, the cookie path, or the API
+  off `/api`), so do not "fix" it in passing. Verify any auth change with a **hard reload** in a browser,
+  never only through the SPA's own router or a REST call to `/auth/*`.
+
 ## 2. Prisma and the database
 
 Prisma 7 plus a tenancy extension plus hand-written SQL means the driver is not the only thing deciding what a query does.
@@ -372,6 +387,22 @@ Code-first GraphQL with custom scalars: most of these are registration problems 
   decision 2) is on `dispatchNotifications: AlertDispatchModel`. Two mutations that call into the same
   notification pipeline, two different summaries — read the generated `schema.gql` for the one you want
   rather than assuming they share a shape.
+
+- **`aiConsents` enumerates every purpose the client may ask about, so `NOT_ASKED` arrives as a *row* with
+  `recordedAt: null` — it is not a row in the database.** The table is append-only and has no
+  "asked but unanswered" state, so the absence of a decision is expressed by the API filling in the
+  missing kinds (the four product purposes map onto three kinds, and only three are exposed). Two
+  consequences: a client that tests `records.length === 0` to mean "nothing decided yet" is **wrong**, and
+  so is a test that asserts it; and a test that asserts `records.length === 1` after one grant is wrong
+  for the same reason. Read the state *per kind* (`stateOf(records, kind)`, or the row whose `kind`
+  matches) and check `recordedAt` to tell "decided" from "not asked" (found live in 5.2a).
+
+- **A test stub that returns the same array reference hides a signal transition.** A `ConsentService` stub
+  that answered `aiConsents` with the very array it also pushed to made `askable` — a `computed` over
+  `records` — stay cached on the first read, because `signal.set(sameReference)` is a no-op under
+  `Object.is` and never notifies. Real answers arrive as freshly parsed JSON, so this is purely an
+  artifact of a hand-written stub (5.2a's trigger spec): return a copy, or the transition under test
+  cannot happen. The same trap applies to any stub that mutates and re-returns a signal's current value.
 
 ---
 
@@ -895,15 +926,18 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   Both are JS template literals, so a backtick *terminates the string* and the remainder is parsed as
   code. The error names neither the file nor the real problem: `Failed to resolve styles at position
   N to a string` / `Failed to resolve template at position N`, usually surfacing as
-  `Angular compilation initialization failed`. It has cost real time **ten** times — twice from a
+  `Angular compilation initialization failed`. It has cost real time **eleven** times — twice from a
   backtick in a CSS comment documenting a property; again in 2.3.2b from *two* HTML comments and a CSS
   comment written in the same sitting; again in 2.3.3b from a comment that quoted `septička jama`,
   **written minutes after adding this entry**; again in 3.1.4's follow-up fix, from an HTML comment
   naming the `NAV_ITEMS` constant while removing a duplicate nav entry; and again in 4.2.1b, from an HTML
   comment inside the shell template that described the update banner as living inside `main`. The eighth, in 4.2.6b, was
   an HTML comment naming the new settings route; the ninth, in 4.2.7b, was one quoting the tray's own *Zašto* line
-  while adding the conflict panel — in the same week the entry above was extended with the tally; and the
-  tenth, in 4.2.8b, quoted the word `null` inside an HTML comment in the cached-list branch. That one is
+  while adding the conflict panel — in the same week the entry above was extended with the tally; the
+  tenth, in 4.2.8b, quoted the word `null` inside an HTML comment in the cached-list branch; and the
+  **eleventh, in 5.2a, quoted a computed's name** in a comment explaining why the template must call it —
+  a comment *about* the trap, which is now the second time the entry has been extended by a comment
+  written within minutes of reading it. That one is
   worth reading twice, because the error was **exactly** the shape predicted two paragraphs down:
   `tsc` reported `TS1005: ',' expected` at the first markup line *after* the comment, naming neither the
   file's template nor the comment. The pattern is that the author knows the rule and does it
@@ -934,13 +968,32 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   `web:build` with `TS2591: Cannot find name 'node:fs'` (the web tsconfig has `"types": []`); the fix is
   to `import` the JSON instead, which needs `resolveJsonModule` (4.2.1b's `ngsw-config.spec.ts`).
 
-- **Angular's JIT does not discover `input()` signal inputs, so a mounted test cannot render
-  `fm-money`.** `MoneyComponent.amount` is `input.required`, and under JIT (which is what Vitest runs,
-  unlike the AOT production build) the binding is dropped and it throws NG0950. `web:build` accepts
-  the same binding, so it is a JIT limitation and not a template bug.
-  `capture.component.spec.ts` therefore swaps `fm-money` for a **custom element**
-  (`remove: { imports: [MoneyComponent] }, add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] }`) and asserts
-  amounts on the component's own state. Do not "fix" that by weakening the component.
+- **Angular's JIT does not discover `input()` signal inputs, so a mounted test cannot render a
+  signal-input child — and `CUSTOM_ELEMENTS_SCHEMA` alone does not make it opaque.** Under JIT (which is
+  what Vitest runs, unlike the AOT production build) the parent's binding is dropped, the child's required
+  input never arrives, and reading it throws NG0950. `web:build` accepts the very same binding, so it is a
+  JIT limitation and not a template bug. Two ways out, and the difference matters:
+  - **Drop it**: `TestBed.overrideComponent(Parent, { remove: { imports: [Child] }, add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] } })`.
+    `remove` is the load-bearing half — adding the schema *without* removing the import still instantiates
+    the real component, because the decorator's `imports` win over the schema, and the spec fails with the
+    same NG0950 it was trying to avoid (measured in 5.2a). Then assert the parent's own contract and let
+    the child's own spec mount it directly.
+  - **Mount it directly**: `setSignalInput(component, 'name', value)` from `apps/web/test/angular-testing.ts`
+    (`Reflect.get(field, ɵSIGNAL)` + `applyValueToInputSignal`), which is how the consent card and sheet
+    specs assert their sentences.
+  Callers that need the *real* child rendered inside a parent have no option yet: AOT-compiled tests would
+  fix it and the repo does not run them. `capture.component.spec.ts` drops both `fm-money` and
+  `fm-consent-sheet` for this reason, and asserts amounts and the trigger on the component's own state.
+  Do not "fix" any of this by weakening the component.
+
+- **An attribute binding stringifies whatever it is given, so `[attr.x]="signal"` silently renders the
+  signal.** Forgetting the call on `[attr.aria-labelledby]="headingId"` and `[id]="headingId"` produced
+  `[Computed: consent-ask-ai_data_processing]` as the element's id and its label reference — a region
+  labelled by a string that names no element, which is an accessibility bug with no console warning.
+  **`web:typecheck` cannot see it and `web:build` accepts it** (an attribute binding takes `unknown`), so
+  only a spec that reads the rendered attribute catches it; two of them in one file went unnoticed until a
+  spec asserted `aria-labelledby` equals the heading's `id` (5.2a). Prefer the property form where one
+  exists, and assert the DOM value — not the component field — for any id/`aria-*` pair that must agree.
 
 - **`fm-money`'s `accessibleLabel` hardcodes the Serbian words `prihod`/`trošak`.** Found while reading the
   component in 2.3.2b; **not fixed**, because it is a shipped component on the money path and the fix (two

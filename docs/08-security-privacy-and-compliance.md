@@ -707,10 +707,15 @@ are removed only by the Household purge, except the §8.5 tombstone.
 > `aiConsents` carries the mapping so no client re-derives it. `WITHDRAWN` is stored as `granted = false` **plus**
 > `withdrawn_at`, which is how §6.6's state machine is expressed without a migration. Enforcement is
 > `AiRouter`'s injected `ConsentGate`, asked once per non-EEA endpoint per call and failing closed; a routing table
-> that names a non-EEA endpoint **cannot be constructed** without a gate (ADR-032). What is **not** built: the
-> first-use sheet (§6.6's flow), `EVAL_DATASET` consumption (§8.7), an `audit_log` entry per transition, and the
-> two-tap withdrawal surface — all recorded as gaps rather than implied. Until the sheet exists, a Household is
-> `NOT_ASKED` by default and therefore refused, which is §6.6's rule working as written.
+> that names a non-EEA endpoint **cannot be constructed** without a gate (ADR-032). **The first-use sheet and the
+> two-tap withdrawal surface are built** (R-25a shipped `/settings`' section; task 5.2a shipped the sheet): the
+> capture screen opens the question when a preview comes back `degraded`, the sheet and the settings card are one
+> component so the disclosure cannot drift, **Decline** is a first-class button beside **Allow**, and *Not now*
+> defers without writing anything — `NOT_ASKED` is the *absence* of a row, so a row saying "asked and unanswered"
+> would be evidence of a decision nobody made. Verified live at 320/768/1280 px: with no record the model is not
+> called (`degraded: true`, `usedAi: false`), declining writes `DECLINED` and keeps it refused, and allowing turns
+> the same entry into `decidedBy: AI`. What is **still not built**, and recorded rather than implied:
+> `EVAL_DATASET` consumption (§8.7) and an `audit_log` entry per transition.
 
 ### 6.7 What degrades without AI consent
 
@@ -1496,7 +1501,7 @@ Derived from [09 §7](09-implementation-plan.md#7-phase-5--hardening--beta-weeks
 - [ ] F-25 export produces a complete versioned JSON archive **and** CSV, verified against a schema asserting every Household-scoped table is present.
 - [ ] Delete flow (§8.5) end-to-end in staging: `PENDING_PURGE` → undo → re-purge → MinIO prefix empty → `purge_receipts` tombstone → completion email.
 - [ ] `gdpr.purge` is idempotent and resumable (kill it mid-run and re-run it).
-- [ ] Consent capture, display and **two-tap withdrawal** work for all four purposes (§6.6); the gate treats `NOT_ASKED` as declined.
+- [ ] Consent capture, display and **two-tap withdrawal** work for all four purposes (§6.6); the gate treats `NOT_ASKED` as declined. — *The capture/display/withdrawal machinery is built and verified live (R-25a + 5.2a); the box stays open because it is a launch gate to be walked on the release candidate, not a statement about `main`.*
 - [ ] A test asserts that after withdrawing `AI_TEXT_EGRESS` **no AI call is made** for that Household.
 - [ ] Retention jobs verified: `files.purge` (orphans + 24-month Receipt images), `classification_decisions` 24-month trim, audit 24-month retention, session cleanup, access-log lifecycle.
 - [ ] Privacy policy and ToS published, versioned, SR + EN, containing every item in §12.5, linked from the app and signup.

@@ -361,6 +361,18 @@ commit.
 > own reconciliation, and the receipt flow's entry point shipped as the library's capture action
 > (§4.11, task 4.1.5) — the screen that can then itemise what was photographed. Attaching a photo to an
 > already-captured Transaction is the sheet's own section (§4.5, 4.1.2).
+>
+> **The first-use consent sheet lands here** (task 5.2a, docs/08 §6.6, ADR-032): when a preview comes
+> back `degraded` — the rules and keywords could not finish the job and a model was needed — and the
+> Household has not decided, the sheet opens below the composer. Four conditions, each deliberate: the
+> preview must be degraded (a preview the rules finished has no question in it); `askable` must be
+> non-null (nothing routed ⇒ nothing to permit, and a decided Household is not asked again); the person
+> must not have chosen *Not now* in this visit; and the caller must be the OWNER, who is the only one
+> who can decide it (docs/08 §3.7, Q-11) — a MEMBER sees the `degraded` note instead of an interruption
+> they cannot act on. *Not now* writes nothing (there is no "asked and unanswered" row to write) and
+> suppresses the question for the visit; the way back is `/settings` (§4.18). It is placed **after** the
+> composer so the field being typed in never moves under the caret, and at 320 px it adds no horizontal
+> overflow — verified live at 320/768/1280 px with all three answers taken.
 
 ### 4.4 Transactions list — F-24, F-04, F-25, F-12
 
@@ -912,12 +924,19 @@ user opens, not on first load.
 >   record is the lawful-basis evidence, so granting and withdrawing are controller-level acts.
 > - **Withdrawal is the same section, one tap from the state** — §6.6's two taps from settings.
 >
-> **Still not built, and it is the other half of §6.6**: the **first-use sheet**. §6.6 asks for the
-> question at first use — the first fragment that fails rules resolution — and today the capture screen
-> says the categoriser is running without AI with no way to act on it. Until that ships, this section is
-> the only place a Household can be asked, which is why it is R-25's open half. The rest of §4.18's
-> sections are **not built and are not advertised**: Profil, Domaćinstvo, Prikaz, Jezik and Podaci are
-> 3.1.4/5 work, and `Računi`/`Članovi` already have screens or are deferred (F-29).
+> **Build note (5.2a).** The **first-use sheet is now built**, which closes §6.6's other half and R-25.
+> The capture screen opens it when a preview comes back `degraded` and the Household has not decided
+> (§4.3); the sheet and the settings card are **one component** (`shared/ui/consent-purpose`) with the
+> sheet adding only the question, the three verbs and its own reason sentence — so the two screens cannot
+> drift about what somebody is agreeing to, which is the failure mode §6.6's wording invites. The three
+> answers are **Allow**, **Decline** and **Not now**: §6.6 makes declining a first-class button, and
+> *Not now* defers without deciding, writing **nothing** — `NOT_ASKED` is the absence of a row, and a row
+> saying "asked and unanswered" would be evidence of a decision nobody made. It suppresses the question
+> for the visit; the way back is this section.
+>
+> **Still not built**: the rest of §4.18's sections.
+> Profil, Domaćinstvo, Prikaz, Jezik and Podaci are 3.1.4/5 work, and `Računi`/`Članovi` already have
+> screens or are deferred (F-29).
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────────┐
@@ -1213,6 +1232,8 @@ variants are the only permitted styling axis.
 | `ui-review-row` | Queue row with alternatives | `proposal`, `alternatives`, `rememberToggle`, `onResolve`; number-key accelerators |
 | `ui-amount-ambiguity` | Two-reading disambiguation | `candidates`, `onChoose`; blocks commit until resolved |
 | `ui-coach-mark` | One-time teaching (onboarding step 6) | `id`, `placement`, `dismissOnInteraction`; once per household |
+| `ui-consent-purpose` | One AI purpose, disclosed (docs/08 §6.6, R-25a) | `kind` (required), `record`, `routes` (required), `mayChange`, `saving`, `showActions`; emits `decide: GRANTED \| DECLINED \| WITHDRAWN`. The **only** renderer of the provider/region/never-sent/trade copy — `/settings` and the first-use sheet both use it, so the two cannot drift |
+| `ui-consent-sheet` | The first-use question (task 5.2a) | `kind`, `record`, `routes`, `mayChange`, `saving`; emits `decide` and `dismiss` (*Not now*). Delegates the disclosure to `ui-consent-purpose` with `showActions: false` and adds only the heading, the reason, and the three verbs |
 
 ---
 
@@ -1275,7 +1296,7 @@ part of Definition of Done ([09 §8](09-implementation-plan.md)), not a later au
 | **Errors** | `role="alert"`, associated via `aria-describedby`, with the `requestId` as selectable text. |
 | **Reduced motion** | `prefers-reduced-motion: reduce` disables badge animation, chart transitions, sheet easing and toast slide; every state change remains perceivable because it is also textual. |
 | **Contrast and targets** | ≥ 4.5:1 text, ≥ 3:1 UI boundaries; targets ≥ 44 × 44 px on `compact`, ≥ 32 px in dense mode with a 44 px hit area. |
-| **Zoom and reflow** | Usable at 320 px and 400 % zoom with no horizontal scroll and no loss of function. |
+| **Zoom and reflow** | Usable at 320 px and 400 % zoom with no horizontal scroll and no loss of function. ⚠️ **Measured live (5.2a): the authenticated shell overflows at 320 px by 48 px**, and it is the bottom nav — `.nav` measures 368 px inside a 320 px viewport, so every authenticated screen can be dragged sideways. It predates 5.2a (identical with no consent sheet on screen) and it is what 4.3.1's pass exists for. |
 | **i18n** | All strings externalised (F-27); no manual concatenation of numbers and units — ICU messages plus locale-aware formatters. |
 | **Drag-and-drop** | The Category tree, Split ordering and Rule condition ordering all have keyboard equivalents (`Alt+arrows`, plus *Premesti u…*). A pointer-only reorder is a defect. |
 

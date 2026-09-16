@@ -236,10 +236,12 @@ configured). The first run of the harness found and fixed two real defects — s
 | 4.3.2 | Install prompt / Add-to-Home-Screen flow | 1 | F-26 |
 | 4.3.3 | Mobile keyboard handling on the money field (numeric keypad, no layout jump) | 1.5 | F-05 |
 | 4.3.4 | Performance: bundle budget, lazy routes, image sizing; Lighthouse ≥ 90 | 2.5 | F-26 |
+| 4.3.5 | **Session continuity on a cold start** — **added by 5.2a's live pass, recorded as R-26**: a full page load signs the user out, because the API scopes the refresh cookie to `Path=/auth` while the browser must ask the deploy proxy for `/api/auth/refresh`, and a browser matches cookie paths against the *visible* URL. It affects the service worker's own reload path and the app lock's re-auth screen (R-23's "survives a reload" is true for in-app navigation and false for a hard reload). **Needs a decision, not a patch**: narrow the client's path, widen the cookie's, or move the API off the `/api` prefix — each trades a different thing | 0.5 | F-26, F-01 |
 
 **Exit criteria**
 - A Lidl receipt totals correctly across ≥ 3 categories, with low-confidence items flagged.
 - Full capture flow works in airplane mode and syncs without duplication on reconnect.
+- A hard reload of any screen keeps the session, and the app lock's re-auth screen — not `/sign-in` — is what a locked install shows. ⚠️ **Measured false today (R-26, 4.3.5).**
   **[ADR-025](14-decisions-and-risks.md) makes the second half conditional on 4.2.6**: the store persists
   nothing confidential until an app lock can wrap its key, so 4.2.2–4.2.4 are session-only until then
   (risk R-23). The criterion is met in full only with 4.2.6 done.
@@ -255,7 +257,7 @@ configured). The first run of the harness found and fixed two real defects — s
 |---|---|---|---|
 | 5.1 | Security review against the threat model in [08](08-security-privacy-and-compliance.md); fix findings | 3 | Including a deliberate cross-tenant access attempt |
 | 5.2 | GDPR: export, hard delete, consent recording, retention jobs, privacy policy | 2.5 | Blocking for EU/RS launch. **Consent recording is partly done early**: the record + OWNER-only API (ADR-032) and its settings surface (**R-25a**) shipped with 4.2 rather than here, because nothing else could grant consent at all |
-| 5.2a | **The first-use consent sheet** — **added by [ADR-032](14-decisions-and-risks.md), the open half of R-25**: docs/08 §6.6 asks at first use (the first fragment that fails rules resolution), so the capture screen's degraded banner becomes where the question is put, with the same copy and the same OWNER-only rule as the settings section. A declined or withdrawn purpose is never asked again | 0.5 | F-32, F-05 |
+| 5.2a | **The first-use consent sheet** — **added by [ADR-032](14-decisions-and-risks.md), the open half of R-25**: docs/08 §6.6 asks at first use (the first fragment that fails rules resolution), so the capture screen's degraded banner becomes where the question is put, with the same copy and the same OWNER-only rule as the settings section. A declined or withdrawn purpose is never asked again. **DONE** — the sheet and the `/settings` card are one component (`ui-consent-purpose`, so the disclosure cannot drift), the sheet adds the reason sentence and three verbs (Allow · Decline · *Not now*, which writes nothing), the trigger is the server's own `degraded` flag plus `askable`, and it is placed below the composer so the field never moves under the caret. Verified live at 320/768/1280 px: no record ⇒ `degraded: true, usedAi: false`; Decline ⇒ `DECLINED` and still refused; Allow ⇒ `decidedBy: AI`. 22/22 end-to-end checks | 0.5 | F-32, F-05 |
 | 5.3 | Performance: query analysis, missing indexes, N+1 sweep, API p95 ≤ 300 ms | 2 | |
 | 5.4 | i18n: extract all strings, SR + EN, locale formatting, cyrillic-tolerant search | 2 | F-27 |
 | 5.5 | Onboarding funnel instrumentation + product analytics | 1.5 | Needed to read the launch metrics |

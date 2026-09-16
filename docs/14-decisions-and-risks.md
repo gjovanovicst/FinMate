@@ -1849,10 +1849,25 @@ things worth deciding rather than discovering:
 - ✅ **The two prompt defects are the strongest argument for this ADR's existence.** Neither was visible
   to typecheck, lint, `web:build`, the 2 400-test suite or the eval gates; both were found within a
   minute of the first real call, because the root made the composed path *runnable*.
-- ⚠️ **The consent sheet is unbuilt.** A Household can record consent only through the mutation, so on
-  any deployment without a client for it, every Household is `NOT_ASKED` and gets rules-only. That is
-  the safe direction and it is a real product gap: the sheet is docs/02 §4.18's *AI podešavanja*, part of
-  the settings work. Recorded as R-25.
+- ✅ **The consent sheet is built** (task 5.2a, the follow-up this ADR scheduled). The sheet and the
+  `/settings` card are **one component** — `ui-consent-purpose` owns the provider/region/never-sent/trade
+  copy and the state, and the sheet adds only the reason sentence and the three verbs — so the two
+  screens cannot drift about what somebody is agreeing to. It opens from the capture screen's **degraded**
+  preview, and only then: a preview the rules finished has no question in it, a decided Household is never
+  asked twice, a MEMBER is not interrupted with a decision they cannot make, and *Not now* defers without
+  writing anything (`NOT_ASKED` is the absence of a row). Verified live at 320/768/1280 px — 22 checks
+  covering the trigger's four silences, both recorded answers, the deferral, and the settings crossover.
+- ⚠️ **The live pass found that a full page load signs the user out** and it is *not* cosmetic: the API
+  scopes the refresh cookie to `Path=/auth` (deliberately — the token must not ride ordinary data
+  requests), while the browser must ask the deploy proxy for `/api/auth/refresh`, and a browser matches
+  cookie paths against the visible URL. Sending the same cookie explicitly returns a real access token, so
+  the cookie is the only missing piece. It affects the service worker's own reload path and the app lock's
+  re-auth screen: R-23's "offline capture survives a reload" holds for in-app navigation and fails for a
+  hard reload. Recorded as **R-26** and scheduled as **4.3.5**; the fix is a topology decision (which of
+  the three paths moves), which is why it is named here instead of patched.
+- ⚠️ **The 320 px reflow requirement is measurably unmet today**: the authenticated shell overflows by
+  48 px because the bottom nav measures 368 px in a 320 px viewport. It predates 5.2a (identical with no
+  consent sheet on screen), it affects every authenticated screen, and it is 4.3.1's work.
 - ⚠️ **`AI_CLASSIFY_PRIMARY` is set to `DEEPSEEK_GLOBAL` in the dev `.env` only.** `.env.example` keeps
   `LOCAL`, because a deployment should not default to a non-EEA provider; the file now documents why
   naming it is safe rather than forbidden.
@@ -1924,14 +1939,20 @@ owner and a checkpoint in [09](09-implementation-plan.md).
 | **R-23** | ~~**The offline cache depends on an app lock that no task builds** (ADR-025), so F-26's offline capture is session-only and Sprint 4.2's exit criterion cannot be met as written~~ **CLOSED in 4.2.6b** | 4 | 3 | ~~12~~ **0** | The lock's core shipped in 4.2.6a (ADR-029) and the **device panel and re-auth screen that arm it** in 4.2.6b, so a user can turn persistence on and offline capture survives a reload. An install that leaves the lock off still persists nothing — deliberately (ADR-025's rejected alternative (c)), and the tray's copy now says so instead of claiming *"Nothing here is lost."* | Closed; the residual "the user has not armed it" case is Phase 4.3's onboarding copy, not a risk |
 | **R-24** | **The push payload is coupled to `ngsw-worker.js`'s undocumented `handlePush`/`onActionClick`** (ADR-028's 4.2.5 amendment), so an `@angular/service-worker` upgrade could make every push silently display nothing — `dispatch` still reports `SENT`, so nothing looks broken server-side | 3 | 3 | 9 | The dependency is pinned and the coupling is written down in the payload module and here; `web-push-payload.spec.ts` pins the exact block the worker reads; the in-app centre is the source of truth and is complete without push (docs/07 §4.8), so a silent failure costs nagging, not data; re-check `ngsw-worker.js` on every Angular major | Every Angular upgrade + Phase 5 beta gate |
 
-| **R-25** | **The consent gate shipped without a consent sheet** — a Household could record AI consent only through the `recordAiConsent` mutation, so on any deployment with no client for it every Household stayed `NOT_ASKED` and the AI path was rules-only (ADR-032) | ~~4~~ **3** | 2 | ~~8~~ **6** | **Half closed in R-25a**: the `/settings` *AI* section lists every purpose with its state, an Allow/Decline pair while the question is open, a withdrawal, the provider-and-region disclosure rendered from the server's own routing table, and the OWNER-only rule (docs/02 §4.18). **The open half is the first-use sheet** (task 5.2a): §6.6 asks at first use, and until it exists a Household has to find settings — so the remaining exposure is discoverability, not capability | Task 5.2a, before any deployment that claims AI categorisation |
+| **R-25** | ~~**The consent gate shipped without a consent sheet** — a Household could record AI consent only through the `recordAiConsent` mutation, so on any deployment with no client for it every Household stayed `NOT_ASKED` and the AI path was rules-only (ADR-032)~~ **CLOSED in 5.2a** | ~~4~~ **0** | 2 | ~~8~~ **0** | **R-25a** shipped `/settings`' AI section (every purpose, its state, the Allow/Decline pair, the withdrawal, the disclosure rendered from the server's routing table, OWNER-only) and **5.2a** shipped the first-use sheet docs/08 §6.6 actually specifies — one shared card, so the two screens cannot disagree about what is being agreed to; the trigger is the server's own `degraded` flag, and a declined or withdrawn purpose is never asked again. Both halves verified live, including the direction that matters: no record ⇒ the model is not called, declining keeps it refused, allowing switches the same entry to `decidedBy: AI` | Closed; the residual is discoverability of *withdrawal* after a decline, which `/settings` owns and which the sheet's own copy points at |
+
+| **R-26** | **A cold start signs the user out** — the refresh cookie is scoped `Path=/auth` while the browser reaches the API at `/api/auth/*` through the deploy proxy, so the cookie is never sent, `AuthStore.restore()` gets an empty token, and `authenticatedGuard` bounces every hard reload to `/sign-in`. Found by 5.2a's live pass, not by any test, because every test drives the client in-process and every API test calls `/auth/*` directly | 4 | 3 | 12 | The in-memory access token survives in-app navigation, so a session in use looks fine — which is exactly why it hid. It breaks the service worker's reload path (ADR-024), the app lock's re-auth screen on a locked install (ADR-029 — a locked install must show its re-auth screen, not `/sign-in`), and any PWA cold start (4.3.2). Three candidate fixes, each moving a different one of the three paths: narrow the client, widen the cookie, or move the API off `/api`. Sending the cookie explicitly returns a real token, so the cause is isolated and the fix is small — it is a **decision**, not an investigation | **4.3.5**, before the install prompt (4.3.2) or any PWA claim; and before the launch gates, because a reload is the most common user action there is |
 
 ### Top five by exposure
 1. **R-01 onboarding cold-start (20)** — the single biggest threat, and the one the plan spends the most disproportionate effort on.
 2. **R-12 retention (16)** — a working product that people stop using is still a failed product.
-3. **R-03 / R-04 / R-05 / R-06 / R-07 / R-08 / R-14 / R-15 / R-16 / R-23 (12 each)** — a cluster of medium-high risks, all addressed by decisions already taken above (R-23 by an ADR that names the missing task rather than assuming it).
-4. **R-02 / R-09 / R-10 / R-20 (10 each)** — low-likelihood, catastrophic-impact; these justify the reconciliation job, backup rehearsal and tenancy tests even though they are unlikely.
-5. **R-11 / R-13 / R-17 / R-19 / R-22 / R-25 (8–9)** — monitor, do not over-invest.
+3. **R-26 cold-start sign-out (12)** — the newest entry and the cheapest to fix, but it voids the reload path the whole PWA story rests on.
+4. **R-03 / R-04 / R-05 / R-06 / R-07 / R-08 / R-14 / R-15 / R-16 / R-23 (12 each)** — a cluster of medium-high risks, all addressed by decisions already taken above (R-23 by an ADR that names the missing task rather than assuming it).
+5. **R-02 / R-09 / R-10 / R-20 (10 each)** — low-likelihood, catastrophic-impact; these justify the reconciliation job, backup rehearsal and tenancy tests even though they are unlikely.
+
+**R-25 (0) is closed**, and it is the register working as intended: an ADR (032) named the missing task
+instead of assuming it, the risk carried the open half with its deadline, and the task closed it with a
+live pass. R-26 is what that pass found instead.
 
 ---
 

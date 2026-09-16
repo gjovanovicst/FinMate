@@ -7,12 +7,9 @@ import { ConsentService } from '../../core/consent/consent.service';
 import {
   CONSENT_KINDS,
   canChangeConsent,
-  egressFor,
-  kindNameKey,
-  kindWhatKey,
-  needsConsent,
-  regionKey,
-  stateKey,
+  type ConsentKind,
+  type ConsentRecord,
+  type RecordableConsentState,
 } from '../../core/consent/consent.view';
 import {
   PIN_LENGTH,
@@ -21,7 +18,7 @@ import {
   lockMessageKey,
 } from '../../core/app-lock/lock.view';
 import { I18nService } from '../../core/i18n/i18n.service';
-import { syncedAtLabel } from '../../core/offline/sync.view';
+import { ConsentPurposeComponent } from '../../shared/ui/consent-purpose/consent-purpose.component';
 import { SyncService } from '../../core/offline/sync.service';
 
 /**
@@ -56,7 +53,7 @@ import { SyncService } from '../../core/offline/sync.service';
 @Component({
   selector: 'fm-settings',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink],
+  imports: [RouterLink, ConsentPurposeComponent],
   template: `
     <main class="wrap">
       <h1>{{ i18n.t('settings.title') }}</h1>
@@ -131,66 +128,16 @@ import { SyncService } from '../../core/offline/sync.service';
           <p class="muted small">{{ i18n.t('consent.egress.none') }}</p>
         } @else {
           @for (kind of kinds; track kind) {
-            <article class="purpose">
-              <h3>{{ i18n.t(kindNameKey(kind)) }}</h3>
-              <p class="muted small">{{ i18n.t(kindWhatKey(kind)) }}</p>
-
-              @for (route of egressFor(consent.routes(), kind); track route.task) {
-                <p class="muted small">
-                  {{ i18n.t('consent.egress', { provider: route.provider, region: i18n.t(regionKey(route.region)) }) }}
-                </p>
-              }
-              @if (needsConsent(consent.routes(), kind)) {
-                <p class="muted small">{{ i18n.t('consent.egress.nonEea') }}</p>
-              }
-
-              <p class="state">
-                <strong>{{ i18n.t(stateKey(consent.state(kind))) }}</strong>
-                @if (recordedAtLabel(kind); as recorded) {
-                  <span class="muted small">{{ i18n.t('consent.recorded', { time: recorded }) }}</span>
-                }
-              </p>
-
-              @if (kindNote(kind); as note) {
-                <p class="muted small">{{ note }}</p>
-              }
-
-              @if (mayChange()) {
-                <div class="actions">
-                  @if (consent.state(kind) === 'GRANTED') {
-                    <button
-                      type="button"
-                      class="btn btn--danger"
-                      [disabled]="consent.saving()"
-                      (click)="record(kind, 'WITHDRAWN')"
-                    >
-                      {{ i18n.t('consent.withdraw') }}
-                    </button>
-                  } @else {
-                    <button
-                      type="button"
-                      class="btn"
-                      [disabled]="consent.saving()"
-                      (click)="record(kind, 'GRANTED')"
-                    >
-                      {{ i18n.t('consent.allow') }}
-                    </button>
-                    @if (consent.state(kind) === 'NOT_ASKED') {
-                      <!-- Present only while the question is open. Once somebody has declined, "Decline"
-                           again would be a button that changes nothing. -->
-                      <button
-                        type="button"
-                        class="btn"
-                        [disabled]="consent.saving()"
-                        (click)="record(kind, 'DECLINED')"
-                      >
-                        {{ i18n.t('consent.decline') }}
-                      </button>
-                    }
-                  }
-                </div>
-              }
-            </article>
+            <!-- The same card the first-use sheet shows, so the disclosure cannot drift between the two
+                 (shared/ui/consent-purpose). -->
+            <fm-consent-purpose
+              [kind]="kind"
+              [record]="recordFor(kind)"
+              [routes]="consent.routes()"
+              [mayChange]="mayChange()"
+              [saving]="consent.saving()"
+              (decide)="record(kind, $event)"
+            />
           }
 
           <p class="muted small">{{ i18n.t('consent.neverSent') }}</p>
@@ -300,12 +247,6 @@ export class SettingsComponent {
 
   /** The purposes, in the order the section lists them (docs/08 §6.6's vocabulary, not the stored one). */
   readonly kinds = CONSENT_KINDS;
-  readonly kindNameKey = kindNameKey;
-  readonly kindWhatKey = kindWhatKey;
-  readonly stateKey = stateKey;
-  readonly regionKey = regionKey;
-  readonly egressFor = egressFor;
-  readonly needsConsent = needsConsent;
 
   readonly pin = signal('');
 
@@ -318,25 +259,12 @@ export class SettingsComponent {
     void this.consent.load();
   }
 
-  /** The `recordedAt` of a purpose, in the app's one timestamp style, or `null`. */
-  recordedAtLabel(kind: (typeof CONSENT_KINDS)[number]): string | null {
-    const at = this.consent.states().find((record) => record.kind === kind)?.recordedAt ?? null;
-    return at === null ? null : syncedAtLabel(at, this.i18n.tag());
+  /** The stored record for a purpose, or `null` when the API reported none (which reads `NOT_ASKED`). */
+  recordFor(kind: ConsentKind): ConsentRecord | null {
+    return this.consent.states().find((record) => record.kind === kind) ?? null;
   }
 
-  /**
-   * The honest note for a purpose, or `null`.
-   *
-   * Only `EVAL_DATASET` needs one: the record is real and the API enforces it, but nothing consumes it in
-   * this build (docs/08 §8.7 is unbuilt), so a row that looked like the other two would be offering a
-   * switch that changes nothing yet. A per-purpose key set would be three keys of which two are empty,
-   * and an empty catalogue value is a defect this repo's i18n spec already refuses.
-   */
-  kindNote(kind: (typeof CONSENT_KINDS)[number]): string | null {
-    return kind === 'EVAL_DATASET' ? this.i18n.t('consent.evalNotLive') : null;
-  }
-
-  async record(kind: (typeof CONSENT_KINDS)[number], state: 'GRANTED' | 'DECLINED' | 'WITHDRAWN'): Promise<void> {
+  async record(kind: ConsentKind, state: RecordableConsentState): Promise<void> {
     await this.consent.record(kind, state, 'settings');
   }
 

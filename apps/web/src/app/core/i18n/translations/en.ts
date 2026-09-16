@@ -302,6 +302,14 @@ export const en = {
   // it names the provider and the region, what is sent, what is never sent, and the §6.1 trade — with
   // the provider/region coming from `aiEgress` rather than from this file.
   'consent.title': 'AI',
+  'consent.ask.title': 'May the app use an AI model here?',
+  'consent.ask.whyText':
+    'This entry has an amount but no category your rules or keywords could match. An AI model could suggest one.',
+  'consent.ask.whyOcr':
+    'You added a receipt photo. An AI model could read its printed lines instead of you typing them in.',
+  'consent.ask.whyEval':
+    'Corrections like the one you just made are what this opt-in is about.',
+  'consent.ask.notNow': 'Not now',
   'consent.intro':
     'Some of the app can use an AI model. Nothing leaves this server unless you allow it here, and everything keeps working if you do not.',
   'consent.egress': 'It goes to {provider}, {region}.',

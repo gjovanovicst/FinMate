@@ -299,6 +299,13 @@ export const srLatn: Record<keyof typeof en, string> = {
   'lock.screen.working': 'Proveravam…',
   'lock.screen.signOut': 'Radije se odjavi',
   'consent.title': 'AI',
+  'consent.ask.title': 'Sme li aplikacija ovde da koristi AI model?',
+  'consent.ask.whyText':
+    'Ovaj unos ima iznos, ali nijednu kategoriju koju su tvoja pravila ili ključne reči prepoznale. AI model bi mogao da je predloži.',
+  'consent.ask.whyOcr':
+    'Dodao si fotografiju računa. AI model bi mogao da pročita njene štampane stavke umesto da ih ti kucaš.',
+  'consent.ask.whyEval': 'Ispravke poput ove koju si upravo napravio su ono na šta se ova dozvola odnosi.',
+  'consent.ask.notNow': 'Ne sada',
   'consent.intro':
     'Deo aplikacije može da koristi AI model. Ništa ne napušta ovaj server bez tvoje dozvole, a sve radi i bez nje.',
   'consent.egress': 'Odlazi ka {provider}, {region}.',

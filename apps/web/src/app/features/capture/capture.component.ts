@@ -1,9 +1,17 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 import { parseAmount } from '@finmate/domain';
 
 import { ErrorMessageService } from '../../core/api/error-message.service';
+import { AuthStore } from '../../core/auth/auth.store';
+import { ConsentService } from '../../core/consent/consent.service';
+import {
+  canChangeConsent,
+  type ConsentKind,
+  type ConsentRecord,
+  type RecordableConsentState,
+} from '../../core/consent/consent.view';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
@@ -11,6 +19,7 @@ import { CAPTURE_COMMIT, SyncService } from '../../core/offline/sync.service';
 import type { CaptureCommitInput } from '../../core/offline/sync.types';
 import { isRetryable } from '../../core/offline/outbox';
 import { toMajorString } from '../../shared/money-text';
+import { ConsentSheetComponent } from '../../shared/ui/consent-sheet/consent-sheet.component';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import {
   ambiguousRows,
@@ -213,7 +222,7 @@ interface RowError {
 @Component({
   selector: 'fm-capture',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MoneyComponent, RouterLink],
+  imports: [MoneyComponent, RouterLink, ConsentSheetComponent],
   template: `
     <header class="head">
       <div>
@@ -334,6 +343,29 @@ interface RowError {
         </div>
         <p class="hint" id="capture-hint">{{ i18n.t('capture.confirmHint') }}</p>
       </section>
+
+      <!--
+        The first-use consent sheet (docs/08 §6.6, ADR-032, task 5.2a). It sits below the composer so the
+        field the user is typing in never moves out from under the caret, and it is asked only here —
+        after a preview came back degraded, which is the moment the question has a reason.
+      -->
+      @if (askKind(); as kind) {
+        <fm-consent-sheet
+          [kind]="kind"
+          [record]="recordFor(kind)"
+          [routes]="consent.routes()"
+          [mayChange]="mayChangeConsent()"
+          [saving]="consent.saving()"
+          (decide)="answerConsent(kind, $event)"
+          (dismiss)="dismissConsent(kind)"
+        />
+        <!-- Only while the question is open. A failed *read* on a screen that works offline is not an
+             error the user can act on, and nothing was attempted: the sheet stays open on a refused
+             *write*, which is the case this message exists for. -->
+        @if (consent.error(); as consentError) {
+          <p class="alert" role="alert">{{ consentError }}</p>
+        }
+      }
 
       @if (rows().length === 0) {
         <div class="empty">
@@ -824,6 +856,9 @@ export class CaptureComponent {
   private readonly graphql = inject(GraphqlClient);
   private readonly errors = inject(ErrorMessageService);
   private readonly sync = inject(SyncService);
+  private readonly auth = inject(AuthStore);
+  /** Public because the template reads `routes()`, `saving()` and `error()` off it. */
+  readonly consent = inject(ConsentService);
 
   readonly text = signal('');
   readonly rows = signal<readonly CaptureRow[]>([]);
@@ -847,6 +882,26 @@ export class CaptureComponent {
   readonly lastCommit = signal<CommitSummary | null>(null);
   readonly undoing = signal(false);
 
+  /**
+   * The purpose the first-use sheet is asking about right now, or `null`.
+   *
+   * Held as *the purpose* rather than a boolean because the sheet asks about exactly one, and because a
+   * deployment could need more than one permission — the second question must survive the first answer.
+   */
+  readonly askKind = signal<ConsentKind | null>(null);
+
+  /** OWNER-only, per docs/08 §3.7 and Q-11: consent is the lawful-basis evidence. */
+  readonly mayChangeConsent = computed(() => canChangeConsent(this.auth.role()));
+
+  /**
+   * Purposes answered with "Not now" **in this visit**.
+   *
+   * Not persisted and not a consent state: the sheet's own doc explains why writing a row for "asked and
+   * unanswered" would be evidence of a decision nobody made. A reload forgets it, which is the honest
+   * scope of "not now" — and `/settings` is the permanent way to answer.
+   */
+  private readonly deferred = new Set<ConsentKind>();
+
   /** The preview this draft belongs to, sent back with the commit so a stale one is refused. */
   private parseId: string | null = null;
   /** Monotonic guard: a response for an older text never lands (docs/02 §3's supersede). */
@@ -865,6 +920,47 @@ export class CaptureComponent {
 
   constructor() {
     void this.load();
+    // The consent state is read on entry too, so the first degraded preview can tell "not asked yet" from
+    // "nothing is routed" — the two cases `askable` conflates on its own (its own doc).
+    void this.consent.load();
+  }
+
+  /**
+   * Offer the consent question when the rules could not do the job without a model.
+   *
+   * Called with the flag the server just returned rather than read from `degraded()`, so a stale render
+   * cannot decide whether a question is warranted. Four ways to stay silent, and each is deliberate:
+   * the preview was not degraded (there was nothing to ask about); the Household has already decided or
+   * nothing is routed (`askable` is `null` — asking a settled question is the nagging §6.6 forbids); the
+   * person said "Not now" in this visit; or the caller is a MEMBER, who cannot decide it and would only be
+   * interrupted to be told so.
+   */
+  private maybeAsk(degraded: boolean): void {
+    if (!degraded || !this.mayChangeConsent()) return;
+    const kind = this.consent.askable();
+    if (kind === null || this.deferred.has(kind)) return;
+    this.askKind.set(kind);
+  }
+
+  /** The stored record for a purpose, or `null` when the API reported none (which reads `NOT_ASKED`). */
+  recordFor(kind: ConsentKind): ConsentRecord | null {
+    return this.consent.states().find((record) => record.kind === kind) ?? null;
+  }
+
+  /**
+   * Record the sheet's answer on the capture surface.
+   *
+   * The sheet closes **only on success**: a refused write leaves the question on screen with the reason,
+   * because closing it would look like the decision had been recorded.
+   */
+  async answerConsent(kind: ConsentKind, state: RecordableConsentState): Promise<void> {
+    if (await this.consent.record(kind, state, 'capture')) this.askKind.set(null);
+  }
+
+  /** "Not now": no write, no question again in this visit. */
+  dismissConsent(kind: ConsentKind): void {
+    this.deferred.add(kind);
+    this.askKind.set(null);
   }
 
   private async load(): Promise<void> {
@@ -938,6 +1034,7 @@ export class CaptureComponent {
       this.parseId = parse.parseId;
       this.rows.set(applyFragments(this.rows(), parse.fragments.map(toProposal)));
       this.rejected.set([]);
+      this.maybeAsk(parse.degraded);
     } catch (error) {
       if (token !== this.parseToken) return;
       // A failed preview is not a failed entry: the rows are still there and the commit path

@@ -1,13 +1,11 @@
 // @vitest-environment jsdom
 // FIRST import, deliberately: it loads `@angular/compiler`, and the partially compiled Angular
 // packages used below need the JIT compiler to already be present (see `capture.component.spec.ts`).
-import { initAngularTesting } from '@web-test/angular-testing';
+import { initAngularTesting, setSignalInput } from '@web-test/angular-testing';
 
 import {
   CUSTOM_ELEMENTS_SCHEMA,
   provideZonelessChangeDetection,
-  ɵSIGNAL,
-  type ɵInputSignalNode,
 } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
@@ -42,13 +40,6 @@ initAngularTesting();
 
 type Fixture = ReturnType<typeof TestBed.createComponent<ReceiptDetailComponent>>;
 
-function setSignalInput<T>(component: object, name: string, value: T): void {
-  const field = Reflect.get(component, name) as unknown;
-  if (typeof field !== 'function') throw new Error(`"${name}" is not a signal input.`);
-  const node = Reflect.get(field, ɵSIGNAL) as ɵInputSignalNode<T, T> | undefined;
-  if (node === undefined) throw new Error(`"${name}" has no signal node.`);
-  node.applyValueToInputSignal(node, value);
-}
 
 const CATEGORIES = [
   { id: 'c1', name: 'Hrana', kind: 'EXPENSE', path: ['Hrana'] },

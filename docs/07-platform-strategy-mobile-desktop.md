@@ -511,6 +511,7 @@ that yet: the shell opens and the screen shows its own failure.
 | CSV export of full history ([F-25](01-product-requirements.md)) | 🌐 | Server-generated for completeness |
 | Sign-in / account lifecycle ([F-28](01-product-requirements.md)) | 🌐 | An unexpired access token permits read-only use; no offline sign-in |
 | Alerts and notifications ([F-22](01-product-requirements.md)) | 🌐 | Generated server-side; the in-app centre shows what was delivered |
+| AI consent — the first-use sheet and `/settings`' section (5.2a, docs/08 §6.6) | 🌐 | Both the *state* and the *disclosure* are the server's (`aiConsents` + `aiEgress`), which is the point: a client that cached a grant would show a permission the API no longer holds, and one that hardcoded the provider would be making a claim ([ADR-031](14-decisions-and-risks.md)). Nothing is asked offline because nothing offline asks the question — an offline capture queues *without* parsing, so no `degraded` preview exists to open the sheet. Withholding the decision loses nothing: rules-only is the default path, not a degraded one |
 
 ### The outbox and the pending tray
 

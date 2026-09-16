@@ -1084,6 +1084,22 @@ and editing one fragment does not re-request the others.
 The service worker itself is exercised end-to-end in Playwright with the network throttled to offline —
 a mocked `navigator.serviceWorker` cannot prove the real cache strategy works.
 
+> **Status (5.2a).** That Playwright pass still does not exist **as a committed suite**, and the reason is
+> a dependency decision nobody has taken: `playwright` is not in any `package.json`, so adding it — and
+> the browser download CI would need — is [rule 9](14-decisions-and-risks.md)'s kind of change, not
+> something to slip in under a feature task.
+>
+> A **browser pass was nevertheless run for 5.2a**, because nothing else could answer the question it was
+> there to answer: does the sheet open in a real browser, and does the consent gate actually change what
+> the server does? A Chromium (`~/.cache/ms-playwright` plus an ad-hoc `playwright` from the npx cache) drove
+> a fresh signup through `/onboarding` → `/capture`, took all three answers, and asserted the API's own
+> `aiConsents` from inside the page. **22/22 checks passed**, and it found two things no test in this
+> document could have: [R-26](14-decisions-and-risks.md) (a hard reload signs the user out — every spec
+> drives the client in-process, where the token is still in memory) and the 320 px shell overflow (a real
+> viewport, which jsdom has no opinion about). The script is not committed; until the dependency is
+> decided, reproduce it from this note. **That is the argument for deciding it**: two live defects, one
+> afternoon, from a tool the repo already has browsers for.
+
 ### 8.4 Visual regression policy
 
 Playwright `toHaveScreenshot` on both viewports, deterministic seed data, fonts awaited, animations
