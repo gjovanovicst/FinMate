@@ -1307,11 +1307,14 @@ the ledger-rows record exists for.
    renders as *nothing*, because it means "uncategorised" **or** "divided" — a split Transaction has no
    Category of its own and the whitelist holds one. Adding any of them is a data-minimisation decision
    (docs/08 §3.9), not a rendering convenience, and is not taken here.
-5. **Analytics is left where the documents agree, not where one of them gestured.** Its offline view is
-   an **open decision**: this matrix says cached views only, rejected option (f) says it needs its own
-   design, and serving the ledger rows in its place would show a table where the user expects category
-   spend. `/analytics` therefore keeps its error state, and the contradiction is recorded in docs/07 §6
-   rather than resolved by picking a side silently.
+5. **Analytics requires a connection, and docs/07 §6's matrix was corrected to say so.** This row said
+   📖 "cached views only" with no record behind it; docs/09's 4.2.8b row said "analytics' cached period
+   follows the same rule"; rejected option (f) said analytics needs its own design. The matrix won, and
+   the reasoning is that a *spending analysis* has no honest offline form: its whole content is the
+   server's aggregates, recomputing them from a row cache is forbidden (ADR-001, rejected option (a)),
+   and a cached view would be staler than safe-to-spend while driving no decision the way that one
+   figure does. So `/analytics` keeps its error state, docs/09's note is **retracted** rather than
+   quietly dropped, and the two-row disagreement in docs/07 §6 is gone instead of annotated.
 6. **The assistant still reads nothing.** Rejected option (f) is unchanged: it must never answer from a
    stale snapshot.
 
@@ -1329,14 +1332,15 @@ the ledger-rows record exists for.
   the same consequence decision 6 records for the dashboard, for the same reason (no timer).
 - ⚠️ **Requires the app lock to survive a reload** (ADR-025 decision 3): with no lock the store is
   in-memory and the label survives navigation but not a reload.
-- ⚠️ **Analytics' offline view is still owed**, and it is now the only 📖 row in docs/07 §6 with no
-  record behind it.
+- ✅ **Analytics is settled rather than owed.** docs/07 §6 now marks it 🌐 and the plan's outlier note is
+  retracted, so the matrix no longer contains a promise with nothing behind it.
 
 **Alternatives rejected.**
 - **(a) Serve the cached rows on `/analytics` as its "cached period".** A table of raw rows where the
   screen promises category spend is a different kind of fabrication, not a smaller one. If analytics is
-  to work offline it needs its own record (the server's aggregates), which is rejected option (f)'s
-  "own design".
+  to work offline it needs its own record of the server's aggregates — which is a real option, and the
+  one rejected here on value rather than on feasibility: a stale analysis drives no decision, so the
+  matrix says 🌐 instead of promising it.
 - **(b) Cache filtered reads too.** Four rows cached under a search would be served later as the
   ledger, and nothing in the record would say they were a subset.
 - **(c) Cache every page as the user scrolls.** It would grow the record past its cap and, worse, make

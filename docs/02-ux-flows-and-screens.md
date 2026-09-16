@@ -774,6 +774,13 @@ ship an accessible table alternative ([07 §7.3](07-platform-strategy-mobile-des
 category with no prior-period data renders *nema osnova za poređenje* rather than a misleading
 infinity.
 
+> **Offline (task 4.2.8b).** `/analytics` **needs a connection** and shows its honest error state without
+> one. It is the one screen the ledger cache was deliberately *not* extended to: a spending analysis is
+> the server's aggregates, and the options were to recompute them from cached rows (forbidden —
+> ADR-001, ADR-027's rejected option (a)) or to cache the aggregates themselves (a stale analysis that
+> drives no decision, unlike the dashboard's safe-to-spend). docs/07 §6 said 📖 here until 4.2.8b; it
+> now says 🌐, and ADR-027's 4.2.8b amendment records why.
+>
 > **Build state (task 3.3.1).** `/analytics` ships the period picker with `[`/`]`, the monthly
 > trend, the category bars with their share and change, the top merchants and the month-over-month
 > comparison, each with its table inside `<details>` as docs/07 §7.3 requires. **One GraphQL operation
