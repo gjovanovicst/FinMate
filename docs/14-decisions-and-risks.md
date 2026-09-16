@@ -1192,6 +1192,85 @@ layer. Task 4.2.3 is the **UX** on top of it, and four things it needs are not d
   avoid.
 - **(e) Leader-tab election now**: there is nothing shared to lead until the store persists (ADR-025).
 
+### ADR-027 — A stale figure is labelled, sourced from a per-read-model snapshot, and never fabricated
+**Status:** Accepted
+
+**Context.** [05 §7](05-architecture.md) requires the read-model cache to carry a `syncedAt` and says an
+unlabelled stale "safe to spend" is a trust bug. [07 §6](07-platform-strategy-mobile-desktop.md)'s matrix
+is more specific than that: safe-to-spend and the projection are 📖 *"shown from the snapshot with `as
+of`; **never recomputed client-side**"*, analytics and the assistant are 📖 *"cached views only … we will
+not fabricate an answer from a stale snapshot"*, and the ledger snapshot is 📖. [08 §3.9](08-security-privacy-and-compliance.md)
+minimises what may be cached — but its field list is about **transaction** rows, and says nothing about a
+*computed* figure. [10 §8.3](10-testing-and-quality.md) turns all of it into a test: *"every figure
+carries `as of <timestamp>`; the test fails if any offline figure lacks it"*.
+
+ADR-025 built the store, the whitelist mapper and the TTLs, and recorded that **nothing writes a
+snapshot** — which made this task the one that has to decide what a snapshot *is*.
+
+**Decision.**
+
+1. **The snapshot is a per-read-model record, not one ledger blob.** A successful dashboard read writes
+   `{ syncedAt, figures }`, where `figures` is the `Dashboard` payload verbatim: every member is a
+   numeral, a currency amount or a boolean, so there is no free text to whitelist and no row to minimise.
+   That is not an evasion of §3.9 — it is what makes ADR-001 hold: the matrix forbids recomputing
+   safe-to-spend client-side, so the only honest offline figure is *the server's own number, cached*,
+   never a value re-derived from a row cache.
+2. **A figure is stale when it came from the snapshot, not when it is merely old.** Age is not
+   observable to the client — a fresh read of a quiet month also describes yesterday — so the **source**
+   decides the label: a live read renders unlabelled, a snapshot-served read labels *every* figure it
+   renders `podaci od <syncedAt>` (docs/02 §4.2, with the label in the hero's disclosure).
+3. **Never fabricate.** If the snapshot is missing or past its 24 h TTL (ADR-025 decision 6), the screen
+   keeps its existing honest error state. It does not show a zero that looks like advice, does not
+   extrapolate a projection, and does not override the server's own `paceIsReliable` refusal to forecast.
+4. **The label belongs to the serving mode, not to each tile.** The dashboard renders one
+   `podaci od <time>` line whenever it is serving snapshot data, so a figure cannot appear without its
+   provenance — a per-tile label would be five ways to forget one. The spec asserts both halves: the
+   label is present in snapshot mode, and no money figure renders while the mode is unlabelled.
+5. **The header chip carries both states in one element**: `podaci od <time>` when figures are stale and
+   `Čeka slanje (n)` when something is queued (docs/02 §2.2's offline chip, whose `syncedAt` and
+   `pendingCount` inputs are exactly this). The pending half shipped in 4.2.3; this task adds the stale
+   half and the combination.
+6. **The snapshot is written after a successful read, never on a timer**, for the dashboard only in this
+   build, and it is cleared by the same `purge()` triggers as everything else offline (logout, a `401`,
+   Household deletion, the manual control).
+
+**Consequences.**
+- ✅ The dashboard is honest offline: it shows the figures the server last computed, says when, and
+  refuses to invent the rest.
+- ✅ The trust rule is structural rather than editorial: provenance is a property of where a figure came
+  from, so "a stale figure without a label" is not a rendering the code can produce.
+- ✅ 4.2.6 makes the snapshot survive a reload by swapping the key provider — no change to this design.
+- ⚠️ **In this build the snapshot lives in memory**, so `podaci od <time>` survives navigation but not a
+  reload: reopen the tab and the dashboard is back to its error state offline. That is ADR-025 decision 3
+  working as intended (no app lock, no key, nothing on disk), and it is the visible half of R-23.
+- ⚠️ **Only the dashboard serves from a snapshot.** The ledger-rows cache the matrix's *Ledger snapshot*
+  row (📖) wants is a separate record and is **not built**; `/transactions`, analytics' cached period and
+  the assistant stay online-only, with their own error states. Recorded in docs/07 §6 rather than
+  implied, because "every offline figure is labelled" is only true while the set of offline figures is
+  this small.
+- ⚠️ A cached dashboard has no per-figure provenance: if one input changed and another did not, the whole
+  screen is labelled stale. Coarser than a per-tile timestamp and deliberately so — the alternative is
+  five labels that can disagree about the same moment.
+- ⚠️ The snapshot is written on **read**, so a user who only ever captures (never opens the dashboard)
+  gets no offline figures at all. The alternative — a background prefetch — is a timer, which this repo
+  does not trust in a PWA (ADR-025 decision 6).
+
+**Alternatives rejected.**
+- **(a) Cache the ledger rows and recompute the dashboard offline.** Forbidden by 07 §6's matrix and by
+  ADR-001: two implementations of safe-to-spend is how the app and the server start disagreeing about
+  money, and the offline one would be the one nobody tested.
+- **(b) Label every tile individually.** More labels, and no way to keep them consistent about a single
+  snapshot time.
+- **(c) Label by age** ("older than an hour is stale"). A fresh read of a quiet month is also old, so the
+  label would cry wolf until users ignore it — the failure mode labelling exists to prevent.
+- **(d) Serve a zero or a blank instead of an error when there is no snapshot.** A zero that looks like
+  advice is worse than an honest failure (docs/02 §4.2's own rule about an unset budget).
+- **(e) Prefetch on a timer so the snapshot is always fresh.** A background timer in a PWA is a promise
+  iOS does not keep (ADR-025), and it inverts the cost model: the app would read on a schedule nobody
+  asked for.
+- **(f) Snapshot the analytics and assistant answers too.** 07 §6 says cached views only, and the
+  assistant must never answer from a stale snapshot; both need their own design, not this record.
+
 ---
 
 ## Part 2 — Risk register

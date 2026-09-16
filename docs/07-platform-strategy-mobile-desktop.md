@@ -494,11 +494,11 @@ that yet: the shell opens and the screen shows its own failure.
 | Capture single / bulk ([F-05](01-product-requirements.md), [F-06](01-product-requirements.md)) | ✅ | Local segmentation via `packages/nlp`; committed to the outbox with `idempotency_key` + `client_id` |
 | Manual create/edit ([F-04](01-product-requirements.md)) | ✅ | Local-only until sync; queued as outbox mutations |
 | Category / Tag / Merchant / Counterparty assignment | ✅ | From the cached taxonomy snapshot; new taxonomy nodes need network |
-| Ledger snapshot | 📖 | Last synced state, `as of` labelled |
+| Ledger snapshot | 📖 | Last synced state, `as of` labelled. **Partly built (4.2.4)**: the `Dashboard` read model is cached and served with `podaci od <time>` (ADR-027); the **ledger-rows** cache the transactions list would need is a separate record and is **not built**, so `/transactions` is still online-only |
 | Review queue ([F-08](01-product-requirements.md)) | 📖 / ✅ | View offline, resolve locally; resolutions queue and the `Rule` is synthesised server-side ([ADR-010](14-decisions-and-risks.md)) |
 | Receipt capture ([F-14](01-product-requirements.md)) | ✅ / ⏳ | Photo retained and uploaded on reconnect; extraction and reconciliation are server-side |
-| Safe-to-spend ([F-19](01-product-requirements.md)) / projection ([F-21](01-product-requirements.md)) | 📖 | Shown from the snapshot with `as of`; **never recomputed client-side** ([ADR-001](14-decisions-and-risks.md)) |
-| Analytics ([F-20](01-product-requirements.md)) / Assistant ([F-23](01-product-requirements.md)) | 📖 | Cached views only; a new question needs network — we will not fabricate an answer from a stale snapshot |
+| Safe-to-spend ([F-19](01-product-requirements.md)) / projection ([F-21](01-product-requirements.md)) | 📖 | **Built (4.2.4)**: shown from the snapshot with `as of`; **never recomputed client-side** ([ADR-001](14-decisions-and-risks.md), [ADR-027](14-decisions-and-risks.md)). With no snapshot the tile keeps its error state — no zero, no extrapolation |
+| Analytics ([F-20](01-product-requirements.md)) / Assistant ([F-23](01-product-requirements.md)) | 📖 | Cached views only; a new question needs network — we will not fabricate an answer from a stale snapshot. **Not built**: neither has a snapshot record, so both are online-only with their own error states (ADR-027 records why this is not the dashboard's record) |
 | CSV export of full history ([F-25](01-product-requirements.md)) | 🌐 | Server-generated for completeness |
 | Sign-in / account lifecycle ([F-28](01-product-requirements.md)) | 🌐 | An unexpired access token permits read-only use; no offline sign-in |
 | Alerts and notifications ([F-22](01-product-requirements.md)) | 🌐 | Generated server-side; the in-app centre shows what was delivered |
