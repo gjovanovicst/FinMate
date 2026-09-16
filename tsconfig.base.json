@@ -44,7 +44,11 @@
       "@finmate/contracts": ["./packages/contracts/src/index.ts"],
       "@finmate/nlp": ["./packages/nlp/src/index.ts"],
       "@finmate/rules-engine": ["./packages/rules-engine/src/index.ts"],
-      "@finmate/ai": ["./packages/ai/src/index.ts"]
+      "@finmate/ai": ["./packages/ai/src/index.ts"],
+      /* The worker boots the API's Nest modules and calls its services (ADR-022), which is the one
+         application-to-application edge `eslint.config.mjs` permits. Aliased rather than reached by
+         a relative climb so both the boundary rule and SWC can see where the import lands. */
+      "@finmate/api/*": ["./apps/api/src/*"]
     }
   },
   "exclude": ["node_modules", "dist", "**/node_modules/*"]

@@ -734,6 +734,87 @@ Four constraints meet here and none of them is a preference:
   bug this ADR's decision 8 fixes. A cosine above 0.82 is evidence about a *name*, not about a
   category, and the whole point of a confidence band is that the caller respects it.
 
+### ADR-022 — The worker is a second process over the same services, and BullMQ owns the schedule
+**Status:** Accepted
+
+**Context.** [05 §8](05-architecture.md) has named BullMQ and a twelve-job table since Phase 0, and
+`apps/worker` has been a stub ever since. That gap is now load-bearing: four features are built and
+**only reachable through a mutation** — `insights.generate`, `notifications.dispatch`,
+`recurring.materialise` and `recurring.detect`. Each was written so the mutation calls exactly the
+method the job will, precisely so this decision would not change them. Nothing runs on a schedule, so
+"the nightly insight feed" and "the subscription detector" are buttons a user has to press.
+
+Four constraints shape the decision:
+
+1. **One implementation per job.** Every job's logic already exists as a service method with its own
+   tests and its own idempotency story (insight dedupe keys, `notifications.dedupe_key`, the
+   per-occurrence `recurring:{rule}:{date}` key, detection by identity). A job must call that method,
+   never a second version of it.
+2. **`scope:worker` may depend on `scope:api`, and that is the only app-to-app edge.** The tag
+   constraints in `eslint.config.mjs` already allow it, and Nx additionally forbids an app importing
+   another app unless the target is named in the rule's `allow` list — so the API is named there, with
+   a comment pointing at this ADR, and no other application is. The alternative — calling the API over
+   HTTP — would make every job depend on a web process being up.
+3. **A job must not read across Households, and yet something must enumerate them.** ADR-008 refuses
+   any household-scoped query without a `TenantContext`, and `households` is scoped by its own primary
+   key, so a worker cannot so much as list the Households it is meant to serve. This is the one place
+   where that rule needs a sanctioned, auditable exception — and it must be narrow enough that it
+   cannot become a general back door.
+4. **Redis already exists.** ADR-013's single node runs it; the API already talks to it through
+   `ioredis` for sessions and rate limits. A queue is not a new datastore.
+
+**Decision.**
+
+1. **The worker is a Nest application context** (`NestFactory.createApplicationContext`) that imports
+   the API's feature modules and calls their services. It serves no HTTP, owns no schema, and runs no
+   migrations — migrations stay a separate deploy step.
+2. **BullMQ owns the schedule**, on the existing Redis: one queue per job name, repeatable jobs using
+   [05 §8](05-architecture.md)'s schedule, `attempts` with exponential backoff, `removeOnComplete`/
+   `removeOnFail` bounded, and a **dead-letter queue** for exhausted jobs. A failed job is logged with
+   its household and its attempt count.
+3. **Idempotency is the processor's obligation, not the queue's.** Every processor is safe to run
+   twice; where a job posts money or a notification, the existing key is what makes that true. A new
+   job may not be added without saying what makes it idempotent.
+4. **`runAsSystem` is the only cross-Household read**, added to `tenant-context.ts`: it marks the
+   current scope as a *job* scope, and the Prisma extension permits exactly the reads a job needs to
+   enumerate work — `households.findMany` — while still refusing every household-scoped model without
+   a tenant. Every per-Household unit of work then runs inside `runWithTenant`, so the job code is the
+   same shape as a request.
+5. **A job failure never takes the worker down**: each processor catches, logs and rethrows (BullMQ
+   records the attempt), and a Household that throws is skipped for that run while the others proceed.
+6. **The worker runs the same config loader as the API** (`@finmate/config`), so `REDIS_URL` and the
+   database URL have one definition, and a missing required value fails the boot with a sentence
+   rather than a stack trace mid-job.
+
+**Consequences.**
+- ✅ Four built features become scheduled, and the nightly evaluation runner has the process it needs.
+- ✅ One implementation per job: a mutation and its job cannot drift, because they are the same method.
+- ✅ Retries, backoff and a dead-letter path are configuration rather than code we maintain.
+- ⚠️ **A new dependency** (`bullmq`) and its transitive tree, plus a second process to run locally, in
+  CI and in the deploy (compose and `pnpm dev` both change).
+- ⚠️ The worker imports the API's modules, so a service whose constructor gains a provider the worker's
+  module graph does not import will fail **the worker's boot** while `api:test` stays green — the same
+  class of failure as docs/15's module-resolution entry, with a new blast radius.
+- ⚠️ `runAsSystem` is a deliberate hole in ADR-008. It is narrow (an enumerated read list), asserted by
+  a test that it cannot do anything else, and any widening is an amendment to this ADR.
+- ⚠️ Two processes can now write at once. Every processor's idempotency is what keeps that safe, which
+  is why decision 3 is a rule rather than advice.
+
+**Alternatives rejected.**
+- **(a) A hand-rolled Redis scheduler** (a lock plus an interval and a `next_run_at`): no new
+  dependency, but it re-implements retries, backoff, jitter, visibility timeouts and a dead-letter
+  path — the parts of a queue that are easy to get subtly wrong, on the path that posts money.
+- **(b) Cron inside the API process**: a web process must not own long tasks. A deploy or a restart
+  kills a job mid-run, and a burst of job work competes with request latency on the same event loop.
+- **(c) The worker calls the API over HTTP**: every job then depends on a web process being up, and on
+  an authenticated caller that is not a user — a second auth surface for no benefit.
+- **(d) Extract the services into a shared package first**: the honest long-term shape, but it is a
+  large refactor of eleven modules with no behaviour change, and the boundary rule already permits the
+  edge this ADR uses. If the worker ever needs to deploy independently of the API, that refactor is
+  the follow-up, not a prerequisite.
+- **(e) A queue table in Postgres**: `SELECT ... FOR UPDATE SKIP LOCKED` is a real pattern, but it puts
+  job traffic on the primary database of a single-node deployment to avoid a dependency we already run.
+
 ---
 
 ## Part 2 — Risk register

@@ -46,7 +46,42 @@ export class TenantContextMissingError extends Error {
   }
 }
 
-const storage = new AsyncLocalStorage<TenantContext>();
+/**
+ * A job scope: the marker that says "this is background work enumerating Households", which is the
+ * **one** sanctioned exception to ADR-008 (ADR-022).
+ *
+ * Deliberately not a `TenantContext`: a job must not be able to pretend it belongs to a Household it
+ * is not working on. The guard lets a job scope read the Household directory and nothing else, and
+ * every unit of per-Household work still runs inside {@link runWithTenant}.
+ */
+export interface SystemScope {
+  readonly requestId: string;
+}
+
+export type TenancyScope =
+  | { readonly kind: 'TENANT'; readonly context: TenantContext }
+  | { readonly kind: 'SYSTEM'; readonly scope: SystemScope };
+
+const storage = new AsyncLocalStorage<TenancyScope>();
+
+/** The models a system scope may read: the Household directory, and nothing else (ADR-022). */
+export const SYSTEM_READABLE_MODELS: ReadonlySet<string> = new Set(['households']);
+
+/**
+ * Run `fn` in a **job scope**: allowed to enumerate Households, allowed nothing else.
+ *
+ * This exists for one caller — the worker (ADR-022) — because something has to know which Households
+ * to iterate, and ADR-008 otherwise refuses every read without a tenant. It is narrow by
+ * construction: the guard consults {@link SYSTEM_READABLE_MODELS}, so a job that reaches for a
+ * Transaction, a Budget or an Insight still throws exactly as it would anywhere else.
+ */
+export function runAsSystem<T>(scope: SystemScope, fn: () => T): T {
+  const result = storage.run({ kind: 'SYSTEM', scope }, fn);
+  if (isThenable(result)) {
+    return storage.run({ kind: 'SYSTEM', scope }, () => Promise.resolve(result)) as T;
+  }
+  return result;
+}
 
 /**
  * Run `fn` with tenancy established. Used by the request middleware, by background jobs, and by
@@ -61,9 +96,9 @@ const storage = new AsyncLocalStorage<TenantContext>();
  * one-line test helpers and background jobs are where it bites.
  */
 export function runWithTenant<T>(context: TenantContext, fn: () => T): T {
-  const result = storage.run(context, fn);
+  const result = storage.run({ kind: 'TENANT', context }, fn);
   if (isThenable(result)) {
-    return storage.run(context, () => Promise.resolve(result)) as T;
+    return storage.run({ kind: 'TENANT', context }, () => Promise.resolve(result)) as T;
   }
   return result;
 }
@@ -73,9 +108,21 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
   return typeof (value as { then?: unknown } | null)?.then === 'function';
 }
 
-/** The current context, or `undefined` outside a tenanted scope. */
+/** The current context, or `undefined` outside a tenanted scope (and in a job scope). */
 export function getTenantContext(): TenantContext | undefined {
-  return storage.getStore();
+  const scope = storage.getStore();
+  return scope?.kind === 'TENANT' ? scope.context : undefined;
+}
+
+/** The current job scope, or `undefined` when this is a request or nothing at all. */
+export function getSystemScope(): SystemScope | undefined {
+  const scope = storage.getStore();
+  return scope?.kind === 'SYSTEM' ? scope.scope : undefined;
+}
+
+/** True when a job scope is active. The guard uses this; nothing else should. */
+export function isSystemScope(): boolean {
+  return storage.getStore()?.kind === 'SYSTEM';
 }
 
 /**
@@ -85,7 +132,7 @@ export function getTenantContext(): TenantContext | undefined {
  * recoverable condition — failing closed is the only acceptable behaviour for financial data.
  */
 export function requireTenantContext(detail = 'unspecified operation'): TenantContext {
-  const context = storage.getStore();
+  const context = getTenantContext();
   if (!context) throw new TenantContextMissingError(detail);
   return context;
 }
@@ -106,5 +153,5 @@ export function requireSessionId(detail = 'unspecified operation'): string {
 
 /** True when running inside a tenanted scope. For assertions and diagnostics only. */
 export function hasTenantContext(): boolean {
-  return storage.getStore() !== undefined;
+  return getTenantContext() !== undefined;
 }

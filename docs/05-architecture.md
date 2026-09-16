@@ -242,7 +242,16 @@ Mobile reality: capture must work on the metro. Design:
 
 ## 8. Background jobs
 
-All via BullMQ, idempotent, with retries and dead-letter queues.
+All via BullMQ, idempotent, with retries and dead-letter queues. **Implemented in task 3.4.1** —
+[ADR-022](14-decisions-and-risks.md) records the shape: `apps/worker` boots the API's feature modules as
+a Nest application context and calls the **same service methods the mutations call**, one queue per job
+with a scheduler id per name (a redeploy replaces a schedule rather than stacking a second copy),
+`attempts: 3` with exponential backoff, and bounded `removeOnComplete`/`removeOnFail` history. A job
+enumerates Households through the **job scope** (`runAsSystem`, the one sanctioned cross-Household read)
+and then does each Household's work inside `runWithTenant`, so the service sees exactly what a request
+would give it. Four jobs are registered today — `recurring.materialise`, `recurring.detect`,
+`insights.generate`, `notifications.dispatch`; the rest of the table is unbuilt, and each entry below
+says what makes a second run safe, which ADR-022 makes a precondition for adding one.
 
 | Job | Schedule | Responsibility |
 |---|---|---|

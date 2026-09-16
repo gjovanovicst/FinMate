@@ -20,6 +20,20 @@
         "command": "tsc --noEmit -p tsconfig.json",
         "cwd": "{projectRoot}"
       }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --env-file=../../.env -r @swc-node/register src/index.ts",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "apps/worker/node_modules/.bin/vitest run --config apps/worker/vitest.config.mts",
+        "cwd": "{workspaceRoot}"
+      }
     }
   }
 }

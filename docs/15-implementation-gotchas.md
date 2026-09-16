@@ -678,6 +678,17 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   `src/**&#47;*.ts`. Cost real time on `packages/domain/src/seed/index.ts`, explaining why that content does
   not live beside `src`.
 
+- **A running worker and the API integration suite share one dev database, so the worker will act on
+  the tests' Households.** `runAsSystem` enumerates **every** Household by design (ADR-022), so a
+  per-minute `notifications.dispatch` — or an hourly `recurring.materialise` — happily writes rows into
+  the synthetic Household an integration test created two seconds ago. A test that counts insights,
+  notifications or transactions then sees work it did not do, and the symptom is a suite that passes on
+  its own and fails in a full `pnpm test`, with no code change to explain it (measured: `api:test` green
+  alone, red in a full run with the worker up, green again once it was stopped). Stop the worker before
+  running the suite, or point it at its own database. The worker's own spec is immune because it calls
+  `runJob` directly and never starts the scheduler.
+
+
 ---
 
 ## 10. Cross-cutting rules of the codebase

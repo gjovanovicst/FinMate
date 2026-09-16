@@ -36,7 +36,12 @@ export default tseslint.config(
         {
           // Nx 23 renamed this from `enforceBuildableLibs`.
           enforceBuildableLibDependency: false,
-          allow: [],
+          // The one application-to-application edge, named explicitly (ADR-022): the worker boots the
+          // API's feature modules and calls their services, so a job and its mutation are the same
+          // implementation. The tag constraints below already allow `scope:worker -> scope:api`; Nx
+          // additionally forbids an app importing another app unless the target is listed here, which
+          // is what this entry lifts — for the API only, and for no other application.
+          allow: ['@finmate/api'],
           depConstraints: [
             // --- pure packages: no application, no I/O, no other scope ---
             // packages/domain imports nothing (docs/05 §2). This is what keeps it

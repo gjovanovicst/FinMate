@@ -1,4 +1,4 @@
-import { requireTenantContext } from './tenant-context';
+import { SYSTEM_READABLE_MODELS, isSystemScope, requireTenantContext } from './tenant-context';
 
 /**
  * Prisma client extension that mechanically enforces household scoping (ADR-008, layer 2 of 3).
@@ -195,6 +195,20 @@ export function applyTenancyGuard(
         `Reach it through its parent, whose query the tenancy guard already scopes — for example ` +
         `\`prisma.transactions.findFirst({ where: { id }, include: { transaction_tags: true } })\` ` +
         `instead of querying ${model} directly (ADR-008).`,
+    );
+  }
+
+  // A job scope may read the Household directory and nothing else (ADR-022). Everything a job does
+  // *for* a Household then runs inside `runWithTenant`, so it comes back through this function with a
+  // real tenant and is scoped exactly like a request.
+  if (isSystemScope()) {
+    if (SYSTEM_READABLE_MODELS.has(model) && READ_OPERATIONS.has(operation)) {
+      return { allowed: true, args };
+    }
+    throw new TenancyError(
+      `${model}.${operation} is not permitted in a job scope: background work may enumerate ` +
+        `Households, and every other read or write must run inside runWithTenant() for the Household ` +
+        `it is working on (ADR-008, ADR-022).`,
     );
   }
 
