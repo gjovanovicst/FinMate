@@ -14,7 +14,7 @@
  */
 import type { TranslationKey } from '../i18n/translations';
 import type { OutboxEntry } from './outbox';
-import type { CaptureCommitInput, CapturePreviewRow } from './sync.types';
+import type { CaptureCommitInput, CapturePreviewRow, ConflictFieldChange } from './sync.types';
 
 /** The local preview a queue entry carries in `meta`, or an empty list when it carries none. */
 export function previewRows(entry: OutboxEntry): readonly CapturePreviewRow[] {
@@ -177,4 +177,40 @@ function isPreviewRow(value: unknown): value is CapturePreviewRow {
 
 function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === 'string';
+}
+
+
+/**
+ * The fields an edit's conflict diff compares, in the order a person reads a transaction.
+ *
+ * A fixed list rather than "every key the payload had": the diff is shown to a user, and a field that
+ * gained no label would render as a raw GraphQL name. Adding one here is a deliberate act — and the
+ * labels live in the catalogue next to every other string (4.2.7b renders them).
+ */
+export const CONFLICT_FIELDS = ['amount', 'occurredLocalDate', 'categoryId', 'description', 'status'] as const;
+
+/**
+ * Build the field-by-field changes for a refused edit.
+ *
+ * Both sides are **strings by the time they reach here** — `before` from the queue's meta, `after`
+ * from the server's row — so this compares what each side actually said and never parses a money
+ * value. `null` and `''` are normalised to one "empty" so an absent field does not look like a change
+ * from `null` to `''`.
+ */
+export function conflictChanges(
+  before: Readonly<Record<string, unknown>>,
+  after: Readonly<Record<string, unknown>>,
+  fields: readonly string[] = CONFLICT_FIELDS,
+): ConflictFieldChange[] {
+  const changes: ConflictFieldChange[] = [];
+  const empty = (value: unknown): string | null => {
+    if (value === null || value === undefined || value === '') return null;
+    return typeof value === 'string' ? value : String(value);
+  };
+  for (const field of fields) {
+    const was = empty(before[field]);
+    const now = empty(after[field]);
+    if (was !== now) changes.push({ field, before: was, after: now });
+  }
+  return changes;
 }

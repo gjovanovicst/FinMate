@@ -24,7 +24,7 @@
 import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 
-import { GraphqlClient } from '../graphql/graphql.client';
+import { GraphQLRequestError, GraphqlClient } from '../graphql/graphql.client';
 import { OfflineStoreHolder } from './offline-store-holder';
 import { withFlushLock } from './flush-lock';
 import {
@@ -33,11 +33,19 @@ import {
   type GraphQLFailureDetail,
   type OutboxEntry,
 } from './outbox';
-import type { CaptureCommitInput, CapturePreviewRow, SyncDiff } from './sync.types';
+import type {
+  CaptureCommitInput,
+  CapturePreviewRow,
+  SyncConflict,
+  SyncDiff,
+  TransactionEditInput,
+} from './sync.types';
 import {
   previewIndex,
   queueDump,
   type QueuedPreview,
+  CONFLICT_FIELDS,
+  conflictChanges,
 } from './sync.view';
 
 /**
@@ -48,6 +56,58 @@ import {
  * category and its decision source. One document means a queued retry and a live commit cannot drift
  * apart in what they ask the server for.
  */
+/**
+ * The queued **edit** (task 4.2.7, ADR-030).
+ *
+ * `updateTransaction` with the version the user read, exactly as the sheet sends it online — the queue
+ * does not get to weaken optimistic concurrency, it only delays the write. A mismatch is the API's
+ * `CONFLICT`, which is `retryable: false`, so the outbox parks the entry and the flush carries on:
+ * one stale row must not block the queue behind it.
+ */
+export const UPDATE_TRANSACTION = /* GraphQL */ `
+  mutation UpdateTransaction($input: TransactionUpdateInput!) {
+    updateTransaction(input: $input) {
+      __typename
+      id
+      version
+      amount { amountMinor currency }
+      occurredLocalDate
+      categoryId
+      description
+      note
+      status
+    }
+  }
+`;
+
+/** The row the conflict diff compares against (docs/06 §4's `transaction`). */
+interface ConflictRow {
+  readonly id: string;
+  readonly version: number;
+  readonly amount: { readonly amountMinor: string; readonly currency: string };
+  readonly occurredLocalDate: string | null;
+  readonly categoryId: string | null;
+  readonly description: string;
+  readonly note: string | null;
+  readonly status: string;
+}
+
+/** The row as the conflict diff needs it: the five fields a person reads, plus the version. */
+export const TRANSACTION_FOR_CONFLICT = /* GraphQL */ `
+  query TransactionForConflict($id: ID!) {
+    transaction(id: $id) {
+      id
+      version
+      amount { amountMinor currency }
+      occurredLocalDate
+      categoryId
+      description
+      note
+      status
+    }
+  }
+`;
+
 export const CAPTURE_COMMIT = /* GraphQL */ `
   mutation CaptureCommit($input: CaptureCommitInput!) {
     captureCommit(input: $input) {
@@ -175,6 +235,7 @@ export class SyncService {
   private readonly busySignal = signal(false);
   private readonly lastErrorSignal = signal<string | null>(null);
   private readonly diffsSignal = signal<readonly SyncDiff[]>([]);
+  private readonly conflictsSignal = signal<readonly SyncConflict[]>([]);
   private names: ReadonlyMap<string, string> | null = null;
 
   readonly pending = this.pendingSignal.asReadonly();
@@ -183,6 +244,15 @@ export class SyncService {
   readonly busy = this.busySignal.asReadonly();
   readonly lastError = this.lastErrorSignal.asReadonly();
   readonly diffs = this.diffsSignal.asReadonly();
+
+  /**
+   * Queued edits the server refused with a version conflict (task 4.2.7, ADR-030).
+   *
+   * A separate list from {@link diffs} on purpose: a re-classification is the server's *decision* about
+   * a row it accepted, a conflict is a write it **rejected**. Merging them would let one screen imply
+   * the other's outcome.
+   */
+  readonly conflicts = this.conflictsSignal.asReadonly();
 
   constructor() {
     const document = this.documentRef;
@@ -231,6 +301,32 @@ export class SyncService {
     rows: readonly CapturePreviewRow[],
   ): Promise<OutboxEntry> {
     const entry = await (await this.outbox()).enqueue(CAPTURE_COMMIT, { input }, { preview: rows });
+    await this.refresh();
+    return entry;
+  }
+
+  /**
+   * Queue one **edit** — a `updateTransaction` that could not reach the server.
+   *
+   * `before` is the row as the user was looking at it — **every** field this edit carries, flattened
+   * (`amount` as its minor-unit string, not the Money object) — because a field missing from it is
+   * indistinguishable from "the row had nothing there", and the diff would report the row's own
+   * untouched value as a change. The comparison is then limited to the fields the edit carried:
+   * the queue carries it in `meta` (ADR-026 decision 2) so a conflict that surfaces after a reload can
+   * still say what the user thought they were changing. The entry is immutable once queued, exactly
+   * like a capture — a resend under the same version either lands or conflicts, and editing the queued
+   * payload would show a success while the server kept another value (docs/15).
+   */
+  async enqueueEdit(
+    input: TransactionEditInput,
+    before: Readonly<Record<string, unknown>>,
+  ): Promise<OutboxEntry> {
+    const entry = await (await this.outbox()).enqueue(
+      UPDATE_TRANSACTION,
+      { input },
+      { before, transactionId: input.id },
+      'edit',
+    );
     await this.refresh();
     return entry;
   }
@@ -320,6 +416,89 @@ export class SyncService {
   }
 
   /**
+   * One queued edit, and the conflict detail if the server refused it.
+   *
+   * The rethrow is deliberate and carries the API's own error: `CONFLICT` arrives with
+   * `retryable: false`, so the outbox's own classifier parks the entry as *ne može se poslati* and the
+   * flush moves on. Building the diff is a side effect of that refusal, not a second decision — and a
+   * failure to *read* the current row must not swallow the conflict itself, which is why the fetch is
+   * guarded separately.
+   */
+  private async sendEdit(variables: Record<string, unknown>): Promise<void> {
+    const input = variables['input'] as TransactionEditInput | undefined;
+    if (input === undefined) return;
+
+    try {
+      await this.graphql.query(UPDATE_TRANSACTION, variables);
+    } catch (error) {
+      if (error instanceof GraphQLRequestError && error.code === 'CONFLICT') {
+        await this.recordConflict(input);
+      }
+      throw error;
+    }
+  }
+
+  /** Read what the row holds now and record the field-by-field difference. */
+  private async recordConflict(input: TransactionEditInput): Promise<void> {
+    try {
+      const current = await this.graphql.query<{ transaction: ConflictRow | null }>(
+        TRANSACTION_FOR_CONFLICT,
+        { id: input.id },
+      );
+      const row = current.transaction;
+      if (row === null) return;
+
+      // Only the fields this edit actually carried: a field the user never touched cannot be "what
+      // they changed", and comparing all five would report the row's untouched values as differences
+      // the moment `before` was incomplete (found by this spec).
+      const compared = CONFLICT_FIELDS.filter((field) => field in input);
+      const before = this.beforeOf(input.id);
+      const changes = conflictChanges(
+        before,
+        {
+          amount: row.amount.amountMinor,
+          occurredLocalDate: row.occurredLocalDate,
+          categoryId: row.categoryId,
+          description: row.description,
+          status: row.status,
+        },
+        compared,
+      );
+
+      const conflict: SyncConflict = {
+        seq: this.seqOf(input.id),
+        transactionId: input.id,
+        editedVersion: input.version,
+        serverVersion: row.version,
+        changes,
+      };
+      this.conflictsSignal.update((current) => [...current, conflict]);
+    } catch {
+      // The row could not be read: the entry is still parked and still says a conflict happened, which
+      // is the part that must not be lost. The detail is the part that can be.
+    }
+  }
+
+  /** The `before` half of a queued edit, from the entry that carried it. */
+  private beforeOf(transactionId: string): Record<string, unknown> {
+    const entry = this.pendingSignal().find(
+      (candidate) => candidate.meta?.['transactionId'] === transactionId,
+    );
+    const before = entry?.meta?.['before'];
+    return typeof before === 'object' && before !== null
+      ? (before as Record<string, unknown>)
+      : {};
+  }
+
+  /** The queue position of a queued edit, so the tray can point at the entry the diff belongs to. */
+  private seqOf(transactionId: string): number {
+    return (
+      this.pendingSignal().find((candidate) => candidate.meta?.['transactionId'] === transactionId)
+        ?.seq ?? 0
+    );
+  }
+
+  /**
    * One `graphql.query` call, wrapped so the outbox sees only "sent" or "threw".
    *
    * The refusal arm is converted here and nowhere else: an accepted arm builds the diff, and a network
@@ -331,6 +510,12 @@ export class SyncService {
     index: ReadonlyMap<string, QueuedPreview>,
     collected: SyncDiff[],
   ): Promise<void> {
+    // Which mutation this is decides what "the interesting outcome" means (ADR-030).
+    if (document === UPDATE_TRANSACTION) {
+      await this.sendEdit(variables);
+      return;
+    }
+
     const response = await this.graphql.query<CommitResponse>(document, variables);
     const result = response.captureCommit;
 

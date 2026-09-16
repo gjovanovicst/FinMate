@@ -86,3 +86,53 @@ export interface SyncDiff {
   readonly serverCategoryName: string | null;
   readonly why: string;
 }
+
+/**
+ * One field of a queued edit that the server refused, as the tray shows it.
+ *
+ * `before` is what the user was looking at when they edited offline, `after` is what the row holds
+ * now. The two come from different places on purpose: `before` is the client-only `meta` the queue
+ * carried (ADR-026 decision 2), `after` is the row the server just returned — so the diff is a
+ * comparison between two real observations rather than a reconstruction of either.
+ */
+export interface ConflictFieldChange {
+  readonly field: string;
+  readonly before: string | null;
+  readonly after: string | null;
+}
+
+/**
+ * A queued edit the server refused with a version conflict (task 4.2.7, ADR-030).
+ *
+ * **Not a re-classification.** ADR-026's diff has a `why` because the server decided something; a
+ * conflict has no decision to explain — the row changed after the user read it, and the only honest
+ * "why" is the two versions. Rendering the version pair is what stops a screen from inventing a
+ * reason the API never gave.
+ */
+export interface SyncConflict {
+  /** The queue entry the refused edit came from. */
+  readonly seq: number;
+  readonly transactionId: string;
+  /** The version the user edited; the server's is whatever accepted the change instead. */
+  readonly editedVersion: number;
+  readonly serverVersion: number;
+  readonly changes: readonly ConflictFieldChange[];
+}
+
+/**
+ * One queued `updateTransaction`, as the queue stores it under `input`.
+ *
+ * A **subset** of the API's arguments — only the fields the sheet can change — and `version` is
+ * required: a queued edit without it would be a blind overwrite, which is the behaviour optimistic
+ * concurrency exists to prevent (ADR-030).
+ */
+export interface TransactionEditInput {
+  readonly id: string;
+  readonly version: number;
+  readonly amount?: { readonly amountMinor: string; readonly currency: string };
+  readonly categoryId?: string | null;
+  readonly description?: string;
+  readonly occurredLocalDate?: string | null;
+  readonly note?: string | null;
+  readonly status?: string;
+}

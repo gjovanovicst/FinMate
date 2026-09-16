@@ -6,7 +6,7 @@ import { initAngularTesting } from '@web-test/angular-testing';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { GraphqlClient } from '../graphql/graphql.client';
+import { GraphQLRequestError, GraphqlClient } from '../graphql/graphql.client';
 import { OFFLINE_KEY_PROVIDER } from './offline-key-provider';
 import { SyncService } from './sync.service';
 import type { CaptureCommitInput, CapturePreviewRow } from './sync.types';
@@ -89,11 +89,38 @@ const OFFLINE = { status: 0, message: 'Failed to fetch', errors: [] };
 
 let commitResult: unknown = ACCEPTED;
 
-function mount(): { service: SyncService; query: ReturnType<typeof vi.fn> } {
+/** The version conflict the API answers a stale edit with: `CONFLICT`, and explicitly not retryable. */
+const STALE = new GraphQLRequestError(
+  [{ code: 'CONFLICT', message: 'This row changed.', retryable: false }],
+  200,
+);
+
+/** The row as the server holds it *now* — the `after` half of a conflict diff. */
+const SERVER_ROW = {
+  transaction: {
+    id: 'tx-9',
+    version: 7,
+    amount: { amountMinor: '250000', currency: 'RSD' },
+    occurredLocalDate: '2026-09-15',
+    categoryId: 'cat-fuel',
+    description: 'Lidl 2500',
+    note: null,
+    status: 'CONFIRMED',
+  },
+};
+
+function mount(options: { editFails?: unknown } = {}): {
+  service: SyncService;
+  query: ReturnType<typeof vi.fn>;
+} {
   commitResult = ACCEPTED;
   const query = vi.fn((document: string) => {
     if (document.includes('SyncCategoryNames')) {
       return Promise.resolve({ categories: [{ id: 'cat-fuel', name: 'Gorivo' }] });
+    }
+    if (document.includes('TransactionForConflict')) return Promise.resolve(SERVER_ROW);
+    if (document.includes('UpdateTransaction') && options.editFails !== undefined) {
+      return Promise.reject(options.editFails);
     }
     // A genuine offline failure rejects rather than answering; the outbox classifies it.
     if (commitResult === OFFLINE) return Promise.reject(OFFLINE);
@@ -278,5 +305,84 @@ describe('SyncService', () => {
     if (!entry) throw new Error('expected a queued entry');
     await service.discard(entry.seq);
     expect(service.pendingCount()).toBe(0);
+  });
+
+  it('queues an edit as an edit, with the row it compares against', async () => {
+    const { service } = mount();
+    await settle();
+
+    const entry = await service.enqueueEdit(
+      { id: 'tx-9', version: 6, description: 'Lidl 2500' },
+      { amount: '200000', categoryId: 'cat-food' },
+    );
+
+    // The document is what tells the flush which mutation this is (ADR-030): there is no kind field
+    // on the wire, and matching on a string is the only honest way to dispatch.
+    expect(entry.document).toContain('UpdateTransaction');
+    expect(entry.kind).toBe('edit');
+    expect(entry.meta).toEqual({
+      before: { amount: '200000', categoryId: 'cat-food' },
+      transactionId: 'tx-9',
+    });
+    expect(entry.variables).toEqual({ input: { id: 'tx-9', version: 6, description: 'Lidl 2500' } });
+  });
+
+  it('records the field-by-field conflict when the server refuses a stale edit', async () => {
+    const { service } = mount({ editFails: STALE });
+    await settle();
+    await service.enqueueEdit(
+      {
+        id: 'tx-9',
+        version: 6,
+        amount: { amountMinor: '200000', currency: 'RSD' },
+        description: 'Lidl 2000',
+      },
+      { amount: '200000', description: 'Lidl 2000' },
+    );
+
+    await service.flushNow();
+    await settle();
+
+    expect(service.conflicts()).toHaveLength(1);
+    const conflict = service.conflicts()[0]!;
+    expect(conflict.transactionId).toBe('tx-9');
+    // The two versions are the honest explanation; the API gave no decision to quote.
+    expect(conflict.editedVersion).toBe(6);
+    expect(conflict.serverVersion).toBe(7);
+    // Only what actually differs: the amount the user typed against the amount the row now holds.
+    // The edit carried the amount and the description, so those are what it compares — and only what
+    // actually differs: the category the server also holds is not "something the user changed".
+    expect(conflict.changes).toEqual([
+      { field: 'amount', before: '200000', after: '250000' },
+      { field: 'description', before: 'Lidl 2000', after: 'Lidl 2500' },
+    ]);
+  });
+
+  it('parks a conflicted edit as refused and keeps sending the queue behind it', async () => {
+    const { service } = mount({ editFails: STALE });
+    await settle();
+    await service.enqueueEdit({ id: 'tx-9', version: 6, description: 'Lidl 2500' }, {});
+    await service.enqueueCapture(INPUT, PREVIEW);
+
+    await service.flushNow();
+    await settle();
+
+    // The edit needs a person, so it is parked rather than retried; the capture behind it still went.
+    expect(service.rejected()).toHaveLength(1);
+    expect(service.pendingCount()).toBe(0);
+  });
+
+  it('does not treat a version conflict as something to retry', async () => {
+    // `retryable: false` on the API's CONFLICT is what parks the entry; a retry loop here would
+    // re-send a stale version forever.
+    const { service } = mount({ editFails: STALE });
+    await settle();
+    await service.enqueueEdit({ id: 'tx-9', version: 6 }, {});
+
+    await service.flushNow();
+    await settle();
+
+    expect(service.pending()).toHaveLength(0);
+    expect(service.rejected()[0]?.attempts).toBe(0);
   });
 });

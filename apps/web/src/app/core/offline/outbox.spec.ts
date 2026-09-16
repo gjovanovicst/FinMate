@@ -6,6 +6,7 @@ import type { GraphQLRequestError } from '../graphql/graphql.client';
 
 import { InMemoryOfflineStore } from './offline-store';
 import {
+  kindOf,
   BACKOFF_CAP_MS,
   Outbox,
   isRetryable,
@@ -314,5 +315,18 @@ describe('Outbox', () => {
     const amount = variables['amount'] as { amountMinor: string };
     expect(typeof amount.amountMinor).toBe('string');
     expect(amount.amountMinor).toBe(beyondSafeInteger);
+  });
+
+  it('remembers what an entry IS, and reads an older one as a capture', async () => {
+    const outbox = queued();
+    // Task 4.2.7 queues edits as well as captures (ADR-030), so the flush needs to know which.
+    const edit = await outbox.enqueue('mutation UpdateTransaction', { input: { id: 't' } }, {}, 'edit');
+    const capture = await outbox.enqueue('mutation CaptureCommit', { input: {} });
+
+    expect(kindOf(edit)).toBe('edit');
+    expect(kindOf(capture)).toBe('capture');
+    // An entry written before the field existed is a capture, because that is all 4.2.3 could queue.
+    expect(kindOf({})).toBe('capture');
+    expect((await outbox.pending()).map(kindOf)).toEqual(['edit', 'capture']);
   });
 });

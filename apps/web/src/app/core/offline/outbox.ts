@@ -25,6 +25,16 @@ import {
 export type OutboxStatus = 'pending' | 'sent' | 'rejected';
 
 /**
+ * What an entry is, which is what the flush has to do with it.
+ *
+ * 4.2.3 queued whole `captureCommit` batches and nothing else, so the document *was* the type. Task
+ * 4.2.7 queues edits too, and the two need different answers after a send: a capture's interesting
+ * outcome is a re-classification, an edit's is a **version conflict** (ADR-030). Optional because an
+ * entry written before this field existed is a capture — {@link kindOf} is the one reader.
+ */
+export type OutboxKind = 'capture' | 'edit';
+
+/**
  * One queued mutation.
  *
  * `variables` are passed to the server byte-for-byte as they were enqueued. Money inside them is
@@ -53,6 +63,8 @@ export interface OutboxEntry {
    * place a caller may stash something, and the tray is its only reader.
    */
   readonly meta?: Record<string, unknown>;
+  /** See {@link OutboxKind}. Absent on an entry written before 4.2.7, which is a capture. */
+  readonly kind?: OutboxKind;
 }
 
 /**
@@ -126,6 +138,11 @@ const RETRYABLE_CODES = new Set(['INTERNAL', 'RATE_LIMITED', 'AI_UNAVAILABLE', '
  * surfaces it, which is R-20's "never silently dropped", whereas guessing "refused" would park a live
  * capture behind a tray that claims a person must fix it.
  */
+/** What an entry is. An entry from before 4.2.7 has no `kind`, which means a capture. */
+export function kindOf(entry: Pick<OutboxEntry, 'kind'>): OutboxKind {
+  return entry.kind ?? 'capture';
+}
+
 export function isRetryable(error: unknown): boolean {
   if (isGraphQLFailure(error)) {
     if (error.status === 0 || error.status >= 500) return true; // offline, DNS, 5xx
@@ -195,6 +212,7 @@ export class Outbox {
     document: string,
     variables: Record<string, unknown>,
     meta?: Record<string, unknown>,
+    kind: OutboxKind = 'capture',
   ): Promise<OutboxEntry> {
     await this.seed();
     const seq = ++this.nextSeq;
@@ -205,6 +223,7 @@ export class Outbox {
       variables,
       status: 'pending',
       attempts: 0,
+      kind,
       ...(meta === undefined ? {} : { meta }),
     };
     await this.store.put(OUTBOX_STORE, keyFor(seq), entry, PENDING_CAPTURE_TTL_MS);

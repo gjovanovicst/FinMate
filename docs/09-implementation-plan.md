@@ -220,7 +220,8 @@ configured). The first run of the harness found and fixed two real defects — s
 | 4.2.5 | Web push subscription + permission flow — the **client** half; needs 4.2.9 | 1.5 | F-22 |
 | 4.2.9 | **The `WEB_PUSH` sender** — **added by [ADR-028](14-decisions-and-risks.md)**: `push_subscriptions`, the inert-without-VAPID `web-push` seam, the minimal payload and the dispatch wiring | 2 | F-22 |
 | 4.2.8 | **The ledger-rows cache and the screens that read it** — **added by [ADR-027](14-decisions-and-risks.md)**; 4.2.4 caches the dashboard read model, and the transactions list / analytics' cached period need their own minimised row cache | 1.5 | F-26, F-24 |
-| 4.2.7 | **Queued edits and the money-field conflict diff** — **added by [ADR-026](14-decisions-and-risks.md)**; 4.2.3 ships the capture tray, and the `409`+`version` diff docs/02 §4.3 draws has no producer until an edit can be queued | 2 | F-26, F-04 |
+| 4.2.7a | **Queued edits in the core** — **added by [ADR-026](14-decisions-and-risks.md)**, decided by [ADR-030](14-decisions-and-risks.md): the entry `kind`, `enqueueEdit`, the version-checked dispatch, and the conflict diff (`SyncConflict`) a refused stale edit produces | 1.5 | F-26, F-04 |
+| 4.2.7b | **The offline edit and its conflict panel** — the sheet queues an edit when it is offline, and the tray renders before → after per money field with the two versions | 0.5 | F-26, F-04 |
 | 4.2.6a | **The app lock's core** — **added by [ADR-025](14-decisions-and-risks.md)**, mechanism by [ADR-029](14-decisions-and-risks.md): the WebAuthn-PRF and PIN secrets, the wrapped-key lifecycle, the state that turns persistence on, the cross-tab flush mutex ADR-026 deferred here, and the wipe | 1.5 | F-26, F-28 |
 | 4.2.6b | **The app lock's device panel and lock screen** — the control that arms it, the re-auth screen, and the `/notifications`/settings copy that stops saying "keep the app open" | 0.5 | F-26, F-28 |
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { OutboxEntry } from './outbox';
 import type { CapturePreviewRow } from './sync.types';
 import {
+  conflictChanges,
   captureInput,
   categoryLabel,
   previewIndex,
@@ -129,4 +130,40 @@ describe('queueDump', () => {
     expect(parsed.rejected).toEqual([]);
     expect(dumped).not.toContain('mutation CaptureCommit');
   });
+
+describe('the conflict diff', () => {
+  it('reports only the fields that differ, in reading order', () => {
+    const changes = conflictChanges(
+      { amount: '200000', description: 'Lidl 2000', status: 'CONFIRMED' },
+      { amount: '250000', description: 'Lidl 2000', status: 'PENDING' },
+    );
+
+    expect(changes).toEqual([
+      { field: 'amount', before: '200000', after: '250000' },
+      { field: 'status', before: 'CONFIRMED', after: 'PENDING' },
+    ]);
+  });
+
+  it('treats an absent value and an empty string as the same nothing', () => {
+    // A cleared note arrives as '' from a form and as null from the API. Rendering that as a change
+    // from nothing to nothing would put a row in the diff that says nothing happened.
+    expect(conflictChanges({ description: 'Lidl' }, { description: 'Lidl' })).toEqual([]);
+    expect(conflictChanges({ note: '' }, { note: null })).toEqual([]);
+    expect(conflictChanges({ description: '' }, { description: 'Lidl' })).toEqual([
+      { field: 'description', before: null, after: 'Lidl' },
+    ]);
+  });
+
+  it('never parses a money value: both sides are compared as the strings they are', () => {
+    // ADR-003: the diff is a comparison of two renditions, not arithmetic. `2000` and `2000.00` would
+    // be equal as numbers and are not equal as amounts.
+    expect(
+      conflictChanges({ amount: '2000' }, { amount: '2000.00' }, ['amount']),
+    ).toEqual([{ field: 'amount', before: '2000', after: '2000.00' }]);
+  });
+
+  it('compares only the fields it is asked to', () => {
+    expect(conflictChanges({ id: 'a' }, { id: 'b' }, ['amount'])).toEqual([]);
+  });
+});
 });

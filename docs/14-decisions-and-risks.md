@@ -1510,6 +1510,99 @@ Two things neither document says, and both are load-bearing:
   re-election rule to survive a closed tab — a distributed-systems problem for a mutex the platform
   already provides.
 
+### ADR-030 — Queued edits: what the queue may carry, and a conflict diff that quotes no decision
+**Status:** Accepted
+
+**Context.** ADR-026 decision 2 queued whole `captureCommit` batches and deferred **edits** here, with the
+reason written down: *"deciding which mutations may be queued offline is a product decision about what
+'offline' means (docs/07 §6's matrix draws the line at capture and review)"*, and docs/02 §4.3's offline
+sequence ends with *"409 + version on an edited row → money-field diff"* — a diff no task built, because
+nothing queued an edit. Four things needed deciding, and each is wrong **silently** when it is wrong:
+
+1. **Which writes the queue may carry.** A queue that accepts any mutation is a second, weaker API: no
+   screen asked for it, and a queued delete of a row somebody else has since edited is worse than an
+   error.
+2. **What a stale edit means.** `updateTransaction` takes the `version` the client read and answers
+   `CONFLICT` when it no longer matches. A queue that re-read the row and bumped the version before
+   sending would turn optimistic concurrency into a **silent overwrite** — the exact defect the field
+   exists to catch.
+3. **What the user is shown.** ADR-026's re-classification diff has a `why` because the server *decided*
+   something about a row it accepted. A conflict is a write the server **rejected**, and the API gives no
+   decision to quote. Inventing a reason there would be a screen explaining something that never happened.
+4. **What the diff compares.** Money is `BIGINT` minor units (ADR-003); a diff that parsed it to decide
+   whether something changed would be arithmetic in the money path.
+
+**Decision.**
+
+1. **The queue carries two documents and no more**: `captureCommit` (4.2.3, batched atomically) and
+   `updateTransaction` (this task). An entry records its **kind** (`OutboxKind`), because the two need
+   different outcomes, and the document is what dispatches them — there is no kind on the wire, and
+   matching the document string is the one honest signal available. An entry written before the field
+   existed reads as a capture, which is all 4.2.3 could queue.
+2. **An edit is queued only when the failure was retryable.** A refusal that needs a person stays an
+   error on the screen where the person is (ADR-026 decision 3); nothing about editing changes that.
+3. **`version` is mandatory and is never refreshed.** A queued edit carries the version the user read. If
+   the row moved, the server refuses it; the queue does not "helpfully" re-read and retry, because that
+   is a silent overwrite. This is the constraint most likely to be eroded by a future convenience.
+4. **A `CONFLICT` parks the entry and does not stop the flush.** The API already answers
+   `retryable: false`, so the outbox's own classifier marks the entry *ne može se poslati* and carries on
+   — one stale row must not block a queue of unrelated captures behind it.
+5. **The conflict's detail is recorded separately from a re-classification diff.** `SyncConflict` is its
+   own list with its own type: one says "the server accepted this row and changed the category, here is
+   what decided it", the other says "the server refused this write". Merging them would let one screen
+   imply the other's outcome.
+6. **The diff quotes no decision — it shows the two versions.** `editedVersion` and `serverVersion` are
+   the entire explanation the API supports, and rendering them is what keeps the screen from inventing a
+   `why`. The re-classification arm's `Zašto` line stays where it belongs.
+7. **The diff compares only the fields the edit carried, as strings.** A field the user never touched
+   cannot be "what they changed", and comparing the row's other values would report untouched fields as
+   differences the moment the `before` snapshot was incomplete — which is exactly what the first version
+   of this code did, caught by its own spec. Money is compared as the rendition each side gave
+   (`'2000'` vs `'2000.00'` are not equal), never parsed.
+8. **An empty change list is still a conflict.** The version moved because somebody changed a field this
+   edit did not; that is worth showing, because the user's press did fail. The screen says so in words
+   rather than rendering an empty table.
+9. **The UI is 4.2.7b** — the sheet queueing an edit when it is offline, and the tray's conflict panel.
+   This record covers the queue and the diff it produces, which is what the UI needs to exist first.
+
+**Consequences.**
+- ✅ docs/02 §4.3's *"409 + version on an edited row → money-field diff"* finally has a producer, and the
+  diff is a comparison of two real observations rather than a reconstruction of either.
+- ✅ Optimistic concurrency survives the queue: a stale edit is refused and explained rather than applied.
+- ✅ The queue's meaning stays small enough to reason about — two documents, one of which is append-only
+  and idempotent, the other explicitly version-checked.
+- ⚠️ **`captureCommit` is idempotent and an edit is not.** A replay of a capture collapses (I-10); a
+  replay of an edit succeeds once and then conflicts, because the first attempt bumped the version. The
+  outbox removes an entry only after a successful send, so this is only reachable if a response was lost
+  after the write landed — in which case the entry keeps its old version and parks as a conflict, which is
+  honest and recoverable by hand. A queued edit is therefore **at-most-once, not idempotent**, and the
+  difference is recorded here rather than discovered later.
+- ⚠️ **The `before` snapshot is the caller's responsibility.** An incomplete one yields a diff with
+  spurious rows; the service limits the comparison to the fields the edit carried to shrink that window,
+  but a caller that flattens `amount` wrongly still produces a wrong "before". `enqueueEdit`'s contract
+  says so, and the spec pins the shape.
+- ⚠️ **A conflict is a dead end that needs a person**: the entry can be retried (same stale version, same
+  conflict) or discarded. 4.2.7b offers exactly those two, which is what the tray already does for a
+  refusal.
+- ⚠️ **`correctTransaction` is not queued.** A category change that should teach a rule still needs the
+  network — the learning signal is recorded against the version the user read, and a queue would have to
+  decide what a delayed correction teaches. Recorded, not silently omitted.
+
+**Alternatives rejected.**
+- **(a) Queue any mutation the client can call.** A second API with weaker semantics, and the queue's
+  ordering/retry rules were designed for one append-only document.
+- **(b) Re-read the row before flushing and send the new version.** Turns a conflict into a silent
+  overwrite of somebody else's change, which is the one thing `version` exists to prevent.
+- **(c) Merge field-by-field automatically and apply the union.** A conflict-resolution policy for money
+  is a product decision, the user cannot see what was merged, and "both changed the amount" has no
+  safe union.
+- **(d) Report the conflict through the existing `SyncDiff` shape.** The two mean different things
+  (accepted-and-reclassified vs refused), and one shape would force the tray to guess from a field.
+- **(e) Treat a conflict as retryable.** It is not: the same stale version produces the same conflict
+  forever, and the retry loop would burn the backoff and the user's patience.
+- **(f) Queue `deleteTransaction`.** A queued delete of a row that changed while offline destroys work
+  with no diff to show for it; it needs its own decision, not an extra arm here.
+
 ---
 
 ## Part 2 — Risk register

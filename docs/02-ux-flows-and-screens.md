@@ -1087,6 +1087,13 @@ sequenceDiagram
 3. The diff sheet always shows the *Zašto* line for the server decision, so the change is explainable
    rather than merely accepted.
 4. Failed flushes surface the server error with a retry; nothing is silently dropped.
+5. **Where a conflict's explanation comes from (ADR-030, 4.2.7).** Point 3's *Zašto* line belongs to the
+   re-classification diff, where the server **accepted** the row and decided something. A version
+   conflict is a write the server **refused**, and the API gives no decision to quote — so its panel
+   shows the two versions (`izmenjeno iz verzije 6, sada je 7`) and the before → after per field the edit
+   carried, and invents no reason. A conflict whose compared fields did not change is still shown, in
+   words: the row moved, the user's press did not land. The core that produces both diffs is 4.2.7a; the
+   sheet that queues an offline edit and this panel are **4.2.7b**.
 
 ---
 

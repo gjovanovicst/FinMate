@@ -609,6 +609,14 @@ F-05/F-06 and I-10: the path where a mistake costs the user money.
 
 ---
 
+- **A diff built from a partial "before" reports the row's own untouched values as changes.** The
+  conflict diff (ADR-030) compares a client-held snapshot against the row the server just returned; the
+  first version passed only the fields the edit *carried as different* and compared all five, so every
+  field missing from the snapshot looked like a change from `null` to whatever the server held — a
+  five-row diff for a one-field edit. Two rules came out of it: the comparison is limited to the fields
+  the edit carried, and the snapshot must be complete **for those fields**. Asserted in
+  `sync.service.spec.ts`, which is how it was caught.
+
 ## 8. Taxonomy: categories, keywords, merchants
 
 The tables hold platform content beside the Household’s own rows, which is where most of these come from.
