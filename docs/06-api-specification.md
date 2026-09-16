@@ -646,24 +646,26 @@ type ReceiptItem {
 
 type Attachment {
   id: UUID!
-  purpose: AttachmentPurpose!        # additive to [03 §4]; see note below
+  purpose: AttachmentPurpose!        # canonical in [03 §4]; the values below are the DDL's
   mimeType: String!
   byteSize: Int!
   sha256: String!
   downloadUrl: String                # short-lived presigned GET; null while scanning
-  scanState: FileScanState!          # additive to [03 §4]; see note below
+  scanState: FileScanState!          # canonical in [03 §4]
   createdAt: DateTime!
 }
 
-enum FileScanState { PENDING CLEAN REJECTED }
+enum AttachmentPurpose { RECEIPT TRANSACTION IMPORT AVATAR }
+enum FileScanState { PENDING CLEAN INFECTED FAILED SKIPPED }
 ```
 
-> **Two columns promoted to canonical.** [03 §4](03-domain-model.md) now defines `attachments` with
-> both `purpose` (so an upload can be routed to receipt-OCR versus a plain transaction photo) and
-> `scan_state` (so `downloadUrl` can be withheld until the virus/format scan promotes the row, §9.2).
-> They were originally flagged here as additive and have since been folded into the canonical DDL, so
-> there is no divergence to track. `storage_key` is deliberately **not** exposed on the GraphQL type:
-> raw object paths are an internal detail, and clients receive presigned URLs instead.
+> **Two columns promoted to canonical, and the enums corrected (task 4.1.1).** [03 §4](03-domain-model.md)
+> defines `attachments` with both `purpose` (so an upload can be routed to receipt-OCR versus a plain
+> transaction photo) and `scan_state` (so `downloadUrl` can be withheld until the virus/format scan
+> promotes the row, §9.2). This sketch originally invented `TRANSACTION_PROOF`/`OTHER` and
+> `REJECTED`/`CLEAN`/`PENDING`, which no `CHECK` constraint permits; the enums now carry the DDL's
+> values. `storage_key` is deliberately **not** exposed on the GraphQL type: raw object paths are an
+> internal detail, and clients receive presigned URLs instead.
 
 ```graphql
 type Budget {
@@ -2736,6 +2738,32 @@ contract. The pipeline is docs/05 §9's, and the storage is docs/03 §4's two ta
 | The notification centre's screen | `/notifications`, with the preferences beneath the list | docs/02 §4.18 files notification preferences under a **Settings shell that does not exist yet**. Rather than invent one for a single section, "what you get told" sits under "what you were told"; when the settings shell lands it hosts the same panel unchanged. The header bell (docs/02 §2.2) is the entry point and carries the unread count; the nav's one badged **slot** remains the review queue. |
 | `runAlerts` | A mutation, and the method the daily job calls | The worker exists since 3.4.1, and since 3.4.4 `insights.generate` calls the **same** `NotificationsService.run` this mutation does — generate, then evaluate against the rules, in the pipeline's order. Both are idempotent (insight dedupe keys, `notifications.dedupe_key`), and `notifications.dispatch` remains the per-minute drain. Before 3.4.4 the job called `InsightsService.generate` alone, so a scheduled run wrote insight rows that nothing ever turned into a notification. |
 
+### 5.15 Attachments and object storage (task 4.1.1)
+
+F-34's attachments, and the presigned upload/download docs/06 §9 specifies. `files` owns `attachments`
+and nothing else; the bytes never transit the API (ADR-018).
+
+| Decision | Built | Why |
+|---|---|---|
+| `presign` and the download route | **REST**, `/v1/files/presign` and `/v1/files/:id` | §9's reasoning, unchanged: one is a URL a browser PUTs to, the other a `302`. GraphQL has neither an upload nor a redirect. |
+| Signing | `sigv4.ts`, a **dependency-free** SigV4 signer | `@aws-sdk/client-s3` plus its presigner is tens of megabytes and a supply-chain surface for three operations. ADR-004 asks for an ADR before a dependency; the answer here is not to add one. Tested against AWS's published presigned-GET vector and self-consistency of every emitted signature. |
+| Storage seam | `OBJECT_STORAGE` token; `S3ObjectStorage` when all four `S3_*` settings exist, otherwise an **unavailable** default | The same inert-default shape as `EMBEDDINGS` (ADR-021). CI has no MinIO, so `api:test` must boot the module; a presign on an unconfigured deployment fails with a readable message instead of a URL that cannot work. |
+| The scan hook | `SCANNER` token, `UNCONFIGURED_SCANNER` answering `SKIPPED` | docs/08 §9.4 expects ClamAV; this build has none, and `SKIPPED` is the honest state — `CLEAN` would claim a check that never ran. `SKIPPED` is linkable, which is exactly why it must not be read as `CLEAN`. ⚠️ **A production deployment must configure a scanner**; recorded in docs/08 §9.4 and AGENTS. |
+| Idempotency | `(purpose, sha256)` within 24 h returns the existing row | §9.2's rule. It is the identity a client can state, and a retried upload must not produce a second row. Outside the window a new row is allocated. |
+| Object key | `household/<id>/<randomUUID>.<ext>` | docs/08 T-04 asks for scoped, unguessable keys. The doc's `uuidv7` is time-ordered; a random v4 suffix is strictly harder to guess, and the Household prefix is what makes the namespace per-tenant. |
+| `commitAttachment` | HEADs the object, compares `byte-length` and the upload's `x-amz-meta-sha256`, runs the scan hook, then links | A presigned PUT cannot enforce a body hash (`content-length-range` needs a POST policy), so verification happens on the commit that follows it. A missing, short or swapped object becomes `FAILED`; an `INFECTED` one is deleted at once. |
+| `CommitAttachmentInput` | Drops docs/06's `purpose` and `receiptId` | The purpose was fixed at presign — accepting it again invites a contradiction — and nothing produces a Receipt yet (4.1.3 does). The §5.5 precedent: do not declare a parameter a contract cannot keep. |
+| `deleteAttachment` | `Boolean`, not `SimplePayload` | `transactions.attachment_id` / `receipts.attachment_id` are `ON DELETE SET NULL`, so a referenced attachment detaches rather than blocking. The payload union's arms are the typed `ApiError` codes every module already returns (§5.5, §5.7, §5.13). |
+| Retention | `FilesService.purge`, the **`files.purge`** job (daily 04:00) | Quarantined (`INFECTED`/`FAILED`), abandoned (`PENDING` past the grace window), unreferenced, and everything past **24 months** (docs/08 §7 row 17). Idempotent, and a failed object deletion keeps the row so the next pass retries instead of orphaning the blob. |
+| Bucket creation | `pnpm storage:init`, never on a request path | MinIO does not create a bucket on first write. A lazy create inside `presign` would be a side effect on the hot path needing permission the API otherwise does not use. |
+| Not built | Magic-byte **sniffing**, `Content-Disposition`/`nosniff` on the object response, re-encoding/EXIF stripping, thumbnails, and the OCR webhook | Each is 4.1.x or Phase 5 work; docs/08 §9.4 now carries the implementation status line by line rather than implying all of it ships. |
+
+**`GET /v1/files/:id` has three answers.** A foreign or unknown id is `404` (existence is information —
+§9.4); a row that exists but is not linkable (`PENDING`/`INFECTED`/`FAILED`) is **`409`**, which §9.4 did
+not specify. `404` would make the client show "file missing" during the ordinary window between a
+successful PUT and `commitAttachment`, and serving the bytes anyway is what `scan_state` exists to
+prevent.
+
 ---
 
 ## 6. Subscriptions
@@ -3329,9 +3357,9 @@ REST CRUD.
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| `POST` | `/v1/files/presign` | Bearer access token, role ≥ `MEMBER` | Allocate an attachment row + return a presigned `PUT` URL |
+| `POST` | `/v1/files/presign` | Bearer access token, role ≥ `MEMBER` | **Implemented (4.1.1).** Allocate an attachment row + return a presigned `PUT` URL |
 | `PUT` | *(presigned URL)* | Presigned signature only | Direct browser/device upload to object storage |
-| `GET` | `/v1/files/:id` | Bearer access token, role ≥ `VIEWER`, household match | `302` to a short-lived presigned `GET` URL |
+| `GET` | `/v1/files/:id` | Bearer access token, role ≥ `VIEWER`, household match | **Implemented (4.1.1).** `302` to a short-lived presigned `GET` URL; `409` while the row is not linkable (§9.4) |
 | `POST` | `/v1/webhooks/ocr` | HMAC-SHA256 signature header | OCR provider completion callback |
 | `GET` | `/health` | **None** | Liveness: process is up |
 | `GET` | `/health/ready` | **None** (internal network only) | Readiness: Postgres, Redis, migrations current |
@@ -3391,6 +3419,14 @@ Responds `302 Found` with `Location: <presigned GET URL>` (TTL 5 minutes). Autho
 before the redirect: the attachment's `household_id` must equal `TenantContext.householdId`. A
 cross-household id returns **`404 NOT_FOUND`**, not `403` — existence is itself information, and leaking
 it is an enumeration oracle.
+
+**Implemented in 4.1.1, with one addition and two refinements.** A row of this Household that is not
+yet linkable answers **`409 CONFLICT`** rather than `404` (see §5.15). The `Cache-Control: no-store`
+the download path requires is set on the redirect. The presigned PUT is signed over `content-type` and
+`x-amz-meta-sha256`, and `host` — which is part of `SignedHeaders` but must be **sent by the runtime,
+not the client** — is stripped from the response's `headers` before it reaches a browser; a scripted
+client gets the same map. No `Content-Disposition`/`nosniff` is applied to the object response yet
+(§5.15's "not built").
 
 ### 9.5 `POST /v1/webhooks/ocr`
 

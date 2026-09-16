@@ -170,6 +170,15 @@ ADR-008 is enforced by an extension, not by discipline — which is why these tw
   same shape (`include: { transaction_tags: true }`), which is why a fixture that wants a tagged row
   has to create the Transaction and the Tag together.
 
+- **A cross-tenant test is only testing cross-tenancy when the *tenant* is the other Household.** The
+  guard scopes every query to `TenantContext.householdId` and the service passes its own `householdId`
+  argument into the same `where`; under a session for Household A, calling
+  `files.downloadTarget('B-id', 'A-attachment')` does **not** simulate Household B — the guard answers
+  from A's rows, so a `PENDING` attachment of A's came back as if B had asked. The failing assertion
+  looked like a missing `404`, and the fix was `runWithTenant(otherContext, …)`, not a service change.
+  The ADR-008 rule that clients never send a `householdId` is what makes this safe in production — the
+  two values always agree there — and what makes a mismatched pair meaningless in a test.
+
 ---
 
 ## 4. GraphQL and the API surface
@@ -270,6 +279,17 @@ Code-first GraphQL with custom scalars: most of these are registration problems 
   the notification's `dedupe_key` hid it, so the user saw one alert while the `insights` table grew. The
   writer now looks the key up over the periods its own drafts use. When you add a generator, ask which
   period its row is filed under before assuming the run's.
+
+- **A presigned S3 URL signs `host` but the client must not send it, and MinIO does not create a bucket
+  for you.** Three traps on the upload path, all of which look like an auth failure: (1) the signer's
+  header map includes `host` because it is in `SignedHeaders`, but a browser cannot set `Host` and a
+  scripted client should not — the runtime sets the real one, and passing the signed value through to
+  `fetch` gets it dropped or rejected; `clientHeaders`/`sendHeaders` strip it and the signature still
+  verifies because the value sent is the value signed. (2) `PUT` to a nonexistent bucket answers
+  `NoSuchBucket`, and MinIO never creates one on first write, so a fresh `pnpm dev:infra` needs
+  `pnpm storage:init` before any presign works. (3) A presigned **PUT** cannot constrain the body —
+  `content-length-range` needs a POST policy — so nothing enforces the declared size or sha until
+  `commitAttachment` `HEAD`s the object; a client that lies is caught there, as `FAILED`, not at upload.
 
 ---
 

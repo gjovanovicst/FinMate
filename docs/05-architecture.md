@@ -99,7 +99,7 @@ directly — cross-module reads go through the owning service or a read-model qu
 | `notifications` | Alert rules, dedupe, channel dispatch (in-app, email, web push), quiet hours | `alert_rules`, `notifications` |
 | `assistant` | Query planner (intent → template), fact assembly, narration, provenance | **reads many; writes nothing.** `costMicros`/`latencyMs` are returned on the answer and logged — a narration is not a classification decision, and `classification_decisions.decided_by` has no value that means "narration" (docs/06 §8.8) |
 | `ai` | Provider adapters, routing, circuit breakers, budget guards, prompt registry | `ai_provider_configs`, `prompt_templates` |
-| `files` | Presigned upload/download, virus scan hook, lifecycle/purge | `attachments` |
+| `files` | Presigned upload/download, virus scan hook, lifecycle/purge — **implemented in 4.1.1** | `attachments` |
 | `audit` | Append-only audit trail, GDPR export & purge orchestration | `audit_log` |
 
 **The most important boundary:** `ledger` owns every arithmetic operation on money. No other module
@@ -249,9 +249,9 @@ with a scheduler id per name (a redeploy replaces a schedule rather than stackin
 `attempts: 3` with exponential backoff, and bounded `removeOnComplete`/`removeOnFail` history. A job
 enumerates Households through the **job scope** (`runAsSystem`, the one sanctioned cross-Household read)
 and then does each Household's work inside `runWithTenant`, so the service sees exactly what a request
-would give it. Four jobs are registered today — `recurring.materialise`, `recurring.detect`,
-`insights.generate`, `notifications.dispatch`; the rest of the table is unbuilt, and each entry below
-says what makes a second run safe, which ADR-022 makes a precondition for adding one.
+would give it. Five jobs are registered today — `recurring.materialise`, `recurring.detect`,
+`insights.generate`, `notifications.dispatch`, `files.purge`; the rest of the table is unbuilt, and each
+entry below says what makes a second run safe, which ADR-022 makes a precondition for adding one.
 
 **`insights.generate` is the whole daily pipeline, not only its first half** (3.4.4): it calls
 `NotificationsService.run`, which generates the insights **and** evaluates them against the alert rules

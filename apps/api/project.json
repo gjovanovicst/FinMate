@@ -59,6 +59,13 @@
         "command": "echo \"apps/api build lands in Phase 0 task 0.9 (bundling strategy for source-consumed packages)\"",
         "cwd": "{projectRoot}"
       }
+    },
+    "storage:init": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --env-file-if-exists=../../.env -r @swc-node/register src/modules/files/storage-init.ts",
+        "cwd": "{projectRoot}"
+      }
     }
   }
 }

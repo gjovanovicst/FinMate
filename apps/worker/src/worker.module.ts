@@ -4,6 +4,7 @@ import { AuthModule } from '@finmate/api/modules/auth/auth.module';
 import { ConfigModule } from '@finmate/api/config/config.module';
 import { PrismaModule } from '@finmate/api/prisma/prisma.module';
 import { BudgetingModule } from '@finmate/api/modules/budgeting/budgeting.module';
+import { FilesModule } from '@finmate/api/modules/files/files.module';
 import { InsightsModule } from '@finmate/api/modules/insights/insights.module';
 import { LedgerModule } from '@finmate/api/modules/ledger/ledger.module';
 import { NotificationsModule } from '@finmate/api/modules/notifications/notifications.module';
@@ -38,6 +39,10 @@ import { TaxonomyModule } from '@finmate/api/modules/taxonomy/taxonomy.module';
     InsightsModule,
     NotificationsModule,
     RecurringModule,
+    // Attachments (task 4.1.1). The `files.purge` job reaches `FilesService.purge`, which needs the
+    // same storage seam the API signs with — one implementation, so a purge and a download cannot
+    // disagree about what is in the bucket.
+    FilesModule,
   ],
 })
 export class WorkerModule {}

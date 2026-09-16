@@ -222,6 +222,32 @@ enum AssistantIntent {
   UNCATEGORISED_REVIEW
 }
 
+type AttachmentModel {
+  """Bytes. Capped at 12 MiB by the presign allowlist (docs/06 §9.2)."""
+  byteSize: Int!
+  createdAt: DateTime!
+
+  """A short-lived presigned GET, or null while the row is not linkable."""
+  downloadUrl: String
+  id: UUID!
+  mimeType: String!
+  purpose: AttachmentPurpose!
+  scanState: FileScanState!
+
+  """Lower-case hex SHA-256 of the bytes, declared at presign."""
+  sha256: String!
+}
+
+"""
+Why the file was uploaded — a Receipt photo, a Transaction proof, an import or an avatar.
+"""
+enum AttachmentPurpose {
+  AVATAR
+  IMPORT
+  RECEIPT
+  TRANSACTION
+}
+
 """
 One losing candidate from rules-engine or the keyword tier, recorded on every decision so a choice can be explained after the fact (docs/04 §5.3.5, P-3).
 """
@@ -623,6 +649,13 @@ type ClassificationDecisionModel {
   transactionId: ID
 }
 
+input CommitAttachmentInput {
+  attachmentId: UUID!
+
+  """Attach the file to a Transaction in the same Household."""
+  transactionId: UUID
+}
+
 """
 One Transaction this commit wrote, with the audit decision behind its category (F-31).
 """
@@ -918,6 +951,17 @@ type DuplicateSuspectModel {
 
   """The Transaction just written — what an undo would remove."""
   transactionId: ID!
+}
+
+"""
+`PENDING` until `commitAttachment` has seen the bytes. `CLEAN`/`SKIPPED` are downloadable — and `SKIPPED` means **not scanned**, which this build produces when no scanner is configured (docs/08 §9.4). `INFECTED`/`FAILED` are never downloadable.
+"""
+enum FileScanState {
+  CLEAN
+  FAILED
+  INFECTED
+  PENDING
+  SKIPPED
 }
 
 """
@@ -1234,6 +1278,11 @@ type Mutation {
   ): CaptureParseResultModel!
 
   """
+  Verify an uploaded object (size, declared sha256, scan hook) and optionally attach it to a Transaction. Idempotent: a row already decided is linked, not re-scanned.
+  """
+  commitAttachment(input: CommitAttachmentInput!): AttachmentModel!
+
+  """
   Mark onboarding complete and stamp the time. Separate from `setOnboardingStep` so completion is a fact of its own rather than an inference from reaching step 7.
   """
   completeOnboarding: OnboardingStateModel!
@@ -1378,6 +1427,11 @@ type Mutation {
 
   """Returns false when the id is not this Household's rule."""
   deleteAlertRule(id: ID!): Boolean!
+
+  """
+  Delete the object and its row. A Transaction or Receipt pointing at it detaches rather than blocking (docs/03 §4). False when the id is not this Household’s.
+  """
+  deleteAttachment(id: String!): Boolean!
   deleteBudget(id: ID!): Boolean!
 
   """
@@ -1853,6 +1907,9 @@ type Query {
   The answerable starter questions (docs/06 §8.1), for the assistant screen.
   """
   assistantSuggestions: [String!]!
+
+  """One attachment of this Household, or null when the id is not ours."""
+  attachment(id: String!): AttachmentModel
 
   """
   Budgets with consumption for their CURRENT period. Spend includes splits and the whole Category subtree, and counts only CONFIRMED transactions (invariants I-5, I-7).

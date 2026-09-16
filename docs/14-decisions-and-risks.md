@@ -817,6 +817,73 @@ Four constraints shape the decision:
 
 ---
 
+### ADR-023 — Attachments: signed in-repo, scanned through a seam that is inert in this build
+**Status:** Accepted
+
+**Context.** [ADR-018](#adr-018--self-hosted-s3-compatible-object-storage-for-receipts) decided that
+Receipt images live in S3-compatible storage reached only through short-lived presigned URLs, with
+virus scanning and a lifecycle purge. Task 4.1.1 implements it (F-34, then F-14). Three questions were
+left open and are not answerable from ADR-018:
+
+1. **How is a URL signed?** The conventional answer is `@aws-sdk/client-s3` plus
+   `@aws-sdk/s3-request-presigner`. ADR-004 requires an ADR before a new dependency, and this one is a
+   large transitive tree for what is, in this module, four operations.
+2. **What happens when no scanner is configured?** `attachments.scan_state` gates the download
+   (docs/06 §9.2: *"`downloadUrl` is `null` until `CLEAN`"*), and `CLEAN` asserts a check that ran.
+   With no scanner there are three options: leave every row `PENDING` (the feature cannot be used),
+   write `CLEAN` (a false assertion), or write `SKIPPED` (true, and linkable).
+3. **What enforces the declared size and digest?** A presigned `PUT` cannot carry a body condition —
+   `content-length-range` belongs to a POST policy — so the upload itself is unconstrained.
+
+**Decision.**
+
+1. **SigV4 is signed in-repo** (`apps/api/src/modules/files/sigv4.ts`), dependency-free on
+   `node:crypto`, as a pure module tested against AWS's published presigned-GET vector. No vendor SDK
+   is added. Server-side bucket operations (`HEAD`/`PUT`/`DELETE`) use the same signer, so there is one
+   canonicalisation to get right, not two.
+2. **Storage and scanning are injected seams with honest inert defaults.** `OBJECT_STORAGE` resolves to
+   a real signer only when all four `S3_*` settings are present; `SCANNER` has **no implementation in
+   this build** and answers `SKIPPED`. `SKIPPED` means *not scanned* and is never presented as `CLEAN`;
+   it is linkable, which is why the distinction is load-bearing rather than cosmetic.
+3. **Verification happens at commit.** `commitAttachment` `HEAD`s the object and compares the byte
+   length and the upload's `x-amz-meta-sha256` with the presign request, then runs the scan hook, and
+   only then links the row. A missing, short, swapped or rejected upload becomes `FAILED`/`INFECTED`
+   and is never downloadable.
+4. **Retention is a job, not an intention.** `files.purge` (daily 04:00, ADR-022) deletes quarantined
+   rows, uploads abandoned past a 24 h grace, unreferenced attachments, and everything past
+   **24 months**; a failed blob deletion keeps its row so the next pass retries.
+5. **The bucket is created out of band** (`pnpm storage:init`), never lazily on a request.
+
+**Consequences.**
+- ✅ No new dependency and no vendor coupling: MinIO today, any S3-compatible service later, by
+  configuration.
+- ✅ A deployment without storage still boots and fails a presign with a readable message — which is
+  what lets CI, which has no MinIO, run the module's integration suite.
+- ⚠️ **This build accepts attachments that have not been virus-scanned.** They are labelled `SKIPPED`,
+  and a production deployment must configure a scanner before treating them as safe; docs/08 §9.4
+  carries the status line by line, and AGENTS.md lists it as an open gap. Until then magic-byte
+  sniffing is also absent, so a mislabelled upload is stored under its declared type.
+- ⚠️ The signer is our code. It is covered by AWS's own vector and by a live MinIO round-trip, but it
+  is a security-relevant implementation where a vendor SDK is the conservative choice; the seam is
+  small enough (`presignS3Request`/`signS3Request`) that swapping in the SDK later is one file.
+- ⚠️ `SKIPPED` is a state a client might read as "fine". The GraphQL description and the docs say
+  otherwise, but the honest fix is a scanner, not better wording.
+
+**Alternatives rejected.**
+- **(a) Add `@aws-sdk/client-s3` + `s3-request-presigner`**: correct, conventional and vendor-maintained,
+  but tens of megabytes and a supply-chain surface for four operations. Revisit if the signer ever needs
+  SigV4 features beyond S3 path-style signing (POST policies, chunked uploads).
+- **(b) Proxy the bytes through the API**: contradicts ADR-018's central property and puts a 12 MiB
+  body on the request path.
+- **(c) `CLEAN` when no scanner is configured**: makes the schema's promise ("promoted only after a
+  clean scan") false in the data, which is worse than an inert feature.
+- **(d) Leave every row `PENDING` without a scanner**: honest, but it makes F-34 unusable in
+  development and in the beta, and it hides the gap behind a broken feature instead of a labelled one.
+- **(e) Ship a ClamAV sidecar now**: a deployment concern, not a code seam; the interface is what makes
+  it a later addition that changes no caller.
+
+---
+
 ## Part 2 — Risk register
 
 Scored as **Likelihood (L)** and **Impact (I)** on 1–5; **Exposure = L × I**. Anything ≥ 12 gets an

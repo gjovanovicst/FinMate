@@ -63,8 +63,20 @@ export const envSchema = z
     AI_NARRATE_PRIMARY: z.string().default('ANTHROPIC_EU'),
     AI_OCR_PRIMARY: z.string().default('LOCAL'),
 
+    /**
+     * S3-compatible object storage (ADR-018, task 4.1.1). All optional: with none of them set the
+     * `files` module answers with an honest "storage is not configured" rather than a broken presigned
+     * URL, exactly as `EMBEDDINGS` is inert without a model (ADR-021). `attachments` is still the
+     * table — a deployment without storage simply cannot accept an upload.
+     */
     S3_ENDPOINT: z.string().optional(),
     S3_BUCKET: z.string().optional(),
+    S3_REGION: z.string().default('us-east-1'),
+    S3_ACCESS_KEY_ID: z.string().optional(),
+    S3_SECRET_ACCESS_KEY: z.string().optional(),
+    /** Presigned URL lifetimes, from docs/06 §9.2/§9.4. */
+    S3_UPLOAD_URL_TTL_SECONDS: z.coerce.number().int().min(1).max(604_800).default(900),
+    S3_DOWNLOAD_URL_TTL_SECONDS: z.coerce.number().int().min(1).max(604_800).default(300),
   })
   .superRefine((env, ctx) => {
     // A development placeholder must never reach production. Failing at boot is far cheaper than

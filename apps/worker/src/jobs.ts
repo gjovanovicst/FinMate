@@ -2,6 +2,7 @@ import type { INestApplicationContext } from '@nestjs/common';
 
 import { runAsSystem, runWithTenant, type TenantContext } from '@finmate/api/common/tenancy/tenant-context';
 import { PrismaService } from '@finmate/api/prisma/prisma.service';
+import { FilesService } from '@finmate/api/modules/files/files.service';
 import { NotificationsService } from '@finmate/api/modules/notifications/notifications.service';
 import { RecurringService } from '@finmate/api/modules/recurring/recurring.service';
 
@@ -35,6 +36,7 @@ import { RecurringService } from '@finmate/api/modules/recurring/recurring.servi
  */
 
 export type JobName =
+  | 'files.purge'
   | 'insights.generate'
   | 'notifications.dispatch'
   | 'recurring.materialise'
@@ -110,6 +112,16 @@ export const JOBS: readonly JobDefinition[] = [
     description: 'Drain queued notifications, respecting quiet hours and the daily cap.',
     idempotentBecause: 'a delivery is a status transition on a row that already carries `dedupe_key`',
     perHousehold: (app, household) => app.get(NotificationsService).dispatch(household.id),
+  },
+  {
+    name: 'files.purge',
+    schedule: '0 4 * * *',
+    description:
+      'Delete quarantined, abandoned and unreferenced attachments, and enforce the 24-month retention.',
+    idempotentBecause:
+      'the pass selects rows by state and age and deletes them by id; removing an object that is ' +
+      'already gone succeeds, and a row already deleted is simply not selected again',
+    perHousehold: (app, household) => app.get(FilesService).purge(household.id),
   },
 ];
 

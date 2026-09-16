@@ -1150,6 +1150,20 @@ Receipt images (F-14) and Attachments (F-34) are the only user-supplied binaries
 | Card fragments | OCR text is digit-run masked on ingest (§6.3); we never store a PAN, and a PAN found in OCR output is discarded, not logged |
 | Logging | Image bytes, OCR text and presigned URLs are **never** written to logs or error reports |
 
+**Implementation status (task 4.1.1)** — the table above is the target; this is what actually ships.
+Anything not marked done is an open item, not an implied control:
+
+| Control | Status |
+|---|---|
+| Allow-list, 12 MiB cap, server-side key, presigned PUT/GET, `no-store` on the download redirect, no logging of bytes or URLs | **Implemented.** The allow-list also carries `application/pdf` (docs/06 §9.2's list); SVG is rejected. |
+| PUT URL TTL | **15 minutes**, per docs/06 §9.2 and `S3_UPLOAD_URL_TTL_SECONDS`'s default. The 5 minutes in the row above is the **GET** TTL; the two were conflated here and are now separated. |
+| `content-length-range` / content-type conditions | **Partly.** A presigned PUT cannot carry a length condition (that needs a POST policy), so the declared size and the upload's `x-amz-meta-sha256` are verified by `commitAttachment`'s `HEAD` instead; a mismatch becomes `FAILED` and is never linked. |
+| Magic-byte sniffing | **Not implemented.** The declared `Content-Type` is what the object is stored with; nothing reads the bytes back, so a malformed upload is accepted until a scanner exists. |
+| Virus scanning | **Hook only.** `SCANNER` is a seam with no implementation in this build, so an accepted upload is recorded **`SKIPPED`** — explicitly *not scanned*, and never `CLEAN`. ⚠️ **A production deployment must configure a scanner before attachments are treated as safe** (docs/06 §5.15); the quarantine-prefix promotion above is part of that work. |
+| Key shape | `household/<id>/<random v4 UUID>.<ext>` — scoped and unguessable. The random suffix replaces this doc's time-ordered `uuidv7` on purpose: a v7 leaks creation order and is easier to guess. |
+| `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, 50 MP decode cap, re-encoding/EXIF stripping, thumbnails | **Not implemented.** A presigned GET carries no response-header overrides yet, so the object response is whatever storage returns. |
+| Retention | **Implemented** as `files.purge` (daily 04:00): quarantined rows, abandoned uploads past a 24 h grace, unreferenced attachments, and everything past **24 months**. A failed blob deletion keeps its row so the next pass retries instead of orphaning the blob. |
+
 ### 9.5 CSRF, XSS and CSP posture
 
 | Risk | Posture |

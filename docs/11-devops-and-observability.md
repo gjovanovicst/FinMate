@@ -313,13 +313,21 @@ export const envSchema = z.object({
 export const env = envSchema.parse(process.env);   // throws at boot, not at first request
 ```
 
+**Implemented deviation (task 4.1.1).** `apps/api/src/config/config.ts` is the schema that ships, and
+it keeps this shape with two corrections: `S3_*` is **not fatal** — a deployment without object storage
+still boots, and a presign fails with a readable message instead of an unusable URL, which is what lets
+CI (no MinIO) run the module's integration suite (ADR-023). The four settings are `S3_ENDPOINT`,
+`S3_BUCKET`, `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`, plus `S3_REGION` (default `us-east-1`) and
+`S3_UPLOAD_URL_TTL_SECONDS`/`S3_DOWNLOAD_URL_TTL_SECONDS` (docs/06 §9.2/§9.4). `pnpm storage:init`
+creates the bucket once; nothing creates it on a request path.
+
 `env` is injected; a lint rule bans `process.env` outside `packages/config`. Failing fast means the
 healthcheck never sees a "healthy" process that fails on request one.
 
 | Class | Examples | If missing | Rationale |
 |---|---|---|---|
-| **Fatal** | `DATABASE_URL`, `REDIS_URL`, `JWT_*`, `S3_*` | Refuse to boot | No correct way to run without them |
-| **Degrading** | `AI_*_API_KEY`, `SMTP_URL` | Boot with a warning; that route leaves the chain; rules-only still works | [ADR-002](14-decisions-and-risks.md), [ADR-007](14-decisions-and-risks.md) |
+| **Fatal** | `DATABASE_URL`, `REDIS_URL`, `JWT_*` | Refuse to boot | No correct way to run without them |
+| **Degrading** | `AI_*_API_KEY`, `SMTP_URL`, `S3_*` | Boot with a warning; that route leaves the chain; rules-only still works | [ADR-002](14-decisions-and-risks.md), [ADR-007](14-decisions-and-risks.md), [ADR-023](14-decisions-and-risks.md) |
 | **Optional** | `OTEL_EXPORTER_OTLP_ENDPOINT` | Boot untraced | Telemetry must never take the product down |
 | **Behavioural** | caps, thresholds, `AI_GLOBAL_DISABLED` | Boot with defaults | Operational levers |
 

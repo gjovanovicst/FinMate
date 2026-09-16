@@ -24,6 +24,7 @@
     "db:pull": "prisma db pull",
     "db:generate": "prisma generate",
     "db:seed": "prisma db seed",
+    "storage:init": "nx run api:storage:init",
     "db:studio": "prisma studio",
     "format": "prettier --write \"**/*.{ts,js,mjs,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,js,mjs,json,md,yml,yaml}\""

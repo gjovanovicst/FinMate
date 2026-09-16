@@ -12,6 +12,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AssistantModule } from './modules/assistant/assistant.module';
 import { BudgetingModule } from './modules/budgeting/budgeting.module';
 import { ClassificationModule } from './modules/classification/classification.module';
+import { FilesModule } from './modules/files/files.module';
 import { GoalsModule } from './modules/goals/goals.module';
 import { InsightsModule } from './modules/insights/insights.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -59,6 +60,10 @@ import { PrismaModule } from './prisma/prisma.module';
     // The assistant (F-23). Planner → fact assembly → narration, with the template fallback when no
     // provider is configured (docs/06 §8).
     AssistantModule,
+    // Attachments (F-34/F-14, ADR-018). Signs presigned uploads/downloads and owns `attachments`;
+    // bytes never transit this process, and storage is an injected seam so a deployment without MinIO
+    // still boots (docs/06 §9, task 4.1.1).
+    FilesModule,
   ],
   controllers: [HealthController],
   providers: [
