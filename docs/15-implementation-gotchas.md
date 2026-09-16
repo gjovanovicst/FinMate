@@ -1004,6 +1004,17 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   the server did is impossible. When a defect is "the client thinks X, the server did Y", **add the request log before hunting** —
   otherwise the only evidence is the client's own account of events.
 
+- **`page.route` does not see service-worker-mediated requests, so "no requests" is not "no requests made".** Chasing
+  R-27, a Playwright route handler on `**/graphql` recorded **nothing** during a flush, which read as "the response came from
+  the service worker". It did not: the page was controlled by `ngsw`, and Playwright's `page.route` does not intercept traffic
+  the worker mediates (the docs' remedy is `serviceWorkers: 'block'`, which for this app is useless — a lazy route cannot load
+  its chunk offline without the worker). **The instrument that works is inside the page**: an `addInitScript` that wraps both
+  `window.fetch` *and* `XMLHttpRequest.prototype.send` (Angular's `HttpClient` may use either) and records the body of every
+  `/graphql` response. It immediately produced the server's own refusal message, which the network layer could not.
+  Two lessons worth keeping: when the app consumes a response body, **Playwright cannot read it afterwards** — record it in the
+  page or not at all; and a *fetch/XHR* wrapper is agnostic to both the transport and the service worker, which is what a
+  client/server disagreement needs.
+
 - **No hardcoded user-facing copy.** Every string goes through `I18nService.t('key')`. English is
   primary and is the source of the key set: add the string to `translations/en.ts` first, then to
   `sr-latn.ts` (typed, so a miss is a compile error). `sr-Cyrl` is generated — never edit it. A
