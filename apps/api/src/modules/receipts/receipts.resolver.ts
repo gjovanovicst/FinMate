@@ -2,6 +2,7 @@ import { Args, Int, Mutation, Query, Resolver } from '@nestjs/graphql';
 
 import { CurrentHouseholdId } from '../../common/auth/current-tenant.decorator';
 import {
+  CommitReceiptInput,
   CreateReceiptInput,
   ReceiptExtractionModel,
   ReceiptItemInput,
@@ -145,7 +146,23 @@ export class ReceiptsResolver {
 
   @Mutation(() => ReceiptModel, {
     description:
-      'One of the four answers to a mismatch. Returns the receipt with its recomputed reconciliation.',
+      'Turn a reconciled receipt into one CONFIRMED Transaction, with a Split per Category. Refused ' +
+      'while the receipt does not reconcile (I-6) and while any line has no Category. Idempotent.',
+  })
+  async commitReceipt(
+    @CurrentHouseholdId() householdId: string,
+    @Args('input', { type: () => CommitReceiptInput }) input: CommitReceiptInput,
+  ): Promise<ReceiptModel> {
+    const view = await this.receiptsService.commit(householdId, input.receiptId, {
+      accountId: input.accountId,
+      description: input.description ?? null,
+    });
+    return toReceiptModel(view);
+  }
+
+  @Mutation(() => ReceiptModel, {
+    description:
+      'One of the answers to a mismatch. Returns the receipt with its recomputed reconciliation.',
   })
   async reconcileReceipt(
     @CurrentHouseholdId() householdId: string,

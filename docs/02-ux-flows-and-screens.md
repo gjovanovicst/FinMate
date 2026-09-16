@@ -565,7 +565,7 @@ with `source = 'RECEIPT'`, and sets `receipts.transaction_id`; it is enabled wit
 *Uskladi ručno*. Items stream in with ⚪ badges while OCR runs, and manual itemisation is offered
 rather than a spinner page.
 
-> **Build state (task 4.1.3).** The **backend** ships: a Receipt is opened over an uploaded attachment
+> **Build state (tasks 4.1.3–4.1.4a).** The **backend** ships: a Receipt is opened over an uploaded attachment
 > (`createReceipt`), OCR writes its lines as items and each item is categorised by the Household's own
 > rules through the same pipeline a typed fragment uses (`extractReceipt`), the ordinary item mutations
 > exist (`addReceiptItem`, `updateReceiptItem`, `removeReceiptItem`), and I-6 is recomputed after every
@@ -573,8 +573,11 @@ rather than a spinner page.
 > calls those operations — they are verified by integration tests and live GraphQL, not by a view.
 > **No OCR provider is configured**, so `extractReceipt` answers `{extracted: false, reason:
 > "AI_UNAVAILABLE:no-provider-configured"}` and the receipt is itemised by hand; that is the state the
-> sentence above describes, and it is reported rather than faked. *Napravi transakciju* and the
-> mismatch banner are 4.1.4.
+> sentence above describes, and it is reported rather than faked. *Napravi transakciju* is
+> live too (`commitReceipt`: one CONFIRMED Transaction with a Split per Category, refused until I-6
+> reconciles and every line has a Category). What is **not** built is this **screen** — the mismatch
+> banner, the item table with its category pickers and the two buttons — which is 4.1.4b, and the
+> Receipt library list, which is 4.1.5.
 
 ### 4.12 Budgets — F-17
 

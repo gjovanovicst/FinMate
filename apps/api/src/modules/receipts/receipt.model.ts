@@ -47,13 +47,15 @@ export enum ReconcileActionEnum {
   ADJUST_ITEM = 'ADJUST_ITEM',
   ADJUST_TOTAL = 'ADJUST_TOTAL',
   ADD_ROUNDING_LINE = 'ADD_ROUNDING_LINE',
+  DETACH_TRANSACTION = 'DETACH_TRANSACTION',
 }
 
 registerEnumType(ReconcileActionEnum, {
   name: 'ReconcileAction',
   description:
-    'The four ways out of a mismatch. `DETACH_TRANSACTION` is 4.1.4’s arm and is not declared until ' +
-    'something can produce it — the §5.5 precedent.',
+    'The ways out of a mismatch. `DETACH_TRANSACTION` unlinks a Receipt from its Transaction without ' +
+    'deleting the Transaction — a confirmed row of the Household’s money is not removed because a ' +
+    'photo was detached.',
 });
 
 @ObjectType()
@@ -211,6 +213,21 @@ export class UpdateReceiptItemInput {
 
   @Field(() => Boolean, { nullable: true })
   clearCategory?: boolean | null;
+}
+
+@InputType()
+export class CommitReceiptInput {
+  @Field(() => UuidScalar)
+  receiptId!: string;
+
+  @Field(() => UuidScalar, { description: 'The Account the receipt was paid from.' })
+  accountId!: string;
+
+  @Field(() => String, {
+    nullable: true,
+    description: 'Overrides the description derived from the Merchant, or from the receipt itself.',
+  })
+  description?: string | null;
 }
 
 @InputType()

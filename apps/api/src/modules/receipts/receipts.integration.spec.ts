@@ -78,6 +78,7 @@ describe('receipts (integration)', () => {
   const asTenant = <T>(fn: () => Promise<T>): Promise<T> => runWithTenant(context, fn);
 
   let categoryId: string;
+  let accountId: string;
 
   /** An uploaded, committed RECEIPT attachment — what the upload flow from 4.1.2 leaves behind. */
   async function uploadedAttachment(purpose = 'RECEIPT'): Promise<string> {
@@ -146,7 +147,7 @@ describe('receipts (integration)', () => {
       const account = await prisma.client.accounts.create({
         data: { id: uuidv7(), household_id: householdId, name: 'Tekući', kind: 'BANK', currency: 'RSD' },
       });
-      void account;
+      accountId = account.id;
       const food = await prisma.client.categories.create({
         data: { id: uuidv7(), household_id: householdId, name: 'Hrana', kind: 'EXPENSE' },
       });
@@ -412,6 +413,149 @@ describe('receipts (integration)', () => {
     const removed = await asTenant(() => receipts.removeItem(householdId, added.items[0]!.id));
     expect(removed.items).toEqual([]);
     expect(removed.reconciliation).toBe('PENDING');
+  });
+
+  // ---------------------------------------------------------------------------------------------
+  // Posting the receipt (the *Napravi transakciju* arm)
+  // ---------------------------------------------------------------------------------------------
+
+  /** A reconciled receipt over one categorised line of 2 000,00. */
+  async function matchedReceipt(): Promise<string> {
+    const attachmentId = await uploadedAttachment();
+    const receipt = await asTenant(() => receipts.create(householdId, { attachmentId }));
+    await asTenant(() =>
+      receipts.addItem(householdId, receipt.id, { rawText: 'Mleko', amountMinor: 200000n, categoryId }),
+    );
+    await asTenant(() =>
+      receipts.reconcile(householdId, { receiptId: receipt.id, action: 'ADJUST_TOTAL', setMinor: 200000n }),
+    );
+    return receipt.id;
+  }
+
+  it('posts a reconciled receipt as one CONFIRMED Transaction with a Split per Category', async () => {
+    const receiptId = await matchedReceipt();
+    const committed = await asTenant(() => receipts.commit(householdId, receiptId, { accountId }));
+
+    expect(committed.transactionId).not.toBeNull();
+    const transaction = await asTenant(() =>
+      prisma.client.transactions.findFirstOrThrow({
+        where: { id: committed.transactionId as string },
+        include: { transaction_splits: true },
+      }),
+    );
+    expect(transaction.status).toBe('CONFIRMED');
+    expect(transaction.source).toBe('RECEIPT');
+    expect(transaction.kind).toBe('EXPENSE');
+    expect(transaction.amount_minor).toBe(200000n);
+    // I-1: the Splits add up to the Transaction's amount, and they are per Category (ADR-015).
+    const splitTotal = transaction.transaction_splits.reduce((sum, split) => sum + split.amount_minor, 0n);
+    expect(splitTotal).toBe(200000n);
+    expect(transaction.transaction_splits.map((split) => split.category_id)).toEqual([categoryId]);
+    // The photo follows the purchase (F-34), through `files`' own link.
+    expect(transaction.attachment_id).not.toBeNull();
+  });
+
+  it('is idempotent: a second confirm returns the Transaction it already produced', async () => {
+    const receiptId = await matchedReceipt();
+    const first = await asTenant(() => receipts.commit(householdId, receiptId, { accountId }));
+    const second = await asTenant(() => receipts.commit(householdId, receiptId, { accountId }));
+    expect(second.transactionId).toBe(first.transactionId);
+
+    const count = await asTenant(() =>
+      prisma.client.transactions.count({
+        where: { household_id: householdId, idempotency_key: `receipt:${receiptId}` },
+      }),
+    );
+    expect(count).toBe(1);
+  });
+
+  it('refuses to post a receipt that does not reconcile, or whose lines have no Category', async () => {
+    const attachmentId = await uploadedAttachment();
+    const mismatched = await asTenant(() => receipts.create(householdId, { attachmentId }));
+    await asTenant(() =>
+      receipts.addItem(householdId, mismatched.id, { rawText: 'Mleko', amountMinor: 200000n, categoryId }),
+    );
+    await asTenant(() =>
+      receipts.reconcile(householdId, {
+        receiptId: mismatched.id,
+        action: 'ADJUST_TOTAL',
+        setMinor: 200001n,
+      }),
+    );
+    // Within the tolerance, so this one is postable — it proves the tolerance is real, not a skip.
+    const tolerated = await asTenant(() => receipts.commit(householdId, mismatched.id, { accountId }));
+    expect(tolerated.transactionId).not.toBeNull();
+
+    const uncategorisedAttachment = await uploadedAttachment();
+    const uncategorised = await asTenant(() =>
+      receipts.create(householdId, { attachmentId: uncategorisedAttachment }),
+    );
+    await asTenant(() =>
+      receipts.addItem(householdId, uncategorised.id, { rawText: 'Nepoznato', amountMinor: 100n }),
+    );
+    // Reconciled, so the only thing standing between it and a Transaction is the missing Category —
+    // which is exactly what this arm is asserting (I-6 is checked first, on purpose).
+    await asTenant(() =>
+      receipts.reconcile(householdId, { receiptId: uncategorised.id, action: 'ADJUST_TOTAL', setMinor: 100n }),
+    );
+    await expect(
+      asTenant(() => receipts.commit(householdId, uncategorised.id, { accountId })),
+    ).rejects.toThrow(/has no category/);
+
+    const farAttachment = await uploadedAttachment();
+    const far = await asTenant(() => receipts.create(householdId, { attachmentId: farAttachment }));
+    await asTenant(() =>
+      receipts.addItem(householdId, far.id, { rawText: 'Mleko', amountMinor: 100n, categoryId }),
+    );
+    await asTenant(() =>
+      receipts.reconcile(householdId, { receiptId: far.id, action: 'ADJUST_TOTAL', setMinor: 500n }),
+    );
+    await expect(asTenant(() => receipts.commit(householdId, far.id, { accountId }))).rejects.toThrow(
+      /differ by 400/,
+    );
+  });
+
+  it('gives the one-minor-unit tolerance to the largest Split, so I-1 still holds', async () => {
+    const attachmentId = await uploadedAttachment();
+    const receipt = await asTenant(() => receipts.create(householdId, { attachmentId }));
+    await asTenant(() =>
+      receipts.addItem(householdId, receipt.id, { rawText: 'Mleko', amountMinor: 120000n, categoryId }),
+    );
+    await asTenant(() =>
+      receipts.addItem(householdId, receipt.id, { rawText: 'Hleb', amountMinor: 80000n, categoryId }),
+    );
+    // 200 001 against items of 200 000: MATCHED within I-6's tolerance, and the total is what was paid.
+    await asTenant(() =>
+      receipts.reconcile(householdId, { receiptId: receipt.id, action: 'ADJUST_TOTAL', setMinor: 200001n }),
+    );
+
+    const committed = await asTenant(() => receipts.commit(householdId, receipt.id, { accountId }));
+    const transaction = await asTenant(() =>
+      prisma.client.transactions.findFirstOrThrow({
+        where: { id: committed.transactionId as string },
+        include: { transaction_splits: true },
+      }),
+    );
+    expect(transaction.amount_minor).toBe(200001n);
+    expect(transaction.transaction_splits.reduce((sum, split) => sum + split.amount_minor, 0n)).toBe(200001n);
+    // Both lines share one Category, so there is one Split — and it absorbed the filler.
+    expect(transaction.transaction_splits).toHaveLength(1);
+    expect(transaction.transaction_splits[0]?.amount_minor).toBe(200001n);
+  });
+
+  it('unlinks a posted receipt without deleting the Transaction (DETACH_TRANSACTION)', async () => {
+    const receiptId = await matchedReceipt();
+    const committed = await asTenant(() => receipts.commit(householdId, receiptId, { accountId }));
+    const transactionId = committed.transactionId as string;
+
+    const detached = await asTenant(() =>
+      receipts.reconcile(householdId, { receiptId, action: 'DETACH_TRANSACTION' }),
+    );
+    expect(detached.transactionId).toBeNull();
+    const stillThere = await asTenant(() =>
+      prisma.client.transactions.findFirst({ where: { id: transactionId, household_id: householdId } }),
+    );
+    expect(stillThere).not.toBeNull();
   });
 
   // ---------------------------------------------------------------------------------------------

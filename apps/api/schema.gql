@@ -656,6 +656,17 @@ input CommitAttachmentInput {
   transactionId: UUID
 }
 
+input CommitReceiptInput {
+  """The Account the receipt was paid from."""
+  accountId: UUID!
+
+  """
+  Overrides the description derived from the Merchant, or from the receipt itself.
+  """
+  description: String
+  receiptId: UUID!
+}
+
 """
 One Transaction this commit wrote, with the audit decision behind its category (F-31).
 """
@@ -1297,6 +1308,11 @@ type Mutation {
   commitAttachment(input: CommitAttachmentInput!): AttachmentModel!
 
   """
+  Turn a reconciled receipt into one CONFIRMED Transaction, with a Split per Category. Refused while the receipt does not reconcile (I-6) and while any line has no Category. Idempotent.
+  """
+  commitReceipt(input: CommitReceiptInput!): ReceiptModel!
+
+  """
   Mark onboarding complete and stamp the time. Separate from `setOnboardingStep` so completion is a fact of its own rather than an inference from reaching step 7.
   """
   completeOnboarding: OnboardingStateModel!
@@ -1567,7 +1583,7 @@ type Mutation {
   ): MerchantModel!
 
   """
-  One of the four answers to a mismatch. Returns the receipt with its recomputed reconciliation.
+  One of the answers to a mismatch. Returns the receipt with its recomputed reconciliation.
   """
   reconcileReceipt(input: ReconcileReceiptInput!): ReceiptModel!
   removeCategoryKeyword(keywordId: ID!): Boolean!
@@ -2203,13 +2219,14 @@ type ReceiptModel {
 }
 
 """
-The four ways out of a mismatch. `DETACH_TRANSACTION` is 4.1.4’s arm and is not declared until something can produce it — the §5.5 precedent.
+The ways out of a mismatch. `DETACH_TRANSACTION` unlinks a Receipt from its Transaction without deleting the Transaction — a confirmed row of the Household’s money is not removed because a photo was detached.
 """
 enum ReconcileAction {
   ACCEPT_MATCH
   ADD_ROUNDING_LINE
   ADJUST_ITEM
   ADJUST_TOTAL
+  DETACH_TRANSACTION
 }
 
 input ReconcileReceiptInput {

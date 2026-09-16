@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   receiptTotals,
   roundingLineAmount,
+  toLocalDate,
   uuidv7,
   type ReconciliationState,
 } from '@finmate/domain';
@@ -14,6 +15,12 @@ import { normalisePageSize } from '../../graphql/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClassificationService } from '../classification/classification.service';
 import { FilesService } from '../files/files.service';
+import { TransactionsService } from '../ledger/transactions.service';
+import {
+  TransactionKind,
+  TransactionSource,
+  TransactionStatus,
+} from '../ledger/transaction.model';
 import { OCR, type OcrService } from './ocr';
 
 /**
@@ -120,9 +127,20 @@ export interface UpdateReceiptItemInput {
   readonly clearCategory?: boolean | null;
 }
 
+export interface CommitReceiptInput {
+  readonly accountId: string;
+  /** Overrides the description derived from the Merchant or the items. */
+  readonly description?: string | null;
+}
+
 export interface ReconcileInput {
   readonly receiptId: string;
-  readonly action: 'ACCEPT_MATCH' | 'ADJUST_ITEM' | 'ADJUST_TOTAL' | 'ADD_ROUNDING_LINE';
+  readonly action:
+    | 'ACCEPT_MATCH'
+    | 'ADJUST_ITEM'
+    | 'ADJUST_TOTAL'
+    | 'ADD_ROUNDING_LINE'
+    | 'DETACH_TRANSACTION';
   readonly adjustmentItemId?: string | null;
   /** The new **absolute** amount for ADJUST_ITEM / ADJUST_TOTAL (never a signed delta; see the model). */
   readonly setMinor?: bigint | null;
@@ -189,6 +207,7 @@ export class ReceiptsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly files: FilesService,
+    private readonly transactions: TransactionsService,
     private readonly classification: ClassificationService,
     @Inject(CONFIG) private readonly config: AppConfig,
     @Optional() @Inject(OCR) private readonly ocr: OcrService | null = null,
@@ -425,6 +444,134 @@ export class ReceiptsService {
     };
   }
 
+  /**
+   * Turn a reconciled receipt into **one** CONFIRMED Transaction — the *Napravi transakciju* button
+   * (docs/02 §4.11, docs/06 §5.9's `createTransaction` arm).
+   *
+   * Three gates, in this order, and each is an invariant rather than a preference:
+   *
+   * 1. **I-6** — the receipt must be `MATCHED` or `MANUAL`. This is the F-14 acceptance criterion
+   *    ("the transaction is only marked confirmed once the total reconciles") and the reason
+   *    reconciliation exists at all: a mismatch is a question, and posting it would answer the question
+   *    with a guess.
+   * 2. **Every item has a Category** — the Transaction's Splits are per Category (ADR-015), and a Split
+   *    without one is I-1's "splits must cover the amount" with a hole in it. The API names the first
+   *    offending line rather than posting a partial transaction.
+   * 3. **I-1** — the Splits sum to the Transaction's amount. The receipt's own tolerance (I-6) is one
+   *    minor unit, so the lines can legitimately be a filler away from the total: that filler is added
+   *    to the **largest** split, deterministically, which keeps both invariants true at once. Allocating
+   *    it anywhere else would be arbitrary; dropping it would make the Transaction claim a total its
+   *    Splits do not add up to.
+   *
+   * Idempotent on the receipt: a second call returns the receipt that already carries its Transaction.
+   * The create also passes `receipt:<id>` as the ledger's `idempotencyKey` (I-10), so two concurrent
+   * confirms cannot produce two rows even if they race past the first check.
+   */
+  async commit(householdId: string, receiptId: string, input: CommitReceiptInput): Promise<ReceiptView> {
+    const receipt = await this.requireReceipt(householdId, receiptId);
+    if (receipt.transaction_id !== null) {
+      return (await this.getById(householdId, receiptId)) as ReceiptView;
+    }
+
+    const totals = await this.totalsFor(householdId, receipt);
+    if (totals.state !== 'MATCHED' && totals.state !== 'MANUAL') {
+      throw new ApiError(
+        'VALIDATION_FAILED',
+        totals.state === 'PENDING'
+          ? 'That receipt has no total to reconcile against yet (I-6).'
+          : `The items and the total differ by ${totals.varianceMinor.toString()} minor units (I-6).`,
+      );
+    }
+    if (receipt.total_minor === null) {
+      // Unreachable while `receiptTotals` treats a missing total as PENDING, but a future change to
+      // that function must not silently post an unvalued transaction.
+      throw new ApiError('VALIDATION_FAILED', 'That receipt has no total (I-6).');
+    }
+
+    const items = await this.itemsFor(householdId, receiptId);
+    if (items.length === 0) {
+      throw new ApiError('VALIDATION_FAILED', 'A receipt with no items cannot become a transaction.');
+    }
+    const uncategorised = items.find((item) => item.category_id === null);
+    if (uncategorised !== undefined) {
+      throw new ApiError(
+        'VALIDATION_FAILED',
+        `Line ${uncategorised.line_no} ("${uncategorised.raw_text}") has no category, so it cannot become a Split.`,
+      );
+    }
+    await this.assertAccount(householdId, input.accountId);
+
+    // Aggregate per Category, in a deterministic order (category id), dropping zero-amount lines: a
+    // Split of nothing is noise, and `transaction_splits` has no place for it.
+    const byCategory = new Map<string, bigint>();
+    for (const item of items) {
+      const categoryId = item.category_id as string;
+      byCategory.set(categoryId, (byCategory.get(categoryId) ?? 0n) + item.amount_minor);
+    }
+    const splits = [...byCategory.entries()]
+      .filter(([, amountMinor]) => amountMinor > 0n)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([categoryId, amountMinor]) => ({ categoryId, amountMinor }));
+
+    const itemsTotal = splits.reduce((sum, split) => sum + split.amountMinor, 0n);
+    const filler = receipt.total_minor - itemsTotal;
+    if (filler !== 0n) {
+      // The largest split absorbs the filler; ties go to the first, which the sort above made stable.
+      let largest = 0;
+      for (const [index, split] of splits.entries()) {
+        if (split.amountMinor > (splits[largest]?.amountMinor ?? 0n)) largest = index;
+      }
+      const target = splits[largest];
+      if (target === undefined) {
+        throw new ApiError('VALIDATION_FAILED', 'A receipt whose items sum to zero cannot be posted.');
+      }
+      target.amountMinor += filler;
+      if (target.amountMinor < 0n) {
+        throw new ApiError(
+          'VALIDATION_FAILED',
+          'The rounding filler would make a Split negative; adjust an item instead.',
+        );
+      }
+    }
+
+    const description = await this.descriptionFor(receipt, input.description ?? null);
+    const transaction = await this.transactions.create(householdId, {
+      accountId: input.accountId,
+      kind: TransactionKind.EXPENSE,
+      amountMinor: receipt.total_minor,
+      description,
+      // The day the receipt was captured, in the Household's own timezone (I-2), not the server's.
+      occurredLocalDate: await this.localDayFor(householdId, receipt.captured_at),
+      status: TransactionStatus.CONFIRMED,
+      source: TransactionSource.RECEIPT,
+      splits,
+      idempotencyKey: `receipt:${receipt.id}`,
+    });
+
+    // The photo moves onto the purchase through `files`, which owns the link and its linkable-state
+    // guard — the ledger is not asked to validate an attachment (docs/05 §3's module boundaries).
+    if (receipt.attachment_id !== null) {
+      try {
+        await this.files.commit(householdId, {
+          attachmentId: receipt.attachment_id,
+          transactionId: transaction.id,
+        });
+      } catch (error) {
+        // The Transaction exists and is correct; a photo that cannot be linked must not unwind it.
+        this.logger.warn(
+          `Receipt ${receipt.id} posted, but its attachment could not be linked: ` +
+            `${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    await this.prisma.client.receipts.updateMany({
+      where: { id: receipt.id, household_id: householdId },
+      data: { transaction_id: transaction.id, updated_at: new Date() },
+    });
+    return (await this.getById(householdId, receiptId)) as ReceiptView;
+  }
+
   // -------------------------------------------------------------------------------------------
   // Items and reconciliation
   // -------------------------------------------------------------------------------------------
@@ -613,9 +760,21 @@ export class ReceiptsService {
         break;
       }
 
+      case 'DETACH_TRANSACTION': {
+        // Unlinking a receipt from its Transaction does **not** delete the Transaction: it is a
+        // confirmed row of the Household's money, and removing it because a photo was detached would
+        // destroy a fact the user recorded. `attachment_id` is left alone too, so the picture stays
+        // with the purchase (docs/03 §4: both links are independent).
+        await this.prisma.client.receipts.updateMany({
+          where: { id: receipt.id, household_id: householdId },
+          data: { transaction_id: null, updated_at: new Date() },
+        });
+        break;
+      }
+
       default: {
-        // `DETACH_TRANSACTION` is 4.1.4's arm, and a switch that silently ignored an unknown action
-        // would answer "done" to a request it did not perform.
+        // A switch that silently ignored an unknown action would answer "done" to a request it did
+        // not perform.
         throw new ApiError('VALIDATION_FAILED', `Unsupported reconciliation action "${input.action}".`);
       }
     }
@@ -693,6 +852,43 @@ export class ReceiptsService {
       );
       return { categoryId: null, confidence: 0, needsReview: true };
     }
+  }
+
+  private async assertAccount(householdId: string, accountId: string): Promise<void> {
+    const account = await this.prisma.client.accounts.findFirst({
+      where: { id: accountId, household_id: householdId, deleted_at: null },
+      select: { id: true },
+    });
+    if (account === null) throw new ApiError('NOT_FOUND', 'Account not found.');
+  }
+
+  /** The Household's own day for an instant (I-2) — the server's UTC day is the wrong answer. */
+  private async localDayFor(householdId: string, instant: Date): Promise<string> {
+    const household = await this.prisma.client.households.findFirst({
+      where: { id: householdId },
+      select: { iana_timezone: true },
+    });
+    return toLocalDate(instant, household?.iana_timezone ?? 'Europe/Belgrade');
+  }
+
+  /**
+   * What the posted Transaction is called.
+   *
+   * The caller's words win; then the Merchant's name, because that is what the user will look for in
+   * the list; then a neutral fallback. It is never a model's sentence and never a Category's name —
+   * a description is the user's own record of what they bought.
+   */
+  private async descriptionFor(receipt: ReceiptRow, override: string | null): Promise<string> {
+    const trimmed = override?.trim() ?? '';
+    if (trimmed.length > 0) return trimmed;
+    if (receipt.merchant_id !== null) {
+      const merchant = await this.prisma.client.merchants.findFirst({
+        where: { id: receipt.merchant_id },
+        select: { name: true },
+      });
+      if (merchant !== null) return merchant.name;
+    }
+    return 'Receipt';
   }
 
   private async assertCategory(householdId: string, categoryId: string): Promise<void> {
