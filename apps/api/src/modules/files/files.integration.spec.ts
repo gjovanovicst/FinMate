@@ -10,6 +10,7 @@ import { runWithTenant, type TenantContext } from '../../common/tenancy/tenant-c
 import { ConfigModule } from '../../config/config.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
+import { FakeObjectStorage } from '../../testing/fake-object-storage';
 import { AuthModule } from '../auth/auth.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { TransactionsService } from '../ledger/transactions.service';
@@ -21,7 +22,7 @@ import {
   ORPHAN_GRACE_HOURS,
   PRESIGN_RATE_LIMIT,
 } from './files.service';
-import { OBJECT_STORAGE, UNCONFIGURED_OBJECT_STORAGE, type ObjectStorage } from './object-storage';
+import { OBJECT_STORAGE, UNCONFIGURED_OBJECT_STORAGE } from './object-storage';
 import { SCANNER, type ScanVerdict, type Scanner } from './scanner';
 
 /**
@@ -36,50 +37,6 @@ import { SCANNER, type ScanVerdict, type Scanner } from './scanner';
  * the rows its rules name. The signing itself is proven separately against AWS's own vector in
  * `sigv4.spec.ts`, and the live MinIO round-trip is a manual verification, not a test.
  */
-class FakeStorage implements ObjectStorage {
-  readonly available = true;
-  readonly unavailableReason = null;
-  readonly objects = new Map<string, { byteSize: number; contentType: string; sha256: string }>();
-  readonly removed: string[] = [];
-  headCalls = 0;
-
-  presignPut(input: { key: string; contentType: string; sha256: string; expiresSeconds: number }) {
-    return {
-      url: `https://storage.test/${input.key}?sig=put`,
-      method: 'PUT',
-      headers: {
-        host: 'storage.test',
-        'content-type': input.contentType,
-        'x-amz-meta-sha256': input.sha256,
-      },
-    };
-  }
-
-  presignGet(input: { key: string; expiresSeconds: number }) {
-    return { url: `https://storage.test/${input.key}?sig=get`, method: 'GET', headers: {} };
-  }
-
-  async head(key: string) {
-    this.headCalls += 1;
-    const object = this.objects.get(key);
-    return object === undefined
-      ? null
-      : {
-          byteSize: object.byteSize,
-          etag: null,
-          contentType: object.contentType,
-          declaredSha256: object.sha256,
-        };
-  }
-
-  async remove(key: string): Promise<void> {
-    this.removed.push(key);
-    this.objects.delete(key);
-  }
-
-  async ensureBucket(): Promise<void> {}
-}
-
 /** A scanner whose verdict the test chooses, so every arm of the commit path is reachable. */
 class FakeScanner implements Scanner {
   readonly available = true;
@@ -99,7 +56,7 @@ describe('files (integration)', () => {
   let files: FilesService;
   let rateLimit: RateLimitService;
   let transactions: TransactionsService;
-  let storage: FakeStorage;
+  let storage: FakeObjectStorage;
   let scanner: FakeScanner;
 
   const householdId = uuidv7();
@@ -138,16 +95,13 @@ describe('files (integration)', () => {
     const row = await asTenant(() =>
       prisma.client.attachments.findFirstOrThrow({ where: { id: attachmentId, household_id: householdId } }),
     );
-    storage.objects.set(row.storage_key, {
-      byteSize: overrides.byteSize ?? Number(row.byte_size),
-      contentType: row.mime_type,
-      sha256: overrides.sha256 ?? row.sha256,
-    });
+    const bytes = new Uint8Array(overrides.byteSize ?? Number(row.byte_size));
+    storage.put(row.storage_key, bytes, row.mime_type, overrides.sha256 ?? row.sha256);
     return row;
   };
 
   beforeAll(async () => {
-    storage = new FakeStorage();
+    storage = new FakeObjectStorage();
     scanner = new FakeScanner();
 
     moduleRef = await Test.createTestingModule({
@@ -481,7 +435,7 @@ describe('files (integration)', () => {
           },
         }),
       );
-      storage.objects.set(key, { byteSize: 10, contentType: 'image/jpeg', sha256: 'x'.repeat(64) });
+      storage.put(key, new Uint8Array(10), 'image/jpeg', 'x'.repeat(64));
       if (referenced) {
         await asTenant(() =>
           prisma.client.transactions.create({

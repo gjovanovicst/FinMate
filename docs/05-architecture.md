@@ -91,7 +91,7 @@ directly — cross-module reads go through the owning service or a read-model qu
 | `taxonomy` | Categories, keywords, merchants, aliases, counterparties, aliases | `categories`, `category_keywords`, `merchants`, `merchant_aliases`, `counterparties`, `counterparty_aliases` |
 | `capture` | Natural-language entry orchestration, bulk segmenting, idempotency, duplicate detection | writes `transactions` via `ledger` |
 | `classification` | Pipeline orchestration, rules engine integration, confidence gating, review queue, corrections, rule synthesis | `rules`, `classification_decisions`, `corrections` |
-| `receipts` | Upload, OCR orchestration, item extraction, reconciliation | `receipts`, `receipt_items`, `attachments` |
+| `receipts` | Upload, OCR orchestration, item extraction, reconciliation — **implemented in 4.1.3** (the screen is 4.1.5) | `receipts`, `receipt_items` |
 | `budgeting` | Budgets, consumption calculation, safe-to-spend, rollovers | `budgets` |
 | `goals` | Saving goals and contributions | `saving_goals`, `goal_contributions` |
 | `recurring` | Recurring rules, RRULE expansion, materialisation job, subscription detection | `recurring_rules` |

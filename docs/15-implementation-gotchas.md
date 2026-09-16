@@ -141,6 +141,20 @@ Prisma 7 plus a tenancy extension plus hand-written SQL means the driver is not 
 
 ---
 
+- **A `CHECK` constraint you did not read is part of the algorithm.** `receipt_items.amount_minor` is
+  `CHECK (amount_minor >= 0)` (docs/03 §4), and the obvious implementation of `ADD_ROUNDING_LINE` — a
+  line carrying `-variance` so the sum matches — is therefore **unrepresentable** the moment the lines
+  overshoot the total. The domain function returns `null` instead of a negative amount and the service
+  refuses with the reason, pointing at `ADJUST_ITEM`/`ADJUST_TOTAL`. Read the DDL's CHECKs before
+  designing the arithmetic around a column, not after Postgres refuses the insert.
+
+- **The dev API does not watch your files, so a live pass can be testing code you replaced an hour
+  ago.** `nx run api:serve` is a plain `node -r @swc-node/register src/main.ts` with no watcher, and
+  every restart is manual. Two live failures in one task (a `needsReview` flag and an error code) were
+  the *old* process answering, not the new code being wrong — the integration suites were green
+  throughout because they build fresh. Restart the API before a live verification, and if a live result
+  contradicts a passing test, suspect the process before the patch.
+
 ## 3. Tenancy and the guard
 
 ADR-008 is enforced by an extension, not by discipline — which is why these two are about what the guard *cannot* do for you.

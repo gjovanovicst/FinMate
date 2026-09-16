@@ -59,6 +59,15 @@ export interface ObjectStorage {
   presignGet(input: { readonly key: string; readonly expiresSeconds: number }): PresignedRequest;
   /** `null` when the object is not there (a 404 is an answer, not an error). */
   head(key: string): Promise<StoredObject | null>;
+  /**
+   * The object's bytes, for the one caller that legitimately needs them: OCR.
+   *
+   * ADR-018's rule is that bytes never transit the API *on the request path* — a client uploads and
+   * downloads directly. Reading an image server-side to hand it to a LOCAL or EEA OCR provider is a
+   * different operation with a different justification, and it is why this method exists here rather
+   * than in a feature module: storage stays owned by `files`.
+   */
+  getBytes(key: string): Promise<Uint8Array>;
   /** Idempotent: removing an object that is already gone is a success. */
   remove(key: string): Promise<void>;
   /** Create the bucket when it is missing. Used by `pnpm storage:init`, never on a request path. */
@@ -85,6 +94,7 @@ export const UNCONFIGURED_OBJECT_STORAGE: ObjectStorage = (() => {
     presignPut: refuse,
     presignGet: refuse,
     head: async () => refuse(),
+    getBytes: async () => refuse(),
     remove: async () => refuse(),
     ensureBucket: async () => refuse(),
   };
@@ -133,6 +143,15 @@ export class S3ObjectStorage implements ObjectStorage {
       contentType: response.headers.get('content-type'),
       declaredSha256: response.headers.get('x-amz-meta-sha256'),
     };
+  }
+
+  async getBytes(key: string): Promise<Uint8Array> {
+    const signed = signS3Request(this.request('GET', key));
+    const response = await fetch(signed.url, { method: 'GET', headers: sendHeaders(signed) });
+    if (!response.ok) {
+      throw new StorageError(`Object storage answered ${response.status} on GET ${key}.`);
+    }
+    return new Uint8Array(await response.arrayBuffer());
   }
 
   async remove(key: string): Promise<void> {

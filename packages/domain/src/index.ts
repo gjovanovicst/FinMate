@@ -91,6 +91,16 @@ export {
 } from './analytics';
 
 export {
+  RECEIPT_TOLERANCE_MINOR,
+  isWithinTolerance,
+  receiptTotals,
+  roundingLineAmount,
+  type ReceiptItemAmount,
+  type ReceiptTotals,
+  type ReconciliationState,
+} from './receipts';
+
+export {
   RECURRENCE_FREQUENCIES,
   WEEKDAYS,
   expandOccurrences,

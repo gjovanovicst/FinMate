@@ -808,6 +808,15 @@ enum CounterpartyType {
   PERSON
 }
 
+input CreateReceiptInput {
+  attachmentId: UUID!
+
+  """When the receipt was photographed."""
+  capturedAt: DateTime
+  merchantId: UUID
+  total: Money
+}
+
 input CreateRuleFromCorrectionInput {
   """
   `false` means "this was a one-off". The rule is not created. The refusal is **not** persisted — `corrections` has no column for it — so it is currently only an answered prompt.
@@ -1242,6 +1251,11 @@ type Mutation {
   addCategoryKeyword(categoryId: ID!, keyword: String!, matchMode: String = "WORD", polarity: KeywordPolarity!): Boolean!
 
   """
+  Add a line by hand — manual itemisation, and the path when OCR is unavailable.
+  """
+  addReceiptItem(input: ReceiptItemInput!, receiptId: String!): ReceiptModel!
+
+  """
   Make the selected shipped merchants this Household’s own, with a default Category resolved from the starter tree (F-13 step 4). A merchant already owned is left alone, so re-running never mints a second one.
   """
   applyMerchantSelection(names: [String!]!): MerchantSelectionResultModel!
@@ -1344,6 +1358,11 @@ type Mutation {
     defaultCategoryId: ID
     name: String!
   ): MerchantModel!
+
+  """
+  Open a Receipt over an uploaded Attachment (docs/09 4.1.2’s upload, this task’s subject). The total is optional: without one the receipt is PENDING rather than mismatched (I-6).
+  """
+  createReceipt(input: CreateReceiptInput!): ReceiptModel!
 
   """
   Create a standing order. The schedule is parsed and canonicalised, and an unsupported part is refused rather than ignored. The currency is the Household ledger currency (ADR-011).
@@ -1498,6 +1517,11 @@ type Mutation {
   dispatchNotifications: AlertDispatchModel!
 
   """
+  Read the receipt image and write its lines as items, each categorised by the Household’s own rules. Writes nothing when no OCR provider is configured — the screen then offers manual itemisation instead of a spinner (docs/02 §4.11).
+  """
+  extractReceipt(receiptId: String!): ReceiptExtractionModel!
+
+  """
   Run the deterministic generators for one period. Idempotent per condition and period, so it is safe to call repeatedly; the `insights.generate` job calls the same service method.
   """
   generateInsights(
@@ -1541,7 +1565,15 @@ type Mutation {
     """The merchant to keep. May be a shipped one."""
     targetId: ID!
   ): MerchantModel!
+
+  """
+  One of the four answers to a mismatch. Returns the receipt with its recomputed reconciliation.
+  """
+  reconcileReceipt(input: ReconcileReceiptInput!): ReceiptModel!
   removeCategoryKeyword(keywordId: ID!): Boolean!
+
+  """Remove one line and recompute I-6."""
+  removeReceiptItem(receiptItemId: String!): ReceiptModel!
 
   """
   Resolve one queued row (docs/06 §5.5). Choosing a category goes through the correction path, so it records a Correction and can create a rule — the queue is a learning surface, not a dismiss button. Resolving an already-resolved row is a NO-OP rather than a conflict: two devices clearing the same queue is not an error.
@@ -1613,6 +1645,11 @@ type Mutation {
   Merge the given fields into the stored preferences; omitted fields are unchanged.
   """
   updateNotificationPreferences(input: NotificationPreferencesInput!): NotificationPreferencesModel!
+
+  """
+  Override one item’s text, amount or category. A category set by hand is recorded at confidence 1 and clears `needsReview`: the user has answered the question the pipeline could not.
+  """
+  updateReceiptItem(input: UpdateReceiptItemInput!): ReceiptModel!
 
   """
   Patch a rule. An absent field is left alone; `clearEndsOn`/`clearCategory` unset one. A changed schedule re-anchors `nextOccurrenceOn` from the new start.
@@ -2004,6 +2041,14 @@ type Query {
   proposeEqualSplits(amount: Money!, categoryIds: [ID!]!): [ProposedSplit!]!
 
   """
+  One receipt with its items, or null when the id is not this Household’s.
+  """
+  receipt(id: String!): ReceiptModel
+
+  """The Household’s receipts, newest first, keyset-paged on the UUIDv7 id."""
+  receipts(after: String, first: Int): [ReceiptModel!]!
+
+  """
   The Household’s standing orders, soonest next occurrence first. `activeOnly` defaults to true; false lists deactivated and deleted ones too, because deactivating keeps the history.
   """
   recurringRules(activeOnly: Boolean = true): [RecurringRuleModel!]!
@@ -2097,6 +2142,96 @@ type Query {
   The rules with an occurrence inside the next `withinDays` days — docs/02 §4.14’s "next 30 days" line. A rule with nothing in the window is omitted rather than returned empty.
   """
   upcomingRecurring(withinDays: Int = 30): [RecurringRuleModel!]!
+}
+
+type ReceiptExtractionModel {
+  currencyMismatch: Boolean!
+  extracted: Boolean!
+  itemsWritten: Int!
+
+  """
+  Lines whose amount could not be read. They are not items, and they are not guessed.
+  """
+  linesWithoutAmount: Int!
+
+  """Why nothing was written — `AI_UNAVAILABLE:…` or `AI_ERROR:…`."""
+  reason: String
+}
+
+input ReceiptItemInput {
+  amount: Money!
+  categoryId: UUID
+  quantity: Float
+  rawText: String!
+  unitPrice: Money
+}
+
+type ReceiptItemModel {
+  amount: Money!
+  categoryId: UUID
+  confidence: Float
+  id: UUID!
+  lineNo: Int!
+  needsReview: Boolean!
+  normalizedName: String
+  quantity: Float
+  rawText: String!
+  receiptId: UUID!
+  unitPrice: Money
+}
+
+type ReceiptModel {
+  attachmentId: UUID
+  capturedAt: DateTime!
+  createdAt: DateTime!
+  id: UUID!
+  items: [ReceiptItemModel!]!
+
+  """Σ items, computed on read (docs/03 §6)."""
+  itemsTotal: Money!
+  merchantId: UUID
+  ocrConfidence: Float
+  reconciliation: ReconciliationState!
+  total: Money
+  transactionId: UUID
+  updatedAt: DateTime!
+
+  """
+  `total − itemsTotal`, SIGNED. Within one minor unit when `MATCHED` (I-6).
+  """
+  variance: Balance!
+}
+
+"""
+The four ways out of a mismatch. `DETACH_TRANSACTION` is 4.1.4’s arm and is not declared until something can produce it — the §5.5 precedent.
+"""
+enum ReconcileAction {
+  ACCEPT_MATCH
+  ADD_ROUNDING_LINE
+  ADJUST_ITEM
+  ADJUST_TOTAL
+}
+
+input ReconcileReceiptInput {
+  absorbCategoryId: UUID
+  action: ReconcileAction!
+  adjustmentItemId: UUID
+
+  """
+  The new **absolute** amount for ADJUST_ITEM / ADJUST_TOTAL. Deliberately not a delta: `Money` is non-negative (ADR-003), so a delta could never express a decrease — §5.9 sketched one and that was a defect, recorded in the implementation notes.
+  """
+  amount: Money
+  receiptId: UUID!
+}
+
+"""
+I-6: `MATCHED` only when the items sum to the total within one minor unit. `MANUAL` means the agreement came from a hand-added line, not from the receipt itself.
+"""
+enum ReconciliationState {
+  MANUAL
+  MATCHED
+  MISMATCH
+  PENDING
 }
 
 type RecurringOccurrenceModel {
@@ -2729,3 +2864,12 @@ enum TransactionStatus {
 A UUID string (any version; the app generates v7 so ids sort by creation time).
 """
 scalar UUID
+
+input UpdateReceiptItemInput {
+  amount: Money
+  categoryId: UUID
+  clearCategory: Boolean
+  quantity: Float
+  rawText: String
+  receiptItemId: UUID!
+}

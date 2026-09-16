@@ -18,6 +18,7 @@ import { InsightsModule } from './modules/insights/insights.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
+import { ReceiptsModule } from './modules/receipts/receipts.module';
 import { RecurringModule } from './modules/recurring/recurring.module';
 import { TaxonomyModule } from './modules/taxonomy/taxonomy.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -64,6 +65,10 @@ import { PrismaModule } from './prisma/prisma.module';
     // bytes never transit this process, and storage is an injected seam so a deployment without MinIO
     // still boots (docs/06 §9, task 4.1.1).
     FilesModule,
+    // Receipts (F-14). OCR orchestration, item extraction and I-6 reconciliation (task 4.1.3). It
+    // reads attachment bytes through `FilesModule` and categorises items through the capture pipeline,
+    // so an item's category is the same decision a typed fragment would get.
+    ReceiptsModule,
   ],
   controllers: [HealthController],
   providers: [

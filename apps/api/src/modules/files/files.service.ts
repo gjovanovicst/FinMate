@@ -316,6 +316,44 @@ export class FilesService {
     };
   }
 
+  /**
+   * An attachment's bytes, for the one caller that needs them: OCR (task 4.1.3).
+   *
+   * Refuses a row that is not linkable and the unconfigured-storage case for the same reason
+   * `commit` does — a `PENDING` or quarantined object must not be read any more than it may be
+   * downloaded. Returns the bytes and the type the **row** recorded, not the object's own header, so a
+   * caller cannot be told a type the Household never declared.
+   */
+  async readBytes(
+    householdId: string,
+    attachmentId: string,
+  ): Promise<{ readonly bytes: Uint8Array; readonly mimeType: string; readonly attachmentId: string }> {
+    if (!this.storage.available) {
+      throw new ApiError(
+        'VALIDATION_FAILED',
+        this.storage.unavailableReason ?? 'Object storage is not configured.',
+      );
+    }
+
+    const row = await this.prisma.client.attachments.findFirst({
+      where: { id: attachmentId, household_id: householdId },
+      select: { id: true, storage_key: true, mime_type: true, scan_state: true },
+    });
+    if (row === null) throw new ApiError('NOT_FOUND', 'Attachment not found.');
+    if (!LINKABLE_SCAN_STATES.has(row.scan_state)) {
+      throw new ApiError(
+        'VALIDATION_FAILED',
+        `That attachment is ${row.scan_state} and cannot be read.`,
+      );
+    }
+
+    return {
+      attachmentId: row.id,
+      bytes: await this.storage.getBytes(row.storage_key),
+      mimeType: row.mime_type,
+    };
+  }
+
   // -------------------------------------------------------------------------------------------
   // Commit and delete
   // -------------------------------------------------------------------------------------------

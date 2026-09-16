@@ -2493,6 +2493,26 @@ I-6 is enforced here: `reconciliation` becomes `MATCHED` only when `|total − �
 Otherwise the receipt stays `MISMATCH` and the transaction is not confirmed — which is exactly the F-14
 acceptance criterion *"the transaction is only marked confirmed once the total reconciles."*
 
+**Implemented in task 4.1.3, with recorded deviations.** The OCR adapter itself is `packages/ai`'s
+(since 2.2.1); this task added the caller — `apps/api/src/modules/receipts`, the `OCR` seam
+(`UNCONFIGURED_OCR` in this build, exactly as `AI_CLASSIFIER` and `NARRATOR` resolve to their
+unconfigured twins), item extraction, item-level classification and I-6.
+
+| Decision | Built | Why |
+|---|---|---|
+| `commitReceipt` | **Split**: `createReceipt` (attachment → receipt), `extractReceipt` (OCR → items), `updateReceiptItem`/`addReceiptItem`/`removeReceiptItem`, `reconcileReceipt` | §5.9's single mutation also created the Transaction. The itemised screen and the *Napravi transakciju* button are 4.1.4/4.1.5, so the creation arm is not declared yet — a union arm or a parameter with no producer is the pattern this repo declines (§5.5). |
+| `variance` | **`Balance!`, not `Money!`** | The variance is **signed** — the lines can overshoot the total — and `Money` is non-negative by ADR-003 (`money()` throws on a negative). `Balance` is the scalar already added for exactly this distinction (§5.1). |
+| `ReconcileReceiptInput.adjustment` | **The absolute new amount** (`ADJUST_ITEM` sets the item, `ADJUST_TOTAL` sets the total) | §5.9 sketched a `Money` *delta*, which cannot express a decrease: `Money` is non-negative, so a client could only ever raise a figure. Taking the new absolute value makes both directions expressible with the scalar the money path already has. |
+| `ADD_ROUNDING_LINE` | Only when `variance > 0`; the receipt becomes `MANUAL` | `receipt_items.amount_minor` is `CHECK (amount_minor >= 0)`, so an added line can only be positive. When the lines *overshoot*, no non-negative line can absorb the gap and the API refuses with the reason, pointing at `ADJUST_ITEM`/`ADJUST_TOTAL`. |
+| Reconciliation states | `PENDING` = no total yet · `MATCHED` = the receipt's own figures agree · `MISMATCH` = they do not · `MANUAL` = they agree because the user added the absorbing line | All four now have a producer, and the `MATCHED`/`MANUAL` split records **who** reconciled — a screen can say "reconciled by hand" without re-deriving it. |
+| Re-extraction | Replaces the items; a fresh provider total wins, an existing total is kept when the provider read none | `extractReceipt` is an explicit retry, so a retry that kept a stale total could never fix a bad read. What the provider could **not** read never erases a total the user asserted. |
+| A line with no amount | Skipped, and reported as `linesWithoutAmount` | Guessing `0` understates the receipt and inventing the difference is exactly what I-6 exists to catch. |
+| A total in another currency | Ignored (`currencyMismatch: true`); the items are still written | ADR-011: one ledger currency. Converting a model's EUR total would be the API inventing an exchange rate. |
+| Manual itemisation | `addReceiptItem` sets `needsReview` when it has no category | A line the user typed without a category is a question, not an answer: `commitReceipt` turns items into Splits, and a Split without a Category is I-8's blocking lane. |
+| `ReceiptPayload` union | **The model directly** | The §5.5 precedent, fifth time: the arms are the typed `ApiError` codes every module returns. |
+| `ReceiptItem.createdAt`, `Receipt.currency` | Not exposed | Every `Money`/`Balance` on the type already carries its currency, so a separate field would be a second source of truth; no screen needs an item's creation time. |
+| The `POST /v1/webhooks/ocr` path (§9.5) | **Not built** | This task ships the **synchronous** extraction: the API reads the object and calls the provider. The async webhook (HMAC, delivery-id idempotency, delivery order) is a separate integration with the same seam behind it, and it is recorded rather than half-built. Until then the provider contract is "answer within the OCR timeout". |
+
 ### 5.10 `dismissInsight`, `markNotificationRead`
 
 ```graphql
