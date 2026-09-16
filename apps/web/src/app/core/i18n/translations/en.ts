@@ -263,7 +263,7 @@ export const en = {
   'notifications.settings.save': 'Save',
   'notifications.settings.saved': 'Saved.',
   'notifications.settings.error': 'Could not save. Please try again.',
-  'notifications.settings.queuedNote': 'Push cannot be delivered yet, so those notifications wait in the app.',
+  'notifications.settings.queuedNote': 'Push is not set up on this device yet, so those notifications wait in the app.',
 
   // ---- session ----
   'session.signOut': 'Sign out',

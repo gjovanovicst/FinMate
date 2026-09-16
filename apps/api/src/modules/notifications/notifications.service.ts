@@ -13,6 +13,7 @@ import {
 } from '@finmate/domain';
 
 import { CONFIG, type AppConfig } from '../../config/config';
+import { ApiError } from '../../common/filters/all-exceptions.filter';
 import { Prisma } from '../../generated/prisma/client';
 import type { CursorPage } from '../../graphql/pagination';
 import { normalisePageSize } from '../../graphql/pagination';
@@ -27,6 +28,8 @@ import {
   serialiseNotificationPreferences,
   type NotificationPreferences,
 } from './notification-preferences';
+import { buildWebPushPayload } from './web-push-payload';
+import { isGoneError, WEB_PUSH, type WebPushSender } from './web-push-sender';
 
 /**
  * Alerts and notifications — docs/05 §9's pipeline, docs/06 §5.14.
@@ -92,8 +95,30 @@ export interface DispatchResult {
   readonly failed: number;
   /** Held because the user's quiet hours are on right now. */
   readonly deferred: number;
-  /** Channels this build cannot deliver yet (push), left `QUEUED` rather than marked sent. */
+  /** Rows left `QUEUED` because this pass had nothing to deliver them to (no push sender, no endpoint). */
   readonly skipped: number;
+  /**
+   * One line per row this pass did not deliver, with **why** — ADR-028 decision 2.
+   *
+   * A bare `skipped` count answers "how many" and not "why has nothing arrived?", which is the only
+   * question an operator with an unconfigured VAPID pair or a dead endpoint actually has.
+   */
+  readonly reasons: readonly string[];
+}
+
+/** A registered browser endpoint, as much of it as the client half (4.2.5) needs back. */
+export interface PushSubscriptionView {
+  readonly id: string;
+  readonly endpoint: string;
+  readonly lastSeenAt: Date;
+  readonly createdAt: Date;
+}
+
+export interface RegisterPushSubscriptionShape {
+  readonly endpoint: string;
+  readonly p256dh: string;
+  readonly auth: string;
+  readonly userAgent?: string;
 }
 
 export interface AlertRunResult {
@@ -152,6 +177,7 @@ export class NotificationsService {
     private readonly insights: InsightsService,
     private readonly mail: MailService,
     @Inject(CONFIG) private readonly config: AppConfig,
+    @Inject(WEB_PUSH) private readonly webPush: WebPushSender,
   ) {}
 
   // -------------------------------------------------------------------------------------------
@@ -354,8 +380,8 @@ export class NotificationsService {
    * | Channel | What "delivered" means here |
    * |---|---|
    * | `IN_APP` | The row is the delivery: `SENT`, `sent_at = now`. The centre and the badge read it. |
-   * | `EMAIL` | Sent through `MailService` (Mailhog in development). A failure sets `FAILED` — never a retry loop, because the row records that we tried. |
-   * | `PUSH` / `WEB_PUSH` | **Not dispatched.** The browser subscription store and the service worker are Phase 4 (docs/09 §6), and there is no push dependency to send with. The rows stay `QUEUED`, which is the honest state, and `skipped` says how many. |
+   * | `EMAIL` | Sent through `MailService` (Mailhog in development). A failure sets `FAILED` — never a retry loop, because the row records that we tried. No owner address → `skipped`, left `QUEUED`. |
+   * | `PUSH` / `WEB_PUSH` | Sent to every **live** `push_subscriptions` row of the Household's owner through the `WEB_PUSH` seam (ADR-028). `SENT` means the push service accepted it. A `404`/`410` **soft-deletes** that subscription and still counts as delivered — a vanished endpoint is not a failure to retry; any other rejection sets `FAILED`. With no VAPID keys, or no live endpoint, the row stays `QUEUED` and is reported `skipped` **with a reason**. |
    *
    * The recipient is the Household's **owner**: v1 has exactly one Member (F-29 is a `Won't`), so the
    * `user_id` on the row is already the only candidate, and resolving "members who want this" is a
@@ -368,6 +394,9 @@ export class NotificationsService {
       where: { household_id: householdId, status: 'QUEUED' },
       orderBy: { id: 'asc' },
       take: DISPATCH_BATCH,
+      // The payload builder needs the insight *kind* only — never the copy, never the payload
+      // (ADR-028 decision 4).
+      include: { insights: { select: { kind: true } } },
     });
 
     const owner = await this.prisma.client.households.findFirst({
@@ -375,10 +404,25 @@ export class NotificationsService {
       select: { owner_user_id: true, users: { select: { email: true } } },
     });
 
+    // Loaded once per pass: the owner, and only the owner's live endpoints. A tombstone is never a
+    // delivery target (ADR-028 decision 3).
+    const subscriptions =
+      owner === null
+        ? []
+        : await this.prisma.client.push_subscriptions.findMany({
+            where: {
+              household_id: householdId,
+              user_id: owner.owner_user_id,
+              deleted_at: null,
+            },
+            orderBy: { id: 'asc' },
+          });
+
     let sent = 0;
     let failed = 0;
     let deferred = 0;
     let skipped = 0;
+    const reasons: string[] = [];
 
     for (const row of queued) {
       // Quiet hours are re-checked at dispatch time, not trusted from when the row was written: the
@@ -387,8 +431,79 @@ export class NotificationsService {
         deferred += 1;
         continue;
       }
+
       if (row.channel === 'PUSH' || row.channel === 'WEB_PUSH') {
-        skipped += 1;
+        if (!this.webPush.available) {
+          skipped += 1;
+          reasons.push(
+            `${row.channel} ${row.id}: ${this.webPush.unavailableReason ?? 'the push sender is not configured'}`,
+          );
+          continue;
+        }
+        if (subscriptions.length === 0) {
+          skipped += 1;
+          reasons.push(
+            `${row.channel} ${row.id}: no live push subscription for this Household's owner.`,
+          );
+          continue;
+        }
+
+        const payload = buildWebPushPayload({
+          id: row.id,
+          // Deliberately passed and deliberately unread: the T-09 test is the proof that neither
+          // can reach the payload (ADR-028 decision 4).
+          title: row.title,
+          body: row.body,
+          insightKind: row.insights?.kind ?? null,
+        });
+
+        let accepted = 0;
+        let pruned = 0;
+        let failure: string | null = null;
+        for (const subscription of subscriptions) {
+          try {
+            await this.webPush.sendNotification(
+              {
+                endpoint: subscription.endpoint,
+                keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+              },
+              payload,
+            );
+            accepted += 1;
+          } catch (error) {
+            if (isGoneError(error)) {
+              // Dead endpoint: retire the row, never retry it. This does not fail the notification —
+              // there is nothing left that could receive it.
+              await this.prisma.client.push_subscriptions.updateMany({
+                where: { id: subscription.id, household_id: householdId, deleted_at: null },
+                data: { deleted_at: new Date() },
+              });
+              pruned += 1;
+            } else {
+              failure = error instanceof Error ? error.message : String(error);
+            }
+          }
+        }
+
+        if (accepted + pruned > 0) {
+          await this.prisma.client.notifications.updateMany({
+            where: { id: row.id, status: 'QUEUED' },
+            data: { status: 'SENT', sent_at: new Date() },
+          });
+          sent += 1;
+          if (failure !== null) {
+            reasons.push(`${row.channel} ${row.id}: delivered to a live endpoint, but ${failure}`);
+          }
+        } else {
+          await this.prisma.client.notifications.updateMany({
+            where: { id: row.id },
+            data: { status: 'FAILED' },
+          });
+          failed += 1;
+          reasons.push(
+            `${row.channel} ${row.id}: ${failure ?? 'the push service rejected the notification'}`,
+          );
+        }
         continue;
       }
 
@@ -396,6 +511,7 @@ export class NotificationsService {
         if (row.channel === 'EMAIL') {
           if (owner?.users?.email === undefined) {
             skipped += 1;
+            reasons.push(`EMAIL ${row.id}: the Household owner has no email address.`);
             continue;
           }
           await this.mail.sendNotification(owner.users.email, row.title, row.body);
@@ -405,7 +521,7 @@ export class NotificationsService {
           data: { status: 'SENT', sent_at: new Date() },
         });
         sent += 1;
-      } catch {
+      } catch (error) {
         // A failed delivery is recorded, not retried forever: the status is the honest report, and
         // `runAlerts` will not recreate the condition because the dedupe key is spent.
         await this.prisma.client.notifications.updateMany({
@@ -413,10 +529,13 @@ export class NotificationsService {
           data: { status: 'FAILED' },
         });
         failed += 1;
+        reasons.push(
+          `${row.channel} ${row.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     }
 
-    return { sent, failed, deferred, skipped, considered: queued.length };
+    return { sent, failed, deferred, skipped, considered: queued.length, reasons };
   }
 
   /** The window that governs dispatch: the Household preference (rules are re-read at generation). */
@@ -468,6 +587,94 @@ export class NotificationsService {
       data: { settings: { ...settings, notifications: next } as Prisma.InputJsonValue },
     });
     return parseNotificationPreferences(next);
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Push subscriptions
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * The VAPID **public** key, or `null` when push is not configured.
+   *
+   * A public key is not a secret — the browser needs it to subscribe — so this is a plain query with
+   * no session requirement beyond the normal auth guard. `null` is the honest answer on a deployment
+   * that has not configured a pair, and the client half (4.2.5) must render that as "push unavailable"
+   * rather than ask for a permission it cannot use (ADR-028 decision 2).
+   */
+  pushPublicKey(): string | null {
+    return this.config.VAPID_PUBLIC_KEY ?? null;
+  }
+
+  /**
+   * Register (or re-register) a browser endpoint for the **session's** Household and user.
+   *
+   * The scope comes from the session and never from input (ADR-008): the input carries only what a
+   * browser can mint. `endpoint` is globally unique (docs/03 §4), so a re-subscribe updates
+   * `last_seen_at` and clears `deleted_at` rather than duplicating; a re-subscribe is also how a row a
+   * `404`/`410` retired comes back (ADR-028 decision 3).
+   */
+  async registerPushSubscription(
+    householdId: string,
+    userId: string,
+    input: RegisterPushSubscriptionShape,
+  ): Promise<PushSubscriptionView> {
+    const existing = await this.prisma.client.push_subscriptions.findFirst({
+      where: { endpoint: input.endpoint },
+    });
+
+    if (existing !== null) {
+      const row = await this.prisma.client.push_subscriptions.update({
+        where: { id: existing.id },
+        data: {
+          p256dh: input.p256dh,
+          auth: input.auth,
+          user_agent: input.userAgent ?? existing.user_agent,
+          last_seen_at: new Date(),
+          deleted_at: null,
+        },
+      });
+      return this.toPushSubscriptionView(row);
+    }
+
+    try {
+      const row = await this.prisma.client.push_subscriptions.create({
+        data: {
+          id: uuidv7(),
+          household_id: householdId,
+          user_id: userId,
+          endpoint: input.endpoint,
+          p256dh: input.p256dh,
+          auth: input.auth,
+          user_agent: input.userAgent ?? null,
+        },
+      });
+      return this.toPushSubscriptionView(row);
+    } catch (error) {
+      // The scoped lookup above cannot see another Household's row, but `UNIQUE (endpoint)` is
+      // global, so a collision here means this browser is already subscribed elsewhere. Refusing is
+      // the correct outcome — silently stealing the row would move a device between Households.
+      if (this.isUniqueViolation(error)) {
+        throw new ApiError(
+          'CONFLICT',
+          'That browser endpoint is already registered to another Household.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Soft-delete the session's own subscription for an endpoint.
+   *
+   * Returns `false` when there is no **live** row for it in this Household, which is also the answer
+   * for somebody else's endpoint: a client cannot distinguish "already gone" from "not yours".
+   */
+  async deletePushSubscription(householdId: string, endpoint: string): Promise<boolean> {
+    const result = await this.prisma.client.push_subscriptions.updateMany({
+      where: { household_id: householdId, endpoint, deleted_at: null },
+      data: { deleted_at: new Date() },
+    });
+    return result.count > 0;
   }
 
   // -------------------------------------------------------------------------------------------
@@ -586,6 +793,30 @@ export class NotificationsService {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
+  }
+
+  private toPushSubscriptionView(row: {
+    id: string;
+    endpoint: string;
+    last_seen_at: Date;
+    created_at: Date;
+  }): PushSubscriptionView {
+    return {
+      id: row.id,
+      endpoint: row.endpoint,
+      lastSeenAt: row.last_seen_at,
+      createdAt: row.created_at,
+    };
+  }
+
+  /** The unique-violation shape `goals.service.ts` already uses; `P2002` is Prisma's code for it. */
+  private isUniqueViolation(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 'P2002'
+    );
   }
 
   private toRuleFact(rule: AlertRuleView, preferences: NotificationPreferences): AlertRuleFact {

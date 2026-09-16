@@ -733,8 +733,10 @@ CREATE TABLE notifications (
 
 -- Browser push endpoints (ADR-028). One row per endpoint, household-scoped: the endpoint is the
 -- identity, so a re-subscribe updates rather than duplicates, and a 404/410 from the push service
--- deletes the row. `p256dh`/`auth` are the client's public key material (RFC 8291); nothing here is a
--- secret of ours, but the endpoint is a device identifier and therefore personal data (08 §3.9).
+-- **retires** the row (`deleted_at`, not a DELETE — the browser re-subscribes with the same endpoint,
+-- so the row has to be revivable and the UNIQUE (endpoint) must stay satisfied). `p256dh`/`auth` are the
+-- client's public key material (RFC 8291); nothing here is a secret of ours, but the endpoint is a
+-- device identifier and therefore personal data (08 §3.9).
 CREATE TABLE push_subscriptions (
   id                 UUID PRIMARY KEY,
   household_id       UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,

@@ -155,6 +155,15 @@ Prisma 7 plus a tenancy extension plus hand-written SQL means the driver is not 
   throughout because they build fresh. Restart the API before a live verification, and if a live result
   contradicts a passing test, suspect the process before the patch.
 
+- **`push_subscriptions.endpoint` is globally `UNIQUE`, so a soft-deleted row still owns its endpoint
+  — registering it again must *revive* it, not insert.** `endpoint` is the identity a browser mints, and
+  it does not change when a push service retires the subscription; so the register path clears
+  `deleted_at` and updates `p256dh`/`auth`/`user_agent` on the existing row. An `insert` looks correct
+  and fails with a unique-constraint violation the moment a user re-subscribes, i.e. exactly when a
+  `404`/`410` soft-delete happened (verified live: register → delete → register returns the **same** id).
+  The partial `push_subscriptions_live_idx` is on `deleted_at IS NULL` for the same reason — the row
+  exists, it is just not live.
+
 ## 3. Tenancy and the guard
 
 ADR-008 is enforced by an extension, not by discipline — which is why these two are about what the guard *cannot* do for you.
@@ -315,6 +324,14 @@ Code-first GraphQL with custom scalars: most of these are registration problems 
   nothing leaks in normal use, but the deletion feature docs/08's retention section implies needs an
   **object** delete or a bucket lifecycle rule, and it has to run *before* the rows disappear, because
   nothing records the key once they are gone.
+
+- **The dispatch *reasons* are on `dispatchNotifications`, not on `runAlerts`.** `runAlerts` returns
+  `AlertRunModel` — how many insights it wrote, how many conditions were deduped, queued, rate-limited
+  or suppressed — and has no `reasons` field at all; asking for one is a `GRAPHQL_VALIDATION_FAILED`
+  with `Cannot query field "reasons"`. The per-row explanation of an undelivered push (ADR-028
+  decision 2) is on `dispatchNotifications: AlertDispatchModel`. Two mutations that call into the same
+  notification pipeline, two different summaries — read the generated `schema.gql` for the one you want
+  rather than assuming they share a shape.
 
 ---
 

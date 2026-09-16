@@ -19,7 +19,7 @@ import { SYSTEM_READABLE_MODELS, isSystemScope, requireTenantContext } from './t
 
 /**
  * Models carrying a `household_id` column. The guard injects it into every read and write.
- * 24 models as of the baseline migration (docs/03-domain-model.md §4).
+ * 26 models as of the `push_subscriptions` migration (docs/03-domain-model.md §4).
  */
 export const HOUSEHOLD_SCOPED_BY_COLUMN: ReadonlySet<string> = new Set([
   'accounts',
@@ -38,6 +38,7 @@ export const HOUSEHOLD_SCOPED_BY_COLUMN: ReadonlySet<string> = new Set([
   'insights',
   'notifications',
   'purge_receipts',
+  'push_subscriptions',
   'receipts',
   'recurring_rules',
   'rules',

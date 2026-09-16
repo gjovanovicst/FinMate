@@ -48,6 +48,17 @@ describe('tenancy guard (ADR-008 layer 2 — mechanical household scoping)', () 
       expect(() => applyTenancyGuard('budgets', 'deleteMany', {})).toThrow(/budgets\.deleteMany/);
     });
 
+    it('throws for the push_subscriptions table too, with no way round it (ADR-028)', () => {
+      // A browser endpoint is a device identifier and therefore personal data (docs/08 §3.9), so the
+      // table is household-scoped like every other one. No context means no read and no write.
+      expect(() => applyTenancyGuard('push_subscriptions', 'findMany', {})).toThrow(
+        TenantContextMissingError,
+      );
+      expect(() => applyTenancyGuard('push_subscriptions', 'create', { data: {} })).toThrow(
+        TenantContextMissingError,
+      );
+    });
+
     it('does not throw for a global model', () => {
       expect(applyTenancyGuard('users', 'findMany', {})).toEqual({ allowed: true, args: {} });
     });
@@ -78,6 +89,18 @@ describe('tenancy guard (ADR-008 layer 2 — mechanical household scoping)', () 
         const { args } = withTenant(() => applyTenancyGuard('transactions', operation, {}));
         expect(args['where']).toEqual({ household_id: HOUSEHOLD_A });
       }
+    });
+
+    it('scopes push_subscriptions by household_id and never by the client', () => {
+      const { args } = withTenant(() =>
+        applyTenancyGuard('push_subscriptions', 'findFirst', {
+          where: { endpoint: 'https://push.example.test/abc' },
+        }),
+      );
+      expect(args['where']).toEqual({
+        endpoint: 'https://push.example.test/abc',
+        household_id: HOUSEHOLD_A,
+      });
     });
 
     it('scopes households by primary key, so the platform is never listed wholesale', () => {

@@ -54,9 +54,16 @@ type AlertDispatchModel {
   """Held: quiet hours are on right now, so it waits."""
   deferred: Int!
   failed: Int!
+
+  """
+  One line per undelivered row saying why (ADR-028 decision 2). Never a bare count: an operator with no VAPID keys has to be able to see that nothing was sent, and why.
+  """
+  reasons: [String!]!
   sent: Int!
 
-  """Push channels this build cannot deliver yet; the rows stay QUEUED."""
+  """
+  Rows left QUEUED because this pass had nothing to deliver them to — no VAPID keys or no live push subscription. Their rows are not lost, and the reason is in `reasons`.
+  """
   skipped: Int!
 }
 
@@ -1488,6 +1495,11 @@ type Mutation {
   deleteMerchant(id: ID!): Boolean!
 
   """
+  Soft-delete this Household's subscription for an endpoint. False when there is no live row for it here — which is also the answer for another Household's endpoint.
+  """
+  deletePushSubscription(endpoint: String!): Boolean!
+
+  """
   Soft-delete a rule. The Transactions it posted are kept — they are the ledger.
   """
   deleteRecurringRule(id: String!): Boolean!
@@ -1528,7 +1540,7 @@ type Mutation {
   dismissInsight(id: String!): InsightModel
 
   """
-  The `notifications.dispatch` job (docs/05 §8): deliver what is queued and due — quiet hours re-checked at dispatch time. `IN_APP` rows become SENT (the row is the delivery); `EMAIL` goes through SMTP; push channels stay QUEUED because this build cannot deliver them (Phase 4).
+  The `notifications.dispatch` job (docs/05 §8): deliver what is queued and due — quiet hours re-checked at dispatch time. `IN_APP` rows become SENT (the row is the delivery); `EMAIL` goes through SMTP; `PUSH`/`WEB_PUSH` go to every live browser subscription when VAPID keys are configured, and otherwise stay QUEUED with the reason in `reasons` (ADR-028).
   """
   dispatchNotifications: AlertDispatchModel!
 
@@ -1586,6 +1598,11 @@ type Mutation {
   One of the answers to a mismatch. Returns the receipt with its recomputed reconciliation.
   """
   reconcileReceipt(input: ReconcileReceiptInput!): ReceiptModel!
+
+  """
+  Register or re-register this browser endpoint for the session's Household and user. `endpoint` is unique, so a re-subscribe updates `lastSeenAt` and revives a retired row rather than duplicating it (ADR-028 decision 3).
+  """
+  registerPushSubscription(input: PushSubscriptionInput!): PushSubscriptionModel!
   removeCategoryKeyword(keywordId: ID!): Boolean!
 
   """Remove one line and recompute I-6."""
@@ -1929,6 +1946,29 @@ type ProvenanceModel {
   transactionCount: Int!
 }
 
+input PushSubscriptionInput {
+  """The browser's auth secret (RFC 8291 `auth`)."""
+  auth: String!
+  endpoint: String!
+
+  """The browser's public key (RFC 8291 `p256dh`)."""
+  p256dh: String!
+  userAgent: String
+}
+
+type PushSubscriptionModel {
+  createdAt: DateTime!
+
+  """The push service URL the browser minted for this device."""
+  endpoint: String!
+  id: ID!
+
+  """
+  When this endpoint last subscribed or re-subscribed; the dispatch path reads it.
+  """
+  lastSeenAt: DateTime!
+}
+
 type Query {
   """A single Account by id, scoped to the Household."""
   account(id: String!): Account!
@@ -2055,6 +2095,11 @@ type Query {
   Split an amount evenly across categories without losing a para. The backend computes it so the client never rounds money (ADR-003); the result sums exactly (invariant I-1).
   """
   proposeEqualSplits(amount: Money!, categoryIds: [ID!]!): [ProposedSplit!]!
+
+  """
+  The VAPID **public** key the browser needs in order to subscribe, or null when this deployment has not configured a key pair. A public key is not a secret (ADR-028).
+  """
+  pushPublicKey: String
 
   """
   One receipt with its items, or null when the id is not this Household’s.

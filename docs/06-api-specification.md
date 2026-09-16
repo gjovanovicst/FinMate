@@ -844,6 +844,12 @@ type Notification {
   status: NotificationStatus!
   createdAt: DateTime!
 }
+
+type PushSubscription {              # generated as PushSubscriptionModel, ADR-028
+  id: UUID!
+  endpoint: String!                  # the push service URL the browser minted; globally UNIQUE
+  lastSeenAt: DateTime!              # last subscribe / re-subscribe; the dispatch path reads it
+}
 ```
 
 ### 3.3 Computed / derived types
@@ -1200,6 +1206,13 @@ input NotificationPreferencesInput {
   locale: String
 }
 
+input PushSubscriptionInput {         # only what a browser can mint; never a householdId (§2)
+  endpoint: String!
+  p256dh: String!
+  auth: String!
+  userAgent: String
+}
+
 input HouseholdSettingsInput {
   name: String
   ianaTimezone: String
@@ -1292,6 +1305,7 @@ type Query {
   alerts: [AlertRule!]!
   notifications(unreadOnly: Boolean = false, first: Int, after: Cursor): NotificationConnection!
   unreadNotificationCount: Int!                 # CP
+  pushPublicKey: String                         # VAPID public key, or null when push is unconfigured (ADR-028)
 
   # ---- analytics
   spendByCategory(range: DateRangeInput!, accountIds: [UUID!], includeSubcategories: Boolean = true): [CategorySpend!]!                 # CP
@@ -1751,6 +1765,8 @@ type Mutation {
   updateAlertRule(input: AlertRuleUpdateInput!): AlertRulePayload!
   deleteAlertRule(id: UUID!): AlertRulePayload!
   updateNotificationPreferences(input: NotificationPreferencesInput!): SimplePayload!
+  registerPushSubscription(input: PushSubscriptionInput!): PushSubscription!   # generated as PushSubscriptionModel (ADR-028)
+  deletePushSubscription(endpoint: String!): Boolean!
 
   # ---------- settings, household, lifecycle
   updateHouseholdSettings(input: HouseholdSettingsInput!): HouseholdPayload!
@@ -2747,16 +2763,18 @@ contract. The pipeline is docs/05 §9's, and the storage is docs/03 §4's two ta
 | `POSITIVE` delivery | In-app only, and only when `positiveFeedback` is on | Good news is not worth a push, and docs/02 §7.1 gives it its own tab rather than the interrupt path. |
 | `AlertRule.version` | **Not implemented** | docs/06 §3.2 declares `version: Int!` and `AlertRuleUpdateInput.version`, but neither docs/03 §4's DDL nor the migrated table has the column. Rather than invent a migration for optimistic concurrency on a settings list nobody edits concurrently, the field is omitted and this line is the record. Adding it later is one migration and one input field. |
 | Notification copy | **English only, rendered server-side** | `notifications.title`/`body` are `TEXT NOT NULL` and the API has no i18n catalogue — the web's lives in `apps/web`. This is a **Definition-of-Done breach** of the same shape as `fm-money`'s hardcoded label: it is recorded here, and the fix is either a shared catalogue in a package or storing a key plus payload parameters and rendering at read time. `NotificationPreferencesInput.locale` exists and is not yet honoured. |
-| `EMAIL`/`PUSH`/`WEB_PUSH` | Rows are written; nothing is sent | Channel fan-out is task 3.1.3. The evaluator already decides per channel, so 3.1.3 changes only the writer. |
+| `EMAIL`/`PUSH`/`WEB_PUSH` | **Channel fan-out is built** — the writer decides per channel and `dispatchNotifications` (the `notifications.dispatch` job) delivers | This row predicted that 3.1.3 would change only the writer, and it did: `IN_APP` becomes `SENT` (the row *is* the delivery), `EMAIL` goes through SMTP, and `PUSH`/`WEB_PUSH` go to the live browser subscriptions when VAPID keys exist (4.2.9, [ADR-028](14-decisions-and-risks.md)). A row that cannot be delivered stays `QUEUED` and is reported `skipped` **with a reason**. |
 | Rule CRUD | `alerts`, `createAlertRule`, `updateAlertRule`, `deleteAlertRule` | Without one, the evaluator is unconfigurable and unverifiable end to end. The settings **screen** is 3.1.4. |
 | Defaults | Three rows written by `ensureDefaultRules` on the first run (`PACE_OVERRUN`, `UNUSUAL_SPEND`, `RECURRING_DUE`; `IN_APP`; active) | docs/02 §7.1 shows alerts arriving without the user visiting settings, so "no rules" cannot mean "no alerts". They are **rows, not hidden code defaults**, so the screen shows what is actually on and editing a rule edits the thing that decides. Written once, only for a Household that has configured nothing. |
 | `SUPPRESSED` decisions | **Not persisted** | `notifications` is `UNIQUE (user_id, dedupe_key)`. Writing a rate-limited row burns the key and makes that condition **permanently undeliverable** once the cap resets — the notification equivalent of poisoning a cache. Only `SENT` and `QUEUED` become rows; suppression is reported in the `runAlerts` summary instead. `QUEUED` occupies the key correctly: the row exists and will be delivered. |
-| Non-in-app channels | Stored `QUEUED`, never `SENT` | The evaluator's `SENT` means "deliverable". Only `IN_APP` can actually be delivered in this build, so an email/push row waits for 3.1.3's fan-out rather than claiming a delivery that has not happened. |
+| Non-in-app channels | Stored `QUEUED` until a sender **accepts** them | The evaluator's `SENT` means "deliverable". `EMAIL` is delivered through SMTP, and `PUSH`/`WEB_PUSH` when the deployment has a VAPID pair *and* the owner has a live subscription; otherwise the row keeps `QUEUED` rather than claiming a delivery that has not happened ([ADR-028](14-decisions-and-risks.md) decision 2). |
 | `markNotificationRead` | Returns `{ notification, unreadNotificationCount }` | The badge is on every screen; making it a second round trip is a badge that lags. `markAllNotificationsRead` returns how many rows changed. |
 | `updateNotificationPreferences` | **Built in 3.1.3**, in `households.settings.notifications` | `NotificationPreferencesInput` has no table (docs/03 §4 defines none), and the same pattern as onboarding progress works: a Household-scoped JSONB key with per-field fallback, so a malformed document degrades to the documented default instead of erroring the notification centre. The settings **screen** is 3.1.4. |
 | Channel-aware copy | **Per channel**, in `notification-copy.ts` | T-09 forbids amounts and entity names on a lock screen, so one `title`/`body` for every channel is a disclosure by construction. `IN_APP` carries the figures; every other channel carries **no digit at all** — asserted by a test that does not enumerate payload keys, so it survives the next generator. |
 | `EMAIL` delivery | `MailService.sendNotification`, plain text | nodemailer and Mailhog are already in the stack (docs/11 §1) and `MailService` already existed for verification mail — its own comment reserved it for "budget alerts". No dependency was added. Verified live: the message arrives in Mailhog with a body containing no digits. |
-| `PUSH`/`WEB_PUSH` delivery | **Sender decided, not yet built** ([ADR-028](14-decisions-and-risks.md)) — **task 4.2.9** | The browser subscription store and the service worker are Phase 4 (docs/09 §6) and there is no push client dependency. Rows stay `QUEUED` and `dispatch` reports them as `skipped` on every pass — the honest state, and the reason the count does not fall to zero. |
+| `PUSH`/`WEB_PUSH` delivery | **Built in 4.2.9** ([ADR-028](14-decisions-and-risks.md)) | `web-push@3.6.7` + `@types/web-push` behind the `WEB_PUSH` token, with an **inert default** (`UNCONFIGURED_WEB_PUSH`) exactly like `EMBEDDINGS` and `OBJECT_STORAGE`: no VAPID pair means no network call at all, the rows stay `QUEUED`, and `dispatchNotifications.reasons` names the missing setting. The payload is `{ notificationId, kind, deepLink }` from `buildWebPushPayload` — `title`/`body` are passed in and deliberately never read, so no amount or entity name can reach a lock screen (T-09). A `404`/`410` from the push service **soft-deletes** that subscription and still counts the notification delivered (a vanished endpoint is not a retry); any other rejection is `FAILED` with its reason. The **client** half — permission, subscribe/unsubscribe — is task 4.2.5. ⚠️ \`/notifications\` still tells the user *"Push is not set up on this device yet"* as a **static string**; 4.2.5 must derive that sentence from \`pushPublicKey\`, or the screen is a second source of truth about availability. |
+| `push_subscriptions` | New in 4.2.9: `20260916120000_push_subscriptions` | `endpoint` is globally `UNIQUE` (docs/03 §4), so **register is an upsert that clears `deleted_at`**: an endpoint a `404`/`410` retired is revived by the next re-subscribe instead of colliding with its own dead row (verified live). `push_subscriptions_live_idx` is partial on `deleted_at IS NULL` because every dispatch read wants live rows only. The Household and user come from the session; no input carries either (ADR-008). |
+| `registerPushSubscription` / `deletePushSubscription` / `pushPublicKey` | **Built in 4.2.9** | Both operations are assigned with `sync` semantics: register is an upsert, delete is **soft** and a second call returns `false` rather than erroring (verified live). `pushPublicKey` returns the VAPID **public** key or `null`, and `null` is the client's signal that it must not ask for a permission it cannot use — the client half renders "push unavailable" from it rather than guessing. A foreign Household's endpoint cannot be read, revived or deleted. |
 | `APP_NAME` | Added to the API config, defaulting to the working title | AGENTS.md forbids hardcoding a brand string (ADR-014). ⚠️ The web holds the same string as the `app.name` i18n key, so this is a **second source of truth** until a shared constant lands; when the name is decided (Q-1) both change in one commit. |
 | `notificationReceived` subscription | **Not built** | It needs a pub/sub transport the API does not have (docs/06 §6). The bell polls on auth and on navigation, and a mark-read applies the count the mutation returns — the same mechanism the review-queue badge uses (docs/02 §2.3). |
 | `Notification.insightKind` / `insightSeverity` | Flattened scalars, added in 3.1.4 | The screen needs two things from the insight behind a row — its **tone** and where the row **links** — and a nested `insight { … }` field would invite a join per row on a list the bell reads constantly. Two scalars cost one `include`. |

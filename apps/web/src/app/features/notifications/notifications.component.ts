@@ -43,8 +43,10 @@ import {
  *
  * There is no realtime layer, so the bell updates from the counts the mark-read mutations return (the
  * API returns the new count precisely so the badge needs no second round trip). `PUSH`/`WEB_PUSH` are
- * listed as channels a rule may name, with a note that this build cannot deliver them yet — a checkbox
- * that silently does nothing is worse than a labelled limitation.
+ * listed as channels a rule may name, with a note that this device has no push subscription yet — a
+ * checkbox that silently does nothing is worse than a labelled limitation. That note is still a static
+ * string; task 4.2.5 derives it from `pushPublicKey` (§5.14), which is the only honest source for
+ * whether a deployment can deliver at all.
  *
  * @module apps/web/src/app/features/notifications
  */

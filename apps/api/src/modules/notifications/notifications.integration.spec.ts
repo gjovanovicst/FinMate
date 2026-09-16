@@ -498,6 +498,9 @@ describe('notifications (integration)', () => {
     const pass = await asTenant(() => notifications.dispatch(householdId));
     expect(pass.sent).toBeGreaterThan(0);
     expect(pass.skipped).toBeGreaterThan(0);
+    // The skip is never a bare count: the test environment has no VAPID key pair, so the reason names
+    // exactly what an operator would have to configure (ADR-028 decision 2).
+    expect(pass.reasons.some((reason) => reason.includes('VAPID_PUBLIC_KEY'))).toBe(true);
 
     const rows = await asTenant(() =>
       prisma.client.notifications.findMany({
@@ -513,12 +516,13 @@ describe('notifications (integration)', () => {
     expect(mailed).toBeDefined();
     expect(/\d/.test(mailed!.text)).toBe(false);
     expect(mailed!.to).toContain('@');
-    // Push cannot be delivered by this build: left QUEUED, which is the honest state.
+    // Push is configured through the `WEB_PUSH` seam (ADR-028), and this environment has no VAPID key
+    // pair, so the row is left QUEUED rather than marked sent — the honest state.
     expect(byChannel.get('WEB_PUSH')?.status).toBe('QUEUED');
 
     // Idempotent as far as sending goes: nothing is delivered twice. Push rows are still *considered*
-    // on every pass — they stay QUEUED until Phase 4 can deliver them — which is why `skipped`, not
-    // `considered`, is the count that returns to zero.
+    // on every pass — with no VAPID keys they stay QUEUED — which is why `skipped`, not `considered`,
+    // is the count that returns to zero.
     const again = await asTenant(() => notifications.dispatch(householdId));
     expect(again.sent).toBe(0);
     expect(again.skipped).toBeGreaterThan(0);

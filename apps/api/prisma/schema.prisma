@@ -356,6 +356,7 @@ model households {
   insights                 insights[]
   merchants                merchants[]
   notifications            notifications[]
+  push_subscriptions       push_subscriptions[]
   receipt_items            receipt_items[]
   receipts                 receipts[]
   recurring_rules          recurring_rules[]
@@ -458,6 +459,23 @@ model purge_receipts {
   object_keys_deleted Int       @default(0)
   status              String    @default("PENDING")
   users               users?    @relation(fields: [requested_by], references: [id], onUpdate: NoAction)
+}
+
+model push_subscriptions {
+  id           String     @id @db.Uuid
+  household_id String     @db.Uuid
+  user_id      String     @db.Uuid
+  endpoint     String     @unique
+  p256dh       String
+  auth         String
+  user_agent   String?
+  last_seen_at DateTime   @default(now()) @db.Timestamptz(6)
+  created_at   DateTime   @default(now()) @db.Timestamptz(6)
+  deleted_at   DateTime?  @db.Timestamptz(6)
+  households   households @relation(fields: [household_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users        users      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([household_id], map: "push_subscriptions_live_idx", where: raw("(deleted_at IS NULL)"))
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -710,21 +728,22 @@ model transactions {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model users {
-  id                String              @id @db.Uuid
-  email             String              @unique @db.Citext
-  email_verified_at DateTime?           @db.Timestamptz(6)
-  password_hash     String?
-  display_name      String
-  locale            String              @default("en")
-  status            String              @default("ACTIVE")
-  created_at        DateTime            @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime            @default(now()) @db.Timestamptz(6)
-  audit_log         audit_log[]
-  consents          consents[]
-  email_tokens      email_tokens[]
-  household_members household_members[]
-  households        households[]
-  notifications     notifications[]
-  purge_receipts    purge_receipts[]
-  sessions          sessions[]
+  id                 String                @id @db.Uuid
+  email              String                @unique @db.Citext
+  email_verified_at  DateTime?             @db.Timestamptz(6)
+  password_hash      String?
+  display_name       String
+  locale             String                @default("en")
+  status             String                @default("ACTIVE")
+  created_at         DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime              @default(now()) @db.Timestamptz(6)
+  audit_log          audit_log[]
+  consents           consents[]
+  email_tokens       email_tokens[]
+  household_members  household_members[]
+  households         households[]
+  notifications      notifications[]
+  purge_receipts     purge_receipts[]
+  push_subscriptions push_subscriptions[]
+  sessions           sessions[]
 }

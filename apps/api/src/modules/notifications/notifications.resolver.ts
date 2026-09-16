@@ -15,8 +15,11 @@ import {
   NotificationModel,
   NotificationPageArgs,
   NotificationReadModel,
+  PushSubscriptionInput,
+  PushSubscriptionModel,
   toAlertRuleModel,
   toNotificationModel,
+  toPushSubscriptionModel,
 } from './notification.model';
 import { NotificationsService } from './notifications.service';
 
@@ -206,17 +209,66 @@ export class NotificationsResolver {
     };
   }
 
+  // ---- push subscriptions (ADR-028, task 4.2.9) ---------------------------------------------
+
+  @Query(() => String, {
+    nullable: true,
+    description:
+      'The VAPID **public** key the browser needs in order to subscribe, or null when this ' +
+      'deployment has not configured a key pair. A public key is not a secret (ADR-028).',
+  })
+  pushPublicKey(): string | null {
+    return this.notificationsService.pushPublicKey();
+  }
+
+  @Mutation(() => PushSubscriptionModel, {
+    description:
+      'Register or re-register this browser endpoint for the session\'s Household and user. ' +
+      '`endpoint` is unique, so a re-subscribe updates `lastSeenAt` and revives a retired row rather ' +
+      'than duplicating it (ADR-028 decision 3).',
+  })
+  async registerPushSubscription(
+    @CurrentHouseholdId() householdId: string,
+    @CurrentTenant() tenant: TenantContext,
+    @Args('input') input: PushSubscriptionInput,
+  ): Promise<PushSubscriptionModel> {
+    const view = await this.notificationsService.registerPushSubscription(
+      householdId,
+      tenant.userId,
+      {
+        endpoint: input.endpoint,
+        p256dh: input.p256dh,
+        auth: input.auth,
+        ...(input.userAgent !== undefined ? { userAgent: input.userAgent } : {}),
+      },
+    );
+    return toPushSubscriptionModel(view);
+  }
+
+  @Mutation(() => Boolean, {
+    description:
+      'Soft-delete this Household\'s subscription for an endpoint. False when there is no live row ' +
+      'for it here — which is also the answer for another Household\'s endpoint.',
+  })
+  async deletePushSubscription(
+    @CurrentHouseholdId() householdId: string,
+    @Args('endpoint') endpoint: string,
+  ): Promise<boolean> {
+    return this.notificationsService.deletePushSubscription(householdId, endpoint);
+  }
+
   // ---- evaluation ---------------------------------------------------------------------------
 
   @Mutation(() => AlertDispatchModel, {
     description:
       'The `notifications.dispatch` job (docs/05 §8): deliver what is queued and due — quiet hours ' +
       're-checked at dispatch time. `IN_APP` rows become SENT (the row is the delivery); `EMAIL` goes ' +
-      'through SMTP; push channels stay QUEUED because this build cannot deliver them (Phase 4).',
+      'through SMTP; `PUSH`/`WEB_PUSH` go to every live browser subscription when VAPID keys are ' +
+      'configured, and otherwise stay QUEUED with the reason in `reasons` (ADR-028).',
   })
   async dispatchNotifications(@CurrentHouseholdId() householdId: string): Promise<AlertDispatchModel> {
     const result = await this.notificationsService.dispatch(householdId);
-    return { ...result };
+    return { ...result, reasons: [...result.reasons] };
   }
 
   @Mutation(() => AlertRunModel, {

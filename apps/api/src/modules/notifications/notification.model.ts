@@ -3,7 +3,7 @@ import { ArgsType, Field, ID, InputType, Int, ObjectType, registerEnumType } fro
 import { Paginated } from '../../graphql/pagination';
 import { JsonScalar } from '../../graphql/scalars/json.scalar';
 import { InsightModel } from '../insights/insight.model';
-import type { AlertRuleView, NotificationView } from './notifications.service';
+import type { AlertRuleView, NotificationView, PushSubscriptionView } from './notifications.service';
 
 /**
  * Alerts and notifications — docs/06 §3.2 (`AlertRule`, `Notification`), §5.11, §5.14.
@@ -186,9 +186,57 @@ export class AlertDispatchModel {
   deferred!: number;
 
   @Field(() => Int, {
-    description: 'Push channels this build cannot deliver yet; the rows stay QUEUED.',
+    description:
+      'Rows left QUEUED because this pass had nothing to deliver them to — no VAPID keys or no ' +
+      'live push subscription. Their rows are not lost, and the reason is in `reasons`.',
   })
   skipped!: number;
+
+  @Field(() => [String], {
+    description:
+      'One line per undelivered row saying why (ADR-028 decision 2). Never a bare count: an operator ' +
+      'with no VAPID keys has to be able to see that nothing was sent, and why.',
+  })
+  reasons!: string[];
+}
+
+/** A registered browser push endpoint (ADR-028, task 4.2.9), as much as the client half needs back. */
+@ObjectType()
+export class PushSubscriptionModel {
+  @Field(() => ID)
+  id!: string;
+
+  @Field(() => String, { description: 'The push service URL the browser minted for this device.' })
+  endpoint!: string;
+
+  @Field(() => Date, {
+    description: 'When this endpoint last subscribed or re-subscribed; the dispatch path reads it.',
+  })
+  lastSeenAt!: Date;
+
+  @Field(() => Date)
+  createdAt!: Date;
+}
+
+/**
+ * What a browser can mint.
+ *
+ * There is deliberately **no** `householdId`/`userId`: the scope comes from the session (ADR-008), and
+ * a client never sends one.
+ */
+@InputType()
+export class PushSubscriptionInput {
+  @Field(() => String)
+  endpoint!: string;
+
+  @Field(() => String, { description: "The browser's public key (RFC 8291 `p256dh`)." })
+  p256dh!: string;
+
+  @Field(() => String, { description: "The browser's auth secret (RFC 8291 `auth`)." })
+  auth!: string;
+
+  @Field(() => String, { nullable: true })
+  userAgent?: string;
 }
 
 @ObjectType()
@@ -301,6 +349,15 @@ export function toNotificationModel(view: NotificationView): NotificationModel {
     sentAt: view.sentAt,
     readAt: view.readAt,
     status: view.status as NotificationStatusEnum,
+    createdAt: view.createdAt,
+  };
+}
+
+export function toPushSubscriptionModel(view: PushSubscriptionView): PushSubscriptionModel {
+  return {
+    id: view.id,
+    endpoint: view.endpoint,
+    lastSeenAt: view.lastSeenAt,
     createdAt: view.createdAt,
   };
 }

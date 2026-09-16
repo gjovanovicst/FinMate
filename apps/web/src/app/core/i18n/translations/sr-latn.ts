@@ -263,7 +263,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'notifications.settings.save': 'Sačuvaj',
   'notifications.settings.saved': 'Sačuvano.',
   'notifications.settings.error': 'Nije sačuvano. Pokušaj ponovo.',
-  'notifications.settings.queuedNote': 'Push još ne može da se dostavi, pa ta obaveštenja čekaju u aplikaciji.',
+  'notifications.settings.queuedNote': 'Push još nije podešen na ovom uređaju, pa ta obaveštenja čekaju u aplikaciji.',
 
   // ---- session ----
   'session.signOut': 'Odjavi se',

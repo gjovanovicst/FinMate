@@ -77,6 +77,20 @@ export const envSchema = z
     /** Presigned URL lifetimes, from docs/06 §9.2/§9.4. */
     S3_UPLOAD_URL_TTL_SECONDS: z.coerce.number().int().min(1).max(604_800).default(900),
     S3_DOWNLOAD_URL_TTL_SECONDS: z.coerce.number().int().min(1).max(604_800).default(300),
+
+    /**
+     * Web push (ADR-028, task 4.2.9). Only `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` are secrets — the
+     * public key is handed to the client by the `pushPublicKey` query, so it is not one.
+     *
+     * Both keys are optional, and leaving either unset makes the `WEB_PUSH` sender **inert** rather
+     * than fatal (ADR-028 decision 2, the same shape as `S3_*`/`EMBEDDINGS`): rows stay `QUEUED` and
+     * `dispatch` reports them skipped with a reason. `VAPID_SUBJECT` is a contact URL or `mailto:`
+     * the push services may use to reach the operator; it has a safe default because web-push
+     * requires one whenever keys are set.
+     */
+    VAPID_PUBLIC_KEY: z.string().optional(),
+    VAPID_PRIVATE_KEY: z.string().optional(),
+    VAPID_SUBJECT: z.string().default('mailto:noreply@localhost'),
   })
   .superRefine((env, ctx) => {
     // A development placeholder must never reach production. Failing at boot is far cheaper than
