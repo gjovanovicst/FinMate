@@ -3,6 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { uuidv7 } from '@finmate/domain';
 
+import { requireShippedGlobals } from '../../../test/shipped-globals';
+
 import { ConfigModule } from '../../config/config.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -33,6 +35,8 @@ describe('global-readable models (integration)', () => {
       imports: [ConfigModule.forRoot(), PrismaModule],
     }).compile();
     prisma = moduleRef.get(PrismaService);
+    // The precondition this spec's own note names: the shipped catalogue is data, not fixture.
+    await requireShippedGlobals(prisma);
 
     await runWithTenant(context, async () => {
       await prisma.client.users.create({

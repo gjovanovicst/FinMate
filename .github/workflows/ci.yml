@@ -1,7 +1,7 @@
 # Continuous integration (docs/11-devops-and-observability.md §5).
 #
 # Gates, in the order a failure is cheapest to fix:
-#   install → generate → migrate → lint → typecheck → test → evals
+#   install → generate → migrate → seed → lint → typecheck → test → evals
 #
 # Deliberately absent for now:
 #   * production build — apps/api has no build target yet; bundling source-consumed workspace
@@ -106,6 +106,16 @@ jobs:
 
       - name: Apply migrations
         run: pnpm db:migrate
+
+      # The integration specs that assert how the *shipped* merchant catalogue behaves need it in the
+      # database: a global row is readable by every Household, a write copies it instead of mutating it,
+      # and it can be neither renamed nor deleted. No spec can create that data — a global row has
+      # `household_id IS NULL` and the tenancy guard deliberately has no unguarded write path (ADR-008)
+      # — so the seed is part of the environment, exactly as it is for a developer. Without this step CI
+      # failed with eleven assertion failures that never named the missing seed (task 4.3.6's CI fix).
+      # `SEED_HOUSEHOLD_ID` is unset, so this seeds the globals and no demo Household.
+      - name: Seed the shipped global catalogue
+        run: pnpm db:seed
 
       - name: Lint
         run: pnpm lint

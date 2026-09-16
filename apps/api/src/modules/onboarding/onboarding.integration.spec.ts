@@ -3,6 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { SHIPPED_MERCHANTS, flattenStarterCategories, uuidv7 } from '@finmate/domain';
 
+import { requireShippedGlobals } from '../../../test/shipped-globals';
+
 import { normaliseForMatching } from '../../common/text/normalise';
 import { runWithTenant, type TenantContext } from '../../common/tenancy/tenant-context';
 import { ConfigModule } from '../../config/config.module';
@@ -85,6 +87,8 @@ describe('F-13 onboarding (integration)', () => {
       .compile();
 
     prisma = moduleRef.get(PrismaService);
+    // Step 4 of the wizard copies a *shipped* merchant, so the catalogue has to be in the database.
+    await requireShippedGlobals(prisma);
     onboarding = moduleRef.get(OnboardingService);
     classification = moduleRef.get(ClassificationService);
 

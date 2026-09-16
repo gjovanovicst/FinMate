@@ -1041,6 +1041,20 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   backing. A fix has to do both halves — rebuild **and** re-read — and the honest test is the user-visible
   one, not a count of IndexedDB records: reload, unlock, open the tray, and see the entry with its state. **Both halves are fixed in 4.3.6a** and verified live 4/4 against the production build.
 
+- **A suite that needs seeded content is green locally and red in CI — and the failures name the assertions,
+  not the seed.** Found by CI on 4.3.6's push: `api:test` failed every run while the same command passed on this
+  machine. The difference was the database, not the code: three API integration specs (`global-reads`,
+  `merchants`, `onboarding`) assert how the **shipped** merchant catalogue behaves, and that catalogue is
+  `pnpm db:seed` output that every developer's database happens to have. On a database with migrations and
+  nothing else — which is what the CI service container is — they failed with **eleven** assertion errors across
+  the three files, none of which mentioned a missing seed. Reproduced exactly by migrating a scratch database and
+  running the suite against it with no `.env`. The fix has two halves, because either alone is a half-measure:
+  **CI seeds the globals** before the suite (the shipped content is part of the environment the specs document,
+  and no spec can create a global row — ADR-008 has no unguarded write path), and the three specs call
+  `requireShippedGlobals` from `apps/api/test/shipped-globals.ts`, which fails by name with the command to run.
+  The general rule: when a spec depends on data it does not create, say so in *code* — a precondition that
+  fails with the fix in its message costs three lines, and an eleven-failure mystery costs an afternoon.
+
 - **A guard that redirects has already consumed the deep link, so a later state change cannot honour it.**
   Found while verifying 4.3.6c: a reload offline on `/transactions` runs the router's **initial** navigation
   while the lock is still `LOCKED`, so `authenticatedGuard` sends it to `/sign-in` — and by the time the PIN

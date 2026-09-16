@@ -412,6 +412,12 @@ Two deliberate exceptions: **9** is cheap and its silent failure is catastrophic
 affected-gated; **10** is a release gate, not a report — the AI evaluation blocks a merge exactly as a
 failing unit test does.
 
+> **What the implementation adds to stage 8** (`.github/workflows/ci.yml`): `pnpm db:seed` after the
+> migrations and before the suite. Three API integration specs assert the *shipped* global merchant
+> catalogue against the real database and cannot create it (ADR-008 has no unguarded write path), so the
+> seed is part of that environment — see [10 §4.1](10-testing-and-quality.md). Without the step the suite
+> is green on a developer's seeded database and fails on CI's fresh one.
+
 ### 5.2 Nx affected-graph optimisation
 
 ```bash

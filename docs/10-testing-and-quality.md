@@ -441,6 +441,19 @@ fail the way a unique partial index fails.
 Container start-up uses `postgres -c fsync=off -c synchronous_commit=off` (test-only, and the reason
 the integration suite fits in its 6-minute budget).
 
+**The shipped global catalogue is part of that environment, and the suite says so.** Three specs —
+`global-reads.integration.spec.ts`, `merchants.integration.spec.ts` and `onboarding.integration.spec.ts` —
+assert how the *shipped* merchant reference data behaves: a global row is readable by every Household, a
+write copies it instead of mutating it, it can be neither renamed nor deleted, and the wizard copies it
+in. **None of them can create that data**: a global `merchants` row has `household_id IS NULL`, and the
+tenancy guard deliberately has no unguarded write path (ADR-008), so the seed script's bare client is the
+only writer. The database the suite runs against must therefore be **seeded** — `pnpm db:seed`, which
+seeds the globals and (only with `SEED_HOUSEHOLD_ID`) the demo Household — exactly as a developer's is.
+CI runs that step before the suite, and `apps/api/test/shipped-globals.ts` fails those three specs **by
+name, with the command** when it is missing. That guard exists because of what happened without it: on a
+database with migrations and nothing else the suite reported **eleven** failures across those three files,
+none of which named the missing seed — a locally green suite that CI could not pass.
+
 ### 4.2 Isolation
 
 | Technique | When | Why |

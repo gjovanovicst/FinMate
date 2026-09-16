@@ -3,6 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { uuidv7 } from '@finmate/domain';
 
+import { requireShippedGlobals } from '../../../test/shipped-globals';
+
 import { ApiError } from '../../common/filters/all-exceptions.filter';
 import { runWithTenant } from '../../common/tenancy/tenant-context';
 import { ConfigModule } from '../../config/config.module';
@@ -42,6 +44,9 @@ describe('MerchantsService (integration)', () => {
       imports: [ConfigModule.forRoot(), PrismaModule],
     }).compile();
     prisma = moduleRef.get(PrismaService);
+    // Nothing here can create a global `merchants` row (ADR-008 has no unguarded write path), so the
+    // shipped catalogue is a precondition — and it fails by name when it is missing.
+    await requireShippedGlobals(prisma);
     merchants = new MerchantsService(prisma);
 
     await prisma.client.users.create({
