@@ -313,6 +313,23 @@ export const en = {
   'settings.notifications.body': 'What you get told, and where those alerts go.',
   'settings.notifications.open': 'Open notifications',
 
+  // ---- queued edits and their conflicts (task 4.2.7b) ----
+  'transactions.offlineCategory': 'You are offline, so the category change was not saved: teaching a rule needs a connection. Your other changes can be queued — send them when you are back.',
+  'transactions.queuedEdit': 'Saved, waiting to send ({count})',
+  'pending.conflictTitle': 'The server refused these edits',
+  'pending.conflictBody': 'Somebody, or something else, changed the row after you read it. Your version was not applied and nothing was overwritten — the row holds what the server shows below.',
+  'pending.conflictVersions': 'You edited version {edited}; the row is now version {server}.',
+  'pending.conflictNoFieldChanges': 'None of the fields you changed differ from the row any more, so the write was refused for another reason: the row moved.',
+  'pending.conflictUnchanged': 'unchanged',
+
+  // ---- conflicted fields (task 4.2.7b) ----
+  'pending.diffField': 'Field',
+  'pending.field.amount': 'Amount',
+  'pending.field.occurredLocalDate': 'Date',
+  'pending.field.categoryId': 'Category',
+  'pending.field.description': 'Description',
+  'pending.field.status': 'Status',
+
   // ---- session ----
   'session.signOut': 'Sign out',
   'session.signingOut': 'Signing out…',

@@ -17,6 +17,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 
 import { AppLockService } from '../../core/app-lock/app-lock.service';
 import { pendingDurabilityKey } from '../../core/app-lock/lock.view';
+import type { TranslationKey } from '../../core/i18n/translations';
 import { I18nService } from '../../core/i18n/i18n.service';
 import { nextAttemptDelay, type OutboxEntry } from '../../core/offline/outbox';
 import { SyncService } from '../../core/offline/sync.service';
@@ -154,6 +155,51 @@ import { categoryLabel, rawInputs, syncedAtLabel, whyKey } from '../../core/offl
       }
     }
 
+    @if (sync.conflicts().length > 0) {
+      <!-- A refused edit (task 4.2.7b, ADR-030). Deliberately a separate panel from the diffs below:
+           that one explains the server's *decision* about a row it accepted, this one explains a write
+           it **rejected**. It also quotes no reason it was not given — the two versions are the whole
+           explanation the API supports, and the Zašto line stays with the re-classification diff. -->
+      <section class="diffs">
+        <h2 class="group__title">
+          {{ i18n.t('pending.conflictTitle') }}
+        </h2>
+        <p class="group__body">{{ i18n.t('pending.conflictBody') }}</p>
+        <ul class="list">
+          @for (conflict of sync.conflicts(); track conflict.seq + ':' + conflict.transactionId) {
+            <li class="diff">
+              <p class="diff__line">
+                {{ i18n.t('pending.conflictVersions', { edited: conflict.editedVersion, server: conflict.serverVersion }) }}
+              </p>
+              @if (conflict.changes.length === 0) {
+                <p class="diff__why">{{ i18n.t('pending.conflictNoFieldChanges') }}</p>
+              } @else {
+                <table class="conflict">
+                  <caption class="sr-only">{{ i18n.t('pending.conflictTitle') }}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">{{ i18n.t('pending.diffField') }}</th>
+                      <th scope="col">{{ i18n.t('pending.diffBefore') }}</th>
+                      <th scope="col">{{ i18n.t('pending.diffAfter') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (change of conflict.changes; track change.field) {
+                      <tr>
+                        <th scope="row">{{ i18n.t(fieldKey(change.field)) }}</th>
+                        <td>{{ change.before ?? '—' }}</td>
+                        <td>{{ change.after ?? '—' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              }
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
     @if (sync.diffs().length > 0) {
       <section class="diffs">
         <h2 class="group__title">{{ i18n.t('pending.diffTitle', { count: sync.diffs().length }) }}</h2>
@@ -181,6 +227,27 @@ import { categoryLabel, rawInputs, syncedAtLabel, whyKey } from '../../core/offl
     `
       :host {
         display: block;
+      }
+      .conflict {
+        inline-size: 100%;
+        border-collapse: collapse;
+        margin-block-start: var(--space-2);
+        font-size: var(--text-sm);
+      }
+      .conflict th,
+      .conflict td {
+        text-align: start;
+        padding: 0.2rem 0.5rem 0.2rem 0;
+        border-block-end: 1px solid var(--color-border);
+        overflow-wrap: anywhere;
+      }
+      .sr-only {
+        position: absolute;
+        inline-size: 1px;
+        block-size: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
       }
       .head__title {
         margin: 0;
@@ -367,6 +434,18 @@ export class PendingComponent {
    * setting, because the two can disagree — a lock that is configured but locked is not persistence.
    */
   readonly subtitleKey = computed(() => pendingDurabilityKey(this.appLock.state() === 'UNLOCKED'));
+
+  /**
+   * The catalogue key for a conflicted field.
+   *
+   * The diff comes from stored, untyped data, so an unknown field name must not render as a raw
+   * GraphQL identifier: `error.<field>` is a key no catalogue has, and `t` falls back to the key
+   * itself — visible and obviously wrong, which is how a new field gets its label (the same rule
+   * `ErrorMessageService` uses for an unknown code).
+   */
+  fieldKey(field: string): TranslationKey {
+    return `pending.field.${field}` as TranslationKey;
+  }
   readonly sync = inject(SyncService);
   private readonly appLock = inject(AppLockService);
 

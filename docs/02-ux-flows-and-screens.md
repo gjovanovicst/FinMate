@@ -1092,8 +1092,13 @@ sequenceDiagram
    conflict is a write the server **refused**, and the API gives no decision to quote — so its panel
    shows the two versions (`izmenjeno iz verzije 6, sada je 7`) and the before → after per field the edit
    carried, and invents no reason. A conflict whose compared fields did not change is still shown, in
-   words: the row moved, the user's press did not land. The core that produces both diffs is 4.2.7a; the
-   sheet that queues an offline edit and this panel are **4.2.7b**.
+   words: the row moved, the user's press did not land. **Built**: the core in 4.2.7a, and in 4.2.7b the
+   sheet queues an offline edit (dismissing like a successful save, because the queue now owns the write)
+   and the tray renders the panel above the re-classification diffs.
+6. **A category change cannot be queued** (ADR-030 decision 9). The correction is the part that teaches a
+   rule and its learning signal is bound to the version the user read, so an offline edit that also moves
+   the category is **refused** with a sentence rather than queued in half — queueing only the other fields
+   would leave the row differing from what the user was shown.
 
 ---
 

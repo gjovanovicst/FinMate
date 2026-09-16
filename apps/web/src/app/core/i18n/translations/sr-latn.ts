@@ -313,6 +313,23 @@ export const srLatn: Record<keyof typeof en, string> = {
   'settings.notifications.body': 'Šta dobijaš i gde te te poruke nalaze.',
   'settings.notifications.open': 'Otvori obaveštenja',
 
+  // ---- queued edits and their conflicts (task 4.2.7b) ----
+  'transactions.offlineCategory': 'Nemaš vezu, pa promena kategorije nije sačuvana: učenje pravila traži vezu. Ostale izmene mogu da sačekaju — pošalji ih kad se vratiš.',
+  'transactions.queuedEdit': 'Sačuvano, čeka slanje ({count})',
+  'pending.conflictTitle': 'Server je odbio ove izmene',
+  'pending.conflictBody': 'Neko ili nešto drugo je izmenilo red nakon što si ga pročitao. Tvoja verzija nije primenjena i ništa nije prepisano — red sadrži ono što server prikazuje ispod.',
+  'pending.conflictVersions': 'Menjao si verziju {edited}; red je sada verzija {server}.',
+  'pending.conflictNoFieldChanges': 'Nijedno polje koje si menjao se više ne razlikuje od reda, pa je upis odbijen iz drugog razloga: red se pomerio.',
+  'pending.conflictUnchanged': 'nepromenjeno',
+
+  // ---- conflicted fields (task 4.2.7b) ----
+  'pending.diffField': 'Polje',
+  'pending.field.amount': 'Iznos',
+  'pending.field.occurredLocalDate': 'Datum',
+  'pending.field.categoryId': 'Kategorija',
+  'pending.field.description': 'Opis',
+  'pending.field.status': 'Status',
+
   // ---- session ----
   'session.signOut': 'Odjavi se',
   'session.signingOut': 'Odjavljivanje…',

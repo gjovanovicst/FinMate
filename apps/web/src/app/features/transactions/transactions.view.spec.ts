@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { MoneyWire } from '../../shared/ui/money/money.component';
 import {
+  planSaveFailure,
   emptyFilters,
   exportUrl,
   filenameFromContentDisposition,
@@ -426,4 +427,64 @@ describe('filenameFromContentDisposition', () => {
     expect(filenameFromContentDisposition('attachment')).toBeNull();
     expect(filenameFromContentDisposition('attachment; filename=""')).toBeNull();
   });
+
+describe('planSaveFailure (task 4.2.7b, ADR-030)', () => {
+  const current = {
+    id: 'tx-9',
+    version: 6,
+    categoryId: 'cat-food',
+    amount: { amountMinor: '200000' },
+    description: 'Lidl 2000',
+    occurredLocalDate: '2026-09-14',
+    status: 'CONFIRMED',
+  };
+  const base = { error: new Error('Failed to fetch'), next: {}, current, retryable: true, isConflict: false };
+
+  it('shows a conflict rather than queueing it', () => {
+    // Retrying a stale version produces the same conflict forever, so it needs a person.
+    expect(planSaveFailure({ ...base, isConflict: true }).kind).toBe('CONFLICT');
+  });
+
+  it('shows anything that is not retryable', () => {
+    expect(planSaveFailure({ ...base, retryable: false }).kind).toBe('ERROR');
+  });
+
+  it('queues an offline edit with the complete before-snapshot of the fields it carries', () => {
+    const plan = planSaveFailure({
+      ...base,
+      next: { description: 'Lidl 2500', amount: { amountMinor: '250000', currency: 'RSD' } },
+    });
+
+    expect(plan.kind).toBe('QUEUE');
+    if (plan.kind !== 'QUEUE') return;
+    expect(plan.edit).toEqual({
+      id: 'tx-9',
+      version: 6,
+      description: 'Lidl 2500',
+      amount: { amountMinor: '250000', currency: 'RSD' },
+    });
+    // The snapshot covers every field the edit carries, which is what makes the conflict diff honest.
+    expect(plan.before).toEqual({
+      amount: '200000',
+      description: 'Lidl 2000',
+      occurredLocalDate: '2026-09-14',
+      status: 'CONFIRMED',
+    });
+  });
+
+  it('refuses a category change rather than queueing half the edit', () => {
+    // The correction teaches a rule and its signal is bound to the version the user read (ADR-030).
+    expect(planSaveFailure({ ...base, next: { categoryId: 'cat-fuel' } }).kind).toBe('REFUSE_CATEGORY');
+  });
+
+  it('does not re-send a category that did not change', () => {
+    const plan = planSaveFailure({ ...base, next: { categoryId: 'cat-food', description: 'Lidl 2500' } });
+
+    expect(plan.kind).toBe('QUEUE');
+    if (plan.kind !== 'QUEUE') return;
+    // A no-op field would still bump the version when the queue drains.
+    expect(plan.edit['categoryId']).toBeUndefined();
+    expect(plan.edit['description']).toBe('Lidl 2500');
+  });
+});
 });

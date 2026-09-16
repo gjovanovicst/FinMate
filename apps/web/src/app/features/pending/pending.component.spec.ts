@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { OutboxEntry } from '../../core/offline/outbox';
 import { SyncService } from '../../core/offline/sync.service';
-import type { SyncDiff } from '../../core/offline/sync.types';
+import type { SyncConflict, SyncDiff } from '../../core/offline/sync.types';
 import { PendingComponent } from './pending.component';
 
 initAngularTesting();
@@ -47,6 +47,7 @@ async function mount(args: {
   readonly pending?: readonly OutboxEntry[];
   readonly rejected?: readonly OutboxEntry[];
   readonly diffs?: readonly SyncDiff[];
+  readonly conflicts?: readonly SyncConflict[];
 }): Promise<Mounted> {
   const pending = signal<readonly OutboxEntry[]>(args.pending ?? []);
   const rejected = signal<readonly OutboxEntry[]>(args.rejected ?? []);
@@ -56,10 +57,13 @@ async function mount(args: {
   const retryAll = vi.fn().mockResolvedValue(undefined);
   const exportAsText = vi.fn().mockReturnValue('{"pending":[]}');
 
+  const conflicts = signal<readonly SyncConflict[]>(args.conflicts ?? []);
+
   const stub = {
     pending,
     rejected,
     diffs,
+    conflicts,
     pendingCount: computed(() => pending().length),
     busy: signal(false),
     lastError: signal<string | null>(null),
@@ -219,5 +223,43 @@ describe('PendingComponent (mounted)', () => {
     button(mounted.fixture, 'Discard').click();
     await mounted.fixture.whenStable();
     expect(mounted.discard).toHaveBeenCalledWith(4);
+  });
+
+  it('renders a refused edit as the two versions and before → after, with no invented reason', async () => {
+    const { fixture } = await mount({
+      conflicts: [
+      {
+        seq: 4,
+        transactionId: 'tx-9',
+        editedVersion: 6,
+        serverVersion: 7,
+        changes: [
+          { field: 'amount', before: '200000', after: '250000' },
+          { field: 'description', before: 'Lidl 2000', after: 'Lidl 2500' },
+        ],
+      },
+      ],
+    });
+
+    const rendered = text(fixture);
+    expect(rendered).toContain('The server refused these edits');
+    // The whole explanation the API supports: the two versions.
+    expect(rendered).toContain('version 6');
+    expect(rendered).toContain('version 7');
+    // The fields are labelled, never raw GraphQL names, and both sides are shown as they came.
+    expect(rendered).toContain('Amount');
+    expect(rendered).toContain('200000');
+    expect(rendered).toContain('250000');
+    expect(rendered).toContain('Description');
+    // No "why" line: a conflict is not a classification decision, so quoting one would be invented.
+    expect(rendered).not.toContain('Zašto');
+  });
+
+  it('says in words when a conflict changed none of the fields the user edited', async () => {
+    const { fixture } = await mount({
+      conflicts: [{ seq: 4, transactionId: 'tx-9', editedVersion: 6, serverVersion: 7, changes: [] }],
+    });
+
+    expect(text(fixture)).toContain('the row moved');
   });
 });

@@ -354,3 +354,71 @@ export function planEdit(args: {
 
 /** One screenful. Small enough to keep the first paint quick, large enough to fill a phone twice. */
 export const PAGE_SIZE = 25;
+
+
+/**
+ * What a failed save should do (task 4.2.7b, ADR-030).
+ *
+ * A pure decision, because the three outcomes are silently wrong when they are wrong: a conflict must
+ * be *shown* rather than queued (retrying it produces the same conflict forever), a retryable failure
+ * must be *queued* rather than shown (the user is offline and nothing is wrong with their edit), and a
+ * **category change** must be refused rather than half-queued — the correction is what teaches a rule,
+ * its learning signal is recorded against the version the user read, and a queue that silently dropped
+ * it would leave the row differing from what the user was shown.
+ *
+ * `before` is the complete snapshot of every field the queued edit carries, flattened (`amount` as its
+ * minor-unit string): the conflict diff compares against it, and a field missing from it reads as "the
+ * row had nothing there".
+ */
+export type SaveFailurePlan =
+  | { readonly kind: 'CONFLICT' }
+  | { readonly kind: 'ERROR' }
+  | { readonly kind: 'REFUSE_CATEGORY' }
+  | {
+      readonly kind: 'QUEUE';
+      readonly edit: Record<string, unknown>;
+      readonly before: Record<string, unknown>;
+    };
+
+export function planSaveFailure(input: {
+  readonly error: unknown;
+  /** The fields this save changes, as the request would send them. Absent means untouched. */
+  readonly next: Record<string, unknown>;
+  readonly current: {
+    readonly id: string;
+    readonly version: number;
+    readonly categoryId: string | null;
+    readonly amount: { readonly amountMinor: string };
+    readonly description: string;
+    readonly occurredLocalDate: string;
+    readonly status: string;
+  };
+  readonly retryable: boolean;
+  readonly isConflict: boolean;
+}): SaveFailurePlan {
+  if (input.isConflict) return { kind: 'CONFLICT' };
+  if (!input.retryable) return { kind: 'ERROR' };
+
+  const categoryChanged =
+    input.next['categoryId'] !== undefined && input.next['categoryId'] !== input.current.categoryId;
+  if (categoryChanged) return { kind: 'REFUSE_CATEGORY' };
+
+  // `categoryId` is dropped rather than sent as-is: it did not change, and re-sending it would be a
+  // no-op write that still bumps the version when the queue finally drains.
+  const { categoryId: _unchanged, ...rest } = input.next;
+  const edit: Record<string, unknown> = {
+    id: input.current.id,
+    version: input.current.version,
+    ...Object.fromEntries(Object.entries(rest).filter(([, value]) => value !== undefined)),
+  };
+  return {
+    kind: 'QUEUE',
+    edit,
+    before: {
+      amount: input.current.amount.amountMinor,
+      description: input.current.description,
+      occurredLocalDate: input.current.occurredLocalDate,
+      status: input.current.status,
+    },
+  };
+}

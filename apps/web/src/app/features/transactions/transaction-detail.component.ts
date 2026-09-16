@@ -19,6 +19,10 @@ import { parseAmount } from '@finmate/domain';
 import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient, GraphQLRequestError } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { isRetryable } from '../../core/offline/outbox';
+import { SyncService } from '../../core/offline/sync.service';
+import type { TransactionEditInput } from '../../core/offline/sync.types';
+import { planSaveFailure } from './transactions.view';
 import type { TranslationKey } from '../../core/i18n/translations';
 import { toMajorString } from '../../shared/money-text';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
@@ -541,6 +545,7 @@ export class TransactionDetailComponent implements OnInit {
   readonly i18n = inject(I18nService);
   private readonly graphql = inject(GraphqlClient);
   private readonly errors = inject(ErrorMessageService);
+  private readonly sync = inject(SyncService);
   private readonly fb = inject(FormBuilder);
 
   readonly transaction = input.required<TransactionRow>();
@@ -556,6 +561,13 @@ export class TransactionDetailComponent implements OnInit {
   readonly error = signal<string | null>(null);
   /** True when the API refused the write because somebody else changed the row first. */
   readonly conflicted = signal(false);
+  /**
+   * True when the edit was **queued** because the server could not be reached (task 4.2.7b, ADR-030).
+   *
+   * The sheet dismisses in that case, like a successful save, because the queue now owns the write —
+   * the tray is where it is visible, and pretending it failed would invite the user to type it again.
+   */
+  readonly queued = signal(false);
 
   readonly hasSplits = computed(() => this.transaction().splits.length > 0);
 
@@ -706,19 +718,20 @@ export class TransactionDetailComponent implements OnInit {
       // The rest of the fields. `categoryId` is deliberately absent when the correction already
       // applied it: `updateTransaction` treats an omitted field as "untouched", and re-sending the
       // same value would be a no-op edit that still writes a version.
+      const edit = {
+        id: current.id,
+        version,
+        description,
+        occurredLocalDate: occurredOn,
+        note: note.trim() === '' ? null : note,
+        status,
+        ...(amountMinor === null
+          ? {}
+          : { amount: { amountMinor: amountMinor.toString(), currency } }),
+        ...(categoryChanged ? {} : { categoryId: nextCategoryId }),
+      };
       if (otherFieldsChanged) {
-        await this.graphql.query(UPDATE_TRANSACTION, {
-          id: current.id,
-          version,
-          description,
-          occurredLocalDate: occurredOn,
-          note: note.trim() === '' ? null : note,
-          status,
-          ...(amountMinor === null
-            ? {}
-            : { amount: { amountMinor: amountMinor.toString(), currency } }),
-          ...(categoryChanged ? {} : { categoryId: nextCategoryId }),
-        });
+        await this.graphql.query(UPDATE_TRANSACTION, { input: edit });
       }
 
       if (this.proposal() === null) {
@@ -727,11 +740,51 @@ export class TransactionDetailComponent implements OnInit {
       }
       // Otherwise the sheet stays open with the prompt, and `acceptProposal` finishes the job.
     } catch (error) {
-      this.conflicted.set(error instanceof GraphQLRequestError && error.code === 'CONFLICT');
-      this.error.set(this.errors.for(error));
+      await this.handleSaveFailure(error, {
+        ...(amountMinor === null ? {} : { amount: { amountMinor: amountMinor.toString(), currency } }),
+        description,
+        occurredLocalDate: occurredOn,
+        status,
+        categoryId: nextCategoryId,
+      });
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /**
+   * Apply {@link planSaveFailure}: a conflict to show, a queued edit, or an error.
+   *
+   * The decision itself is pure and lives in `transactions.view.ts` with its own spec, because all
+   * three branches are silently wrong when they are wrong.
+   */
+  private async handleSaveFailure(error: unknown, next: Record<string, unknown>): Promise<void> {
+    const plan = planSaveFailure({
+      error,
+      next,
+      current: this.transaction(),
+      retryable: isRetryable(error),
+      isConflict: error instanceof GraphQLRequestError && error.code === 'CONFLICT',
+    });
+
+    if (plan.kind === 'CONFLICT') {
+      this.conflicted.set(true);
+      this.error.set(this.errors.for(error));
+      return;
+    }
+    if (plan.kind === 'ERROR') {
+      this.error.set(this.errors.for(error));
+      return;
+    }
+    if (plan.kind === 'REFUSE_CATEGORY') {
+      this.error.set(this.i18n.t('transactions.offlineCategory'));
+      return;
+    }
+
+    await this.sync.enqueueEdit(plan.edit as unknown as TransactionEditInput, plan.before);
+    this.queued.set(true);
+    this.saved.emit();
+    this.dismiss();
   }
 
   /** Keep whatever the correction offered, so the prompt can be answered after the save. */
