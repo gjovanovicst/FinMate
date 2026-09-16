@@ -893,9 +893,31 @@ user opens, not on first load.
 > and a link to `/notifications` (which owns its own screen). Arm with the device's screen lock (WebAuthn
 > PRF) or a 6-digit PIN, and arming is what turns offline persistence on (ADR-029). The re-auth screen
 > replaces the whole shell while locked — no nav and no outlet, because the data key is not in memory, so
-> every screen behind it would be empty. The rest of §4.18's sections are **not built and are not
-> advertised**: Profil, Domaćinstvo, Prikaz, Jezik, AI podešavanja and Podaci are Phase 3.1.4/5 work, and
-> `Računi`/`Članovi` already have screens or are deferred (F-29).
+> every screen behind it would be empty.
+>
+> **Build note (R-25a).** The **AI podešavanja** pane above is built, as a section on the same page rather
+> than a separate pane — there is one settings page and no section nav yet. It lists every purpose this
+> deployment would need permission for, with its current state, and one **Allow**/**Decline** pair while
+> the question is open or a **Povuci dozvolu** once permission is held. Four things the wireframe does not
+> show, each recorded rather than silent:
+>
+> - **The disclosure is the server's.** "It goes to {provider}, {region}" is rendered from `aiEgress`, not
+>   from client copy — a hardcoded provider name would be a claim, and ADR-031 exists because one such
+>   claim was believed. The region is derived from the endpoint registry's own predicates and **fails
+>   closed**: anything not shown to be `LOCAL` or `_EU` is reported as outside the EEA.
+> - **`EVAL_DATASET` is listed with a note saying nothing reads it yet.** The record is real and the API
+>   enforces it; docs/08 §8.7 (the eval-dataset pipeline) is unbuilt, so a row indistinguishable from the
+>   other two would be a switch that changes nothing.
+> - **A member without OWNER sees the state and is told whose decision it is** (docs/08 §3.7, Q-11): the
+>   record is the lawful-basis evidence, so granting and withdrawing are controller-level acts.
+> - **Withdrawal is the same section, one tap from the state** — §6.6's two taps from settings.
+>
+> **Still not built, and it is the other half of §6.6**: the **first-use sheet**. §6.6 asks for the
+> question at first use — the first fragment that fails rules resolution — and today the capture screen
+> says the categoriser is running without AI with no way to act on it. Until that ships, this section is
+> the only place a Household can be asked, which is why it is R-25's open half. The rest of §4.18's
+> sections are **not built and are not advertised**: Profil, Domaćinstvo, Prikaz, Jezik and Podaci are
+> 3.1.4/5 work, and `Računi`/`Članovi` already have screens or are deferred (F-29).
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────────┐

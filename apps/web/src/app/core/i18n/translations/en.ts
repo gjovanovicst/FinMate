@@ -298,6 +298,43 @@ export const en = {
   'lock.screen.unlock': 'Unlock',
   'lock.screen.working': 'Checking…',
   'lock.screen.signOut': 'Sign out instead',
+  // The consent surface (docs/08 §6.6, ADR-032). Every sentence here is the copy a person decides on, so
+  // it names the provider and the region, what is sent, what is never sent, and the §6.1 trade — with
+  // the provider/region coming from `aiEgress` rather than from this file.
+  'consent.title': 'AI',
+  'consent.intro':
+    'Some of the app can use an AI model. Nothing leaves this server unless you allow it here, and everything keeps working if you do not.',
+  'consent.egress': 'It goes to {provider}, {region}.',
+  'consent.region.LOCAL': 'processed on this server, with no network egress',
+  'consent.region.EEA': 'a data centre in the European Economic Area',
+  'consent.region.NON_EEA': 'a data centre outside the European Economic Area',
+  'consent.egress.nonEea':
+    'That is a transfer outside the EEA, which is why it needs your explicit permission — and why you can withdraw it at any time.',
+  'consent.egress.none':
+    'This deployment has no AI model configured, so nothing is sent anywhere. There is nothing to allow yet.',
+  'consent.neverSent':
+    'Never sent: balances, account names or numbers, the rest of your transactions, your email or any id, and anything belonging to another household. Amounts, dates, notes and card-like digit runs are removed before the text goes.',
+  'consent.trade':
+    'If you decline, the rules and keywords still categorise most entries, and every manual feature keeps working. You lose only the AI suggestions, and you can change your mind whenever you like.',
+  'consent.allow': 'Allow',
+  'consent.decline': 'Decline',
+  'consent.withdraw': 'Withdraw permission',
+  'consent.recorded': 'Recorded {time}.',
+  'consent.ownerOnly': 'Only the owner of this household can change these.',
+  'consent.kind.AI_DATA_PROCESSING.name': 'Sending text to an AI model',
+  'consent.kind.AI_DATA_PROCESSING.what':
+    'The words you type — such as a shop name and an amount — so a model can suggest a category when the rules cannot. Your household’s own category names and merchant names go with it.',
+  'consent.kind.CLOUD_OCR.name': 'Sending a receipt photo to an AI model',
+  'consent.kind.CLOUD_OCR.what':
+    'The photo you take of a receipt, so its printed lines can be read for you instead of typed in.',
+  'consent.kind.EVAL_DATASET.name': 'Helping improve accuracy',
+  'consent.kind.EVAL_DATASET.what':
+    'Your corrections, without amounts, kept so categorisation can be measured and improved.',
+  'consent.evalNotLive': 'Recorded for when this ships — nothing reads it yet.',
+  'consent.state.NOT_ASKED': 'Not asked',
+  'consent.state.GRANTED': 'Allowed',
+  'consent.state.DECLINED': 'Declined',
+  'consent.state.WITHDRAWN': 'Withdrawn',
   'settings.title': 'Settings',
   'settings.security.title': 'App lock',
   'settings.security.why': 'With the app lock on, captures you make without a connection survive closing the app. It also keeps what is stored encrypted with your device’s lock or a PIN.',

@@ -47,6 +47,39 @@ enum AccountKind {
   OTHER
 }
 
+type AiEgressModel {
+  """
+  The configured endpoint, e.g. `LOCAL`, `DEEPSEEK_EU` or `DEEPSEEK_GLOBAL`.
+  """
+  endpoint: String!
+
+  """The provider that would answer, e.g. `DEEPSEEK` or `LOCAL`."""
+  provider: String!
+
+  """The consent purpose that governs this route (docs/08 §6.6)."""
+  purpose: ConsentKind!
+
+  """Derived from the registry, never from the name."""
+  region: AiEgressRegion!
+
+  """
+  True when this route needs recorded consent. The client shows a sheet only for these rows: asking permission for a LOCAL route would ask about nothing.
+  """
+  requiresConsent: Boolean!
+
+  """PARSE, CLASSIFY, NARRATE or OCR — which task this row is about."""
+  task: String!
+}
+
+"""
+Where the traffic goes, derived from the endpoint registry rather than from its name: LOCAL is this node, EEA is an `_EU` endpoint with its configured host, and NON_EEA is the consent-gated exception (docs/04 §9, ADR-031).
+"""
+enum AiEgressRegion {
+  EEA
+  LOCAL
+  NON_EEA
+}
+
 type AlertDispatchModel {
   """Queued rows this pass looked at."""
   considered: Int!
@@ -2034,6 +2067,11 @@ type Query {
   The Household decision for every purpose this build enforces, including the ones never asked. Never a bare boolean: a screen has to be able to say "not asked yet".
   """
   aiConsents: [ConsentModel!]!
+
+  """
+  The routes this deployment would use for the consent-governed tasks, with the region derived from the endpoint registry. Empty when no endpoint is configured, which is the honest answer: nothing leaves this server and there is nothing to consent to.
+  """
+  aiEgress: [AiEgressModel!]!
 
   """
   The Household alert rules, including the documented defaults once anything has run.

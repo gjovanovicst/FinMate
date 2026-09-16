@@ -298,6 +298,40 @@ export const srLatn: Record<keyof typeof en, string> = {
   'lock.screen.unlock': 'Otključaj',
   'lock.screen.working': 'Proveravam…',
   'lock.screen.signOut': 'Radije se odjavi',
+  'consent.title': 'AI',
+  'consent.intro':
+    'Deo aplikacije može da koristi AI model. Ništa ne napušta ovaj server bez tvoje dozvole, a sve radi i bez nje.',
+  'consent.egress': 'Odlazi ka {provider}, {region}.',
+  'consent.region.LOCAL': 'obrađuje se na ovom serveru, bez izlaska na mrežu',
+  'consent.region.EEA': 'data centar u Evropskom ekonomskom prostoru',
+  'consent.region.NON_EEA': 'data centar van Evropskog ekonomskog prostora',
+  'consent.egress.nonEea':
+    'To je prenos van EEP-a, zato je potrebna tvoja izričita dozvola — i zato je možeš povući u svakom trenutku.',
+  'consent.egress.none':
+    'Ovo postavljanje nema konfigurisan AI model, pa se ništa ne šalje. Nema šta da se dozvoli.',
+  'consent.neverSent':
+    'Nikada se ne šalju: stanja, nazivi ili brojevi računa, ostatak tvojih transakcija, e-adresa ili bilo koji identifikator, i ništa što pripada drugom domaćinstvu. Iznosi, datumi, napomene i nizovi cifara nalik kartici uklanjaju se pre slanja.',
+  'consent.trade':
+    'Ako odbiješ, pravila i ključne reči i dalje kategorizuju većinu unosa, a svaka ručna funkcija radi. Gubiš samo AI predloge, i možeš da se predomisliš kad god želiš.',
+  'consent.allow': 'Dozvoli',
+  'consent.decline': 'Odbij',
+  'consent.withdraw': 'Povuci dozvolu',
+  'consent.recorded': 'Zabeleženo {time}.',
+  'consent.ownerOnly': 'Samo vlasnik ovog domaćinstva može ovo da menja.',
+  'consent.kind.AI_DATA_PROCESSING.name': 'Slanje teksta AI modelu',
+  'consent.kind.AI_DATA_PROCESSING.what':
+    'Reči koje otkucaš — na primer naziv prodavnice i iznos — da bi model predložio kategoriju kada pravila ne mogu. Uz to idu i nazivi kategorija i prodavaca iz tvog domaćinstva.',
+  'consent.kind.CLOUD_OCR.name': 'Slanje fotografije računa AI modelu',
+  'consent.kind.CLOUD_OCR.what':
+    'Fotografija računa koju uslikaš, da bi se štampane stavke pročitale umesto da ih kucaš.',
+  'consent.kind.EVAL_DATASET.name': 'Pomoć u poboljšanju tačnosti',
+  'consent.kind.EVAL_DATASET.what':
+    'Tvoje ispravke, bez iznosa, čuvaju se da bi kategorizacija mogla da se meri i poboljšava.',
+  'consent.evalNotLive': 'Beleži se za kada ovo bude gotovo — još ništa ne čita ovaj podatak.',
+  'consent.state.NOT_ASKED': 'Nije pitano',
+  'consent.state.GRANTED': 'Dozvoljeno',
+  'consent.state.DECLINED': 'Odbijeno',
+  'consent.state.WITHDRAWN': 'Povučeno',
   'settings.title': 'Podešavanja',
   'settings.security.title': 'Brava',
   'settings.security.why': 'Sa uključenom bravom, unosi koje napraviš bez veze prežive zatvaranje aplikacije. I ono što je sačuvano ostaje šifrovano bravom uređaja ili PIN-om.',

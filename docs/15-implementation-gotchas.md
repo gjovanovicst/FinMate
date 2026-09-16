@@ -987,6 +987,36 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
 
 ---
 
+- **`vi.fn()` with no declared parameters makes `mock.calls[0][0]` a compile error — and only `web:build`
+  reports it.** A bare `vi.fn(() => Promise.resolve(x))` infers a **zero-argument** signature, so
+  `mock.calls` is typed `[][]` and `calls[0]?.[0]` is `TS2493: Tuple type '[]' of length '0' has no element
+  at index '0'`. `npx tsc --noEmit -p apps/web/tsconfig.json` passed on the same file;
+  `npx nx run web:build` failed, because the Angular build type-checks **specs** as well as templates (the
+  counterpart of the `web:typecheck` does-not-check-templates trap). Type the double's signature when it is
+  read back — `vi.fn<(document: string, variables?: Record<string, unknown>) => Promise<unknown>>(…)` — and
+  a cast of `mock.calls[i]` needs `as unknown as […]`, the same shape the capture specs already use.
+
+- **A disclosure must come from the server, because a hardcoded provider name is a claim.** The consent
+  sheet has to name the provider and the region (docs/08 §6.6), and the tempting implementation is a string
+  in the client's catalogue: `"DeepSeek (China)"`. That is precisely the class of assertion ADR-031 exists
+  to remove — `DEEPSEEK_EU` was a suffix on a Chinese host and the suffix satisfied the residency check — so
+  the answer comes from `aiEgress`, which projects the *routing table the router enforces* and derives the
+  region from the registry's own predicates. The client supplies only the sentence and the translations.
+  One consequence worth knowing when reading that mapping: it fails **closed**, so an endpoint that is
+  neither `LOCAL` nor `_EU` is reported NON_EEA rather than defaulting to something reassuring.
+
+- **Modelling "no value" as an empty catalogue string is a defect, not a shorthand.** A per-purpose note
+  key with `''` for the two purposes that need none fails the i18n spec, which asserts every catalogue value
+  in every locale is non-empty (`consent.kind.*.note` did exactly that). The fix is one key for the case
+  that needs a sentence plus one condition, rather than three keys of which two are empty — and it keeps
+  the missing-key cast out of the template.
+
+- **In a mounted spec, scope a query to the card you are testing.** The settings screen renders every
+  consent purpose, so `querySelectorAll('button')` finds the *other* purposes' buttons: an assertion like
+  "Decline is not offered once permission is held" fails for a reason that has nothing to do with the
+  purpose under test — the screen was right and the test was wrong. Find the `article` by the name it
+  renders, then query inside it.
+
 ## 10. Cross-cutting rules of the codebase
 
 Short, and load-bearing.

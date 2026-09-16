@@ -159,7 +159,11 @@ describe('consent (integration)', () => {
     expect(evidence['decision']).toBe('GRANTED');
     expect(evidence['requestId']).toBe('consent-it');
     expect(evidence['householdId']).toBe(householdId);
-    expect(row?.policy_version).toBeTruthy();
+    // Pinned, not merely present: the client sends the revision of the copy *it* rendered
+    // (`AI_CONSENT_POLICY_VERSION`, pinned in its own spec), and docs/08 §6.6 makes a material copy change
+    // force re-consent — which only holds if the stored number is the number of the text a person read.
+    // Two literals in two packages is deliberate and temporary; a drift must fail a test, not a record.
+    expect(row?.policy_version).toBe('2026-09-ai-egress-1');
     // The resolver hashes the fingerprint; the service never sees a raw IP. Nothing here may look
     // like one.
     expect(JSON.stringify(evidence)).not.toMatch(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/);

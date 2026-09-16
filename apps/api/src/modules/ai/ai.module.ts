@@ -8,7 +8,9 @@ import { NARRATOR, type AssistantNarrator } from '../assistant/assistant-narrato
 import { OCR, type OcrService } from '../receipts/ocr';
 import { ConsentModule } from '../consent/consent.module';
 import { ConsentsService } from '../consent/consents.service';
+import { AiEgressResolver } from './ai-egress.resolver';
 import { makeAiSeams, type AiSeams } from './ai-providers';
+import { AI_SEAMS } from './ai-tokens';
 
 /**
  * The AI composition root — ADR-031 decision 6.
@@ -38,12 +40,12 @@ import { makeAiSeams, type AiSeams } from './ai-providers';
  * @module apps/api/src/modules/ai
  */
 
-/** The assembled seams, before they are projected onto the per-task tokens. */
-export const AI_SEAMS = Symbol('AI_SEAMS');
-
 @Module({
   imports: [PrismaModule, ConsentModule],
   providers: [
+    // The egress query reads the same assembly the router does, so the consent sheet can name the
+    // provider and region it would actually use rather than a claim in client copy.
+    AiEgressResolver,
     {
       provide: AI_SEAMS,
       inject: [CONFIG, ConsentsService],
