@@ -1084,6 +1084,14 @@ and editing one fragment does not re-request the others.
 The service worker itself is exercised end-to-end in Playwright with the network throttled to offline —
 a mocked `navigator.serviceWorker` cannot prove the real cache strategy works.
 
+> **Status (4.3.6).** The pass **has now been run**, as an ad-hoc harness (serve the production build —
+> the worker is production-only — then drive a real browser with the network cut). It answered the phase's
+> exit criterion and then some: the shell boots offline from the cache, an offline capture queues, and the
+> queue drains on reconnect, but **the drained batch wrote nothing** while the tray reported *0 waiting to
+> send, 0 refused*, and **an offline reload unlocks into `/sign-in`** with the queued work unreachable.
+> Both are **R-27** / task 4.3.6. A reusable version belongs in CI precisely because it found this on its
+> first run — which is the argument for deciding the dependency below.
+>
 > **Status (5.2a).** That Playwright pass still does not exist **as a committed suite**, and the reason is
 > a dependency decision nobody has taken: `playwright` is not in any `package.json`, so adding it — and
 > the browser download CI would need — is [rule 9](14-decisions-and-risks.md)'s kind of change, not

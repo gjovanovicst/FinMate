@@ -985,6 +985,17 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   a pass; and a token swap has **two** halves, so a light theme has to be measured separately — a fix that
   darkens text for the dark theme can as easily fail on white.
 
+- **Offline, `ngsw` answers an uncached request with a synthetic `504`, not a network rejection.** Angular's
+  service worker does not fail a `fetch` for a URL it has no strategy for — it *responds* `504 Gateway
+  Timeout*. So a client that classifies "we are offline" by catching a thrown `TypeError`/`net::ERR_*` will
+  mis-read it, and one that classifies by status has to treat `504` as retryable. Measured in 4.3.6 while
+  verifying F-26 offline: `/graphql` is deliberately outside the worker's `navigationUrls` and has no
+  `dataGroups`, so every offline GraphQL call came back **504**, and that is the difference between a
+  capture being queued (which worked) and a queued capture being **dropped on flush** (which did not).
+  A second consequence worth knowing before writing an offline test: `context.setOffline(true)` in
+  Playwright *plus* a service worker means the page still gets HTTP responses — the app is not "offline"
+  in the sense of "no responses", which is exactly why the shell can boot at all.
+
 - **No hardcoded user-facing copy.** Every string goes through `I18nService.t('key')`. English is
   primary and is the source of the key set: add the string to `translations/en.ts` first, then to
   `sr-latn.ts` (typed, so a miss is a compile error). `sr-Cyrl` is generated — never edit it. A

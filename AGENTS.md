@@ -41,7 +41,10 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   WebAuthn-PRF and PIN secrets, the wrapped-key lifecycle, the state that turns persistence on, the
   cross-tab flush mutex ADR-026 deferred here, and the wipe — **ADR-029** (4.2.6a); and the control that
   arms it — `/settings`' one section, the re-auth screen the shell renders while locked, and the idle
-  gate — which is what finally makes F-26's offline capture survive a reload, closing R-23 (4.2.6b);
+  gate — which is what turns offline persistence on for F-26 (4.2.6b). ⚠️ **R-23 was closed on a claim that
+  4.3.6 has now measured false**: the queue does survive a reload *on disk*, but an **offline** reload
+  cannot restore the session, so the re-auth screen unlocks straight into `/sign-in` and the queued work
+  is unreachable — see **R-27**, scheduled as 4.3.6;
   and queued **edits**, version-checked and dispatched by entry kind, with a conflict diff that shows
   the two versions instead of inventing a reason — **ADR-030** (4.2.7a), plus the sheet that queues an
   offline edit and the tray panel that explains a refusal (4.2.7b); and the **ledger-rows** record — the
@@ -112,7 +115,15 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   24 px floor** (11 real buttons at 21 px, including the consent sheet's *Allow*/*Decline*) and 37 more
   miss this repo's own 44 px compact rule — open as **4.3.1e**, because the fix is one shared control
   metric and it changes every screen's rhythm.
-- **Next**: **the human visual pass** — now a review rather than a click-through, because 4.3.1d produced
+- **4.3.6 ran the offline pass F-26's exit criterion rests on, and it does not hold yet.** The harness serves
+  the **production build** (the worker is production-only) and drives a real browser with the network cut.
+  What works: the shell boots offline from the cache, an offline capture queues, and the queue drains on
+  reconnect. What does not, measured: the drained batch wrote **zero transactions and zero decisions**
+  while the tray reported *0 waiting to send, 0 refused* — so the entry was dropped as sent, not refused,
+  and the worker answers `/graphql` with a synthetic **504** offline, which makes `outbox.flush`'s
+  classifier the suspect; and an **offline reload** renders the lock screen, unlocks, and lands on
+  `/sign-in` with no way in, so the queued work is on disk and unreachable. Recorded as **R-27** (4.3.6).
+- **Next**: **R-27's two findings** (4.3.6 — the first half is diagnosis, not a fix), then **the human visual pass** — now a review rather than a click-through, because 4.3.1d produced
   a contact sheet of all 20 screens at three widths plus the light theme, with the mechanical defects
   already found and fixed. **4.3.1e** (control sizes) and **4.3.1c** (the pinned capture bar) are the two
   decisions that pass feeds. Then 4.3.3 (mobile keyboard) / 4.3.4 (bundle + Lighthouse).
@@ -212,7 +223,7 @@ Read the document that owns your task before starting:
 | If you are… | Read first |
 |---|---|
 | starting any task | `docs/05-architecture.md` §2 — monorepo layout + the dependency rule |
-| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 141 entries, each saying what the failure looks like |
+| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 142 entries, each saying what the failure looks like |
 | touching money, Transactions, balances | `docs/03-domain-model.md` — **canonical glossary, DDL, invariants** |
 | adding or changing a feature | `docs/01-product-requirements.md` — the `F-xx` catalogue |
 | touching categorization, rules, prompts, AI | `docs/04-categorization-and-ai-engine.md` |
@@ -307,7 +318,7 @@ A change is not done until (doc 09 §8):
 
 ## Gotchas
 
-**The full list — 141 entries in 10 groups, each written to say what it looks like when it goes wrong —
+**The full list — 142 entries in 10 groups, each written to say what it looks like when it goes wrong —
 is [`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md). Read it before debugging
 anything that "should work".** It was split out because this file had grown past the instruction budget
 and was being truncated on load. The ones below stay here because they are the ones that bite hardest,
