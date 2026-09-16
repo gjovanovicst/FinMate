@@ -78,7 +78,8 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   `/api/auth/refresh`, and a browser matches cookie paths against the visible URL) — in-app navigation
   hides it completely, which is why no test caught it. Scheduled as **4.3.5**; it needs a topology
   decision, not a patch. The same pass measured the shell overflowing at 320 px by 48 px (the bottom nav
-  is 368 px wide), which is 4.3.1's work.
+  is 368 px wide) — **fixed in 4.3.1a**, which traced it to one missing declaration and audited all 18
+  authenticated routes at three widths at zero overflow.
 - **Next**: the **human visual pass** at 320/768/1280 px that no screen has
   had (Phase 1's own gate, and 4.3 is where it belongs), 4.3 (mobile polish, incl. **4.3.5**), then
   Phase 5 (hardening and beta).
@@ -102,7 +103,7 @@ narrative above does not repeat them.
 | Counterparties/tags (1.2.2–1.2.3) | **Done** — `counterparties`/`counterparty` + create/update/setCounterpartyAliases/mergeCounterparties/deleteCounterparty (merge-as-deletion, no copy-on-write: the table is plain household-scoped); `tags`/`tag` + createTag/updateTag/deleteTag (delete **cascades its assignments**, deliberately unlike a Merchant); `tagIds` on `createTransaction`/`updateTransaction` and `tags` on `TransactionModel`; `/counterparties` and `/tags` screens |
 | **Phase 1 UI** | **Done** — transaction entry, filtered/paginated list, edit sheet, budgets, dashboard tiles; Accounts from Phase 0 |
 | Category tree editor + keyword editor (1.2.4, F-02/F-03) | **Done** — rename, reparent, reorder, delete-with-reassign, include/exclude keywords. **Drag-and-drop not implemented**; the Parent select and Alt+arrows cover reparenting |
-| Responsive pass (1.3.5) | **Partially done** — no fixed pixel widths and every multi-column grid is behind a `min-width` query; five known 320 px hazards fixed (nav overflow, hero amount, split-editor row, budget card, keyword chips). 2.3.2b removed a sixth by moving Budgets/Accounts behind More (four primary links plus More, docs/02 §2.2), and `/review` is written to the same rules (wrapping flex, `min-inline-size: 0`, `max-inline-size: 100%` on the category select) — but **`/review` has not been looked at by a human at any width**, and the rest still needs the same pass. **Still needs a human at 320/768/1280 px** |
+| Responsive pass (1.3.5) | **Measured clean, not yet looked at.** 4.3.1a audited **all 18 authenticated routes at 320/768/1280 px: zero horizontal overflow** (50/50 pairs). It had been **48 px on every one of them at 320 px**, from a single missing declaration — the shell's grid had no `grid-template-columns`, so its implicit `auto` track took the bottom nav's 368 px min-content (`min-inline-size: 0` removes a flex item's automatic minimum, not its min-content *contribution*); `minmax(0, 1fr)` plus `flex-wrap` on the header's action row fixed it, and the header gained the top safe-area inset while two `100vh` became `dvh` (docs/02 §9, docs/07 §4.3). **What remains is the judgement a measurement cannot make**: whether a screen *looks* right. **Still needs a human at 320/768/1280 px** |
 
 | What | State |
 |---|---|
@@ -176,7 +177,7 @@ Read the document that owns your task before starting:
 | If you are… | Read first |
 |---|---|
 | starting any task | `docs/05-architecture.md` §2 — monorepo layout + the dependency rule |
-| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 136 entries, each saying what the failure looks like |
+| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 138 entries, each saying what the failure looks like |
 | touching money, Transactions, balances | `docs/03-domain-model.md` — **canonical glossary, DDL, invariants** |
 | adding or changing a feature | `docs/01-product-requirements.md` — the `F-xx` catalogue |
 | touching categorization, rules, prompts, AI | `docs/04-categorization-and-ai-engine.md` |
@@ -271,7 +272,7 @@ A change is not done until (doc 09 §8):
 
 ## Gotchas
 
-**The full list — 136 entries in 10 groups, each written to say what it looks like when it goes wrong —
+**The full list — 138 entries in 10 groups, each written to say what it looks like when it goes wrong —
 is [`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md). Read it before debugging
 anything that "should work".** It was split out because this file had grown past the instruction budget
 and was being truncated on load. The ones below stay here because they are the ones that bite hardest,

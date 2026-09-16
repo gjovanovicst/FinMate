@@ -74,7 +74,9 @@ import { SyncService } from '../../../core/offline/sync.service';
   styles: `
     .lock {
       max-inline-size: 24rem;
-      margin: 12vh auto 0;
+      /* dvh, never vh (docs/07 section 4.3): the lock screen is what an installed app opens on, and vh
+         measures the URL-bar-expanded height, so the PIN field and its button sat too low on Safari. */
+      margin: 12dvh auto 0;
       padding: 1.25rem;
       display: flex;
       flex-direction: column;

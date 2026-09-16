@@ -213,6 +213,12 @@ import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
 
       .shell {
         display: grid;
+        /* minmax(0, 1fr), not an implicit auto track. An auto track is sized to its items' MIN-CONTENT,
+           and min-inline-size: 0 on the nav's flex items does not change that: a flex item's min-content
+           contribution is still its content, so five items measured 368 px and pushed the whole page into
+           a 48 px horizontal scroll at 320 px (measured on all 18 authenticated routes, task 4.3.1). This
+           is the one declaration that stops it — do not remove it. */
+        grid-template-columns: minmax(0, 1fr);
         grid-template-rows: 1fr;
         min-block-size: 100dvh;
       }
@@ -349,6 +355,10 @@ import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
         justify-content: space-between;
         gap: var(--space-2) var(--space-3);
         padding: var(--space-2) var(--space-4);
+        /* docs/07 §4.3: an installed app draws under the status bar, so the topmost element owes the
+           inset. The viewport meta already sets viewport-fit=cover; in a normal browser tab the inset
+           is 0 and this changes nothing. */
+        padding-block-start: calc(var(--space-2) + env(safe-area-inset-top));
         background: var(--color-surface);
         border-block-end: 1px solid var(--color-border);
         font-size: var(--text-xs);
@@ -362,6 +372,12 @@ import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
       .topbar__actions {
         display: flex;
         align-items: center;
+        /* Wrapping again, for the same reason as the bar above: five controls are 336 px of min-content
+           (measured), so at 320 px the row pushed the page into a 32 px horizontal scroll once the shell's
+           grid track stopped absorbing it (4.3.1). flex-end keeps the wrapped line aligned with the first
+           rather than drifting left under the role label. */
+        flex-wrap: wrap;
+        justify-content: flex-end;
         gap: var(--space-2);
         margin-inline-start: auto;
         min-inline-size: 0;

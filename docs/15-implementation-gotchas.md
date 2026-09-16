@@ -131,6 +131,19 @@ Everything here has cost time at least once, and most of it fails in a way that 
   with a **hard reload** in a browser,
   never only through the SPA's own router or a REST call to `/auth/*`.
 
+- **The web dev server does not watch files either — `ng serve` served 15-hour-old CSS, silently.** The
+  API's version of this is in `AGENTS.md` ("the dev API does not watch files — restart before live
+  verification"); on this machine `ng serve` in `apps/web` behaves the same way, so an edit to a
+  component's `styles` can be invisible in a browser that is loading fresh. It cost real time in 4.3.1:
+  a `minmax(0, 1fr)` fix measured *zero* effect, because the page was being served the old stylesheet, and
+  the fix looked wrong rather than unloaded. Three ways to tell, cheapest first. (1) `curl` the served
+  bundle and grep for the new value: `curl -s http://127.0.0.1:4200/main.js | grep -c 'minmax(0, 1fr)'`
+  — 0 means the server, not your change, is the problem. (2) Compare `stat -c %y` of the log against the
+  file's mtime. (3) Ask the browser: `getComputedStyle(...)` for the value you just set. **Restart
+  `ng serve` after every source edit before verifying live**, exactly as with the API — and do not kill it
+  with `pkill -f "ng serve ..."`, because the pattern matches your own shell's command line and kills the
+  command that is doing the killing (use `pkill -f "ng ser[v]e"`).
+
 ## 2. Prisma and the database
 
 Prisma 7 plus a tenancy extension plus hand-written SQL means the driver is not the only thing deciding what a query does.

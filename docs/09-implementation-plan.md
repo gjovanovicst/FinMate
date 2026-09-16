@@ -232,7 +232,8 @@ configured). The first run of the harness found and fixed two real defects — s
 
 | # | Task | pd | F-ID |
 |---|---|---|---|
-| 4.3.1 | Bottom-sheet patterns, thumb-reachable primary actions, safe-area insets | 2 | F-26 |
+| 4.3.1a | **Layout correctness** — the 320 px shell overflow (one missing `grid-template-columns`, docs/02 §9), the header's top inset, `vh`→`dvh` in the two places docs/07 §4.3 names, and a **measured** overflow audit of all 18 authenticated routes at 320/768/1280 px. **DONE**: 50/50 route-width pairs at zero overflow | 0.5 | F-26 |
+| 4.3.1b | **Bottom-sheet patterns and thumb reach** — the sheet primitive (focus trap and restore, `Esc`, `inert` background, 90 `dvh`, swipe-down as a discard confirm when dirty), migrating the surfaces that hand-roll a dialog, and a **pinned** capture commit bar so the primary action sits in the lower third on compact (docs/07 §4.1/§4.2) | 1.5 | F-26, F-05 |
 | 4.3.2 | Install prompt / Add-to-Home-Screen flow | 1 | F-26 |
 | 4.3.3 | Mobile keyboard handling on the money field (numeric keypad, no layout jump) | 1.5 | F-05 |
 | 4.3.4 | Performance: bundle budget, lazy routes, image sizing; Lighthouse ≥ 90 | 2.5 | F-26 |

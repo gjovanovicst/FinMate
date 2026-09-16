@@ -230,6 +230,18 @@ on mobile Safari is the URL-bar-expanded height and clips a sheet or hides a con
 pads away from the top inset (the notch is on the *side*). Set `theme-color` for both themes so the status
 bar does not flash white on launch.
 
+> **Build state (4.3.1a).** Implemented: `viewport-fit=cover` (`index.html`); `env(safe-area-inset-top)` on
+> the header, which is the topmost element on every authenticated screen and on the lock screen;
+> `env(safe-area-inset-bottom)` on the bottom nav, the element that actually meets the home indicator
+> (the content region keeps its own inset because the nav is absent on `/onboarding` and while locked);
+> and `dvh` everywhere — `100vh` in the Transaction sheet's `max-height` was clipping its own footer on
+> Safari, and the lock screen's vertical offset was the other one. The sheet now uses
+> `min(90dvh, calc(100dvh - 2rem))`, so it is never taller than the doc's 90dvh and still keeps its
+> margin when there is room. **Measured**: zero horizontal overflow on all 18 authenticated routes at
+> 320/768/1280 px; the shell previously overflowed 48 px at 320 px (docs/02 §9). **Not yet done** in this
+> task: drag-to-dismiss, the `inert` background and the dirty-swipe guard on sheets — that is 4.3.1b,
+> with the pinned capture bar that makes the primary action thumb-reachable on compact.
+
 ### 4.4 iOS keyboard quirks and the money input
 
 The money field ([F-05](01-product-requirements.md)), rendered only by `ui-money`

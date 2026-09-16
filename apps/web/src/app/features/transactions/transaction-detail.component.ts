@@ -367,7 +367,10 @@ const DELETE_TRANSACTION = /* GraphQL */ `
     `
       .sheet {
         width: min(560px, calc(100vw - 2rem));
-        max-height: calc(100vh - 2rem);
+        /* dvh, never vh (docs/07 section 4.3): on mobile Safari 100vh is the URL-bar-EXPANDED height, so
+           a tall sheet had its own footer — save and delete — clipped off the bottom. min() with the
+           doc's 90dvh cap keeps the button on screen and still leaves the 2rem margin when there is room. */
+        max-height: min(90dvh, calc(100dvh - 2rem));
         padding: 0;
         color: var(--color-text);
         background: var(--color-surface);
