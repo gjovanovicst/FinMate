@@ -19,7 +19,7 @@ import { I18nService } from '../../core/i18n/i18n.service';
 import { nextAttemptDelay, type OutboxEntry } from '../../core/offline/outbox';
 import { SyncService } from '../../core/offline/sync.service';
 import type { SyncDiff } from '../../core/offline/sync.types';
-import { categoryLabel, rawInputs, whyKey } from '../../core/offline/sync.view';
+import { categoryLabel, rawInputs, syncedAtLabel, whyKey } from '../../core/offline/sync.view';
 
 @Component({
   selector: 'fm-pending',
@@ -413,12 +413,7 @@ export class PendingComponent {
 
   /** `dateStyle`/`timeStyle` follow the active language; the instant itself is the device's local one. */
   localTime(enqueuedAt: string): string {
-    const at = new Date(enqueuedAt);
-    if (Number.isNaN(at.getTime())) return enqueuedAt;
-    return new Intl.DateTimeFormat(this.i18n.tag(), {
-      dateStyle: 'short',
-      timeStyle: 'short',
-    }).format(at);
+    return syncedAtLabel(enqueuedAt, this.i18n.tag());
   }
 
   beforeLabel(diff: SyncDiff): string {

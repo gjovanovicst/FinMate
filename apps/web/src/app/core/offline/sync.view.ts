@@ -1,13 +1,14 @@
 /**
- * What the pending tray renders, as pure functions.
+ * What the offline features render, as pure functions.
  *
  * The queue stores a whole `captureCommit` call plus a client-only preview; a tray row has to get back
  * to "what did I type" and a diff row to "what did the server decide instead". Both are derivations
  * over stored data with a silent failure mode — a row that renders blank because a field moved, or a
  * diff that names the wrong category — so they live here, without a DOM, and are asserted directly
- * (docs/10 §8.3's retry-tray and conflict-diff rows).
+ * (docs/10 §8.3's retry-tray and conflict-diff rows). {@link syncedAtLabel} is the same idea for the
+ * snapshot's `podaci od` label (ADR-027 decision 4).
  *
- * See ADR-026 decisions 2 and 5, docs/02 §4.3 and docs/07 §6.
+ * See ADR-026 decisions 2 and 5, ADR-027, docs/02 §4.3 and docs/07 §6.
  *
  * @module apps/web/src/app/core/offline
  */
@@ -113,6 +114,19 @@ export function whyKey(why: string): TranslationKey | null {
 export function categoryLabel(id: string | null, name: string | null): string | null {
   if (id === null && name === null) return null;
   return name ?? id;
+}
+
+/**
+ * A snapshot's `syncedAt` as the `podaci od <time>` label's time (ADR-027 decision 2).
+ *
+ * Deliberately the tray's own pair of styles rather than a new format — `pending.component.ts` renders
+ * its enqueue times the same way — so one moment cannot read two different ways across the app. An
+ * unparseable value is shown verbatim: a wrong label is worse than a raw timestamp someone can read.
+ */
+export function syncedAtLabel(syncedAt: string, localeTag: string): string {
+  const at = new Date(syncedAt);
+  if (Number.isNaN(at.getTime())) return syncedAt;
+  return new Intl.DateTimeFormat(localeTag, { dateStyle: 'short', timeStyle: 'short' }).format(at);
 }
 
 /**

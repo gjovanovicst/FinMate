@@ -1254,6 +1254,11 @@ snapshot** — which made this task the one that has to decide what a snapshot *
 - ⚠️ The snapshot is written on **read**, so a user who only ever captures (never opens the dashboard)
   gets no offline figures at all. The alternative — a background prefetch — is a timer, which this repo
   does not trust in a PWA (ADR-025 decision 6).
+- ⚠️ **`purge()` and the stale signal are not yet joined.** The store's `purge()` empties the snapshot,
+  but nothing resets `SnapshotService.staleAt` — no caller purges in this build (logout, a `401` and
+  Household deletion are not wired to it yet). Whoever wires them must clear the signal too, or the chip
+  can read `podaci od <time>` for a moment after a purge. Recorded here because the reset belongs to the
+  purge path, and there is no purge path to put it in yet.
 
 **Alternatives rejected.**
 - **(a) Cache the ledger rows and recompute the dashboard offline.** Forbidden by 07 §6's matrix and by

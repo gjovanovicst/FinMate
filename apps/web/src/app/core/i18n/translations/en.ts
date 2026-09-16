@@ -759,6 +759,9 @@ export const en = {
   // The header chip's count. It renders only while something is queued.
   'sync.chip': 'Waiting to send ({count})',
   'sync.chipLabel': 'Waiting to send, {count} entries',
+  // ADR-027 decisions 2 and 4: the one provenance label a snapshot-served figure carries. Mandatory
+  // for any cached figure (docs/02 section 4.2, and section 10's money.asOf row).
+  'money.asOf': 'as of {time}',
   'pending.title': 'Waiting to send',
   'pending.subtitle': 'Captures that have not reached the server yet. Nothing here is lost.',
   'pending.loading': 'Reading the queue…',

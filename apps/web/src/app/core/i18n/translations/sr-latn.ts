@@ -755,6 +755,8 @@ export const srLatn: Record<keyof typeof en, string> = {
   // ---- čeka slanje (F-26; ADR-026) ----
   'sync.chip': 'Čeka slanje ({count})',
   'sync.chipLabel': 'Čeka slanje, {count} stavke',
+  // ADR-027: the wording docs/02 section 4.2 already uses for a figure that came from the snapshot.
+  'money.asOf': 'podaci od {time}',
   'pending.title': 'Čeka slanje',
   'pending.subtitle': 'Unosi koji još nisu stigli na server. Ništa se odavde ne gubi.',
   'pending.loading': 'Čitam red čekanja…',

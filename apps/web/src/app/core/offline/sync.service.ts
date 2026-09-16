@@ -25,8 +25,7 @@ import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 
 import { GraphqlClient } from '../graphql/graphql.client';
-import { OFFLINE_KEY_PROVIDER } from './offline-key-provider';
-import { createOfflineStore } from './offline-store';
+import { OfflineStoreHolder } from './offline-store-holder';
 import {
   Outbox,
   type FlushResult,
@@ -163,7 +162,7 @@ export class SyncRefusedError extends Error {
 @Injectable({ providedIn: 'root' })
 export class SyncService {
   private readonly graphql = inject(GraphqlClient);
-  private readonly keyProvider = inject(OFFLINE_KEY_PROVIDER);
+  private readonly stores = inject(OfflineStoreHolder);
   private readonly documentRef = inject(DOCUMENT);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -369,7 +368,9 @@ export class SyncService {
   }
 
   private outbox(): Outbox {
-    this.outboxRef ??= new Outbox(createOfflineStore(this.keyProvider));
+    // The repository is the app's one store (OfflineStoreHolder), so the queue and the snapshot
+    // share their purge and their expiry sweep (ADR-027 decision 6).
+    this.outboxRef ??= new Outbox(this.stores.repository());
     return this.outboxRef;
   }
 }

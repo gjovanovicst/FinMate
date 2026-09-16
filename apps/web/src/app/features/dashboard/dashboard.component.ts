@@ -6,24 +6,10 @@ import { AuthStore } from '../../core/auth/auth.store';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
-import { MoneyComponent, type MoneyWire } from '../../shared/ui/money/money.component';
+import { SnapshotService, type DashboardFigures } from '../../core/offline/snapshot.service';
+import { syncedAtLabel } from '../../core/offline/sync.view';
+import { MoneyComponent } from '../../shared/ui/money/money.component';
 import { moneyText, overrunText } from '../../shared/money-text';
-
-interface DashboardData {
-  readonly today: string;
-  readonly daysElapsed: number;
-  readonly daysInMonth: number;
-  readonly safeToSpendToday: MoneyWire;
-  readonly available: MoneyWire;
-  readonly isOverspent: boolean;
-  readonly spentThisMonth: MoneyWire;
-  readonly incomeThisMonth: MoneyWire;
-  readonly monthlyBudget: MoneyWire | null;
-  readonly projectedTotal: MoneyWire;
-  readonly projectedOverrun: MoneyWire | null;
-  readonly paceIsReliable: boolean;
-  readonly needsReviewCount: number;
-}
 
 const DASHBOARD_QUERY = /* GraphQL */ `
   query Dashboard {
@@ -56,6 +42,8 @@ const DASHBOARD_QUERY = /* GraphQL */ `
  *    rather than showing a zero that looks like advice.
  *  - Before enough days have elapsed, the projection is withheld as "too early" instead of
  *    presenting a straight line extrapolated from one shopping trip as a forecast.
+ *  - Offline, the last successful read is served from the snapshot with one `podaci od <time>` line
+ *    (ADR-027, docs/02 §4.2). With no snapshot the error state stands: never a fabricated figure.
  */
 @Component({
   selector: 'fm-dashboard',
@@ -88,6 +76,12 @@ const DASHBOARD_QUERY = /* GraphQL */ `
           <p class="hero__label">{{ i18n.t('dashboard.noBudgetTitle') }}</p>
           <p class="hero__meta">{{ i18n.t('dashboard.noBudgetBody') }}</p>
           <a class="hero__cta" routerLink="/budgets">{{ i18n.t('budgets.setBudget') }}</a>
+        }
+
+        @if (staleLabel(); as asOf) {
+          <!-- ADR-027 decision 4: ONE label for the serving mode, covering every figure on the screen.
+               A per-tile label would be five ways to forget one. -->
+          <p class="hero__asof">{{ i18n.t('money.asOf', { time: asOf }) }}</p>
         }
       </section>
 
@@ -181,6 +175,14 @@ const DASHBOARD_QUERY = /* GraphQL */ `
         color: var(--color-text-subtle);
         font-size: var(--text-sm);
       }
+      /* The staleness disclosure: subordinate to the figures, not a warning — the figures are the
+         server's own, only older (ADR-027 decision 2). */
+      .hero__asof {
+        margin: var(--space-2) 0 0;
+        color: var(--color-text-subtle);
+        font-size: var(--text-xs);
+        font-style: italic;
+      }
       .hero__cta {
         display: inline-block;
         margin-block-start: var(--space-3);
@@ -238,10 +240,23 @@ export class DashboardComponent {
   private readonly graphql = inject(GraphqlClient);
   private readonly errors = inject(ErrorMessageService);
   private readonly auth = inject(AuthStore);
+  private readonly snapshot = inject(SnapshotService);
 
-  readonly data = signal<DashboardData | null>(null);
+  readonly data = signal<DashboardFigures | null>(null);
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
+
+  /**
+   * The `podaci od <time>` line, or `null` when the figures are live.
+   *
+   * Read from the snapshot service rather than kept locally, so the header chip and this screen label
+   * the same moment (ADR-027 decisions 4 and 5). Live figures render **no** label: if everything were
+   * labelled, the label would stop meaning anything.
+   */
+  readonly staleLabel = computed(() => {
+    const syncedAt = this.snapshot.staleAt();
+    return syncedAt === null ? null : syncedAtLabel(syncedAt, this.i18n.tag());
+  });
 
   readonly roleLabel = computed(() => {
     const role = this.auth.role();
@@ -269,14 +284,51 @@ export class DashboardComponent {
   private async load(): Promise<void> {
     this.loading.set(true);
     this.error.set(null);
+
+    let figures: DashboardFigures;
     try {
-      const result = await this.graphql.query<{ dashboard: DashboardData }>(DASHBOARD_QUERY);
-      this.data.set(result.dashboard);
+      const result = await this.graphql.query<{ dashboard: DashboardFigures }>(DASHBOARD_QUERY);
+      figures = result.dashboard;
     } catch (error) {
-      this.error.set(this.errors.for(error));
-    } finally {
+      // A read is a read: every failure — offline, 5xx, a rejected token — falls back to the
+      // snapshot. `isRetryable` is the *outbox*'s classifier and has nothing to say about a read.
+      const cached = await this.cachedFigures();
+      if (cached !== null) {
+        // The server's own numbers, rendered exactly as cached: no zeroes, no extrapolation, and
+        // `paceIsReliable` and the no-budget arm are whatever the payload said (ADR-027 decision 3).
+        this.data.set(cached);
+      } else {
+        // A failed read must not leave a *previous* read's figures on screen: the label tracks the
+        // snapshot, and there is no snapshot here, so nothing may render (ADR-027 decisions 2 and 3).
+        // Today only the constructor calls `load()`, so this cannot yet happen twice — it is cleared
+        // so that the first refresh path anybody adds cannot render an unlabelled stale figure.
+        this.data.set(null);
+        this.error.set(this.errors.for(error));
+      }
       this.loading.set(false);
+      return;
+    }
+
+    this.data.set(figures);
+    this.loading.set(false);
+
+    // Caching is a side effect of a successful read, never a reason to hide one: a store that will
+    // not open must not turn a live dashboard into an error screen.
+    try {
+      await this.snapshot.writeDashboard(figures);
+    } catch {
+      // Nothing to say to the user — the live figures are already rendered and correct.
     }
   }
 
+  /** The snapshot's figures, or `null` when there is none, it expired, or the store would not open. */
+  private async cachedFigures(): Promise<DashboardFigures | null> {
+    try {
+      return (await this.snapshot.readDashboard())?.figures ?? null;
+    } catch {
+      // An unreadable store is the same as no snapshot: keep the honest error state rather than
+      // inventing a figure (ADR-027 decision 3).
+      return null;
+    }
+  }
 }

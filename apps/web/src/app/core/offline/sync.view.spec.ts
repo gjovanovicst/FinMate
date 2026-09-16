@@ -9,6 +9,7 @@ import {
   previewRows,
   queueDump,
   rawInputs,
+  syncedAtLabel,
   whyKey,
 } from './sync.view';
 
@@ -94,6 +95,22 @@ describe('captureInput', () => {
   it('reads the stored batch back, and gives up quietly on a foreign shape', () => {
     expect(captureInput(entry())?.rows).toHaveLength(2);
     expect(captureInput(entry({ variables: {} }))).toBeNull();
+  });
+});
+
+describe('syncedAtLabel', () => {
+  it('formats an instant the way the tray already formats a moment, in the given locale', () => {
+    const at = '2026-09-14T10:00:00.000Z';
+    const expected = new Intl.DateTimeFormat('en-US', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(new Date(at));
+
+    expect(syncedAtLabel(at, 'en-US')).toBe(expected);
+  });
+
+  it('shows an unparseable value verbatim rather than inventing a time', () => {
+    expect(syncedAtLabel('not-a-date', 'en-US')).toBe('not-a-date');
   });
 });
 
