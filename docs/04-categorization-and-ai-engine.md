@@ -661,7 +661,7 @@ and they are the input to the next content iteration rather than a rewrite of th
   transactions?" — with a diff preview. This is a delight feature *and* it retroactively fixes the
   analytics that made the user distrust the app.
 
-#### 8.1.6 The AI's category and the deterministic direction are never reconciled (open, task 2.2.7)
+#### 8.1.6 No stage reconciled its category with the row's direction (fixed in 2.2.7)
 
 Found on 2026-09-16, minutes after the first live provider was wired (ADR-032), by reproducing a user's
 own entry — `Lidl 2000, fuel 3500, salary 150000` — on a Household with the starter tree seeded.
@@ -691,20 +691,50 @@ place (the AI stage) rather than five. It also slips past the confidence gate ra
 0.765 is the verify lane, so the row is neither blocking nor flagged, and nothing downstream will ever
 ask about it.
 
-**Why it is scheduled rather than patched.** Every candidate fix is a product decision about which side
-wins, and they are not equivalent:
+**The decision (task 2.2.7): refuse the category and ask.** Of the four candidates, this is the one that
+keeps the model out of a money-semantics field (rejecting "trust the model and flip `kind`", which
+ADR-001/ADR-003 forbid) and reuses the mechanism 8.1.5 already established. Filtering the candidate list
+before the model sees it was rejected as *worse than asking*: it removes the model's ability to say "this
+is actually income" when the **parser** is the one that is wrong, and the refusal keeps that suggestion in
+`candidates` where the review queue can offer it in one tap. Trusting the model over a stated direction
+was never a candidate.
 
-- **filter the candidate list by direction** before the model sees it — cheapest, but it silently
-  removes the model's ability to say "this is actually income" when the *parser* is wrong;
-- **trust the model's category and flip `kind`** — makes the model authoritative over a money-semantics
-  field, which ADR-001 and ADR-003 forbid;
-- **keep the kind, drop the category and ask** — safest and consistent with 8.1.5, but it turns a
-  reasonable suggestion into a blocking question whenever a Household types in English;
-- **set `needsDirectionConfirmation` and let the direction gate handle it** — reuses 8.1.5's mechanism,
-  and is the option that needs the least new code.
+**Where the fix lives, and why only once.** In `runPipeline`'s `finish()` — the single function all five
+stage arms return through. A per-stage check was rejected because there are five of them and a stage added
+later would forget it; `finish` cannot be bypassed. The refusal is 8.1.5's shape exactly: `categoryId:
+null`, `decidedBy: FALLBACK` (never `AI` — the model did not decide this row, and saying it did would
+corrupt every accuracy metric built on the audit table), the blocking lane, and the refused suggestion as
+a `direction-mismatch` candidate. **The AI telemetry is kept** — `ai_provider`, `ai_model`, `latency_ms`
+and `cost_micros` are recorded even though the answer was refused, because dropping them would
+under-report spend. That call happened; the row simply did not take its advice.
 
-Recorded in [15 §6](../15-implementation-gotchas.md) and scheduled as task 2.2.7 in [09](09-implementation-plan.md);
-the behaviour is unchanged until that decision is made.
+**Three sources, not one, and a hole found while fixing it.** The reconciliation covers every stage,
+which matters because the AI was only the loudest instance. Two more:
+
+- **A keyword or an entity default** of the other direction — an `INCOME` row described `Lidl mesec`
+  matches `lidl` and lands in the `EXPENSE` category `Supermarket`. This one had been **written** since
+  2.2.x; it surfaced when the write path grew the invariant check below, because a pre-existing
+  integration test commits exactly that shape.
+- **`captureCommit` did not enforce I-3 at all** for the normal preview → confirm flow. Its check was
+  `if (row.categoryId)` — the client's *override* — while in that flow a row has none and its category
+  comes from the accepted proposal, loaded later in the same method. So the check never ran, and
+  committing a preview verbatim wrote an `EXPENSE` row in the `INCOME` category `Plata`. Measured, not
+  theorised: the live row existed and violated I-3. Three changes close it — the pipeline reconciliation
+  above (a new preview never offers the contradiction), a commit-phase check on the category a **proposal**
+  brings (a *stale* decision is refused with `invariant I-3` rather than written), and a guard in the
+  write loop itself so any source nobody has thought of yet cannot become a row.
+- **`classifyForCommit` classified from `rawText` alone**, so a commit row's *stated* direction never
+  reached the pipeline: a row carrying `kind: INCOME` and the description `Lidl mesec` produced a
+  fragment the parser read as `UNKNOWN`, and the reconciliation had nothing to compare. `CommitRowClassification`
+  now carries `kind`, which the caller knows and states explicitly.
+
+**What this does not change.** A row whose direction and Category agree — the overwhelmingly common case,
+including every preview whose client echoes the parser's `kind` — is decided exactly as before, and the
+zero-AI-call guarantees of ADR-002 are untouched: the reconciliation runs *after* a stage decided, so a
+rule or keyword that already resolved correctly still calls no model. The cost is that an English income
+word ("salary") now produces a **blocking** row rather than a wrong-category row — which is the trade
+8.1.5 already made for reversals, and the reason `salary 150000` now reads *"Nothing matched; recorded
+uncategorised"* with `Plata` offered as the alternative.
 
 ---
 

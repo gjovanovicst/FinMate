@@ -1049,7 +1049,7 @@ export class TransactionsService {
       const snapshot = decisions.get(acceptedId);
       if (snapshot === undefined) {
         reject(
-          row.clientRowId,
+          row.clientRowId.trim(),
           CaptureRejectionCode.NOT_FOUND,
           'That proposal is not one this Household can see.',
           'acceptedProposalId',
@@ -1058,7 +1058,7 @@ export class TransactionsService {
       }
       if (snapshot.transactionId !== null) {
         reject(
-          row.clientRowId,
+          row.clientRowId.trim(),
           CaptureRejectionCode.CONFLICT,
           'That proposal was already committed.',
           'acceptedProposalId',
@@ -1069,11 +1069,64 @@ export class TransactionsService {
         // Committing a proposal against a *different* preview means the user is confirming something
         // they were not shown, which is the one thing the preview exists to prevent.
         reject(
-          row.clientRowId,
+          row.clientRowId.trim(),
           CaptureRejectionCode.VALIDATION_FAILED,
           'That proposal came from a different preview than the one this commit names.',
           'acceptedProposalId',
         );
+      }
+    }
+
+    // ---- the category a *proposal* brings ----
+    //
+    // The check above is `if (row.categoryId)`, which is the **override** the user chose. Almost every
+    // row in the preview → confirm flow has none: its category comes from the accepted proposal, which
+    // is only loaded a few lines up. So for that whole flow the I-3 check never ran, and a proposal
+    // whose category contradicts the row's `kind` was written as-is. Not theorised: `salary 150000`
+    // came back from the model as `decidedBy: AI` in the **INCOME** category `Plata` with the row
+    // `EXPENSE` at 0.765 — the verify lane, so nothing flagged it — and committing the preview verbatim
+    // produced a live `transactions` row violating I-3 (docs/15, docs/04 §8.1.6).
+    //
+    // The two phases together cover every source of a category a caller can name: the override above,
+    // the proposal here, and — for a row with neither — the classification this method runs itself,
+    // which the write loop's own guard below catches.
+    const proposalCategoryFor = new Map<string, string>();
+    for (const row of pending) {
+      const label = row.clientRowId.trim();
+      if (row.categoryId || !row.acceptedProposalId) continue;
+      const categoryId = decisions.get(row.acceptedProposalId)?.categoryId;
+      if (categoryId !== null && categoryId !== undefined) proposalCategoryFor.set(label, categoryId);
+    }
+
+    if (proposalCategoryFor.size > 0) {
+      const proposalKinds = await this.categoryKinds([...new Set(proposalCategoryFor.values())]);
+      for (const row of pending) {
+        const label = row.clientRowId.trim();
+        if (rejectedRowIds.has(label)) continue;
+        const categoryId = proposalCategoryFor.get(label);
+        if (categoryId === undefined) continue;
+
+        const kind = proposalKinds.get(categoryId);
+        if (kind === undefined) {
+          // A soft-deleted category between the preview and the commit. Refused rather than written as
+          // a dangling reference, and the user is told which row to re-pick.
+          reject(
+            label,
+            CaptureRejectionCode.NOT_FOUND,
+            'The category that proposal chose no longer exists.',
+            'categoryId',
+          );
+          continue;
+        }
+        if (kind !== row.kind) {
+          reject(
+            label,
+            CaptureRejectionCode.VALIDATION_FAILED,
+            `That category classifies ${kind.toLowerCase()} but the row is ${row.kind.toLowerCase()} ` +
+              `(invariant I-3).`,
+            'categoryId',
+          );
+        }
       }
     }
 
@@ -1103,7 +1156,13 @@ export class TransactionsService {
         ? []
         : await this.classification.classifyForCommit(
             householdId,
-            unclassified.map((row) => ({ rawText: (row.description ?? '').trim() })),
+            unclassified.map((row) => ({
+              rawText: (row.description ?? '').trim(),
+              // Mapped explicitly rather than passed through, the same rule `resolveRow` applies to
+              // `categorySource`: the pipeline's vocabulary is the domain's two-way union, and a new
+              // arm on either side should be a compile error here rather than a silent pass.
+              kind: row.kind === TransactionKind.INCOME ? 'INCOME' : 'EXPENSE',
+            })),
             {
               allowAi: input.allowAi ?? true,
               occurredAt: input.occurredAt ?? null,
@@ -1134,11 +1193,39 @@ export class TransactionsService {
 
     const discardedIds = discardIds.filter((id) => decisions.has(id));
 
+    /**
+     * The invariant's floor (I-3).
+     *
+     * The phases above refuse the shapes a *caller* can produce. This one catches a source nobody has
+     * thought of yet — a row classified inside this method, a stage added to the pipeline later — at the
+     * only point where a mismatch would become a row. It is checked against kinds fetched **before** the
+     * transaction, because a query on the outer client inside `$transaction` is the pool stall this
+     * codebase has already been bitten by; throwing inside rolls the whole batch back.
+     *
+     * Reaching it is a bug, not a user error — which is why it throws a typed `ApiError` naming the
+     * invariant rather than joining the accumulated rejections above.
+     */
+    const resolutionKinds = await this.categoryKinds([
+      ...new Set(resolutions.map((resolution) => resolution.categoryId).filter((id): id is string => id !== null)),
+    ]);
+    const assertCategoryKind = (kind: TransactionKind, categoryId: string | null): void => {
+      if (categoryId === null) return;
+      const categoryKind = resolutionKinds.get(categoryId);
+      if (categoryKind !== undefined && categoryKind !== kind) {
+        throw new ApiError(
+          'VALIDATION_FAILED',
+          `Refusing to write a ${kind.toLowerCase()} row in an income category (invariant I-3). No row ` +
+            `in this batch was written.`,
+        );
+      }
+    };
+
     const written = await this.prisma.client.$transaction(async (tx) => {
       const results: CaptureCommittedRow[] = [];
 
       for (const resolution of resolutions) {
         const { row } = resolution;
+        assertCategoryKind(row.kind, resolution.categoryId);
         const created = await tx.transactions.create({
           data: {
             id: uuidv7(),

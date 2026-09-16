@@ -629,6 +629,61 @@ describe('TransactionsService.captureCommit (integration)', () => {
   // I-10 — retry safety and offline dedupe
   // -------------------------------------------------------------------------------------------
 
+  describe('the category a proposal brings (I-3)', () => {
+    // The hole this exists for. The I-3 check was guarded by `if (row.categoryId)` — the client's
+    // **override** — and in the preview → confirm flow a row has none: its category comes from the
+    // accepted proposal. So the check never ran for that flow, and a proposal whose category
+    // contradicts the row's `kind` was written as-is. Measured: `salary 150000` came back from the
+    // model as `decidedBy: AI` in the INCOME category `Plata` while the row was EXPENSE, at 0.765 —
+    // the verify lane, so nothing flagged it — and committing the preview verbatim produced a live
+    // `transactions` row violating I-3 (docs/04 §8.1.6).
+    it('refuses an EXPENSE row carrying an INCOME proposal’s category', async () => {
+      const before = await transactionCount();
+      const proposalId = await proposal({ categoryId: incomeId, confidence: 0.765, decidedBy: 'AI' });
+
+      const error = await rejected({ rows: [row({ acceptedProposalId: proposalId })] });
+
+      expect(error.rows[0]!.field).toBe('categoryId');
+      expect(error.rows[0]!.message).toMatch(/invariant I-3/);
+      // Refused before anything was written, not rolled back afterwards.
+      expect(await transactionCount()).toBe(before);
+    });
+
+    it('refuses the other way round too, because the rule has no direction', async () => {
+      const proposalId = await proposal({ categoryId: foodId, confidence: 0.9 });
+
+      const error = await rejected({
+        rows: [row({ acceptedProposalId: proposalId, kind: TransactionKind.INCOME })],
+      });
+
+      expect(error.rows[0]!.field).toBe('categoryId');
+      expect(error.rows[0]!.message).toMatch(/invariant I-3/);
+    });
+
+    it('still accepts a proposal whose category agrees with the row', async () => {
+      // The check must be a reconciliation, not a blanket refusal of the proposal path.
+      const proposalId = await proposal({ categoryId: foodId, confidence: 0.92 });
+
+      const outcome = await commit({ rows: [row({ acceptedProposalId: proposalId })] });
+
+      expect(outcome.committed).toHaveLength(1);
+      expect(outcome.committed[0]!.transaction.categoryId).toBe(foodId);
+    });
+
+    it('lets the user’s own override win, so a disagreeing proposal is irrelevant', async () => {
+      // A row carrying both: the override is what is written, and the phase that checks proposals
+      // deliberately skips it — otherwise a stale proposal could block a perfectly good correction.
+      const proposalId = await proposal({ categoryId: incomeId, confidence: 0.9 });
+
+      const outcome = await commit({
+        rows: [row({ acceptedProposalId: proposalId, categoryId: foodId })],
+      });
+
+      expect(outcome.committed).toHaveLength(1);
+      expect(outcome.committed[0]!.transaction.categoryId).toBe(foodId);
+    });
+  });
+
   describe('idempotency and offline dedupe (I-10, docs/06 §5.2.2)', () => {
     it('returns the original row on a replay instead of writing a second one', async () => {
       const key = `replay-${uuidv7()}`;

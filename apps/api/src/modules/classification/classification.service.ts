@@ -146,6 +146,17 @@ export interface CommitRowClassification {
   readonly rawText: string;
   /** Per-row override of the request-level `allowAi` (docs/06 §5.1's consent switch). */
   readonly allowAi?: boolean;
+  /**
+   * The direction the row states, when the caller knows it.
+   *
+   * It matters because this method classifies from `rawText` **only**: a commit row carries its amount
+   * and direction as fields, so `extractFragment` reads `Lidl mesec` as `UNKNOWN` even when the row is
+   * an `INCOME`. The pipeline's direction reconciliation (docs/04 §8.1.6) compares a stage's category
+   * against the fragment's kind, and with `UNKNOWN` it has nothing to compare — so it would wave through
+   * an EXPENSE category on an INCOME row, which is the invariant I-3 violation the write path then had
+   * to refuse. Stating the direction here lets the one reconciliation that exists do its job.
+   */
+  readonly kind?: 'EXPENSE' | 'INCOME';
 }
 
 /**
@@ -580,10 +591,15 @@ export class ClassificationService {
       const row = rows[index]!;
       // `extractFragment`, not `extractFragments`: a commit row is one known row, and re-segmenting
       // its description could split it into several fragments the caller never asked about.
-      const fragment = extractFragment(row.rawText, {
+      const extracted = extractFragment(row.rawText, {
         currency: context.household.currency as Parameters<typeof extractFragment>[1]['currency'],
         today: localDay,
       });
+      // The row's stated direction wins over what the text implied — see `CommitRowClassification.kind`.
+      // In the preview → confirm flow the two agree (the client echoes the parser's), so this only
+      // changes a row whose direction the user set themselves or an offline row that carries one.
+      const fragment =
+        row.kind === undefined ? extracted : { ...extracted, kind: row.kind };
 
       const classified = await this.classifyFragment({
         householdId,

@@ -1959,6 +1959,17 @@ classified and written inside a single database transaction. If any row fails va
 amount, category of the wrong `kind` — invariant I-3, account outside the household), **no** row is
 written and the payload is `CaptureCommitRejected` naming every offending row.
 
+> **Implementation note (task 2.2.7).** I-3 is checked against the category that will actually be
+> written, which is one of three things: the client's `categoryId` override, the category the
+> `acceptedProposalId`'s decision chose, or — for a row with neither — the classification this method
+> runs itself. The check used to be guarded by `if (row.categoryId)`, so the whole preview → confirm
+> flow (which sends the *proposal*, not an override) skipped it and could write an `EXPENSE` row in an
+> INCOME category. A proposal that contradicts the row's `kind` is still **refused** rather than
+> silently re-categorised: the user confirmed a category the preview showed, so replacing it would
+> write something they did not agree to, and re-parsing fixes it. A row this method classified itself
+> has no such problem — the pipeline refuses the contradiction before the row is built (docs/04
+> §8.1.6), so it arrives uncategorised and blocking.
+
 The one deliberate exception is the low-confidence case, which is **not** a validation failure:
 
 | Row state | Behaviour |

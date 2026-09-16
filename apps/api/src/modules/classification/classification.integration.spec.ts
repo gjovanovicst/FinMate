@@ -467,6 +467,79 @@ describe('ClassificationService (integration)', () => {
       expect(rawConfidence(row.candidates)).toBeCloseTo(0.95, 3);
     });
 
+    it('refuses a category whose kind contradicts a known direction, and keeps the suggestion (I-3)', async () => {
+      // docs/04 §8.1.6, task 2.2.7. `nepoznat prodavac 1234` has no amount word and no income word, so
+      // the parser reads it as an EXPENSE; the stub then answers with the **INCOME** category. Before
+      // this gate the row was written as `decidedBy: AI` in `Plata` at whatever confidence the model
+      // claimed — an EXPENSE row in an income Category, which is what I-3 forbids. Live, that is
+      // `salary 150000` → `Plata` at 0.765: the verify lane, so nothing asked about it.
+      const stub = stubClassifier(proposal({ categoryId: incomeId, rawConfidence: 0.95 }));
+      const result = await parseInput(stub, 'nepoznat prodavac 1234');
+
+      const fragment = result.fragments[0]!;
+      // Asked, not decided: no Category, the blocking lane, and `decidedBy` is never `AI` — the model
+      // did not decide this row, and saying it did would corrupt every metric built on the audit table.
+      expect(fragment.categoryId).toBeNull();
+      expect(fragment.decidedBy).toBe('FALLBACK');
+      expect(fragment.needsReview).toBe(true);
+      expect(result.usedAi).toBe(false);
+      // The suggestion survives as an alternative, so the review queue can offer it in one tap.
+      expect(
+        fragment.candidates.some(
+          (candidate) => candidate.categoryId === incomeId && candidate.reason === 'direction-mismatch',
+        ),
+      ).toBe(true);
+
+      // The call happened, so its cost and latency are still in the audit — refusing the answer must
+      // not under-report spend.
+      const row = await latestDecision('nepoznat prodavac 1234');
+      expect(row.decided_by).toBe('FALLBACK');
+      expect(row.ai_provider).toBe('LOCAL');
+      expect(row.latency_ms).toBe(42);
+      expect(Number(row.cost_micros)).toBe(7);
+    });
+
+    it('refuses an entity default of the other direction too, because it is the same contradiction', async () => {
+      // The deterministic half of the same rule: a Merchant whose default Category is an expense while
+      // the fragment is income. Reached at rung 4, after rules and keywords declined.
+      const merchantId = uuidv7();
+      await asTenant(() =>
+        prisma.client.merchants.create({
+          data: {
+            id: merchantId,
+            household_id: householdId,
+            name: 'Pekara Ana',
+            default_category_id: foodId,
+            is_global: false,
+          },
+        }),
+      );
+
+      // `honorar` rather than `plata`: both are INCOME markers, but only `plata` is a keyword in this
+      // suite's fixtures — and a keyword that agrees with the direction would decide at rung 3 and the
+      // entity default would never be reached.
+      const fragment = (await parseInput(stubClassifier(), 'Honorar Pekara Ana 2500')).fragments[0]!;
+
+      expect(fragment.categoryId).toBeNull();
+      expect(fragment.decidedBy).toBe('FALLBACK');
+      expect(fragment.needsReview).toBe(true);
+      expect(
+        fragment.candidates.some(
+          (candidate) => candidate.categoryId === foodId && candidate.reason === 'direction-mismatch',
+        ),
+      ).toBe(true);
+
+      await asTenant(() => prisma.client.merchants.deleteMany({ where: { id: merchantId } }));
+    });
+
+    it('leaves agreement alone, so the gate is a reconciliation and not a blanket refusal', async () => {
+      const stub = stubClassifier(proposal({ rawConfidence: 0.95 }));
+      const fragment = (await parseInput(stub, 'nepoznat prodavac 1234')).fragments[0]!;
+
+      expect(fragment.categoryId).toBe(foodId);
+      expect(fragment.decidedBy).toBe('AI');
+    });
+
     it('sends the losing keyword candidates to the model as context (docs/04 §5.4)', async () => {
       // `gorivo` scores below §5.4's floor, so it falls through — but the scored candidate travels
       // with the call, which is what §5.4 asks for and what makes the model's answer debuggable.

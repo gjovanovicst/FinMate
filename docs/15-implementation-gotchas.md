@@ -695,6 +695,41 @@ docs/04 is canonical for all of this. The recurring theme is that a second copy 
   absent — and to say in one sentence that the mode is a summary. Recorded in ADR-027's 4.2.8b amendment
   with the four fields a future task would have to widen the whitelist for, and why it does not.
 
+- **`if (row.categoryId)` is not "the row has a category" when a *proposal* supplies one.** `captureCommit`
+  validated invariant I-3 in the batch phase — kind against the category's kind — behind that guard, but
+  in the preview → confirm flow a row carries **no** `categoryId`: the category comes from
+  `acceptedProposalId`, whose decision row is loaded later in the same method. So for that whole flow the
+  check never ran. Measured, not theorised: `salary 150000` classified by the model into the INCOME
+  category `Plata` on an `EXPENSE` row, committed verbatim through `captureCommit`, produced a live
+  `transactions` row violating I-3 — with the suite green, because every existing test that exercised the
+  proposal path happened to use a matching category. Three changes close it: the pipeline refuses the
+  contradiction when it classifies (docs/04 §8.1.6), a second phase validates the category a proposal
+  brings, and the write loop asserts the pair before `create` so any source nobody has thought of yet
+  cannot become a row. The general shape: **a guard on `input.field` is not a guard on the value that
+  will actually be written** — resolve the effective value first, then check it.
+
+- **A stage's chosen category was never compared with the row's direction — for any stage.** Every
+  Category carries a `kind` (invariant I-3) and a Transaction carries its direction in `kind` rather than
+  in a sign (ADR-003), and nothing reconciled the two: rules, keywords, entity defaults and the model all
+  ran. Two live shapes: the model suggesting the INCOME category `Plata` for an `EXPENSE` fragment
+  (`salary 150000`, at 0.765 — the verify lane, so nothing asked), and a **keyword** putting an `INCOME`
+  row described `Lidl mesec` into the `EXPENSE` category `Supermarket`, which the commit path had been
+  writing since 2.2.x. The reconciliation now lives in `runPipeline`'s `finish()` — the one function all
+  five stage arms return through — and refuses the category, leaving the row blocking with the suggestion
+  kept as a `direction-mismatch` candidate. It is the mirror of §8.1.5's gate: there the direction was
+  *unknown* and a stage had to be stopped from guessing; here the direction is *known* and a stage
+  contradicted it. **One place, because the alternative is five** — a per-stage check is a check the sixth
+  stage will not have.
+
+- **A `captureCommit` row's direction never reached the classifier.** `classifyForCommit` classifies from
+  `rawText` alone, and a commit row carries its amount and direction as *fields* — so `extractFragment`
+  read the description `Lidl mesec` as `UNKNOWN` even for a row whose `kind` was `INCOME`, and the
+  direction reconciliation had nothing to compare against. `CommitRowClassification` now takes `kind`,
+  mapped explicitly from `TransactionKind` at the call site (the same rule `resolveRow` applies to
+  `categorySource`: a new arm on either side should be a compile error, not a silent pass). In the normal
+  flow the two agree, because the client echoes the kind the parser gave it, so only a row whose direction
+  the user set — or an offline row carrying one — is affected.
+
 ## 7. Capture and the commit path
 
 F-05/F-06 and I-10: the path where a mistake costs the user money.

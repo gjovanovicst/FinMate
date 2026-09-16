@@ -415,8 +415,74 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineOutcome
    * `StageDecision` literals — a field that has to be remembered six times is a field that will be
    * forgotten once.
    */
+  /**
+   * ── The direction reconciliation (docs/04 §8.1.6, task 2.2.7, invariant I-3).
+   *
+   * Every Category in the tree carries a `kind` (I-3), and a Transaction carries its direction in
+   * `kind` rather than in a sign (ADR-003). **No stage compared the two**, so a stage could decide a
+   * category of the other direction and the row was written as-is. Two live shapes:
+   *
+   *  - the model, on a fragment whose direction the rules had already settled: `salary 150000` came
+   *    back as `decidedBy: AI` in the **INCOME** category `Plata` while the row was `EXPENSE`, at 0.765
+   *    — the verify lane, so nothing flagged it (docs/04 §8.1.6);
+   *  - a **keyword**, on a row whose direction the user stated: an `INCOME` row described `Lidl mesec`
+   *    matches `lidl` and lands in the `EXPENSE` category `Supermarket`. That one had been written by
+   *    the commit path since 2.2.x and was only caught when the invariant check was added to the write
+   *    path (docs/15).
+   *
+   * It is the mirror of §8.1.5's direction gate: there a stage decided while the direction was
+   * *unknown*; here the direction is *known* and a stage contradicts it. So the answer is the same
+   * shape — refuse the category and ask. The row is left uncategorised and blocking (I-8's
+   * `null`-category arm), the refused suggestion stays in `candidates` so the review queue can offer it
+   * and the audit can show what the pipeline would have said, and `decidedBy` is **not** `AI`: no
+   * category was decided, and `decidedBy: AI` here would corrupt every accuracy metric built on the
+   * audit table.
+   *
+   * Applied inside {@link finish} rather than at each of the five stage arms, because that is the one
+   * function every arm returns through — a stage added later cannot forget it.
+   */
+  const reconcileDirection = (stage: StageDecision): StageDecision => {
+    if (stage.categoryId === null) return stage;
+    // `UNKNOWN` is what the parser reports when it read no amount at all, so there is no direction to
+    // contradict. (A reversal is a different flag, and §8.1.5's gate has already refused it above.)
+    if (fragment.kind === 'UNKNOWN') return stage;
+
+    const chosen = input.categories.find((category) => category.id === stage.categoryId);
+    // An id the pipeline does not know is not this gate's business: the closed-list validation and the
+    // write path each refuse it, and inventing a direction here would hide which of them did.
+    if (chosen === undefined || chosen.kind === fragment.kind) return stage;
+
+    return {
+      decidedBy: 'FALLBACK',
+      categoryId: null,
+      ruleId: null,
+      ruleName: null,
+      entityId: null,
+      entityName: null,
+      confidence: calibratedConfidenceFromStorage(0),
+      rawConfidence: null,
+      candidates: [
+        ...stage.candidates,
+        {
+          kind: 'DEFAULT',
+          categoryId: stage.categoryId,
+          name: chosen.name,
+          // The suggestion is kept with its confidence so the review screen can offer it as a
+          // one-tap choice: the user may well mean exactly this, and the pipeline is refusing to
+          // *decide* it, not refusing to *suggest* it.
+          ...(stage.rawConfidence === null ? {} : { confidence: stage.rawConfidence }),
+          reason: 'direction-mismatch',
+        },
+      ],
+      rung: stage.rung,
+      // The call happened, so its cost and latency are still recorded: dropping the telemetry would
+      // under-report spend, and the audit's `decided_by` is what keeps the metrics honest.
+      ai: stage.ai,
+    };
+  };
+
   const finish = (stage: StageDecision): PipelineOutcome => ({
-    ...finalize(input, stage),
+    ...finalize(input, reconcileDirection(stage)),
     resolvedMerchantId: merchant?.id ?? null,
     resolvedCounterpartyId: counterparty?.id ?? null,
     // Kept separately from the resolved pair: the pair says *what* the row records, this says that
