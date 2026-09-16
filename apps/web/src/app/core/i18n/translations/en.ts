@@ -1116,5 +1116,6 @@ export const en = {
   'error.RATE_LIMITED': 'Too many attempts. Please try again in a few minutes.',
   'error.AI_UNAVAILABLE': 'AI is unavailable right now. Manual entry still works.',
   'error.QUOTA_EXCEEDED': 'You have reached this month’s AI entry limit.',
+  'error.UNREACHABLE': 'The server is not reachable. Check your connection and try again.',
   'error.INTERNAL': 'Something went wrong. Please try again.',
 } as const;

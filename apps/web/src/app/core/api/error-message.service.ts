@@ -12,12 +12,27 @@ import type { TranslationKey } from '../i18n/translations';
  *
  * The server's own message is the last resort — the API never returns internals, so showing it is
  * safe, and a code we do not yet have wording for degrades to something truthful rather than blank.
+ *
+ * ## A transport failure is not an internal error
+ *
+ * When nothing is listening there is no API `code` to localise: Angular reports `status: 0` for a
+ * request that never arrived, and a proxy with no upstream answers `502`/`503`/`504`. All of those
+ * used to fall through to *"Something went wrong. Please try again."* — untrue, because retrying
+ * cannot help a server that is not running, and useless to the person reading it, because the one
+ * thing worth checking is the connection. They get their own message now: the message a developer
+ * hitting an unstarted dev API needs, and the honest one for a real outage.
  */
 @Injectable({ providedIn: 'root' })
 export class ErrorMessageService {
   private readonly i18n = inject(I18nService);
 
   for(error: unknown): string {
+    // Before any code lookup: a request that never reached the API has no code.
+    const status = readStatus(error);
+    if (status === 0 || status === 502 || status === 503 || status === 504) {
+      return this.i18n.t('error.UNREACHABLE');
+    }
+
     const code = readCode(error);
     const key = code ? (`error.${code}` as TranslationKey) : undefined;
 
@@ -28,6 +43,13 @@ export class ErrorMessageService {
     const serverMessage = readServerMessage(error);
     return serverMessage ?? this.i18n.t('error.INTERNAL');
   }
+}
+
+/** Angular's `HttpErrorResponse.status`, read structurally so this module needs no HTTP import. */
+function readStatus(error: unknown): number | null {
+  if (error === null || typeof error !== 'object' || !('status' in error)) return null;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === 'number' ? status : null;
 }
 
 function readCode(error: unknown): string | null {

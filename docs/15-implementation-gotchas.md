@@ -60,7 +60,14 @@ Everything here has cost time at least once, and most of it fails in a way that 
   `options.command` overrides it. **This cost real debugging time**: with the API on 3000 and the proxy
   pointed at 3001, every request through the SPA fails as a proxy error and the sign-in page reports
   "something went wrong" — which reads like an auth or CORS bug and is neither. If you change one
-  port, change both. (`/proc` is restricted and `lsof`/`fuser` are absent here, so use `ss -ltn` or
+  port, change both. **A stopped API produces the same message**, and that is the more common case: the
+  dev proxy answers **502** with no upstream (measured), so the SPA reports a transport failure and the
+  human is invited to retry something that cannot succeed. It happens *because* the suite is run: the API
+  is stopped first so it cannot contend for the database. So check both before handing work back —
+  `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/health` and the same through `:4200`.
+  The client now says *"The server is not reachable"* for `status 0`/`502`/`503`/`504` instead of the
+  generic sentence, which is a better message and still not a running server.
+  (`/proc` is restricted and `lsof`/`fuser` are absent here, so use `ss -ltn` or
   `/tmp/run-api.sh <port>`, which frees the port and waits for the readiness line rather than sleeping.)
   A historical note said port 3000 was held by an unattributable process; the API binds 3000 fine now, so
   that was a stale server, not a rule. Keep the pin anyway: it makes the documented dev pair independent

@@ -1102,5 +1102,6 @@ export const srLatn: Record<keyof typeof en, string> = {
   'error.RATE_LIMITED': 'Previše pokušaja. Pokušaj ponovo za nekoliko minuta.',
   'error.AI_UNAVAILABLE': 'AI trenutno nije dostupan. Ručni unos i dalje radi.',
   'error.QUOTA_EXCEEDED': 'Potrošio si mesečni limit za AI unos.',
+  'error.UNREACHABLE': 'Server nije dostupan. Proveri vezu i pokušaj ponovo.',
   'error.INTERNAL': 'Došlo je do greške. Pokušaj ponovo.',
 };

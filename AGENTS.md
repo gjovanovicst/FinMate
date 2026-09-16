@@ -83,7 +83,7 @@ narrative above does not repeat them.
 | CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → lint → typecheck → test → **evals** → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
 | Web (0.8) | Angular 22, **zoneless** + signals, ADR-006. Responsive shell (bottom nav → sidebar at 1024px), design tokens (`apps/web/src/styles.css`), `fm-money` as the only Money renderer, auth pages, Accounts consuming GraphQL |
 | i18n | `core/i18n/`: **English primary**, Serbian latin + cyrillic. Runtime catalogue (no rebuild), `TranslationKey` derived from `en`, `sr-Cyrl` generated at runtime. Language switcher in the shell |
-| Tests | **2351 pass** — 896 API + 272 domain + 662 web + 149 nlp + 108 rules-engine + 258 ai + 6 worker (+contracts) |
+| Tests | **2355 pass** — 896 API + 272 domain + 666 web + 149 nlp + 108 rules-engine + 258 ai + 6 worker (+contracts) |
 | Worker | `apps/worker` **boots and is scheduled** (ADR-022, task 3.4.1): five BullMQ jobs over the API's own services — `recurring.materialise`, `recurring.detect`, `insights.generate` (generate *and* evaluate since 3.4.4), `notifications.dispatch`, `files.purge` (4.1.1) — `nx run worker:serve`. The remaining jobs in docs/05 §8's table are unbuilt, and ADR-022 makes stating what makes a job idempotent a precondition for adding one |
 | Receipts (F-14) | `apps/api/src/modules/receipts` **implemented in 4.1.3**: `createReceipt`, `extractReceipt`, `addReceiptItem`/`updateReceiptItem`/`removeReceiptItem`, `reconcileReceipt`, `receipts`/`receipt`. Item categories come from the **same** `ClassificationService.parse` a typed fragment uses (auditable in `classification_decisions`); I-6 lives in `@finmate/domain/src/receipts.ts` with both sides of the tolerance asserted. **No OCR provider is configured**, so extraction honestly reports `AI_UNAVAILABLE:no-provider-configured` and manual itemisation is the path, and the detail screen therefore does not offer extraction at all; the **OCR webhook (§9.5)** is not built. `commitReceipt` and `DETACH_TRANSACTION` are (4.1.4a) and both screens that call them are (4.1.4b/4.1.5, `/receipts` + `/receipts/:id`). `CreateReceiptInput.attachmentId` is **required**, so a Receipt exists only over a photo — the library's capture action is the only way in. `receipts` is a plain list with no `filter`/`totalCount`, so the library reads the first 50 and says `{count} shown, newest first` rather than claiming a total |
 | Service worker (F-26) | `apps/web/ngsw-config.json` + `@angular/service-worker`, **ADR-024**. It caches the **app shell only** — `/index.html`, `/*.js`, `/*.css`, 39 built URLs in all — and declares **no `dataGroups`**, so no API response can enter the HTTP cache (the offline data cache is IndexedDB, docs/08 §3.9); `navigationUrls` explicitly excludes `/graphql`, `/api/**`, `/auth/**`, `/v1/**` and the health paths, so the shell never answers for the API. Registered in the **production build only** (`enabled: !isDevMode()`), so `web:serve` has no worker and the built `dist` is what gets verified. The update flow is a **non-dismissible banner** that activates only on the user's click. ⚠️ **Not installable yet** — no manifest and no icons (4.3.2, and a manifest carries the undecided product name), and the Playwright offline pass docs/10 §8.3 specifies does not exist, so the cache strategy is verified by inspecting and serving the build rather than by throttling a browser. ⚠️ The deploy path has to serve `ngsw-worker.js`/`ngsw.json` unhashed and revalidated over HTTPS; nothing does yet (docs/11 §5, Q-7) |
@@ -123,7 +123,7 @@ nx run web:build          # production bundle
 **The browser talks to `/api/*`; the dev proxy strips the prefix** before forwarding, because the
 API serves `/auth/*` and `/graphql` without one (docs/06). Changing the prefix on one side only
 produces a 404 that looks like an auth failure.
-Verified working: lint 9/9, typecheck 9/9, 2351 tests, `pnpm test:evals` gating green, `web:build`, GraphQL over HTTP through the
+Verified working: lint 9/9, typecheck 9/9, 2355 tests, `pnpm test:evals` gating green, `web:build`, GraphQL over HTTP through the
 browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, the presign → PUT to MinIO →
 `commitAttachment` → `302` download round trip (verified live, bytes compared), and `prisma migrate diff`
 reporting no drift.
@@ -240,6 +240,10 @@ or that are cheapest to get wrong before you have read anything else.
 - **The dev API is pinned to `:3001` and the web proxy targets `:3001`, while `.env` says `3000`.** Change
   one and you must change the other, or every request through the SPA fails as a proxy error and the
   sign-in page reports "something went wrong". `nx run api:serve` pins it; plain `node` honours `.env`.
+  **A stopped API gives the human the same message** (the proxy answers 502 with no upstream), so check
+  `:3001/health` before handing work back — especially after running the suite, which is when the API
+  gets stopped. Since 4.2.6a's follow-up the client says "the server is not reachable" for
+  `status 0`/`502`/`503`/`504`, which is a better message and still not a running server.
 - **Never put a backtick inside a `template:` or `styles:` literal — not even in a comment — and never
   put a glob like the source-tree pattern inside a block comment**, because `*/` ends the comment. Both
   fail as a bare parse error or a template error that names the wrong problem.
