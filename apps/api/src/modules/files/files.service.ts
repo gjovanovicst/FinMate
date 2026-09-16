@@ -325,6 +325,11 @@ export class FilesService {
    *
    * Idempotent: a row already decided is not re-scanned, so a retried commit after a dropped response
    * links the Transaction instead of failing on a second HEAD.
+   *
+   * **Linking requires a linkable state.** A row that failed or was quarantined cannot be attached by
+   * committing it a second time with a `transactionId` — otherwise the "not downloadable" guarantee
+   * would stop at the download and a `FAILED`/`INFECTED` blob could still be referenced by a
+   * Transaction.
    */
   async commit(householdId: string, input: CommitInput): Promise<FileView> {
     if (!this.storage.available) {
@@ -347,7 +352,8 @@ export class FilesService {
       if (transaction === null) throw new ApiError('NOT_FOUND', 'Transaction not found.');
     }
 
-    if (row.scan_state === 'PENDING') {
+    let scanState = row.scan_state;
+    if (scanState === 'PENDING') {
       const stored = await this.storage.head(row.storage_key);
       if (stored === null) {
         await this.setScanState(row.id, householdId, 'FAILED');
@@ -386,9 +392,16 @@ export class FilesService {
         );
       }
       await this.setScanState(row.id, householdId, verdict);
+      scanState = verdict;
     }
 
     if (input.transactionId !== undefined && input.transactionId !== null) {
+      if (!LINKABLE_SCAN_STATES.has(scanState)) {
+        throw new ApiError(
+          'VALIDATION_FAILED',
+          `That attachment is ${scanState} and cannot be attached to a Transaction.`,
+        );
+      }
       await this.prisma.client.transactions.updateMany({
         where: { id: input.transactionId, household_id: householdId, deleted_at: null },
         data: { attachment_id: row.id },

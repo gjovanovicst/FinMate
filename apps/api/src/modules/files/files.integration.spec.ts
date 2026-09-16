@@ -11,6 +11,8 @@ import { ConfigModule } from '../../config/config.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthModule } from '../auth/auth.module';
+import { LedgerModule } from '../ledger/ledger.module';
+import { TransactionsService } from '../ledger/transactions.service';
 import { FilesController } from './files.controller';
 import { FilesModule } from './files.module';
 import {
@@ -96,6 +98,7 @@ describe('files (integration)', () => {
   let prisma: PrismaService;
   let files: FilesService;
   let rateLimit: RateLimitService;
+  let transactions: TransactionsService;
   let storage: FakeStorage;
   let scanner: FakeScanner;
 
@@ -148,7 +151,7 @@ describe('files (integration)', () => {
     scanner = new FakeScanner();
 
     moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot(), PrismaModule, AuthModule, FilesModule],
+      imports: [ConfigModule.forRoot(), PrismaModule, AuthModule, FilesModule, LedgerModule],
     })
       .overrideProvider(OBJECT_STORAGE)
       .useValue(storage)
@@ -159,6 +162,7 @@ describe('files (integration)', () => {
     prisma = moduleRef.get(PrismaService);
     files = moduleRef.get(FilesService);
     rateLimit = moduleRef.get(RateLimitService);
+    transactions = moduleRef.get(TransactionsService);
 
     const stamp = Date.now();
     await prisma.client.users.createMany({
@@ -362,10 +366,48 @@ describe('files (integration)', () => {
       prisma.client.transactions.findFirstOrThrow({ where: { id: transactionId } }),
     );
     expect(linked.attachment_id).toBe(attachmentId);
+    // The read path a client uses exposes it too (F-34's `Transaction.attachmentId`).
+    const view = await asTenant(() => transactions.getById(householdId, transactionId));
+    expect(view.attachmentId).toBe(attachmentId);
 
     const callsAfterFirst = storage.headCalls;
     await asTenant(() => files.commit(householdId, { attachmentId, transactionId }));
     expect(storage.headCalls).toBe(callsAfterFirst);
+  });
+
+  it('refuses to attach a row that is not linkable, whatever the caller asks', async () => {
+    const { attachmentId } = await presign();
+    await upload(attachmentId);
+    scanner.verdict = 'INFECTED';
+    await expect(asTenant(() => files.commit(householdId, { attachmentId }))).rejects.toThrow();
+
+    const transactionId = uuidv7();
+    await asTenant(() =>
+      prisma.client.transactions.create({
+        data: {
+          id: transactionId,
+          household_id: householdId,
+          account_id: accountId,
+          kind: 'EXPENSE',
+          amount_minor: 1n,
+          currency: 'RSD',
+          description: 'must stay unattached',
+          source: 'MANUAL',
+          status: 'CONFIRMED',
+          occurred_at: new Date('2026-10-12T10:00:00.000Z'),
+          occurred_local_date: new Date('2026-10-12T00:00:00.000Z'),
+        },
+      }),
+    );
+
+    // The second commit skips the scan (the row is decided) — and must still refuse the link.
+    await expect(
+      asTenant(() => files.commit(householdId, { attachmentId, transactionId })),
+    ).rejects.toThrow(/cannot be attached/);
+    const row = await asTenant(() =>
+      prisma.client.transactions.findFirstOrThrow({ where: { id: transactionId } }),
+    );
+    expect(row.attachment_id).toBeNull();
   });
 
   it('refuses to link a Transaction from another Household', async () => {

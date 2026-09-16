@@ -30,6 +30,8 @@ export interface TransactionRow {
   readonly categoryId: string | null;
   readonly accountId: string;
   readonly needsReview: boolean;
+  /** The Receipt photo on this row, if any (F-34). Resolved separately with the `attachment` query. */
+  readonly attachmentId: string | null;
   /** Optimistic concurrency. Sent back on update; a mismatch is a CONFLICT. */
   readonly version: number;
   readonly splits: readonly SplitRow[];

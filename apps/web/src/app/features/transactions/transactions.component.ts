@@ -85,6 +85,7 @@ const TRANSACTIONS_QUERY = /* GraphQL */ `
           categoryId
           accountId
           needsReview
+          attachmentId
           version
           splits {
             id

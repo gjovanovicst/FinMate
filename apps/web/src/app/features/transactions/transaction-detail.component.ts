@@ -22,6 +22,7 @@ import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
 import { toMajorString } from '../../shared/money-text';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
+import { ReceiptAttachmentComponent } from '../receipts/receipt-attachment.component';
 import { planEdit, type TransactionRow, type TransactionStatus } from './transactions.view';
 
 interface RuleProposal {
@@ -201,7 +202,7 @@ const DELETE_TRANSACTION = /* GraphQL */ `
 @Component({
   selector: 'fm-transaction-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MoneyComponent, RouterLink],
+  imports: [ReactiveFormsModule, MoneyComponent, RouterLink, ReceiptAttachmentComponent],
   template: `
     <dialog #dialog class="sheet" (close)="closed.emit()" (cancel)="closed.emit()">
       <form class="sheet__form" [formGroup]="form" (ngSubmit)="save()" novalidate>
@@ -295,6 +296,17 @@ const DELETE_TRANSACTION = /* GraphQL */ `
           <span class="field__label">{{ i18n.t('transactions.note') }}</span>
           <textarea class="field__input" rows="2" formControlName="note"></textarea>
         </label>
+
+        <!-- F-34: the Receipt photo lives here rather than on /capture, because this is the sheet
+             that already owns one Transaction, and commitAttachment links to exactly one. The child
+             keeps its own state, so a change is visible without reloading the list, whose rows never
+             render an attachment. -->
+        <!-- (No backticks in this comment: the template is a JS template literal, and one would end
+             it with a parse error that names the wrong line.) -->
+        <fm-receipt-attachment
+          [transactionId]="transaction().id"
+          [attachmentId]="transaction().attachmentId"
+        />
 
         @if (!hasSplits()) {
           <!-- The "Zapamti za ubuduće" checkbox (F-09, docs/02 §3). Only meaningful with a category,

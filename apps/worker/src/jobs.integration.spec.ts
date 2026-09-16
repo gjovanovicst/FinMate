@@ -84,6 +84,7 @@ describe('the worker (integration)', () => {
 
   it('registers every job with a schedule and an idempotency statement', () => {
     expect(JOBS.map((job) => job.name).sort()).toEqual([
+      'files.purge',
       'insights.generate',
       'notifications.dispatch',
       'recurring.detect',

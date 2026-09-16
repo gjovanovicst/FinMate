@@ -577,7 +577,7 @@ type Transaction {
 
   tags: [Tag!]!
   receipt: Receipt
-  attachment: Attachment              # transactions.attachment_id is a single FK ([03 §4])
+  attachmentId: UUID                  # implemented (4.1.2); set only by commitAttachment (§5.15)
   recurringRuleId: UUID
   recurringRule: RecurringRule
   transferPeerId: UUID
@@ -2738,7 +2738,7 @@ contract. The pipeline is docs/05 §9's, and the storage is docs/03 §4's two ta
 | The notification centre's screen | `/notifications`, with the preferences beneath the list | docs/02 §4.18 files notification preferences under a **Settings shell that does not exist yet**. Rather than invent one for a single section, "what you get told" sits under "what you were told"; when the settings shell lands it hosts the same panel unchanged. The header bell (docs/02 §2.2) is the entry point and carries the unread count; the nav's one badged **slot** remains the review queue. |
 | `runAlerts` | A mutation, and the method the daily job calls | The worker exists since 3.4.1, and since 3.4.4 `insights.generate` calls the **same** `NotificationsService.run` this mutation does — generate, then evaluate against the rules, in the pipeline's order. Both are idempotent (insight dedupe keys, `notifications.dedupe_key`), and `notifications.dispatch` remains the per-minute drain. Before 3.4.4 the job called `InsightsService.generate` alone, so a scheduled run wrote insight rows that nothing ever turned into a notification. |
 
-### 5.15 Attachments and object storage (task 4.1.1)
+### 5.15 Attachments and object storage (tasks 4.1.1–4.1.2)
 
 F-34's attachments, and the presigned upload/download docs/06 §9 specifies. `files` owns `attachments`
 and nothing else; the bytes never transit the API (ADR-018).
@@ -2754,6 +2754,7 @@ and nothing else; the bytes never transit the API (ADR-018).
 | `commitAttachment` | HEADs the object, compares `byte-length` and the upload's `x-amz-meta-sha256`, runs the scan hook, then links | A presigned PUT cannot enforce a body hash (`content-length-range` needs a POST policy), so verification happens on the commit that follows it. A missing, short or swapped object becomes `FAILED`; an `INFECTED` one is deleted at once. |
 | `CommitAttachmentInput` | Drops docs/06's `purpose` and `receiptId` | The purpose was fixed at presign — accepting it again invites a contradiction — and nothing produces a Receipt yet (4.1.3 does). The §5.5 precedent: do not declare a parameter a contract cannot keep. |
 | `deleteAttachment` | `Boolean`, not `SimplePayload` | `transactions.attachment_id` / `receipts.attachment_id` are `ON DELETE SET NULL`, so a referenced attachment detaches rather than blocking. The payload union's arms are the typed `ApiError` codes every module already returns (§5.5, §5.7, §5.13). |
+| Linking (task 4.1.2) | `commitAttachment(input: { attachmentId, transactionId })`; `Transaction.attachmentId` is now exposed | This is what makes F-34 real — *a receipt photo on a Transaction* — and it is why `attachmentId` is on `Transaction` (it was declared in §5 here and unimplemented until now). The link is refused unless the row is `CLEAN` or `SKIPPED`: without that guard a second commit on a `FAILED`/`INFECTED` row would attach a blob the download path refuses to serve, so the "not downloadable" guarantee has to hold at the **reference** too, not only at the URL. `TransactionCreateInput.attachmentId`/`TransactionUpdateInput.attachmentId` stay unimplemented — an attachment is uploaded first, so the only writer is `commitAttachment`, and a create-time parameter would need the same linkable check in a second place. |
 | Retention | `FilesService.purge`, the **`files.purge`** job (daily 04:00) | Quarantined (`INFECTED`/`FAILED`), abandoned (`PENDING` past the grace window), unreferenced, and everything past **24 months** (docs/08 §7 row 17). Idempotent, and a failed object deletion keeps the row so the next pass retries instead of orphaning the blob. |
 | Bucket creation | `pnpm storage:init`, never on a request path | MinIO does not create a bucket on first write. A lazy create inside `presign` would be a side effect on the hot path needing permission the API otherwise does not use. |
 | Not built | Magic-byte **sniffing**, `Content-Disposition`/`nosniff` on the object response, re-encoding/EXIF stripping, thumbnails, and the OCR webhook | Each is 4.1.x or Phase 5 work; docs/08 §9.4 now carries the implementation status line by line rather than implying all of it ships. |
@@ -2763,6 +2764,13 @@ and nothing else; the bytes never transit the API (ADR-018).
 not specify. `404` would make the client show "file missing" during the ordinary window between a
 successful PUT and `commitAttachment`, and serving the bytes anyway is what `scan_state` exists to
 prevent.
+
+**`Transaction` exposes `attachmentId`, not the nested `Attachment` object this section's sketch drew.**
+Resolving the object per row means a join on a list the transaction feed reads constantly, and the repo
+has already made that call twice (§5.14's flattened `insightKind`/`insightSeverity`). A client that
+wants the image asks `attachment(id:)`, which is where the presigned `downloadUrl` is computed anyway —
+one extra round trip on a sheet that is already loading one row, in exchange for a list query that does
+not fan out.
 
 ---
 
@@ -3407,6 +3415,15 @@ Content-Type: application/json
 Issued by object storage, never by the API. The API is not in the data path — bytes never transit it
 ([05 §1](05-architecture.md)). The client must verify the `ETag` matches the `sha256` it declared, then
 call `commitAttachment` (§5) to mark the attachment usable and trigger OCR.
+
+**Implemented deviation (task 4.1.2).** The client does **not** verify the `ETag`, and the API does not
+rely on it: MinIO answers an `ETag` that is an MD5 for a single-part upload, not the SHA-256 the client
+declared, so comparing them would reject every correct upload. The digest is instead carried in the
+object's own metadata (`x-amz-meta-sha256`, signed so it cannot be swapped) and checked by
+`commitAttachment`'s `HEAD` against `attachments.sha256` — server-side, where a lying client cannot skip
+it. The web client also has to send those headers **verbatim** and uses `XMLHttpRequest` rather than
+`fetch`, because only XHR can report upload progress for a 12 MiB photo; a header added or dropped is a
+`403` that reads like a permissions problem.
 
 ### 9.4 `GET /v1/files/:id`
 

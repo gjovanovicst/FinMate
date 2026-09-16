@@ -431,7 +431,11 @@ describe('recurring rules (integration)', () => {
     expect(after.upcomingOccurrences).toEqual([]);
   });
 
-  it('materialises every due rule when no ids are given, and lists the window', async () => {
+  // An explicit timeout: with no `ruleIds` this materialises the Household's **whole** accumulated
+  // rule history, which is every rule this file created above. Alone it takes ~3.7 s; under
+  // `nx run-many -t test` — api and worker integration suites against one database in parallel — it
+  // crossed Vitest's 5 s default and failed as a flake. The work is real, not slow code.
+  it('materialises every due rule when no ids are given, and lists the window', { timeout: 20_000 }, async () => {
     const soon = await create({ description: 'Uskoro', startsOn: addMonths(TODAY, 1), rrule: 'FREQ=MONTHLY;BYMONTHDAY=1' });
     const far = await create({
       description: 'Daleko',

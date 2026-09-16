@@ -397,6 +397,17 @@ commit.
   diff with *Zadrži moje* / *Prihvati novo* per field. Money fields are never silently clobbered.
 - **Delete** is a soft delete with an undo toast; Restore lives in the history panel.
 
+> **Build state (task 4.1.2).** F-34 ships as an **attachment section in this sheet**: it shows the photo
+> when one is attached, offers *Priloži račun* (camera through `getUserMedia`, a file-input fallback,
+> and an explanation rather than a dead button when the camera is denied), runs the
+> presign → PUT → `commitAttachment` pipeline with upload progress, and removes with *Ukloni*. The photo
+> is linked to **this Transaction**, which is exactly what `commitAttachment(transactionId)` does.
+> The wireframe's `📷 Račun` on `/capture` (§4.3) and the receipts library (§4.11) are **not built**:
+> both belong to the receipt flow, and nothing produces a `Receipt` until 4.1.3 — an upload there would
+> have nothing to attach to and would be swept by `files.purge` as an orphan after 24 h. The section
+> states plainly that an upload is **not virus-scanned** in this build (`scanState: SKIPPED`) instead of
+> showing a reassuring badge it has not earned (docs/08 §9.4).
+
 ### 4.6 Review queue — F-08
 
 ```text

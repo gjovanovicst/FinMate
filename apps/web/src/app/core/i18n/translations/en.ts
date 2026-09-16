@@ -859,6 +859,38 @@ export const en = {
   'review.reason.LOW_CONFIDENCE': 'Not sure enough',
   'review.reason.UNCATEGORISED': 'No category',
 
+  // ---- receipts / camera capture (F-14, F-34; docs/06 §9) ----
+  // `receipts.note.skipped` must keep saying *not scanned*: this build has no virus scanner, so
+  // `SKIPPED` is the honest state and must never read as a clean bill of health (docs/08 §9.4).
+  'receipts.title': 'Receipt photo',
+  'receipts.hint': 'Attach a photo of the receipt to this transaction.',
+  'receipts.loading': 'Loading the receipt…',
+  'receipts.imageAlt': 'Receipt attached to this transaction',
+  'receipts.remove': 'Remove receipt',
+  'receipts.retry': 'Try again',
+  'receipts.file.label': 'Choose a photo',
+  'receipts.camera.start': 'Use the camera',
+  'receipts.camera.starting': 'Starting the camera…',
+  'receipts.camera.capture': 'Capture',
+  'receipts.camera.preview': 'Camera preview',
+  'receipts.camera.unsupported': 'This browser cannot open the camera. Choose a photo instead.',
+  'receipts.camera.denied': 'The camera was not available or permission was refused. Choose a photo instead.',
+  'receipts.note.skipped': 'Not virus-scanned: this build has no scanner, so this file was stored as-is.',
+  'receipts.note.noPreview': 'No preview is available for this file yet.',
+  'receipts.status.hashing': 'Preparing the photo…',
+  'receipts.status.uploading': 'Uploading…',
+  'receipts.status.finishing': 'Finishing…',
+  'receipts.status.attached': 'Receipt attached.',
+  'receipts.status.removed': 'Receipt removed.',
+  'receipts.error.type': 'That file type is not supported. Use a JPEG, PNG, HEIC or WebP photo.',
+  'receipts.error.size': 'That photo is larger than 12 MiB.',
+  'receipts.error.rejected': 'The upload was rejected. Please try again.',
+  'receipts.error.rateLimited': 'Too many uploads. Please wait a minute and try again.',
+  'receipts.error.notFound': 'That receipt no longer exists.',
+  'receipts.error.conflict': 'That receipt is not ready to attach yet.',
+  'receipts.error.capture': 'The photo could not be captured. Please try again.',
+  'receipts.error.generic': 'The receipt could not be uploaded. Please try again.',
+
   // ---- API error codes (docs/06 §10) ----
   'onboarding.back': 'Back',
   'onboarding.progress': 'Step {step} of {total}',

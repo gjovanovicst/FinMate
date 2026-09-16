@@ -754,6 +754,19 @@ Short, and load-bearing.
   docs/05 §8 now says so for this job, and `apps/worker/src/jobs.integration.spec.ts` asserts a condition
   reaches the notification table.
 
+- **Vitest's 5 s default timeout is a flake generator once `nx run-many -t test` runs the api and worker
+  integration suites against one database in parallel.** The recurring suite's *"materialises every due
+  rule when no ids are given"* takes ~3.7 s alone and crossed 5 s under that load, failing as
+  `Test timed out` on a change that touched neither. There is no global `testTimeout` in
+  `apps/api/vitest.config.mts`, so a genuinely heavy integration test needs an explicit
+  `it(name, { timeout }, fn)` — and the comment should say the work is real rather than slow code. It
+  also failed in a full run and **passed alone**, which is the signature of every load-sensitive flake.
+
+- **A job-list assertion is a tripwire for every new job.** `apps/worker/src/jobs.integration.spec.ts`
+  asserts `JOBS.map(job => job.name).sort()` against a literal list, so adding `files.purge` (4.1.1)
+  broke it while `api:test` stayed green — the worker suite simply was not run as part of that task's
+  verification. When you add a job, run `nx run worker:test`, not only `api:test`.
+
 ---
 
 ## Related

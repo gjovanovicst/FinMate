@@ -148,6 +148,15 @@ export class TransactionModel {
   })
   recurringRuleId!: string | null;
 
+  @Field(() => UuidScalar, {
+    nullable: true,
+    description:
+      'The Attachment on this row — a Receipt photo (F-34). Set only by `commitAttachment`, which ' +
+      'verifies the upload first; the raw `storage_key` is never exposed, so a client resolves the ' +
+      'image through the `attachment` query, whose `downloadUrl` is a short-lived presigned GET.',
+  })
+  attachmentId!: string | null;
+
   @Field(() => CategorySource, { nullable: true })
   categorySource!: CategorySource | null;
 

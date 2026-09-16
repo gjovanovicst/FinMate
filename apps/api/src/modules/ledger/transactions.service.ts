@@ -312,6 +312,11 @@ export interface TransactionRowShape {
   raw_input: string | null;
   /** Set when a RecurringRule generated the row (F-16's materialisation). */
   recurring_rule_id: string | null;
+  /**
+   * Set by `commitAttachment` (F-34). Optional in the shape because a few narrow `select`s omit it;
+   * every read that builds a `TransactionModel` uses `include`, so it is present wherever it matters.
+   */
+  attachment_id?: string | null;
   occurred_at: Date;
   occurred_local_date: Date;
   status: string;
@@ -2379,6 +2384,7 @@ export class TransactionsService {
       status: row.status as TransactionStatus,
       source: row.source as TransactionSource,
       recurringRuleId: row.recurring_rule_id,
+      attachmentId: row.attachment_id ?? null,
       categorySource: row.category_source as CategorySource | null,
       confidence: row.confidence === null ? null : Number(row.confidence),
       needsReview: row.needs_review,
