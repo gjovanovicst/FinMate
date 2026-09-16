@@ -1276,6 +1276,94 @@ snapshot** — which made this task the one that has to decide what a snapshot *
 - **(f) Snapshot the analytics and assistant answers too.** 07 §6 says cached views only, and the
   assistant must never answer from a stale snapshot; both need their own design, not this record.
 
+### ADR-028 — Web push: the protocol's own library, a sender that is inert without keys, and a payload the lock screen can show
+**Status:** Accepted
+
+**Context.** `WEB_PUSH` and `PUSH` rows have been written since 3.1.2 and **never delivered**:
+`NotificationsService.dispatch` skips them and reports `skipped`, with the comment that "there is no push
+dependency to send with". docs/09 §6 schedules 4.2.5 as *"web push subscription + permission flow"* — the
+**client** half — which cannot work without a sender, a subscription store and a key pair that no task
+builds. So this is the third plan gap of the same shape as ADR-025's app lock: the planned task assumes a
+counterpart that was never scheduled.
+
+Three constraints shape the decision:
+
+- **T-09** ([08 §2.3](08-security-privacy-and-compliance.md)): a notification payload must be
+  lock-screen-safe — **no amounts, no Merchant or Counterparty names**. A push payload is rendered by the
+  operating system on a locked device, which is the least private surface the product has.
+- **push is a third party by construction.** The payload is end-to-end encrypted (RFC 8291), but the
+  **endpoint, the timing and the count** pass through Apple's, Google's or Mozilla's push service — a
+  sub-processor class this product did not previously have, in a design that self-hosts object storage
+  (ADR-018) and keeps AI in-region (ADR-007) precisely to avoid one.
+- **iOS gives push only to an installed PWA** ([07 §4.8](07-platform-strategy-mobile-desktop.md)):
+  `PushManager` does not exist in a Safari tab, so the flow must not promise what the platform withholds,
+  and email stays the fallback (docs/07 §6).
+
+**Decision.**
+
+1. **The sender is `web-push`, the protocol's own library** — RFC 8291 (`aes128gcm`) payload encryption and
+   VAPID — added to `apps/api`. It is a protocol implementation, not a vendor platform: no account, no
+   dashboard, no second copy of our data. Rule 9 is satisfied by this ADR.
+2. **The sender is a seam that is inert without keys**, exactly like `SCANNER` (ADR-023), `OCR` and
+   `OBJECT_STORAGE`: `WEB_PUSH` resolves to an unconfigured implementation when `VAPID_PUBLIC_KEY` /
+   `VAPID_PRIVATE_KEY` are absent, rows stay `QUEUED`, and `dispatch` reports them `skipped` **with a
+   reason** rather than a bare count. A deployment that has not configured VAPID must be able to see that
+   nothing was delivered and why.
+3. **`push_subscriptions` is a new household-scoped table**: one row per `endpoint` (unique), with
+   `user_id`, `household_id`, `p256dh`, `auth`, `user_agent`, `created_at`, `last_seen_at` and a soft
+   delete. A `404`/`410` from the push service **deletes** the row — a dead endpoint is not a delivery
+   failure to retry — and a re-subscription of the same endpoint updates it rather than duplicating.
+4. **The payload is minimal by construction.** It carries `{ notificationId, kind, deepLink }` and **no
+   sentence, no amount and no name**: `kind` selects a **generic** sentence the client already has
+   translated (`"Novo obaveštenje"` / `"You have a new alert"`), and the detail is read in the app. That
+   keeps T-09 enforced in one place, keeps copy in the i18n catalogue, and means a compromised or curious
+   push service learns nothing but "this device was told something at 08:12".
+5. **Push is opt-in, and it is one channel among three.** The preference already exists
+   (`households.settings.notifications`); `IN_APP` is the row itself and `EMAIL` is the fallback, so a
+   Household that does not want a third party in the path simply does not enable push. The permission
+   prompt is asked **after** an explanation, never on load (4.2.5's client half), and a denied permission
+   is a state the UI shows rather than a broken control.
+6. **`SENT` means "accepted by the push service"**, not "seen". Push has no receipt, so the notification
+   row remains the record and the copy never claims delivery to a person.
+
+**Consequences.**
+- ✅ F-22's push finally has a path: subscription → sender → delivered, with the seams this repo already
+  uses for every unconfigured integration, so a CI without VAPID keys still tests the whole dispatch flow.
+- ✅ The lock-screen rule is structural rather than editorial: there is no field in the payload that could
+  carry an amount, so no future copy change can leak one.
+- ✅ A dead endpoint prunes itself, and a re-subscribe updates, so the table cannot grow stale duplicates.
+- ⚠️ **A new sub-processor class enters the register**: Apple/Google/Mozilla push services see the
+  endpoint, the timing and the count of our notifications. `push_subscriptions.endpoint` is also personal
+  data (a device identifier), so it belongs in [08 §3.9's data-flow table](08-security-privacy-and-compliance.md)
+  and in the erasure path (`gdpr.purge`), and the privacy policy must name push services before beta.
+- ⚠️ **A new dependency on the API** (`web-push`), with a supply-chain surface ([08 §9.6](08-security-privacy-and-compliance.md), T-15).
+- ⚠️ **VAPID keys are secrets**: they live in configuration, never in the repository, and rotating them
+  invalidates every existing subscription — so a rotation is a re-subscribe campaign, not a redeploy.
+- ⚠️ **Delivery is best-effort and unobservable.** A `SENT` row may never have reached a device, so the
+  in-app centre must remain the canonical list and no screen may say "sent to your phone".
+- ⚠️ **iOS delivers push only to an installed PWA** and **the PWA is not installable yet** (no manifest —
+  4.3.2, blocked on the product name). Until then web push is effectively Android/desktop only, which is a
+  capability gap to state in the UI rather than discover.
+- ⚠️ The worker's `notifications.dispatch` job is the sender's caller, so push delivery inherits the job's
+  idempotency rules (ADR-022): a re-dispatch of an already-`SENT` row must not send twice, which is what the
+  row's status is for.
+
+**Alternatives rejected.**
+- **(a) A push platform (OneSignal, Firebase Cloud Messaging).** A sub-processor holding our payloads by
+  default, a vendor lock, and a dashboard to operate — for a protocol `web-push` implements in a few
+  hundred lines we can read.
+- **(b) Put the amount or the Merchant in the payload** so the lock screen is more useful. T-09 forbids it,
+  and a lock screen is precisely where a household's spending should not appear.
+- **(c) Server-rendered copy in the payload.** It would move i18n into the API (already a recorded breach
+  for email, docs/06 §5.14) and put a sentence on a lock screen that no reviewer sees in the catalogue.
+- **(d) The service worker polling for notifications instead of push.** A timer in a background worker,
+  which this repo does not trust in a PWA (ADR-025) and which iOS throttles heavily anyway.
+- **(e) Email only, no push.** docs/07 §6 wants push as the primary channel with email as the iOS fallback;
+  dropping push would leave the alert design worse for the majority platform to avoid a third party that
+  the user opts into.
+- **(f) Ship the client half first (4.2.5 as planned) and subscribe to nothing.** A permission prompt that
+  leads to a `403` from an unimplemented endpoint is worse than not asking.
+
 ---
 
 ## Part 2 — Risk register

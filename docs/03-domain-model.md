@@ -731,6 +731,26 @@ CREATE TABLE notifications (
   UNIQUE (user_id, dedupe_key)
 );
 
+-- Browser push endpoints (ADR-028). One row per endpoint, household-scoped: the endpoint is the
+-- identity, so a re-subscribe updates rather than duplicates, and a 404/410 from the push service
+-- deletes the row. `p256dh`/`auth` are the client's public key material (RFC 8291); nothing here is a
+-- secret of ours, but the endpoint is a device identifier and therefore personal data (08 §3.9).
+CREATE TABLE push_subscriptions (
+  id                 UUID PRIMARY KEY,
+  household_id       UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  user_id            UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint           TEXT NOT NULL,
+  p256dh             TEXT NOT NULL,
+  auth               TEXT NOT NULL,
+  user_agent         TEXT,
+  last_seen_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at         TIMESTAMPTZ,
+  UNIQUE (endpoint)
+);
+-- Live subscriptions only: the dispatch path never wants a tombstone (ADR-028 decision 3).
+CREATE INDEX push_subscriptions_live_idx ON push_subscriptions (household_id) WHERE deleted_at IS NULL;
+
 CREATE TABLE attachments (
   id                 UUID PRIMARY KEY,
   household_id       UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,

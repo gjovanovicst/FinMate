@@ -217,7 +217,8 @@ configured). The first run of the harness found and fixed two real defects — s
 | 4.2.2 | IndexedDB repository + outbox pattern + idempotent flush | 3 | F-26 |
 | 4.2.3 | Offline capture UX: "pending sync" tray, retry, conflict diff for money fields | 2.5 | F-26 |
 | 4.2.4 | Stale-snapshot labelling (`as of <time>`) everywhere a figure is shown offline | 1 | F-26 |
-| 4.2.5 | Web push subscription + permission flow | 1.5 | F-22 |
+| 4.2.5 | Web push subscription + permission flow — the **client** half; needs 4.2.9 | 1.5 | F-22 |
+| 4.2.9 | **The `WEB_PUSH` sender** — **added by [ADR-028](14-decisions-and-risks.md)**: `push_subscriptions`, the inert-without-VAPID `web-push` seam, the minimal payload and the dispatch wiring | 2 | F-22 |
 | 4.2.8 | **The ledger-rows cache and the screens that read it** — **added by [ADR-027](14-decisions-and-risks.md)**; 4.2.4 caches the dashboard read model, and the transactions list / analytics' cached period need their own minimised row cache | 1.5 | F-26, F-24 |
 | 4.2.7 | **Queued edits and the money-field conflict diff** — **added by [ADR-026](14-decisions-and-risks.md)**; 4.2.3 ships the capture tray, and the `409`+`version` diff docs/02 §4.3 draws has no producer until an edit can be queued | 2 | F-26, F-04 |
 | 4.2.6 | **App lock** (WebAuthn platform authenticator, 6-digit PIN fallback) — **added by [ADR-025](14-decisions-and-risks.md)**; it is what wraps the offline store's data key, so without it nothing confidential is persisted | 2 | F-26, F-28 |
