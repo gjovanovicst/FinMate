@@ -60,8 +60,25 @@ export const envSchema = z
     // Anything else is a GDPR Chapter V transfer requiring recorded Household consent.
     AI_PARSE_PRIMARY: z.string().default('LOCAL'),
     AI_CLASSIFY_PRIMARY: z.string().default('LOCAL'),
-    AI_NARRATE_PRIMARY: z.string().default('ANTHROPIC_EU'),
+    // ADR-031: `ANTHROPIC_EU` was the default and it is *unimplemented* (`UNIMPLEMENTED_ENDPOINTS`),
+    // so a default deployment routed narration at an endpoint that could not answer. LOCAL is the
+    // honest default: narration falls back to the deterministic template, which is what this build
+    // already documents.
+    AI_NARRATE_PRIMARY: z.string().default('LOCAL'),
     AI_OCR_PRIMARY: z.string().default('LOCAL'),
+
+    /**
+     * The EEA host each `*_EU` endpoint actually means (ADR-031).
+     *
+     * Optional, because a deployment that routes `LOCAL` needs none of them — and **required** the
+     * moment a task primary names one, which `superRefine` enforces below. There is deliberately no
+     * default: the previous default was the provider's global platform (`api.deepseek.com`,
+     * `api.openai.com`), which is how an `_EU` suffix came to sit on a non-EEA host.
+     */
+    DEEPSEEK_EU_BASE_URL: z.string().url().optional(),
+    OPENAI_EU_BASE_URL: z.string().url().optional(),
+    ANTHROPIC_EU_BASE_URL: z.string().url().optional(),
+    GEMINI_EU_BASE_URL: z.string().url().optional(),
 
     /**
      * S3-compatible object storage (ADR-018, task 4.1.1). All optional: with none of them set the
@@ -111,14 +128,29 @@ export const envSchema = z
       'AI_OCR_PRIMARY',
     ] as const) {
       const value = env[key];
-      if (value !== 'LOCAL' && !value.endsWith('_EU')) {
+      if (value !== 'LOCAL' && !value.endsWith('_EU') && value !== 'DEEPSEEK_GLOBAL') {
         ctx.addIssue({
           code: 'custom',
           path: [key],
           message:
             `${key}="${value}" is not an EEA endpoint. AI tasks carrying Household free text or ` +
             `images may only target LOCAL or an explicit *_EU endpoint (ADR-007). ` +
-            `A non-EEA endpoint requires recorded Household consent and is not configurable here.`,
+            `DEEPSEEK_GLOBAL is the one non-EEA endpoint this build knows, and it serves a Household ` +
+            `only with recorded consent (ADR-031).`,
+        });
+      }
+
+      // ADR-031: an `_EU` endpoint is only EEA if it says which EEA host it means. Without this the
+      // suffix was satisfied by a name while the adapter's default base URL pointed outside the EEA.
+      const baseUrlKey = `${value.replace(/_EU$/, '')}_EU_BASE_URL` as keyof typeof env;
+      if (value !== 'LOCAL' && value.endsWith('_EU') && env[baseUrlKey] === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [key],
+          message:
+            `${key}="${value}" names an EEA endpoint but ${String(baseUrlKey)} is not set. There is ` +
+            `no default host for an *_EU endpoint: the provider's own platform is not in the EEA, so ` +
+            `defaulting to it would make the suffix a claim rather than a fact (ADR-031).`,
         });
       }
     }

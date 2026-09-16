@@ -33,7 +33,20 @@ import { TASKS, type Task } from './provider';
  * every non-`LOCAL` endpoint a sensitive task may reach; a provider that cannot offer one cannot
  * serve those tasks at all (§9).
  */
-export type Endpoint = 'LOCAL' | 'DEEPSEEK_EU' | 'OPENAI_EU' | 'ANTHROPIC_EU' | 'GEMINI_EU';
+export type Endpoint =
+  | 'LOCAL'
+  | 'DEEPSEEK_EU'
+  | 'OPENAI_EU'
+  | 'ANTHROPIC_EU'
+  | 'GEMINI_EU'
+  /**
+   * DeepSeek's **own** platform (`api.deepseek.com`), which is hosted in China.
+   *
+   * Added by ADR-031 because the alternative was a lie: this host was registered as `DEEPSEEK_EU`,
+   * so the suffix rule — the machine-checkable half of ADR-007 — reported EEA compliance for traffic
+   * that leaves the EEA. A non-EEA endpoint may exist; it may not be *called* EEA.
+   */
+  | 'DEEPSEEK_GLOBAL';
 
 /** Every endpoint, for iteration and for a runtime membership check on configuration input. */
 export const ENDPOINTS: readonly Endpoint[] = [
@@ -42,7 +55,36 @@ export const ENDPOINTS: readonly Endpoint[] = [
   'OPENAI_EU',
   'ANTHROPIC_EU',
   'GEMINI_EU',
+  'DEEPSEEK_GLOBAL',
 ];
+
+/**
+ * Endpoints that are **not** inside the EEA, and may therefore only serve a Household that has
+ * recorded its consent (ADR-007's consent-gated exception, ADR-031).
+ *
+ * The list exists so the rule is a runtime fact rather than a naming convention: `isEeaOrLocal` reads
+ * a suffix, and a suffix is a claim. Anything here is refused for a sensitive task unless the caller
+ * can show consent, whatever it is called.
+ */
+export const NON_EEA_ENDPOINTS: readonly Endpoint[] = ['DEEPSEEK_GLOBAL'];
+
+/** Is this endpoint outside the EEA? The half of the residency rule a suffix cannot express. */
+export function isNonEea(endpoint: string): boolean {
+  return (NON_EEA_ENDPOINTS as readonly string[]).includes(endpoint);
+}
+
+/**
+ * May a sensitive task carry Household free text to this endpoint *given* consent?
+ *
+ * Two separate questions, deliberately: `isEeaOrLocal` answers "does this need consent?" and this
+ * answers "is it allowed at all?". A `_EU` endpoint with a non-EEA host behind it would pass the
+ * first and must still fail the second — which is what ADR-031's configured-base-URL rule makes
+ * impossible rather than unlikely.
+ */
+export function isAdmissible(endpoint: string, consentRecorded: boolean): boolean {
+  if (isEeaOrLocal(endpoint)) return true;
+  return isNonEea(endpoint) && consentRecorded;
+}
 
 /** The suffix that makes an endpoint admissible for a sensitive task. */
 export const EEA_ENDPOINT_SUFFIX = '_EU';
@@ -90,10 +132,15 @@ export type RoutingTable = Readonly<Partial<Record<Task, TaskRoute>>>;
  * stronger EEA-hosted model because volume is low and quality is user-visible.
  */
 export const DEFAULT_ROUTING: RoutingTable = Object.freeze({
-  PARSE: { primary: 'LOCAL', fallback: 'DEEPSEEK_EU' },
-  CLASSIFY: { primary: 'LOCAL', fallback: 'DEEPSEEK_EU' },
-  NARRATE: { primary: 'ANTHROPIC_EU', fallback: 'LOCAL' },
-  OCR: { primary: 'LOCAL', fallback: 'GEMINI_EU' },
+  // ADR-031: these three fallbacks used to name `*_EU` endpoints that resolved to non-EEA hosts
+  // (`api.deepseek.com`, `api.generativelanguage.googleapis.com`) — and `ANTHROPIC_EU` was not
+  // implemented at all. A fallback that cannot be honoured without an explicitly configured EEA base
+  // URL is `null` here, which the degradation ladder already handles: the task stays `LOCAL`, and a
+  // deployment that has a real EEA host configures one.
+  PARSE: { primary: 'LOCAL', fallback: null },
+  CLASSIFY: { primary: 'LOCAL', fallback: null },
+  NARRATE: { primary: 'LOCAL', fallback: null },
+  OCR: { primary: 'LOCAL', fallback: null },
   EMBED: { primary: 'LOCAL', fallback: null },
 }) satisfies RoutingTable;
 

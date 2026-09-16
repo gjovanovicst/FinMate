@@ -1603,6 +1603,94 @@ nothing queued an edit. Four things needed deciding, and each is wrong **silentl
 - **(f) Queue `deleteTransaction`.** A queued delete of a row that changed while offline destroys work
   with no diff to show for it; it needs its own decision, not an extra arm here.
 
+### ADR-031 — An `_EU` suffix must name an EEA host, and `DEEPSEEK_GLOBAL` is what is not EEA
+**Status:** Accepted
+
+**Context.** A DeepSeek API key was supplied on 2026-09-16 to give the app AI support — the first real
+credential this project has had. Checking what it would take turned up three things, none of which the
+key could fix:
+
+1. **There is no composition root.** `AI_CLASSIFIER` is bound as `useValue: UNCONFIGURED_AI_CLASSIFIER`
+   (`classification.module.ts`), `NARRATOR`/`OCR`/`EMBEDDINGS` are the same shape, and **nothing in
+   `apps/` calls the provider factories or reads the routing table**: `AI_PARSE_PRIMARY` and its
+   siblings are validated at boot and then never read. The pipeline degrades to rules-only correctly and
+   always will, with or without a key.
+2. **Every `_EU` label was false.** `DEEPSEEK_EU` resolved to `https://api.deepseek.com` and
+   `OPENAI_EU` to `https://api.openai.com` — neither host is in the EEA — while `ANTHROPIC_EU` and
+   `GEMINI_EU` were in `UNIMPLEMENTED_ENDPOINTS` *and* `AI_NARRATE_PRIMARY` defaulted to
+   `ANTHROPIC_EU`. The residency guard is a suffix predicate, so `AI_CLASSIFY_PRIMARY=DEEPSEEK_EU`
+   passed it while sending household free text — merchant and person names — to a non-adequacy
+   jurisdiction. That is precisely the Chapter V transfer [04 §9](04-categorization-and-ai-engine.md)
+   records as *removed as a default*, reinstated by one environment variable, with the boot check
+   reporting the configuration valid.
+3. **Consent does not exist.** ADR-007 permits a non-EEA endpoint only as a "consent-gated exception",
+   and there is no consent column, no check and no UI: `aiConsentGiven` appears in docs and the GraphQL
+   sketch and nowhere else.
+
+The third of those is why this is an ADR and not a patch. A guarantee that a configuration value can
+satisfy while the traffic goes elsewhere is worse than no guarantee, because it is *relied upon*.
+
+**Decision.**
+
+1. **An `*_EU` endpoint must be configured with the EEA host it means** — `DEEPSEEK_EU_BASE_URL`,
+   `OPENAI_EU_BASE_URL`, `ANTHROPIC_EU_BASE_URL`, `GEMINI_EU_BASE_URL`. There is **no default**, and
+   the boot guard refuses a task primary that names one without it. The provider factories take the
+   base URL as an input rather than reading a constant, so the old behaviour is not merely checked
+   against — it is unwriteable.
+2. **`DEEPSEEK_GLOBAL` is the truthful name** for DeepSeek's own platform. It is listed in
+   `NON_EEA_ENDPOINTS`, `isEeaOrLocal` rejects it, and admission is `isAdmissible(endpoint,
+   consentRecorded)` — a predicate that takes consent as an *argument*, so a caller cannot reach a
+   non-EEA endpoint without having decided what it is doing.
+3. **`DEFAULT_ROUTING` is `LOCAL` for every task, with `null` fallbacks.** A fallback that cannot be
+   honoured is not a fallback; a deployment with a real EEA host configures one. The degradation ladder
+   already covers "no endpoint", so nothing else changes.
+4. **`AI_NARRATE_PRIMARY` defaults to `LOCAL`.** Its previous default named an unimplemented endpoint,
+   so every narration silently fell through to the template — the honest default is the one the
+   behaviour already had.
+5. **The key lives in `.env` only** (`.gitignore` line 30) and never in `.env.example`, which carries
+   placeholders for the new base URLs. A credential in a tracked file is a leak; a credential in a
+   *transcript* is a rotation.
+6. **What is still to build, recorded rather than implied:** the composition root (config → routing →
+   provider instances → the tokens) and the per-Household consent store plus its enforcement. Until
+   both exist, `DEEPSEEK_GLOBAL` is admissible and unreachable: **no traffic leaves the EEA today, and
+   none can**, because there is no wiring to leave through.
+
+**Consequences.**
+- ✅ The residency rule is now a fact about hosts rather than a claim about names: the suffix cannot be
+  satisfied by a spelling, and the one non-EEA endpoint this build knows says so in its name.
+- ✅ The defect is visible in the tests that used to pin it: `endpoints.spec.ts` asserted
+  `DEFAULT_ROUTING` was "docs/04 §9 verbatim", including the two-hop chain that made the claim false.
+  Those assertions are now the record of what changed.
+- ⚠️ **A deployment that had `AI_CLASSIFY_PRIMARY=DEEPSEEK_EU` (or any `_EU` primary) and no base URL
+  now fails to boot.** That breakage is the point — it is the difference between a silent Chapter V
+  transfer and a configuration error — but it is a breaking configuration change, and `.env.example`
+  now shows what to set.
+- ⚠️ **This commit does not give the app AI.** It removes a false compliance claim, names the non-EEA
+  endpoint honestly, and makes the consent question unskippable. `Lidl 2000` still resolves by rules and
+  keywords — which is the designed behaviour with no provider wired, not a regression.
+- ⚠️ **Consent is still unimplemented**, so `DEEPSEEK_GLOBAL` is admissible-by-config and unusable in
+  fact. The gate must land before the routing does, or the exception ADR-007 allows would be an
+  exception nobody granted.
+- ⚠️ **`LOCAL` remains an aspiration on this machine**: nothing is listening on
+  `LOCAL_AI_DEFAULT_BASE_URL`, so routing `LOCAL` means rules-only. ADR-021's inert embeddings and this
+  are the same honesty rule seen from two sides.
+- ⚠️ A key supplied in a chat transcript should be treated as exposed and rotated once a deployment
+  path exists; the repository is the part this ADR can protect.
+
+**Alternatives rejected.**
+- **(a) Use the key as supplied — `AI_CLASSIFY_PRIMARY=DEEPSEEK_EU`.** The one-word version of the
+  request. It would have made the code report EEA compliance for traffic leaving the EEA, which is the
+  failure mode this ADR exists to prevent.
+- **(b) Leave the labels, document the discrepancy.** A note beside a false claim is still a false
+  claim; the guard's whole value is that it can be trusted without reading the note.
+- **(c) Rename only DeepSeek's endpoint.** `OPENAI_EU` had the same defect and `ANTHROPIC_EU` was the
+  *default*, so the systemic fix — no default host for an `_EU` endpoint — is the one that holds.
+- **(d) Enforce residency by an allow-list of known-good hosts.** It cannot work: jurisdiction is not a
+  property of a hostname string, so the list would need the same human judgement it was meant to
+  replace, one DNS entry at a time.
+- **(e) Build the composition root first and decide this later.** It would wire the same false labels
+  into a path that actually sends data, turning a documented defect into an incident.
+
 ---
 
 ## Part 2 — Risk register

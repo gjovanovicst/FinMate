@@ -19,6 +19,21 @@ import {
   worstRung,
 } from './router';
 import { DEFAULT_ROUTING, type Endpoint, type RoutingTable } from './endpoints';
+
+/**
+ * A routing table **with** a fallback, for the tests that are about the chain.
+ *
+ * `DEFAULT_ROUTING` no longer carries one (ADR-031): its `DEEPSEEK_EU` fallback resolved to a non-EEA
+ * host. A deployment that has configured an EEA base URL can still route this way, so the router's
+ * fail-open behaviour is exercised here rather than through a default that must not exist.
+ */
+const CHAIN_ROUTING: RoutingTable = {
+  PARSE: { primary: 'LOCAL', fallback: 'DEEPSEEK_EU' },
+  CLASSIFY: { primary: 'LOCAL', fallback: 'DEEPSEEK_EU' },
+  NARRATE: { primary: 'LOCAL', fallback: 'DEEPSEEK_EU' },
+  OCR: { primary: 'LOCAL', fallback: 'DEEPSEEK_EU' },
+  EMBED: { primary: 'LOCAL', fallback: null },
+};
 import { AiRequestError, AiTransientError, AiUnavailableError } from './errors';
 import {
   unaccountedTelemetry,
@@ -181,7 +196,7 @@ describe('the happy path', () => {
     const local = new StubProvider('LOCAL', ok(GOOD));
     const deepseek = new StubProvider('DEEPSEEK', ok(GOOD));
     const router = new AiRouter({
-      routing: DEFAULT_ROUTING,
+      routing: CHAIN_ROUTING,
       providers: { LOCAL: local, DEEPSEEK_EU: deepseek },
     });
 
@@ -197,7 +212,7 @@ describe('fail-open down the chain', () => {
     });
     const deepseek = new StubProvider('DEEPSEEK', ok(GOOD));
     const router = new AiRouter({
-      routing: DEFAULT_ROUTING,
+      routing: CHAIN_ROUTING,
       providers: { LOCAL: local, DEEPSEEK_EU: deepseek },
     });
 
@@ -220,7 +235,7 @@ describe('fail-open down the chain', () => {
       throw new AiTransientError('TIMEOUT', 'slow', 'DEEPSEEK', null, 2);
     });
     const router = new AiRouter({
-      routing: DEFAULT_ROUTING,
+      routing: CHAIN_ROUTING,
       providers: { LOCAL: local, DEEPSEEK_EU: deepseek },
     });
 
@@ -234,11 +249,12 @@ describe('fail-open down the chain', () => {
   });
 
   it('treats a missing adapter as a provider failure, not a crash', async () => {
-    const router = new AiRouter({ routing: DEFAULT_ROUTING, providers: {} });
+    const router = new AiRouter({ routing: CHAIN_ROUTING, providers: {} });
     const result = await router.invoke('CLASSIFY', classifyInput());
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
+    // Two hops: the primary and the fallback, each with no adapter mounted.
     expect(result.failures.map((failure) => failure.reason)).toEqual([
       'UNKNOWN_PROVIDER',
       'UNKNOWN_PROVIDER',
@@ -272,7 +288,7 @@ describe('a non-retryable failure does not advance to the fallback', () => {
     });
     const deepseek = new StubProvider('DEEPSEEK', ok(GOOD));
     const router = new AiRouter({
-      routing: DEFAULT_ROUTING,
+      routing: CHAIN_ROUTING,
       providers: { LOCAL: local, DEEPSEEK_EU: deepseek },
     });
 
@@ -298,7 +314,7 @@ describe('the circuit breaker, through the router', () => {
     const local = new StubProvider('LOCAL', transientFailure);
     const deepseek = new StubProvider('DEEPSEEK', ok(GOOD));
     const router = new AiRouter({
-      routing: DEFAULT_ROUTING,
+      routing: CHAIN_ROUTING,
       providers: { LOCAL: local, DEEPSEEK_EU: deepseek },
       circuit: { now: clock.now, openMs: 1_000 },
     });
@@ -330,7 +346,7 @@ describe('the circuit breaker, through the router', () => {
     });
     const deepseek = new StubProvider('DEEPSEEK', ok(GOOD));
     const router = new AiRouter({
-      routing: DEFAULT_ROUTING,
+      routing: CHAIN_ROUTING,
       providers: { LOCAL: local, DEEPSEEK_EU: deepseek },
       circuit: { now: clock.now, openMs: 100 },
     });
@@ -419,10 +435,17 @@ describe('end to end through real adapters and a stub fetch', () => {
       },
     ]);
     const router = new AiRouter({
-      routing: DEFAULT_ROUTING,
+      routing: CHAIN_ROUTING,
       providers: {
         LOCAL: createLocalProvider({ fetch: hanging.fetch, timeouts: { CLASSIFY: 40 } }),
-        DEEPSEEK_EU: createDeepSeekProvider({ apiKey: 'k', fetch: deepseekStub.fetch }),
+        // `DEEPSEEK_EU` now has to say which EEA host it means (ADR-031): the factory takes the base
+        // URL as an input rather than defaulting to DeepSeek's own platform, which is not in the EEA.
+        DEEPSEEK_EU: createDeepSeekProvider({
+          apiKey: 'k',
+          baseUrl: 'https://eu.example.invalid/v1',
+          endpoint: 'DEEPSEEK_EU',
+          fetch: deepseekStub.fetch,
+        }),
       },
     });
 
@@ -494,8 +517,10 @@ describe('task budgets are reachable from the package surface', () => {
 
   it('orders the chain primary-first for every default route', () => {
     const router = new AiRouter({ routing: DEFAULT_ROUTING, providers: {} });
-    expect(router.endpoints('NARRATE')).toEqual(['ANTHROPIC_EU', 'LOCAL']);
-    expect(router.endpoints('OCR')).toEqual(['LOCAL', 'GEMINI_EU']);
+    // Every default is LOCAL-only since ADR-031: the fallbacks used to name `*_EU` endpoints whose
+    // hosts were not in the EEA (`ANTHROPIC_EU` was not implemented at all).
+    expect(router.endpoints('NARRATE')).toEqual(['LOCAL']);
+    expect(router.endpoints('OCR')).toEqual(['LOCAL']);
     expect(router.endpoints('EMBED')).toEqual(['LOCAL']);
   });
 });

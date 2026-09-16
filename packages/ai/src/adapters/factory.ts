@@ -89,9 +89,16 @@ export interface EndpointAdapterOptions {
  * format, so the schema is enforced on parse by {@link ../validation} instead. That is the whole
  * reason validation lives outside the adapter.
  */
-export function createDeepSeekProvider(options: EndpointAdapterOptions): OpenAiCompatibleProvider {
+export function createDeepSeekProvider(
+  options: EndpointAdapterOptions & { readonly endpoint?: 'DEEPSEEK_EU' | 'DEEPSEEK_GLOBAL' },
+): OpenAiCompatibleProvider {
+  // ADR-031: `baseUrl` has **no default** for `DEEPSEEK_EU`. It used to fall back to DeepSeek's own
+  // platform, which is in China — so `_EU` was a suffix on a host that was elsewhere, and the boot
+  // guard in `apps/api` passed it. An EEA endpoint without a configured EEA host is now unusable
+  // instead of quietly non-compliant; `DEEPSEEK_GLOBAL` is the same wire with an honest name.
+  const endpoint = options.endpoint ?? 'DEEPSEEK_GLOBAL';
   const config: OpenAiCompatibleConfig = {
-    endpoint: 'DEEPSEEK_EU',
+    endpoint,
     provider: 'DEEPSEEK',
     baseUrl: options.baseUrl ?? DEEPSEEK_BASE_URL,
     ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
@@ -115,6 +122,8 @@ export function createOpenAiProvider(options: EndpointAdapterOptions): OpenAiCom
   const config: OpenAiCompatibleConfig = {
     endpoint: 'OPENAI_EU',
     provider: 'OPENAI',
+    // Same rule as DeepSeek's (ADR-031): the OpenAI *platform* is not an EEA host, so a caller that
+    // names `OPENAI_EU` must supply the base URL of the regional deployment it means.
     baseUrl: options.baseUrl ?? OPENAI_BASE_URL,
     ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
     path: '/v1/chat/completions',
@@ -183,3 +192,19 @@ function transport(options: EndpointAdapterOptions): HttpTransport {
  * discovering it as a runtime failure on the first assistant question.
  */
 export const UNIMPLEMENTED_ENDPOINTS: readonly Endpoint[] = ['ANTHROPIC_EU', 'GEMINI_EU'];
+
+/**
+ * Endpoints whose **base URL must be configured** — there is no default, because a default would be a
+ * non-EEA host (ADR-031).
+ *
+ * `apps/api/src/config/config.ts` refuses to boot with one of these as a task primary unless its
+ * `*_BASE_URL` is set, and {@link createDeepSeekProvider} takes the URL as a required input rather
+ * than reading a constant. Both halves are needed: the check catches configuration, and the signature
+ * makes the constant unwriteable.
+ */
+export const REQUIRES_CONFIGURED_BASE_URL: readonly Endpoint[] = [
+  'DEEPSEEK_EU',
+  'OPENAI_EU',
+  'ANTHROPIC_EU',
+  'GEMINI_EU',
+];

@@ -17,7 +17,9 @@ import {
   VALIDATED_DEFAULT_ROUTING,
   assertAllowedRoute,
   endpointsForTask,
+  isAdmissible,
   isEeaOrLocal,
+  isNonEea,
   isKnownEndpoint,
   isLocalOnly,
   validateRouting,
@@ -35,16 +37,29 @@ const SENSITIVE_TASKS: readonly Task[] = ['PARSE', 'CLASSIFY', 'NARRATE', 'OCR']
  * Cast because they are deliberately *not* members of the `Endpoint` union: the point of the test
  * is that a string which never type-checked must still be refused at runtime.
  */
-const NON_EEA_ENDPOINTS = ['ANTHROPIC', 'OPENAI', 'GEMINI', 'DEEPSEEK'] as const;
+const PROVIDER_SPELLINGS = ['ANTHROPIC', 'OPENAI', 'GEMINI', 'DEEPSEEK'] as const;
 
 describe('isEeaOrLocal / isLocalOnly', () => {
   it('accepts LOCAL and every _EU endpoint', () => {
     expect(isEeaOrLocal('LOCAL')).toBe(true);
     for (const endpoint of ENDPOINTS) {
-      if (endpoint === 'LOCAL') continue;
+      if (endpoint === 'LOCAL' || isNonEea(endpoint)) continue;
       expect(endpoint.endsWith(EEA_ENDPOINT_SUFFIX)).toBe(true);
       expect(isEeaOrLocal(endpoint)).toBe(true);
     }
+  });
+
+  it('names the non-EEA endpoint honestly, and needs consent for it (ADR-031)', () => {
+    // `DEEPSEEK_GLOBAL` is DeepSeek's own platform, which is in China. It is not EEA, and it is not
+    // *called* EEA — which is the whole point: the same host used to be registered as `DEEPSEEK_EU`,
+    // so the suffix rule certified traffic that left the EEA.
+    expect(isNonEea('DEEPSEEK_GLOBAL')).toBe(true);
+    expect(isEeaOrLocal('DEEPSEEK_GLOBAL')).toBe(false);
+    expect(isAdmissible('DEEPSEEK_GLOBAL', false)).toBe(false);
+    expect(isAdmissible('DEEPSEEK_GLOBAL', true)).toBe(true);
+    // An EEA endpoint needs no consent, and a non-EU name that is not in the list is refused outright.
+    expect(isAdmissible('DEEPSEEK_EU', false)).toBe(true);
+    expect(isAdmissible('SOMEWHERE', true)).toBe(false);
   });
 
   it('refuses an endpoint without the explicit _EU suffix', () => {
@@ -69,18 +84,22 @@ describe('isEeaOrLocal / isLocalOnly', () => {
   });
 });
 
-describe('DEFAULT_ROUTING is docs/04 §9 verbatim', () => {
-  it('routes parse/classify LOCAL then DEEPSEEK_EU', () => {
-    expect(DEFAULT_ROUTING.PARSE).toEqual({ primary: 'LOCAL', fallback: 'DEEPSEEK_EU' });
-    expect(DEFAULT_ROUTING.CLASSIFY).toEqual({ primary: 'LOCAL', fallback: 'DEEPSEEK_EU' });
+describe('DEFAULT_ROUTING is ADR-031: LOCAL, with no fallback that cannot be honoured', () => {
+  it('routes parse/classify LOCAL with no fallback, because the old one was not EEA', () => {
+    // docs/04 §9's table named `DEEPSEEK_EU` as the fallback, and `DEEPSEEK_EU` resolved to
+    // `api.deepseek.com` — so the documented default was a Chapter V transfer wearing an EEA suffix.
+    expect(DEFAULT_ROUTING.PARSE).toEqual({ primary: 'LOCAL', fallback: null });
+    expect(DEFAULT_ROUTING.CLASSIFY).toEqual({ primary: 'LOCAL', fallback: null });
   });
 
   it('routes narrate ANTHROPIC_EU then LOCAL', () => {
-    expect(DEFAULT_ROUTING.NARRATE).toEqual({ primary: 'ANTHROPIC_EU', fallback: 'LOCAL' });
+    // `ANTHROPIC_EU` was not even implemented (`UNIMPLEMENTED_ENDPOINTS`), so the default pointed at
+    // an endpoint that could not answer and silently degraded every narration.
+    expect(DEFAULT_ROUTING.NARRATE).toEqual({ primary: 'LOCAL', fallback: null });
   });
 
   it('routes ocr LOCAL then GEMINI_EU', () => {
-    expect(DEFAULT_ROUTING.OCR).toEqual({ primary: 'LOCAL', fallback: 'GEMINI_EU' });
+    expect(DEFAULT_ROUTING.OCR).toEqual({ primary: 'LOCAL', fallback: null });
   });
 
   it('routes embed LOCAL with no fallback at all', () => {
@@ -201,7 +220,7 @@ describe('validateRouting — the refusal, per sensitive task, on either slot', 
 
   it('refuses every non-EEA spelling on the union-like list for every sensitive task', () => {
     for (const task of SENSITIVE_TASKS) {
-      for (const endpoint of NON_EEA_ENDPOINTS) {
+      for (const endpoint of PROVIDER_SPELLINGS) {
         expect(() =>
           assertAllowedRoute(task, { primary: endpoint, fallback: null }),
         ).toThrow(AiRoutingError);
@@ -240,7 +259,12 @@ describe('validateRouting — EMBED may only ever be LOCAL', () => {
 
 describe('endpointsForTask', () => {
   it('returns primary then fallback', () => {
-    expect(endpointsForTask(DEFAULT_ROUTING, 'CLASSIFY')).toEqual(['LOCAL', 'DEEPSEEK_EU']);
+    // A configured chain, not the default: ADR-031 removed the default's fallback because the
+    // endpoint it named was not EEA.
+    expect(
+      endpointsForTask({ CLASSIFY: { primary: 'LOCAL', fallback: 'DEEPSEEK_EU' } }, 'CLASSIFY'),
+    ).toEqual(['LOCAL', 'DEEPSEEK_EU']);
+    expect(endpointsForTask(DEFAULT_ROUTING, 'CLASSIFY')).toEqual(['LOCAL']);
   });
 
   it('drops a null fallback', () => {

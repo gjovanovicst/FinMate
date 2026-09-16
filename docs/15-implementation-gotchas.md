@@ -960,6 +960,22 @@ Short, and load-bearing.
   broke it while `api:test` stayed green — the worker suite simply was not run as part of that task's
   verification. When you add a job, run `nx run worker:test`, not only `api:test`.
 
+- **An `_EU` suffix is a *claim*, not a check — and `DEEPSEEK_EU` pointed at a non-EEA host.** The
+  residency guard is a string predicate (`isEeaOrLocal`: `LOCAL`, or anything ending `_EU`) plus a boot
+  check in `apps/api/src/config/config.ts`. That is enough to stop a *typo*; it cannot stop a **name
+  that lies**, and one did: `DEEPSEEK_BASE_URL = 'https://api.deepseek.com'` — DeepSeek's own platform,
+  hosted in China — was registered under the endpoint `DEEPSEEK_EU`, and it is the fallback in
+  `DEFAULT_ROUTING` for `PARSE` and `CLASSIFY`. So `AI_CLASSIFY_PRIMARY=DEEPSEEK_EU` passed the guard
+  while sending household free text (merchant and person names) to a non-adequacy jurisdiction, i.e. the
+  Chapter V transfer docs/04 §9 says was *removed as a default* — reinstated by one environment
+  variable, with the code reporting itself compliant. Found on 2026-09-16 when a DeepSeek key was
+  supplied for evaluation. **Fixed for the registry in ADR-031**: an `*_EU` endpoint must be configured
+  with the EEA host it means and has no default, DeepSeek's own platform is named `DEEPSEEK_GLOBAL`
+  (in `NON_EEA_ENDPOINTS`, admitted only through `isAdmissible(endpoint, consent)`), and
+  `DEFAULT_ROUTING` is `LOCAL`-only. The *consent gate itself* and the composition root that would
+  actually send anything are still unbuilt, so nothing egresses today — and the lesson generalises:
+  when a rule is enforced by string matching, the string is the attack surface.
+
 ---
 
 ## Related

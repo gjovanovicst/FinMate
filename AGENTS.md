@@ -47,8 +47,14 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE apart from 4.2.8b** (4.2.1–4.
   offline edit and the tray panel that explains a refusal (4.2.7b); and the **ledger-rows** record — the
   current period plus 45 days, capped at 200 rows, through the same whitelist and store, with its own
   `staleAt` — so a transaction list can be served offline without making the dashboard's figures look
-  fresher than they are (4.2.8a).
-- **Next**: 4.2.8b (the screens that serve the ledger cache), 4.3 (mobile polish), Phase 5 (hardening and beta), and the human visual pass at 320/768/1280 px that **no screen has
+  fresher than they are (4.2.8a); and **ADR-031**, which repaired AI residency: an `*_EU` endpoint must
+  be configured with the EEA host it means (there is no default — the default *was* a non-EEA host),
+  DeepSeek's own platform is named `DEEPSEEK_GLOBAL` and reaches a Household only with recorded
+  consent, and `DEFAULT_ROUTING` is `LOCAL`-only. **A live DeepSeek key is stored in `.env` (never
+  committed) and is deliberately not routed to yet**: the composition root and the consent gate are
+  unbuilt, so the app still resolves by rules and keywords.
+- **Next**: the AI composition root + the per-Household consent gate (ADR-031 decision 6), then
+  4.2.8b (the screens that serve the ledger cache), 4.3 (mobile polish), Phase 5 (hardening and beta), and the human visual pass at 320/768/1280 px that **no screen has
   had** — Phase 1's own gate, still open.
 
 **The long form is in the docs, deliberately.** Each task's decisions, its deviations from these
@@ -87,7 +93,7 @@ narrative above does not repeat them.
 | CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → lint → typecheck → test → **evals** → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
 | Web (0.8) | Angular 22, **zoneless** + signals, ADR-006. Responsive shell (bottom nav → sidebar at 1024px), design tokens (`apps/web/src/styles.css`), `fm-money` as the only Money renderer, auth pages, Accounts consuming GraphQL |
 | i18n | `core/i18n/`: **English primary**, Serbian latin + cyrillic. Runtime catalogue (no rebuild), `TranslationKey` derived from `en`, `sr-Cyrl` generated at runtime. Language switcher in the shell |
-| Tests | **2395 pass** — 896 API + 272 domain + 706 web + 149 nlp + 108 rules-engine + 258 ai + 6 worker (+contracts) |
+| Tests | **2407 pass** — 902 API + 272 domain + 706 web + 149 nlp + 108 rules-engine + 259 ai + 6 worker (+contracts) |
 | Worker | `apps/worker` **boots and is scheduled** (ADR-022, task 3.4.1): five BullMQ jobs over the API's own services — `recurring.materialise`, `recurring.detect`, `insights.generate` (generate *and* evaluate since 3.4.4), `notifications.dispatch`, `files.purge` (4.1.1) — `nx run worker:serve`. The remaining jobs in docs/05 §8's table are unbuilt, and ADR-022 makes stating what makes a job idempotent a precondition for adding one |
 | Receipts (F-14) | `apps/api/src/modules/receipts` **implemented in 4.1.3**: `createReceipt`, `extractReceipt`, `addReceiptItem`/`updateReceiptItem`/`removeReceiptItem`, `reconcileReceipt`, `receipts`/`receipt`. Item categories come from the **same** `ClassificationService.parse` a typed fragment uses (auditable in `classification_decisions`); I-6 lives in `@finmate/domain/src/receipts.ts` with both sides of the tolerance asserted. **No OCR provider is configured**, so extraction honestly reports `AI_UNAVAILABLE:no-provider-configured` and manual itemisation is the path, and the detail screen therefore does not offer extraction at all; the **OCR webhook (§9.5)** is not built. `commitReceipt` and `DETACH_TRANSACTION` are (4.1.4a) and both screens that call them are (4.1.4b/4.1.5, `/receipts` + `/receipts/:id`). `CreateReceiptInput.attachmentId` is **required**, so a Receipt exists only over a photo — the library's capture action is the only way in. `receipts` is a plain list with no `filter`/`totalCount`, so the library reads the first 50 and says `{count} shown, newest first` rather than claiming a total |
 | Service worker (F-26) | `apps/web/ngsw-config.json` + `@angular/service-worker`, **ADR-024**. It caches the **app shell only** — `/index.html`, `/*.js`, `/*.css`, 39 built URLs in all — and declares **no `dataGroups`**, so no API response can enter the HTTP cache (the offline data cache is IndexedDB, docs/08 §3.9); `navigationUrls` explicitly excludes `/graphql`, `/api/**`, `/auth/**`, `/v1/**` and the health paths, so the shell never answers for the API. Registered in the **production build only** (`enabled: !isDevMode()`), so `web:serve` has no worker and the built `dist` is what gets verified. The update flow is a **non-dismissible banner** that activates only on the user's click. ⚠️ **Not installable yet** — no manifest and no icons (4.3.2, and a manifest carries the undecided product name), and the Playwright offline pass docs/10 §8.3 specifies does not exist, so the cache strategy is verified by inspecting and serving the build rather than by throttling a browser. ⚠️ The deploy path has to serve `ngsw-worker.js`/`ngsw.json` unhashed and revalidated over HTTPS; nothing does yet (docs/11 §5, Q-7) |
@@ -127,7 +133,7 @@ nx run web:build          # production bundle
 **The browser talks to `/api/*`; the dev proxy strips the prefix** before forwarding, because the
 API serves `/auth/*` and `/graphql` without one (docs/06). Changing the prefix on one side only
 produces a 404 that looks like an auth failure.
-Verified working: lint 9/9, typecheck 9/9, 2395 tests, `pnpm test:evals` gating green, `web:build`, GraphQL over HTTP through the
+Verified working: lint 9/9, typecheck 9/9, 2407 tests, `pnpm test:evals` gating green, `web:build`, GraphQL over HTTP through the
 browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, the presign → PUT to MinIO →
 `commitAttachment` → `302` download round trip (verified live, bytes compared), and `prisma migrate diff`
 reporting no drift.
@@ -178,7 +184,9 @@ These are architecture, not preference. Violating one is a bug even when tests p
    `TenantContext` must **throw**. *(ADR-008)*
 5. **AI egress is EEA-only or local.** `PARSE`/`CLASSIFY`/`NARRATE`/`OCR` may only reach a `LOCAL` model
    or a provider endpoint with an explicit `_EU` suffix. Anything else is a consent-gated exception.
-   *(ADR-007)*
+   *(ADR-007)* **An `_EU` suffix is not enough on its own**: the endpoint must be configured with the
+   EEA host it means, because a suffix is a claim and a hostname is not jurisdiction *(ADR-031)* —
+   DeepSeek's own platform is `DEEPSEEK_GLOBAL`, and it needs recorded consent.
 6. **The assistant never invents a number.** A constrained query planner computes facts server-side;
    the LLM only narrates them, and every numeral in its output must exist in the facts payload.
    *(ADR-017)*

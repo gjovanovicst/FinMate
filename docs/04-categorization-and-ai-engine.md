@@ -675,17 +675,18 @@ A provider that cannot offer an EEA endpoint cannot serve those tasks at all. `E
 process, because the vectors are built from the household's own names.
 
 ```ts
-type Endpoint = 'LOCAL' | 'DEEPSEEK_EU' | 'OPENAI_EU' | 'ANTHROPIC_EU' | 'GEMINI_EU';
+type Endpoint = 'LOCAL' | 'DEEPSEEK_EU' | 'OPENAI_EU' | 'ANTHROPIC_EU' | 'GEMINI_EU' | 'DEEPSEEK_GLOBAL';
 
 const routing: Record<Task, { primary: Endpoint; fallback: Endpoint | null }> = {
   // High volume and latency-sensitive: run locally by default. This is also the cheapest
   // and the privacy-maximising choice, which is a happy coincidence rather than a trade-off.
-  PARSE:    { primary: 'LOCAL',       fallback: 'DEEPSEEK_EU'  },
-  CLASSIFY: { primary: 'LOCAL',       fallback: 'DEEPSEEK_EU'  },
-  // Quality is user-visible and volume is low, so a stronger EEA-hosted model leads.
-  NARRATE:  { primary: 'ANTHROPIC_EU', fallback: 'LOCAL'        },
+  PARSE:    { primary: 'LOCAL',       fallback: null           },
+  CLASSIFY: { primary: 'LOCAL',       fallback: null           },
+  // Quality is user-visible and volume is low, so a stronger EEA-hosted model leads — when a
+  // deployment has configured one. ADR-031 made `ANTHROPIC_EU`'s host a required setting.
+  NARRATE:  { primary: 'LOCAL',       fallback: null           },
   // The most sensitive payload in the system (an image). Local-first; cloud only on consent.
-  OCR:      { primary: 'LOCAL',       fallback: 'GEMINI_EU'    },
+  OCR:      { primary: 'LOCAL',       fallback: null           },
   EMBED:    { primary: 'LOCAL',       fallback: null           },
 };
 ```
@@ -696,6 +697,15 @@ const routing: Record<Task, { primary: Endpoint; fallback: Endpoint | null }> = 
 > transfer and not something to be resolved by a config default. Raised as Q-3 in
 > [08](08-security-privacy-and-compliance.md); resolved here by making the local model primary and
 > requiring the EEA suffix on every fallback.
+
+> **Corrected in ADR-031 (2026-09-16).** The fallbacks this table used to carry were not EEA: the code
+> registered `DEEPSEEK_EU` against `https://api.deepseek.com` and `OPENAI_EU` against
+> `https://api.openai.com`, and `ANTHROPIC_EU` — the table's `NARRATE` *primary* — was not implemented
+> at all. The suffix rule the paragraph below relies on was therefore satisfied by a **name**, so the
+> Chapter V transfer this document says it removed was one environment variable away. The table above
+> is now `LOCAL`-only with `null` fallbacks, an `*_EU` endpoint must be configured with the EEA host it
+> means (there is no default), and DeepSeek's own platform is named `DEEPSEEK_GLOBAL` and reaches a
+> Household only with recorded consent.
 
 Cross-cutting requirements on every adapter:
 
