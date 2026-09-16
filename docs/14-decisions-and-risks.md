@@ -985,6 +985,105 @@ service, so the choice is recorded before it is made.
   pending tray is only honest if the shell opens offline, and 4.2.5's push is impossible without one —
   deferring moves two tasks and blocks a third.
 
+### ADR-025 — The offline store is one encrypted IndexedDB, and without an app lock nothing confidential is persisted
+**Status:** Accepted
+
+**Context.** [ADR-016](#adr-016--offline-capture-via-client-generated-ids-and-an-outbox-not-a-local-first-framework)
+fixed the offline **semantics** (client-generated ids, an `idempotencyKey` on every write, an IndexedDB
+outbox flushed in order, last-write-wins with a `version`, a diff for money fields) and [05 §7](05-architecture.md)
+names "a thin repository over `idb`". [08 §3.9](08-security-privacy-and-compliance.md) fixes the
+**client-side posture**: an app lock, AES-GCM records under a non-extractable **in-memory** `CryptoKey`
+unwrapped by that lock, a minimised snapshot with a 24 h TTL, pending captures that expire after 30 days,
+and wipes on logout, revocation and household deletion. T-03 is the threat — L4 × I4, *"lost phone:
+IndexedDB holds pending captures, ledger snapshot, taxonomy cache"* — and that combination is its
+mitigation.
+
+Three things those documents leave open, which task 4.2.2 is where they become real:
+
+1. **The wrapping secret.** A key that lives only in memory decrypts nothing after a reload, so the data
+   key has to be stored **wrapped** — by a WebAuthn secret or a PIN — and unwrapped again after the
+   app-lock check. **No task in [09](09-implementation-plan.md) builds that app lock**: Sprint 4.2 is
+   worker → store → tray → labelling → push, and 4.3 is mobile polish. Sprint 4.2's own exit criterion
+   (*"full capture flow works in airplane mode and syncs without duplication on reconnect"*) therefore
+   depends on a control nobody was scheduled to build.
+2. **What happens before it exists.** The tempting shortcut — generate the key, store it beside the
+   ciphertext — makes §3.9's claim (*"a filesystem dump of the browser profile yields ciphertext"*)
+   **false**, and silently removes a mitigation T-03 is scored against. That is the one thing a security
+   decision may not do: an ADR with no downside is marketing, and a mitigation that is not there is worse.
+3. One library choice and one KDF deviation, below.
+
+**Decision.**
+
+1. **`idb` is the storage library.** One runtime dependency for a typed, promise-based wrapper over
+   IndexedDB, as [05 §7](05-architecture.md) already names; `fake-indexeddb` is a **dev** dependency so the
+   store and the outbox are exercised against a real IndexedDB implementation in Node. No local-first
+   framework (ADR-016).
+2. **Every offline record is one AES-GCM-256 message** under a single per-install data key: `{ iv,
+   ciphertext }`, plus the cleartext keys a lookup needs (a household UUID, a `clientRowId`), which is
+   metadata we accept because we cannot index ciphertext. The data key is generated with
+   `crypto.getRandomValues` and used as a **non-extractable** `CryptoKey`; nothing writes it in the clear.
+3. **The data key is persisted only wrapped by an app-lock secret** — and the app lock is a **new task**
+   (4.2.6, plus risk R-23), WebAuthn's platform authenticator preferred with a 6-digit PIN as the fallback.
+   Until it ships the store runs on an **in-memory** key: the outbox works for the life of the page (a
+   failed commit is recoverable without retyping), and the snapshot and taxonomy caches are **not written
+   to disk at all**. A reload discards pending work, and the UI has to say so rather than imply
+   otherwise — 4.2.3 owns that copy.
+4. **The PIN is stretched with PBKDF2-SHA-256 (WebCrypto), not Argon2-wasm** — a deliberate deviation from
+   §3.9's wording. Argon2 is the better KDF, but it arrives as a wasm build to audit and ship, for a secret
+   with roughly 20 bits of entropy: a 6-digit PIN is brute-forceable offline in hours either way. WebAuthn
+   is the control and the PIN is a speed bump; §3.9 now says that instead of implying otherwise. If a
+   PIN-only mode ever needs to be strong, the fix is a longer secret, not a different KDF.
+5. **What is stored, exactly** — §3.9's list made concrete: outbox entries (one `captureCommit` input per
+   Confirm press, carrying its rows' `clientRowId`/`idempotencyKey`); the ledger snapshot (only
+   `amountMinor`, `kind`, `occurredLocalDate`, `description`, and a category's id and name — never `note`,
+   `rawInput`, counterparty notes, or unbounded history: the current period plus **45 days**); and the
+   taxonomy cache (the categories and accounts the composer needs). **No receipt images** — their blob URLs
+   are short-lived and revoked ([08 §3.9](08-security-privacy-and-compliance.md)).
+6. **TTLs and purges are the store's own job.** The snapshot expires after **24 h**, a pending capture
+   after **30 days**, and `purge()` runs on logout, on a `401` (the remote-revoke path), on household
+   deletion, and from a manual control. Every read filters by expiry and a sweep runs on open, not on a
+   timer — a background timer in a PWA is a promise iOS does not keep.
+7. **The queue is ordered and idempotent.** Each entry takes a monotonic sequence at enqueue time; the
+   flush sends **whole entries in sequence order** and **stops at the first retryable failure** so order is
+   preserved; a `4xx` refusal is marked `rejected` (it needs the user, not a retry); and a replay is safe
+   because the keys were minted when the row was created, so the server collapses it (I-10,
+   `replayed: true`).
+
+**Consequences.**
+- ✅ Offline capture stops being a promise and becomes a queue with an order, a retry rule and a purge
+  rule — all of it testable in Node, without a browser.
+- ✅ **The encryption claim stays true as written**: with no app lock there is no key on disk, so a
+  filesystem dump of the profile yields nothing confidential and T-03's mitigation survives intact.
+- ✅ The key provider is a seam, so the app lock turns persistence on with no data migration.
+- ⚠️ **Until 4.2.6 ships, F-26's offline capture survives only as long as the page does.** [07 §6](07-platform-strategy-mobile-desktop.md)'s
+  ✅ for capture is *in-session* only, and the honest mobile story is degraded; R-23 carries it with a
+  checkpoint rather than assuming it away.
+- ⚠️ No snapshot cache before the app lock means 4.2.4's `as of <time>` labelling has nothing to label in
+  this build. Its producer arrives with the lock, not with the labelling task.
+- ⚠️ `idb` is a supply-chain addition ([08 §9.6](08-security-privacy-and-compliance.md), T-15) for about a
+  kilobyte of wrapper. The alternative — hand-rolled IndexedDB plumbing — is exactly where transaction and
+  connection-lifetime bugs live.
+- ⚠️ A profile dump still reveals **keys** (household and client ids) and the *existence* of pending work
+  even when the ciphertext is unreadable. Minimised, not eliminated.
+- ⚠️ TTLs are enforced on read and on open, so a profile left closed for months keeps ciphertext until it
+  is opened once. The encryption is what makes that acceptable, and it is another reason not to weaken it.
+
+**Alternatives rejected.**
+- **(a) Store the data key unwrapped, or derive it from a device constant.** Makes "encrypted at rest"
+  false while looking true. It would invalidate T-03's mitigation and it is the worst kind of change: one
+  that quietly removes a safety net.
+- **(b) Build the app lock inside this task.** WebAuthn + PIN + idle lock + re-auth is a feature with its
+  own UX ([02 §4.18](02-ux-flows-and-screens.md)), its own tests and its own failure modes. Folding it into
+  the storage task is how a store ships without the lock it depends on; it becomes task 4.2.6 instead.
+- **(c) Require an app lock to use the app at all.** Contradicts F-28's "everything except AI works" and
+  gates the whole product on a browser capability whose iOS behaviour differs.
+- **(d) A local-first framework (Replicache/Zero).** Rejected in ADR-016, unchanged here: a large
+  dependency whose semantics we would have to learn for a requirement we do not have.
+- **(e) `localStorage` or the Cache API instead of IndexedDB.** The service-worker cache is app-shell-only
+  by ADR-024 and must stay that way; `localStorage` is synchronous, stringly-typed and size-capped.
+- **(f) Argon2-wasm for the PIN, as §3.9 words it.** See decision 4 — a new wasm dependency does not fix
+  20 bits of entropy, and PBKDF2 is in the platform.
+
 ---
 
 ## Part 2 — Risk register
@@ -1018,10 +1117,12 @@ owner and a checkpoint in [09](09-implementation-plan.md).
 
 | **R-22** | **A stale app shell outlives a deploy** — the service worker serves a cached document whose bundle predates an API or contract change, so the fix never reaches the user (ADR-024) | 3 | 3 | 9 | Non-dismissible update prompt that activates only on the user's click; `ngsw.json`'s generated hash table makes a mixed old/new bundle impossible; activation-when-idle catches closed tabs; API changes stay additive within a release; the per-feature offline matrix in [07 §6](07-platform-strategy-mobile-desktop.md) states what a stale shell may still do | Phase 4.2 + every release |
 
+| **R-23** | **The offline cache depends on an app lock that no task builds** (ADR-025), so F-26's offline capture is session-only and Sprint 4.2's exit criterion cannot be met as written | 4 | 3 | **12** | The store, the outbox and the flush ship now and are tested in Node; the key provider is a seam, so the app lock switches persistence on with no data migration; the copy says "keep the app open" rather than implying durability; the app lock is a named task (4.2.6) with a Phase 5 checkpoint | Phase 4.2 exit + Phase 5 beta gate |
+
 ### Top five by exposure
 1. **R-01 onboarding cold-start (20)** — the single biggest threat, and the one the plan spends the most disproportionate effort on.
 2. **R-12 retention (16)** — a working product that people stop using is still a failed product.
-3. **R-03 / R-04 / R-05 / R-06 / R-07 / R-08 / R-14 / R-15 / R-16 (12 each)** — a cluster of medium-high risks, all addressed by decisions already taken above.
+3. **R-03 / R-04 / R-05 / R-06 / R-07 / R-08 / R-14 / R-15 / R-16 / R-23 (12 each)** — a cluster of medium-high risks, all addressed by decisions already taken above (R-23 by an ADR that names the missing task rather than assuming it).
 4. **R-02 / R-09 / R-10 / R-20 (10 each)** — low-likelihood, catastrophic-impact; these justify the reconciliation job, backup rehearsal and tenancy tests even though they are unlikely.
 5. **R-11 / R-13 / R-17 / R-19 / R-22 (8–9)** — monitor, do not over-invest.
 

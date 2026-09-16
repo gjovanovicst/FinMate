@@ -243,7 +243,7 @@ Two caches, deliberately different, and they must not be confused ([ADR-024](14-
 | Cache | Holds | Why it is that one |
 |---|---|---|
 | **Service worker** (`ngsw`, app shell only) | The document, the hashed bundles, the icons | It is what makes the app *open* offline. It never holds a response body from the API — no `dataGroups` entry may match `/graphql`, `/api/**`, `/auth/**` or `/v1/**` — so a household's ledger cannot land in an unencrypted HTTP cache by accident |
-| **IndexedDB** (encrypted, [08 §3.9](08-security-privacy-and-compliance.md)) | The outbox, the last-synced snapshot, the taxonomy cache | The only place household data may rest offline, because it is AES-GCM encrypted under an in-memory key, minimised to the fields a figure needs, and TTL'd |
+| **IndexedDB** (encrypted, [08 §3.9](08-security-privacy-and-compliance.md)) | The outbox, the last-synced snapshot, the taxonomy cache | The only place household data may rest offline, because it is AES-GCM encrypted under an in-memory key, minimised to the fields a figure needs, and TTL'd. The key is persisted only **wrapped by the app lock**, so before 4.2.6 ships (ADR-025) there is no key on disk, the store writes nothing confidential, and the outbox lives for the session only |
 
 ---
 

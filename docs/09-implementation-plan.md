@@ -218,6 +218,7 @@ configured). The first run of the harness found and fixed two real defects — s
 | 4.2.3 | Offline capture UX: "pending sync" tray, retry, conflict diff for money fields | 2.5 | F-26 |
 | 4.2.4 | Stale-snapshot labelling (`as of <time>`) everywhere a figure is shown offline | 1 | F-26 |
 | 4.2.5 | Web push subscription + permission flow | 1.5 | F-22 |
+| 4.2.6 | **App lock** (WebAuthn platform authenticator, 6-digit PIN fallback) — **added by [ADR-025](14-decisions-and-risks.md)**; it is what wraps the offline store's data key, so without it nothing confidential is persisted | 2 | F-26, F-28 |
 
 ### Sprint 4.3 (week 14) — Mobile UX polish, ~7 pd
 
@@ -231,6 +232,9 @@ configured). The first run of the harness found and fixed two real defects — s
 **Exit criteria**
 - A Lidl receipt totals correctly across ≥ 3 categories, with low-confidence items flagged.
 - Full capture flow works in airplane mode and syncs without duplication on reconnect.
+  **[ADR-025](14-decisions-and-risks.md) makes the second half conditional on 4.2.6**: the store persists
+  nothing confidential until an app lock can wrap its key, so 4.2.2–4.2.4 are session-only until then
+  (risk R-23). The criterion is met in full only with 4.2.6 done.
 - Lighthouse PWA criteria pass; installable on Android and iOS Safari.
 - Median time-to-log on a real mid-range Android device ≤ 5 s (device lab, not a desktop emulator —
   this is the number the whole thesis rests on).
