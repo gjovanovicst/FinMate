@@ -1,7 +1,8 @@
-import { addMoney, type Money } from '@finmate/domain';
+import { addMoney, money, type Money } from '@finmate/domain';
 
 import { moneyFromWire } from '../../shared/money-text';
 import type { MoneyWire } from '../../shared/ui/money/money.component';
+import type { SnapshotRow } from '../../core/offline/offline-store';
 
 export type TransactionKind = 'EXPENSE' | 'INCOME';
 export type TransactionStatus = 'CONFIRMED' | 'PENDING' | 'VOID';
@@ -66,21 +67,101 @@ export interface DayGroup {
  * expenses rather than a "0,00" that looks like a calculated fact.
  */
 export function groupByDay(rows: readonly TransactionRow[], hasMore: boolean): readonly DayGroup[] {
-  const byDate = new Map<string, TransactionRow[]>();
+  return bucketByDay(rows, hasMore, (row) => ({
+    date: row.occurredLocalDate,
+    kind: row.kind,
+    amount: moneyFromWire(row.amount),
+  }));
+}
+
+/**
+ * One cached row, as the list can render it.
+ *
+ * Deliberately narrower than {@link TransactionRow}, and not a padding of one: the cache holds five
+ * whitelisted fields and a category, so there is no id (nothing to open), no `status`, no
+ * `needsReview` and no splits. A row type that claimed those fields would let the screen render
+ * defaults the server never said.
+ *
+ * `categoryName` is `null` for a row whose cached category is `null`, which means *either*
+ * "uncategorised" *or* "divided" — and the screen renders neither claim.
+ */
+export interface CachedRow {
+  readonly occurredLocalDate: string;
+  readonly description: string;
+  readonly categoryName: string | null;
+  readonly kind: TransactionKind;
+  readonly amount: MoneyWire;
+}
+
+/** One calendar day of **cached** rows (task 4.2.8b). */
+export interface CachedDayGroup {
+  readonly date: string;
+  readonly rows: readonly CachedRow[];
+  readonly expenseTotal: Money | null;
+  readonly incomeTotal: Money | null;
+}
+
+/**
+ * Group cached rows into days, with the same summation policy as {@link groupByDay}.
+ *
+ * The cache is a **closed window** — the current period plus 45 days, capped at 200 rows, selected
+ * newest-first at write time — so `hasMore` is always `false` here: every day in it is complete as far
+ * as the cache is concerned. That is not the same as *complete*, which is why the screen labels the
+ * whole mode `podaci od <time>` rather than implying the days add up to a month.
+ *
+ * The currency comes from the record, not from a row: the whitelist stores minor units only, and a
+ * `Money` without a currency is not a value this codebase has (ADR-003).
+ */
+export function groupCachedByDay(
+  rows: readonly SnapshotRow[],
+  currency: string,
+): readonly CachedDayGroup[] {
+  const projected: CachedRow[] = rows.map((row) => ({
+    occurredLocalDate: row.occurredLocalDate,
+    description: row.description,
+    categoryName: row.category?.name ?? null,
+    // `kind` is `String` in the table and checked to be one of the two by the schema; anything that is
+    // not INCOME is an expense (ADR-003: direction is never a sign).
+    kind: row.kind === 'INCOME' ? 'INCOME' : 'EXPENSE',
+    amount: { amountMinor: row.amountMinor, currency },
+  }));
+
+  return bucketByDay(projected, false, (row) => ({
+    date: row.occurredLocalDate,
+    kind: row.kind,
+    amount: money(BigInt(row.amount.amountMinor), row.amount.currency),
+  }));
+}
+
+/**
+ * The one place day bucketing and its total policy live.
+ *
+ * Extracted for 4.2.8b rather than copied: the two callers differ only in how a row yields a date, a
+ * kind and an amount, and a second copy of "refuse to state a total you cannot know" is exactly the
+ * kind of duplication that lets one screen start lying while the other stays honest.
+ */
+function bucketByDay<T>(
+  rows: readonly T[],
+  hasMore: boolean,
+  project: (row: T) => { readonly date: string; readonly kind: TransactionKind; readonly amount: Money },
+): readonly { date: string; rows: readonly T[]; expenseTotal: Money | null; incomeTotal: Money | null }[] {
+  const buckets = new Map<string, T[]>();
+  // Insertion order is the server's newest-first order, or the cache's — both written newest-first.
   for (const row of rows) {
-    const bucket = byDate.get(row.occurredLocalDate);
+    const date = project(row).date;
+    const bucket = buckets.get(date);
     if (bucket) bucket.push(row);
-    else byDate.set(row.occurredLocalDate, [row]);
+    else buckets.set(date, [row]);
   }
 
-  const groups: DayGroup[] = [];
-  for (const [date, dayRows] of byDate) {
+  const groups: { date: string; rows: readonly T[]; expenseTotal: Money | null; incomeTotal: Money | null }[] = [];
+  for (const [date, dayRows] of buckets) {
     // Only the group holding the oldest row can be cut by the page boundary, and only while another
-    // page exists. `byDate` preserves insertion order, which is the server's newest-first order.
-    const isLast = groups.length === byDate.size - 1;
+    // page exists.
+    const isLast = groups.length === buckets.size - 1;
     const truncated = hasMore && isLast;
-    const expense = sumOf(dayRows, 'EXPENSE');
-    const income = sumOf(dayRows, 'INCOME');
+    const expense = sumOf(dayRows, 'EXPENSE', project);
+    const income = sumOf(dayRows, 'INCOME', project);
     groups.push({
       date,
       rows: dayRows,
@@ -92,10 +173,12 @@ export function groupByDay(rows: readonly TransactionRow[], hasMore: boolean): r
 }
 
 /** `null` for an empty or zero sum: "no expenses" and "0,00 of expenses" read differently. */
-function sumOf(rows: readonly TransactionRow[], kind: TransactionKind): Money | null {
-  const total = totalOf(
-    rows.filter((row) => row.kind === kind).map((row) => moneyFromWire(row.amount)),
-  );
+function sumOf<T>(
+  rows: readonly T[],
+  kind: TransactionKind,
+  project: (row: T) => { readonly kind: TransactionKind; readonly amount: Money },
+): Money | null {
+  const total = totalOf(rows.filter((row) => project(row).kind === kind).map((row) => project(row).amount));
   return total?.amountMinor === 0n ? null : total;
 }
 

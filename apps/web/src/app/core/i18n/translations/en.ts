@@ -404,6 +404,11 @@ export const en = {
   // ---- transactions ----
   'transactions.title': 'Transactions',
   'transactions.count': '{count} transactions',
+  // The cached mode (task 4.2.8b): the rows this device saved, served only when the read failed and no
+  // filter was on. Both strings say what the mode is and what it is not — a summary, not the ledger.
+  'transactions.cachedCount': '{count} transactions saved on this device',
+  'transactions.cachedNotice':
+    'No connection. These are the last rows this device saved — amount, category and date only — and they are read-only: adding, editing and exporting need a connection.',
   'transactions.addTitle': 'Add a transaction',
   'transactions.amount': 'Amount',
   'transactions.amountPlaceholder': 'e.g. 2.000 or 1.250,50',

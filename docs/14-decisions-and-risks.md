@@ -1276,6 +1276,78 @@ snapshot** — which made this task the one that has to decide what a snapshot *
 - **(f) Snapshot the analytics and assistant answers too.** 07 §6 says cached views only, and the
   assistant must never answer from a stale snapshot; both need their own design, not this record.
 
+#### ADR-027 — amendment 4.2.8b: the ledger-rows record gets its screen
+
+**Status:** Accepted (2026-09-16), amending decision 6 and the ⚠️ that said only the dashboard serves
+from a snapshot.
+
+**Context.** Decision 6 wrote the snapshot "for the dashboard only in this build", and its consequences
+recorded that *"`/transactions`, analytics' cached period and the assistant stay online-only, with their
+own error states"* — while docs/09's 4.2.8b row says *"analytics' cached period follows the same rule"*
+and this ADR's rejected option (f) says analytics and the assistant *"need their own design, not this
+record"*. Three documents, two answers for analytics. `/transactions` was not in doubt: it is the screen
+the ledger-rows record exists for.
+
+**Decision.**
+
+1. **`/transactions` serves the ledger-rows record.** A successful **unfiltered** first page writes it;
+   a failed first page serves it with one `podaci od <time>` line, read-only. The label is the serving
+   mode, per decision 4 — one line for the whole list, not one per row or per day.
+2. **A filtered read is never cached and never served.** A search, a date range or a `needsReview`
+   filter returns a *subset*; caching it would later present four rows as the Household's ledger, and
+   serving it after a failed search would answer a question the user did not ask. With a filter active
+   and the read failed, the honest error state stands. This is the same rule decision 3 applies to a
+   fabricated figure, one step earlier.
+3. **The record carries the ledger currency.** `LedgerSnapshot.currency`, not a field on each row: the
+   currency is a property of the Household's ledger (ADR-011) and not part of the row whitelist
+   docs/08 §3.9 minimises. Without it `fm-money` cannot render a cached amount at all, because `Money`
+   carries its currency (ADR-003) — the gap only appeared when a screen first tried to serve these rows.
+4. **The cached list claims nothing the whitelist does not hold.** No id, so no row is a button and
+   nothing drills in; no `status` and no `needsReview`, so no flag is rendered; and a `null` category
+   renders as *nothing*, because it means "uncategorised" **or** "divided" — a split Transaction has no
+   Category of its own and the whitelist holds one. Adding any of them is a data-minimisation decision
+   (docs/08 §3.9), not a rendering convenience, and is not taken here.
+5. **Analytics is left where the documents agree, not where one of them gestured.** Its offline view is
+   an **open decision**: this matrix says cached views only, rejected option (f) says it needs its own
+   design, and serving the ledger rows in its place would show a table where the user expects category
+   spend. `/analytics` therefore keeps its error state, and the contradiction is recorded in docs/07 §6
+   rather than resolved by picking a side silently.
+6. **The assistant still reads nothing.** Rejected option (f) is unchanged: it must never answer from a
+   stale snapshot.
+
+**Consequences.**
+- ✅ `podaci od <time>` is now true of a second screen, and the two records stay separate: the header
+  chip's stale half is still the **dashboard's** provenance, so a cached transaction list cannot make
+  the dashboard's figures look fresher than they are.
+- ✅ The rule "a stale figure is labelled" is enforced structurally rather than editorially: the screen
+  derives the label from the cache service's own provenance signal, which `readRows` sets and
+  `writeRows`/`reset` clear — so the label cannot outlive the rows it describes.
+- ⚠️ **The cached list is a summary, not the ledger screen.** No drill-in, no review flags, no split
+  breakdown, and the window is the cache's (current period + 45 days, capped at 200 rows), so a busy
+  month can be cut. The mode says so in one sentence rather than leaving the user to infer it.
+- ⚠️ **The write happens on a read**, so a user who never opens `/transactions` has no cached list —
+  the same consequence decision 6 records for the dashboard, for the same reason (no timer).
+- ⚠️ **Requires the app lock to survive a reload** (ADR-025 decision 3): with no lock the store is
+  in-memory and the label survives navigation but not a reload.
+- ⚠️ **Analytics' offline view is still owed**, and it is now the only 📖 row in docs/07 §6 with no
+  record behind it.
+
+**Alternatives rejected.**
+- **(a) Serve the cached rows on `/analytics` as its "cached period".** A table of raw rows where the
+  screen promises category spend is a different kind of fabrication, not a smaller one. If analytics is
+  to work offline it needs its own record (the server's aggregates), which is rejected option (f)'s
+  "own design".
+- **(b) Cache filtered reads too.** Four rows cached under a search would be served later as the
+  ledger, and nothing in the record would say they were a subset.
+- **(c) Cache every page as the user scrolls.** It would grow the record past its cap and, worse, make
+  the cached window depend on how far somebody happened to scroll — a ledger view whose completeness
+  varies by accident.
+- **(d) Add an id to the whitelist so cached rows can be opened.** An id is the first step back to a
+  full ledger copy on the device, which docs/08 §3.9 exists to bound; and the row a user taps offline
+  could not be edited anyway (an edit needs a connection and a version).
+- **(e) Label each cached row with its own time.** Decision 4's argument, unchanged: one snapshot
+  moment, one label.
+
 ### ADR-028 — Web push: the protocol's own library, a sender that is inert without keys, and a payload the lock screen can show
 **Status:** Accepted
 

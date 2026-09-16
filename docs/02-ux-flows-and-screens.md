@@ -387,6 +387,19 @@ commit.
   amount range, status, `needs_review`, source. Saved views persist per Member.
 - CSV import runs a dry-run diff (*124 redova · 3 moguća duplikata*) before writing (F-25).
 
+> **Build state (task 4.2.8b).** The screen serves the **ledger-rows cache** when a read fails: one
+> `podaci od <time>` line above the list, and the rows below it read-only. Four deliberate differences
+> from the wireframe in that mode, each because the record does not hold what the live screen does
+> (ADR-027's 4.2.8b amendment): **no row tap** (the whitelist has no id, and adding one is a
+> data-minimisation decision); **no review flag and no status** (neither is cached); **no create form
+> and no CSV export** (both need a connection, and a control that cannot work is not shown); and **no
+> filter bar** — with a filter active the cache is neither written nor served, because a subset is not
+> the ledger. A split Transaction shows **no category** in this mode rather than "uncategorised": the
+> cache holds one category per row, so `null` means either, and the screen claims neither. The mode's
+> own sentence says it is a summary, not the ledger. **Not built**: analytics' offline view (an open
+> decision — [07 §6](07-platform-strategy-mobile-desktop.md)) and the header chip's ledger half, which
+> still shows only the dashboard's provenance and the pending count.
+
 ### 4.5 Transaction detail / edit — F-04, F-15, F-12, F-31, F-34
 
 ```text

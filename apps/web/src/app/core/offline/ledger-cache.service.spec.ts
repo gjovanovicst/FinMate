@@ -86,12 +86,15 @@ describe('LedgerCacheService', () => {
     TestBed.configureTestingModule({});
     const cache = TestBed.inject(LedgerCacheService);
 
-    await cache.writeRows([row()], TODAY);
+    await cache.writeRows([row()], TODAY, 'RSD');
     expect(cache.staleAt()).toBeNull();
 
     const record = await cache.readRows();
     expect(record?.rows).toHaveLength(1);
     expect(record?.syncedAt).toBeTypeOf('string');
+    // The currency travels on the record, not on a row: without it `fm-money` cannot render a cached
+    // amount at all (Money carries its currency, ADR-003).
+    expect(record?.currency).toBe('RSD');
     // Reading is what makes them stale, so a screen cannot render them unlabelled.
     expect(cache.staleAt()).toBe(record?.syncedAt);
   });
@@ -107,7 +110,7 @@ describe('LedgerCacheService', () => {
   it('forgets its provenance on reset, so a wiped store cannot keep labelling', async () => {
     TestBed.configureTestingModule({});
     const cache = TestBed.inject(LedgerCacheService);
-    await cache.writeRows([row()], TODAY);
+    await cache.writeRows([row()], TODAY, 'RSD');
     await cache.readRows();
     expect(cache.staleAt()).not.toBeNull();
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { SnapshotRow } from '../../core/offline/offline-store';
 import type { MoneyWire } from '../../shared/ui/money/money.component';
 import {
   planSaveFailure,
@@ -10,6 +11,7 @@ import {
   filterQueryString,
   filtersFromQuery,
   groupByDay,
+  groupCachedByDay,
   hasActiveFilters,
   localNoonInstant,
   planEdit,
@@ -487,4 +489,65 @@ describe('planSaveFailure (task 4.2.7b, ADR-030)', () => {
     expect(plan.edit['description']).toBe('Lidl 2500');
   });
 });
+});
+
+/**
+ * The cached list's grouping (task 4.2.8b).
+ *
+ * The interesting property is not "it groups by day" — the live path already does that, through the
+ * same helper — but that a cached row **cannot claim what the cache does not hold**: no id, no status,
+ * no review flag, and a `null` category that means either "uncategorised" or "divided".
+ */
+function cachedRow(overrides: Partial<SnapshotRow> = {}): SnapshotRow {
+  return {
+    amountMinor: '200000',
+    kind: 'EXPENSE',
+    occurredLocalDate: '2026-09-20',
+    description: 'Lidl',
+    category: { id: 'c1', name: 'Hrana' },
+    ...overrides,
+  };
+}
+
+describe('groupCachedByDay', () => {
+  it('groups by day and totals per direction, with the record’s currency', () => {
+    const groups = groupCachedByDay(
+      [
+        cachedRow({ amountMinor: '200000' }),
+        cachedRow({ amountMinor: '350000', category: null }),
+        cachedRow({ amountMinor: '150000', kind: 'INCOME', occurredLocalDate: '2026-09-19' }),
+      ],
+      'RSD',
+    );
+
+    expect(groups.map((group) => group.date)).toEqual(['2026-09-20', '2026-09-19']);
+    expect(groups[0]?.expenseTotal?.amountMinor).toBe(550000n);
+    // A day with no income states no income total, rather than a 0,00 that reads as a fact.
+    expect(groups[0]?.incomeTotal).toBeNull();
+    expect(groups[1]?.incomeTotal?.amountMinor).toBe(150000n);
+    expect(groups[0]?.rows[0]?.amount).toEqual({ amountMinor: '200000', currency: 'RSD' });
+  });
+
+  it('keeps a missing category as no claim at all', () => {
+    const [group] = groupCachedByDay([cachedRow({ category: null })], 'RSD');
+
+    // `null` is "uncategorised" OR "divided" — the whitelist holds one category per row and a split
+    // Transaction has none. The screen must say neither, so the view carries the absence through.
+    expect(group?.rows[0]?.categoryName).toBeNull();
+  });
+
+  it('treats anything that is not INCOME as an expense, never as a sign', () => {
+    const [group] = groupCachedByDay([cachedRow({ kind: 'EXPENSE' })], 'RSD');
+
+    expect(group?.rows[0]?.kind).toBe('EXPENSE');
+    // The magnitude is never negative: direction lives in `kind` (ADR-003).
+    expect(group?.expenseTotal?.amountMinor).toBe(200000n);
+  });
+
+  it('never marks a cached day as truncated', () => {
+    // The cache is a closed window selected at write time, so there is no next page to be cut by.
+    const groups = groupCachedByDay([cachedRow(), cachedRow()], 'RSD');
+
+    expect(groups[0]?.expenseTotal).not.toBeNull();
+  });
 });

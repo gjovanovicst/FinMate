@@ -8,6 +8,8 @@ import { ActivatedRoute, Router, RouterLink, type ParamMap } from '@angular/rout
 import { equalsMoney, parseAmount, type Money } from '@finmate/domain';
 
 import { ErrorMessageService } from '../../core/api/error-message.service';
+import { LedgerCacheService, type LedgerSnapshot } from '../../core/offline/ledger-cache.service';
+import { syncedAtLabel } from '../../core/offline/sync.view';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
@@ -27,6 +29,7 @@ import {
   hasActiveFilters,
   localNoonInstant,
   toQueryVariables,
+  groupCachedByDay,
   totalOf,
   type TransactionFilters,
   type TransactionKind,
@@ -220,6 +223,8 @@ const SEARCH_DEBOUNCE_MS = 300;
       <p class="head__sub">
         @if (loading()) {
           {{ i18n.t('accounts.loading') }}
+        } @else if (cached()) {
+          {{ i18n.t('transactions.cachedCount', { count: cachedCount() }) }}
         } @else {
           {{ i18n.t('transactions.count', { count: totalCount() }) }}
         }
@@ -230,7 +235,56 @@ const SEARCH_DEBOUNCE_MS = 300;
       <p class="alert" role="alert">{{ error() }}</p>
     }
 
-    @if (noAccounts()) {
+    @if (cached()) {
+      <div class="cached" role="status">
+        @if (staleLabel(); as asOf) {
+          <p class="cached__asof">{{ i18n.t('money.asOf', { time: asOf }) }}</p>
+        }
+        <p class="cached__body">{{ i18n.t('transactions.cachedNotice') }}</p>
+      </div>
+
+      @for (group of cachedGroups(); track group.date) {
+        <section class="day">
+          <header class="day__head">
+            <h2 class="day__date">{{ group.date }}</h2>
+            <p class="day__totals">
+              @if (group.expenseTotal; as spent) {
+                <span>{{ i18n.t('transactions.daySpent', { amount: amountText(spent) }) }}</span>
+              }
+              @if (group.incomeTotal; as received) {
+                <span>{{ i18n.t('transactions.dayReceived', { amount: amountText(received) }) }}</span>
+              }
+            </p>
+          </header>
+
+          <ul class="list">
+            <!--
+              Deliberately NOT a button: a cached row has no id to open (the whitelist drops it, and
+              adding one is a data-minimisation decision, not a convenience). A row that looked
+              tappable and did nothing would be worse than a row that plainly does not.
+            -->
+            @for (row of group.rows; track $index) {
+              <li class="row row--cached">
+                <span class="row__main">
+                  <span class="row__desc">{{ row.description }}</span>
+                  <span class="row__meta">
+                    <!--
+                      Nothing when the cache holds no category. A null category means "uncategorised"
+                      OR "divided" — a split Transaction has no Category of its own and the whitelist
+                      holds one — so the screen claims neither instead of guessing.
+                    -->
+                    @if (row.categoryName; as name) {
+                      {{ name }}
+                    }
+                  </span>
+                </span>
+                <fm-money class="row__amount" [amount]="row.amount" [direction]="row.kind" />
+              </li>
+            }
+          </ul>
+        </section>
+      }
+    } @else if (noAccounts()) {
       <div class="empty">
         <p class="empty__title">{{ i18n.t('transactions.noAccountsTitle') }}</p>
         <p class="empty__body">{{ i18n.t('transactions.noAccountsBody') }}</p>
@@ -819,6 +873,37 @@ const SEARCH_DEBOUNCE_MS = 300;
       .row__open:focus-visible {
         border-color: var(--color-primary);
       }
+      /* The cached mode (4.2.8b): one provenance line for every row below it, never per row
+         (ADR-027 decision 4), plus a read-only row that plainly is not a button. */
+      .cached {
+        padding: var(--space-3) var(--space-4);
+        margin-block-end: var(--space-4);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+      }
+      .cached__asof {
+        margin: 0;
+        color: var(--color-text-subtle);
+        font-size: var(--text-xs);
+        font-style: italic;
+      }
+      .cached__body {
+        margin: var(--space-1) 0 0;
+        color: var(--color-text-muted);
+        font-size: var(--text-sm);
+      }
+      /* Same geometry as the row button, without the affordances: no hover, no cursor, no edit label. */
+      .row--cached {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-3);
+        padding: var(--space-3) var(--space-4);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+      }
       .row__main {
         display: grid;
         gap: var(--space-1);
@@ -875,6 +960,7 @@ export class TransactionsComponent {
   private readonly fb = inject(FormBuilder);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly ledger = inject(LedgerCacheService);
 
   readonly rows = signal<readonly TransactionRow[]>([]);
   readonly categories = signal<readonly CategoryOption[]>([]);
@@ -890,6 +976,15 @@ export class TransactionsComponent {
   readonly editing = signal<TransactionRow | null>(null);
   readonly splitMode = signal(false);
   readonly splitDrafts = signal<readonly SplitDraft[]>([]);
+
+  /**
+   * The rows served from the ledger cache, or `null` when the list on screen came from the server.
+   *
+   * A mode, not a fallback list: ADR-027 decision 2 makes provenance the label, so the screen renders
+   * *either* the live list *or* the cached one, and the cached arm carries the `podaci od <time>` line
+   * and no controls that need a connection.
+   */
+  readonly cached = signal<LedgerSnapshot | null>(null);
 
   private cursor: string | null = null;
   private searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -916,6 +1011,33 @@ export class TransactionsComponent {
   readonly hasFilters = computed(() => hasActiveFilters(this.filters()));
   readonly hasMore = computed(() => this.hasMoreRows());
   readonly groups = computed(() => groupByDay(this.rows(), this.hasMoreRows()));
+
+  /**
+   * The cached rows, grouped like the live ones but off {@link LedgerSnapshot} (task 4.2.8b).
+   *
+   * Empty while the list is live, so `@if (cached())` and this agree about the mode.
+   */
+  readonly cachedGroups = computed(() => {
+    const record = this.cached();
+    return record === null ? [] : groupCachedByDay(record.rows, record.currency);
+  });
+
+  /**
+   * The `podaci od <time>` line, or `null` when the rows are live.
+   *
+   * One label for the serving mode, not one per day or per row (ADR-027 decision 4). It reads the
+   * *cache service's* provenance rather than the component's own copy of the record, so the label and
+   * the rows cannot disagree: the signal is set by `readRows` and cleared by `writeRows`/`reset`, and
+   * every successful read hits one of those two. Live rows render **no** label — if everything were
+   * labelled, the label would stop meaning anything.
+   */
+  readonly staleLabel = computed(() => {
+    const syncedAt = this.ledger.staleAt();
+    return syncedAt === null ? null : syncedAtLabel(syncedAt, this.i18n.tag());
+  });
+
+  /** How many rows the cached mode is showing. Never `totalCount`: a cache knows only its own window. */
+  readonly cachedCount = computed(() => this.cached()?.rows.length ?? 0);
 
   readonly matchingCategories = computed(() => {
     const kind = this.form.controls.kind.value;
@@ -1056,6 +1178,18 @@ export class TransactionsComponent {
   private async load(): Promise<void> {
     this.loading.set(true);
     this.error.set(null);
+
+    // Taxonomy first, but **not fatally**: it feeds the create form and the category filter, and a
+    // ledger snapshot is a read-only view. Failing the whole screen because the category list did not
+    // arrive would throw away rows the device already has (4.2.8b).
+    await this.loadTaxonomy();
+
+    await this.readFirstPage();
+    this.loading.set(false);
+  }
+
+  /** The accounts and categories the form needs. A failure here is not a failure of the list. */
+  private async loadTaxonomy(): Promise<void> {
     try {
       const taxonomy = await this.graphql.query<{
         accounts: { edges: { node: AccountOption }[] };
@@ -1067,21 +1201,69 @@ export class TransactionsComponent {
 
       const firstAccount = this.accounts()[0];
       if (firstAccount) this.form.controls.accountId.setValue(firstAccount.id);
+    } catch {
+      // Nothing to say here: if the ledger read also failed, *it* reports the reason, and if it
+      // succeeded the list is correct even though the form has no accounts to offer.
+    }
+  }
 
+  /**
+   * Read the first page, and serve the ledger cache when the read fails (task 4.2.8b, ADR-027).
+   *
+   * Two rules decide whether the cache may stand in for the server, and both come from the cache's own
+   * shape rather than from convenience:
+   *
+   * - **Only with no filters active.** A filtered read is a subset, and the cache is the *ledger's*
+   *   window — serving it after a failed search would show rows the search excluded and present them
+   *   as the answer. With a filter on, a failed read keeps the honest error state.
+   * - **Only when something was cached.** No record, an expired one (24 h TTL) or an unreadable store
+   *   all mean the same thing: there is nothing honest to show, so the error stands rather than a zero
+   *   or an empty list that looks like a quiet month (ADR-027 decision 3).
+   */
+  private async readFirstPage(): Promise<void> {
+    try {
       await this.fetchPage({ reset: true });
+      // A live read supersedes the cached mode, including the label. `writeRows` clears the provenance
+      // when it stores a record; this covers the success that stores nothing (no rows, or a filter on).
+      this.cached.set(null);
+      this.ledger.reset();
+      // The error is **not** cleared here. `load()` clears it once up front, and a successful list read
+      // must not wipe a message another concurrent path just wrote: the `/transactions/:id` drill-in
+      // runs beside this one, and clearing here would swallow its refusal (the spec caught this).
+      return;
     } catch (error) {
+      const fallback = await this.cachedFirstPage();
+      if (fallback !== null) {
+        this.cached.set(fallback);
+        // A live page must not linger behind a cached one: the label covers the whole mode, so rows
+        // that came from the server may not sit under a `podaci od` line they are not part of.
+        this.rows.set([]);
+        this.hasMoreRows.set(false);
+        this.cursor = null;
+        this.error.set(null);
+        return;
+      }
+
+      // No cache: clear anything a previous read left, so an unlabelled stale row cannot render
+      // beside the error (ADR-027 decisions 2 and 3).
+      this.cached.set(null);
+      this.rows.set([]);
       this.error.set(this.errors.for(error));
-    } finally {
-      this.loading.set(false);
+    }
+  }
+
+  /** The cached record, or `null` when there is none, it expired, or the store would not open. */
+  private async cachedFirstPage(): Promise<LedgerSnapshot | null> {
+    if (hasActiveFilters(this.filters())) return null;
+    try {
+      return await this.ledger.readRows();
+    } catch {
+      return null;
     }
   }
 
   async reload(): Promise<void> {
-    try {
-      await this.fetchPage({ reset: true });
-    } catch (error) {
-      this.error.set(this.errors.for(error));
-    }
+    await this.readFirstPage();
   }
 
   async loadMore(): Promise<void> {
@@ -1115,6 +1297,50 @@ export class TransactionsComponent {
     this.cursor = result.transactions.pageInfo.endCursor;
     this.hasMoreRows.set(result.transactions.pageInfo.hasNextPage);
     this.totalCount.set(result.transactions.totalCount);
+
+    if (options.reset) await this.cachePage(page);
+  }
+
+  /**
+   * Keep the first page for offline reading (task 4.2.8b).
+   *
+   * **A side effect of a successful read, never a reason to hide one** — and never on a timer
+   * (ADR-027 decision 6). Three conditions, each of which would otherwise make the cache lie:
+   *
+   * - **no active filters**, because a filtered page is a subset and the cache is the ledger's window;
+   * - **at least one row**, because there is nothing to render from an empty record and writing one
+   *   would only convert "no cache" into "an empty ledger";
+   * - a currency, taken from the rows themselves — the server sends it on every amount, and a cached
+   *   row cannot become `Money` without one (ADR-003).
+   *
+   * `today` is the device's local day, the same expression the create form uses for its default date.
+   * It anchors `selectLedgerRows`'s symmetric ±45-day window, so an offset at the margin can drop at
+   * most the oldest day of a 200-row cap.
+   */
+  private async cachePage(page: readonly TransactionRow[]): Promise<void> {
+    const first = page[0];
+    if (first === undefined || hasActiveFilters(this.filters())) return;
+
+    try {
+      await this.ledger.writeRows(
+        page.map((row) => ({
+          amountMinor: row.amount.amountMinor,
+          kind: row.kind,
+          occurredLocalDate: row.occurredLocalDate,
+          description: row.description,
+          // A divided Transaction has no category of its own, and the cache holds one per row — so it
+          // caches as `null`, which the cached list renders as *nothing* rather than as "uncategorised"
+          // (see the service's header).
+          category: row.categoryId
+            ? { id: row.categoryId, name: this.categoryName(row.categoryId) }
+            : null,
+        })),
+        new Date().toISOString().slice(0, 10),
+        first.amount.currency,
+      );
+    } catch {
+      // A store that will not open must not turn a live list into an error screen.
+    }
   }
 
   // -------------------------------------------------------------------------------------------

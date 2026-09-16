@@ -404,6 +404,9 @@ export const srLatn: Record<keyof typeof en, string> = {
   // ---- transactions ----
   'transactions.title': 'Transakcije',
   'transactions.count': '{count} transakcija',
+  'transactions.cachedCount': '{count} transakcija sačuvano na ovom uređaju',
+  'transactions.cachedNotice':
+    'Nema veze. Ovo su poslednji redovi sačuvani na ovom uređaju — samo iznos, kategorija i datum — i samo za čitanje: dodavanje, izmena i izvoz zahtevaju vezu.',
   'transactions.addTitle': 'Dodaj transakciju',
   'transactions.amount': 'Iznos',
   'transactions.amountPlaceholder': 'npr. 2.000 ili 1.250,50',

@@ -660,6 +660,41 @@ docs/04 is canonical for all of this. The recurring theme is that a second copy 
   8.1.5's gate handle it) is a product decision about which side wins, so it is recorded rather than
   patched. docs/04 §8.1.6.
 
+- **A cached row cannot become `Money` without a currency, and the whitelist does not hold one.** The
+  ledger-rows record keeps `amountMinor` as a string and no currency code — correctly, since docs/08 §3.9
+  minimises *rows* — but `fm-money` takes `MoneyWire{amountMinor, currency}` and the domain's `money()`
+  refuses to build a `Money` without one (ADR-003). So the moment a screen first tried to serve those
+  rows there was nothing to render. The fix is on the **record**, not on the row: `LedgerSnapshot.currency`,
+  because ADR-011 gives a Household exactly one ledger currency, and a currency code is not personal data
+  the whitelist was written to exclude. The general shape: a cache designed for *storage* will be missing
+  something a cache designed for *rendering* needs, and the gap only shows up when the first screen reads it.
+
+- **A successful read must not clear an error another concurrent path wrote.** `/transactions` loads the
+  list and, for `/transactions/:id`, fetches one row by id — two floating promises started in the same
+  constructor. When the list succeeded it called `error.set(null)`, which raced the drill-in's refusal and
+  wiped it: the user got an empty sheet and **no message**. The existing spec caught it
+  ("surfaces a refused id in the banner"), which is the argument for asserting *observer-visible* state
+  after a mount rather than the state each call returns. The rule: clear an error **before** the work that
+  may fail, never after a *different* operation succeeds.
+
+- **`whenStable()` does not wait for a floating promise chain, and the deeper the chain the more obvious
+  it is.** A mounted component whose constructor starts `void this.load()` runs taxonomy → list → cache
+  write, each `await` a turn. `fixture.whenStable()` resolves once the app has no queued *work*, which is
+  not the same thing: one turn reaches the list query, and an assertion about what was **written to the
+  cache afterwards** sees nothing. The symptom is a spec that fails while the same assertion passes by
+  hand in the browser. In a mounted Angular spec, flush a few macrotasks (`await new Promise(r =>
+  setTimeout(r, 0))` then `whenStable()`, three times) before asserting on a side effect that sits behind
+  the promise chain.
+
+- **A screen that serves a cache must be told what the cache does *not* hold, or it will render defaults
+  the server never said.** The ledger-rows whitelist has no id, no `status`, no `needsReview` and no
+  splits, and `category: null` collapses two different server states ("uncategorised" and "divided")
+  into one value. Every one of those is a place a cached list could quietly lie: a row that looks
+  tappable and is not, a ✓ that was never checked, "Bez kategorije" printed over a row with three
+  categories. The screen's answer is to claim less — no button, no flag, nothing where the category is
+  absent — and to say in one sentence that the mode is a summary. Recorded in ADR-027's 4.2.8b amendment
+  with the four fields a future task would have to widen the whitelist for, and why it does not.
+
 ## 7. Capture and the commit path
 
 F-05/F-06 and I-10: the path where a mistake costs the user money.
@@ -825,14 +860,18 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   Both are JS template literals, so a backtick *terminates the string* and the remainder is parsed as
   code. The error names neither the file nor the real problem: `Failed to resolve styles at position
   N to a string` / `Failed to resolve template at position N`, usually surfacing as
-  `Angular compilation initialization failed`. It has cost real time **nine** times — twice from a
+  `Angular compilation initialization failed`. It has cost real time **ten** times — twice from a
   backtick in a CSS comment documenting a property; again in 2.3.2b from *two* HTML comments and a CSS
   comment written in the same sitting; again in 2.3.3b from a comment that quoted `septička jama`,
   **written minutes after adding this entry**; again in 3.1.4's follow-up fix, from an HTML comment
   naming the `NAV_ITEMS` constant while removing a duplicate nav entry; and again in 4.2.1b, from an HTML
   comment inside the shell template that described the update banner as living inside `main`. The eighth, in 4.2.6b, was
   an HTML comment naming the new settings route; the ninth, in 4.2.7b, was one quoting the tray's own *Zašto* line
-  while adding the conflict panel — in the same week the entry above was extended with the tally. The pattern is that the author knows the rule and does it
+  while adding the conflict panel — in the same week the entry above was extended with the tally; and the
+  tenth, in 4.2.8b, quoted the word `null` inside an HTML comment in the cached-list branch. That one is
+  worth reading twice, because the error was **exactly** the shape predicted two paragraphs down:
+  `tsc` reported `TS1005: ',' expected` at the first markup line *after* the comment, naming neither the
+  file's template nor the comment. The pattern is that the author knows the rule and does it
   anyway, because a comment that names a property — `aria-label`, `1`–`9`, a sample input — reaches for
   backticks by reflex. Two habits that work: describe the example in words (a bill such as septicka jama),
   and run the plain-backtick scan below before believing a template error is something else. Write CSS/HTML
