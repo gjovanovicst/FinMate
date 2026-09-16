@@ -21,6 +21,7 @@ import type { CursorPage } from '../../graphql/pagination';
 import { normalisePageSize } from '../../graphql/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BudgetsService } from '../budgeting/budgets.service';
+import { RecurringService } from '../recurring/recurring.service';
 import { SpendReadModel, type CategorySpendRow } from '../ledger/spend-read-model';
 
 /**
@@ -99,6 +100,7 @@ export class InsightsService {
     private readonly prisma: PrismaService,
     private readonly budgets: BudgetsService,
     private readonly spend: SpendReadModel,
+    private readonly recurring: RecurringService,
   ) {}
 
   // -------------------------------------------------------------------------------------------
@@ -139,8 +141,13 @@ export class InsightsService {
     ]);
 
     const currency = await this.ledgerCurrency(householdId);
+    // What each budget still has coming in this period, from the Household's own recurring rules. A
+    // Category budget counts its **subtree** (its rules and its children's); the whole-Household budget
+    // counts every expense rule. Before this, every projection was pace-only (docs/06 §5.13).
+    const committedByBudget = await this.committedByBudget(householdId, budgets, period, today);
+
     const drafts = generateInsights(
-      this.buildFacts(budgets, currency, today, period, categoryNames, rows, {
+      this.buildFacts(budgets, currency, today, period, categoryNames, rows, committedByBudget, {
         current: currentSpend,
         baselines: baselineSpend,
         baselineStarts: baselines.map((month) => month.start),
@@ -254,6 +261,7 @@ export class InsightsService {
     period: { start: LocalDate; end: LocalDate },
     paths: ReadonlyMap<string, string>,
     rows: readonly TransactionRow[],
+    committedByBudget: ReadonlyMap<string, bigint>,
     trend: {
       readonly current: readonly CategorySpendRow[];
       readonly baselines: readonly (readonly CategorySpendRow[])[];
@@ -287,11 +295,10 @@ export class InsightsService {
           currency,
           limitMinor: budget.amount.amountMinor,
           spentMinor: budget.spent.amountMinor,
-          // Per-budget committed charges are not attributable yet: recurring rules arrive in 3.3.3, so
-          // a category budget is projected on pace alone. The Household-level budget does have a
-          // figure — `dashboard().reserved` — but it belongs to the Household scope, so it is passed
-          // only there (docs/06 §5.13).
-          committedMinor: 0n,
+          // Recurring charges still due in this period, inside the budget's own scope (task 3.4.2).
+          // Zero is a real answer here — most Households have no rule for most budgets — and the
+          // projection is pace-only for those, which is what it always was.
+          committedMinor: committedByBudget.get(budget.id) ?? 0n,
           periodStart: period.start,
           periodEnd: period.end,
           daysElapsed,
@@ -392,6 +399,42 @@ export class InsightsService {
     });
   }
 
+  /**
+   * Each budget's committed figure, keyed by budget id.
+   *
+   * One read of the Category tree serves every budget: a Category budget's scope is its **subtree**
+   * (`include_subcategories` is what the Budget stores, and a Category budget without its children
+   * would under-report a bill filed under a child), and the whole-Household budget's scope is
+   * everything.
+   */
+  private async committedByBudget(
+    householdId: string,
+    budgets: Awaited<ReturnType<BudgetsService['list']>>,
+    period: { readonly start: LocalDate; readonly end: LocalDate },
+    today: LocalDate,
+  ): Promise<Map<string, bigint>> {
+    const committed = new Map<string, bigint>();
+    if (budgets.length === 0) return committed;
+
+    const categories = await this.prisma.client.categories.findMany({
+      where: { household_id: householdId, deleted_at: null },
+      select: { id: true, parent_id: true },
+    });
+    const parentOf = new Map(categories.map((row) => [row.id, row.parent_id]));
+
+    for (const budget of budgets) {
+      const result = await this.recurring.committed(householdId, {
+        from: period.start,
+        to: period.end,
+        asOf: today,
+        categoryIds: budget.categoryId === null ? null : subtreeOf(budget.categoryId, parentOf),
+      });
+      if (result.minor > 0n) committed.set(budget.id, result.minor);
+    }
+
+    return committed;
+  }
+
   private async categoryNames(householdId: string): Promise<ReadonlyMap<string, string>> {
     const rows = await this.prisma.client.categories.findMany({
       where: { household_id: householdId, deleted_at: null },
@@ -462,3 +505,25 @@ export class InsightsService {
   }
 }
 
+
+/**
+ * A Category and every descendant of it, as ids.
+ *
+ * A fixpoint over the parent links rather than a recursive walk per node: the tree is small, a node may
+ * be added once, and only *adding* can change the answer — so this terminates even if the links were
+ * somehow cyclic (I-11 forbids that, and `CategoriesService` refuses to create one).
+ */
+function subtreeOf(categoryId: string, parentOf: ReadonlyMap<string, string | null>): string[] {
+  const wanted = new Set([categoryId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [id, parent] of parentOf) {
+      if (parent !== null && wanted.has(parent) && !wanted.has(id)) {
+        wanted.add(id);
+        changed = true;
+      }
+    }
+  }
+  return [...wanted];
+}

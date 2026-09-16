@@ -214,6 +214,86 @@ export class RecurringService {
     });
   }
 
+  /**
+   * What is **still to be charged** inside a window — the `committed` figure docs/03 §6 puts in a
+   * projection (F-21) and the number a due-bill alert is about.
+   *
+   * Three rules make it honest:
+   *
+   * 1. **Only what is still ahead.** The window is intersected with `asOf`, because a charge whose day
+   *    has passed is either already posted or overdue — either way it is not "committed".
+   * 2. **Only what is not already posted.** An occurrence with a Transaction behind it is `spent`, and
+   *    counting it again would double a bill in the projection. The exclusion is by
+   *    `(rule, occurrence date)`, the same identity materialisation uses.
+   * 3. **A Category scope means that subtree**, so a Category budget's committed figure counts the rules
+   *    filed under it and its children. A rule with **no** Category belongs to no Category budget, so it
+   *    is counted only for the whole-Household budget (`categoryIds` absent) — the alternative would be
+   *    to attribute an uncategorised subscription to whichever budget asked first.
+   */
+  async committed(
+    householdId: string,
+    window: {
+      readonly from: LocalDate;
+      readonly to: LocalDate;
+      readonly asOf?: LocalDate;
+      readonly categoryIds?: readonly string[] | null;
+    },
+  ): Promise<{ readonly minor: bigint; readonly occurrences: number }> {
+    const asOf = window.asOf ?? (await this.today(householdId));
+    if (compareLocalDates(asOf, window.to) > 0) return { minor: 0n, occurrences: 0 };
+
+    const from = compareLocalDates(asOf, window.from) > 0 ? asOf : window.from;
+    const scoped = window.categoryIds !== undefined && window.categoryIds !== null && window.categoryIds.length > 0;
+
+    const rules = await this.prisma.client.recurring_rules.findMany({
+      where: {
+        household_id: householdId,
+        deleted_at: null,
+        is_active: true,
+        kind: 'EXPENSE',
+        ...(scoped ? { category_id: { in: [...(window.categoryIds ?? [])] } } : {}),
+      },
+      select: { id: true, amount_minor: true, rrule: true, next_occurrence_on: true, ends_on: true },
+    });
+    if (rules.length === 0) return { minor: 0n, occurrences: 0 };
+
+    const [counts, posted] = await Promise.all([
+      this.generatedCounts(householdId, rules.map((rule) => rule.id)),
+      this.prisma.client.transactions.findMany({
+        where: {
+          household_id: householdId,
+          recurring_rule_id: { in: rules.map((rule) => rule.id) },
+          deleted_at: null,
+          occurred_local_date: { gte: this.date(from), lte: this.date(window.to) },
+        },
+        select: { recurring_rule_id: true, occurred_local_date: true },
+      }),
+    ]);
+    const postedKeys = new Set(
+      posted.map((row) => `${row.recurring_rule_id}:${this.iso(row.occurred_local_date)}`),
+    );
+
+    let minor = 0n;
+    let occurrences = 0;
+    for (const rule of rules) {
+      const spec = parseRRule(rule.rrule);
+      if (!spec.ok) continue;
+      const next = this.iso(rule.next_occurrence_on);
+      const dates = expandOccurrences(spec.spec, next, from, window.to, {
+        until: rule.ends_on === null ? null : this.iso(rule.ends_on),
+        remaining: remainingOccurrences(spec.spec, counts.get(rule.id) ?? 0),
+        limit: 64,
+      });
+      for (const date of dates) {
+        if (postedKeys.has(`${rule.id}:${date}`)) continue;
+        minor += rule.amount_minor;
+        occurrences += 1;
+      }
+    }
+
+    return { minor, occurrences };
+  }
+
   async create(householdId: string, input: CreateRuleInput): Promise<RecurringRuleView> {
     const description = input.description.trim();
     if (description.length === 0) throw new ApiError('VALIDATION_FAILED', 'A description is required.');

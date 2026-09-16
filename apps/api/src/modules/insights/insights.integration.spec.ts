@@ -278,6 +278,76 @@ describe('insights (integration)', () => {
     expect(result.created).toBe(0);
   });
 
+  it('projects a budget with the recurring charges still due in the period (task 3.4.2)', async () => {
+    // A subscription filed under the budget's Category, due **after** the Housefold's today, so it is
+    // committed money rather than spend.
+    const ruleId = uuidv7();
+    await asTenant(() =>
+      prisma.client.recurring_rules.create({
+        data: {
+          id: ruleId,
+          household_id: householdId,
+          account_id: accountId,
+          kind: 'EXPENSE',
+          amount_minor: 4_000n,
+          currency: 'RSD',
+          category_id: foodId,
+          description: 'Pretplata',
+          rrule: 'RRULE:FREQ=MONTHLY;BYMONTHDAY=25',
+          next_occurrence_on: new Date('2026-09-25T00:00:00.000Z'),
+          auto_confirm: true,
+          is_detected: false,
+          is_active: true,
+        },
+      }),
+    );
+
+    const readPace = async (): Promise<Record<string, string>> => {
+      const row = await asTenant(() =>
+        prisma.client.insights.findFirst({
+          where: { household_id: householdId, kind: 'BUDGET_PACE' },
+          orderBy: { id: 'desc' },
+        }),
+      );
+      return (row?.payload ?? {}) as Record<string, string>;
+    };
+
+    // A fresh period so the insight is written rather than recognised as already recorded.
+    await asTenant(() => prisma.client.insights.deleteMany({ where: { household_id: householdId } }));
+    await asTenant(() => insights.generate(householdId, TODAY));
+    expect((await readPace())['committedMinor']).toBe('4000');
+
+    // Once the occurrence is posted it is `spent`, not `committed`: counting it twice would double the
+    // bill in the projection.
+    await asTenant(() =>
+      prisma.client.transactions.create({
+        data: {
+          id: uuidv7(),
+          household_id: householdId,
+          account_id: accountId,
+          kind: 'EXPENSE',
+          amount_minor: 4_000n,
+          currency: 'RSD',
+          category_id: foodId,
+          description: 'Pretplata',
+          source: 'RECURRING',
+          status: 'CONFIRMED',
+          recurring_rule_id: ruleId,
+          occurred_at: new Date('2026-09-25T10:00:00.000Z'),
+          occurred_local_date: new Date('2026-09-25T00:00:00.000Z'),
+        },
+      }),
+    );
+
+    await asTenant(() => prisma.client.insights.deleteMany({ where: { household_id: householdId } }));
+    await asTenant(() => insights.generate(householdId, TODAY));
+    expect((await readPace())['committedMinor']).toBe('0');
+
+    await asTenant(() =>
+      prisma.client.recurring_rules.deleteMany({ where: { household_id: householdId, id: ruleId } }),
+    );
+  });
+
   it('keeps every amount in the payload as a minor-unit string (ADR-003)', async () => {
     const rows = await asTenant(() =>
       prisma.client.insights.findMany({ where: { household_id: householdId } }),

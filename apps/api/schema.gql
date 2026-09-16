@@ -1239,6 +1239,11 @@ type Mutation {
   completeOnboarding: OnboardingStateModel!
 
   """
+  Accept a proposal: it becomes an ordinary rule and starts posting from its next date.
+  """
+  confirmDetectedSubscription(ruleId: String!): RecurringRuleModel!
+
+  """
   Put money aside. Idempotent on `idempotencyKey` (invariant I-10): a replay returns the original contribution with `wasReplayed: true` instead of saving it twice.
   """
   contributeToGoal(input: ContributeToGoalInput!): GoalContributionResultModel!
@@ -1417,6 +1422,16 @@ type Mutation {
   Soft-delete. Financial rows are never hard-deleted, so history stays auditable.
   """
   deleteTransaction(id: ID!): Boolean!
+
+  """
+  Propose the subscriptions hiding in the Household’s own history (F-16, task 3.3.4). Each proposal is stored `isDetected: true, isActive: false`, so it posts nothing until the user accepts it — **propose, never auto-create** (docs/04 §8.2). An identity the Household already rules on, already proposed, or already dismissed is skipped. The `recurring.detect` job calls this same method.
+  """
+  detectSubscriptions: [RecurringRuleModel!]!
+
+  """
+  Dismiss a proposal. It is soft-deleted, so the detector remembers not to propose that identity again — and a rule the Household made is refused rather than quietly removed.
+  """
+  dismissDetectedSubscription(ruleId: String!): Boolean!
 
   """
   Dismiss an insight. Returns null when the id is not this Household's — the scoped predicate is the tenancy check, not a lookup the caller could race.
