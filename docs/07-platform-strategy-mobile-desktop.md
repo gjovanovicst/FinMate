@@ -206,6 +206,26 @@ thumb — delete/discard is at the top of a sheet or behind an explicit confirm,
 bulk edit — [F-08](01-product-requirements.md)), which also satisfies WCAG 2.2 **2.5.7**. Top-of-screen
 chrome is for context, not for the actions a user performs every session.
 
+> **Build state (4.3.1b).** **Done**: a sheet's dirty state now guards every dismissal route, and
+> swipe-down-to-dismiss exists. The three routes — the close button, `Esc` and a downward flick — end in
+> one guard: a form whose record fields differ from what it loaded raises an in-sheet `alertdialog`
+> (*Discard changes* / *Keep editing*) instead of losing the edit, and a flick over a clean sheet closes
+> it. `planEdit` is deliberately not the dirty test: it compares a **parsed** amount, so a half-typed
+> `12,` reads as unchanged there — which is exactly the edit a guard exists for. `remember` is excluded,
+> because it is not part of the record, only a modifier of the save. The gesture is a shortcut only:
+> the close button and `Esc` remain, all three pass the same guard (WCAG 2.2 SC 2.5.7), and the threshold
+> is a tested constant (`shared/ui/sheet-drag`).
+>
+> **Not done**: **the pinned capture bar.** `position: sticky; inset-block-end: 0` was tried, measured and
+> removed — it computes but does nothing when the bar is the **last child of its containing block**, which
+> has no slack below it to stick into: the confirm button still measured **1431 px down on a 720 px
+> viewport**, and only *looked* pinned at the end of a scroll because that is where it naturally is. A
+> real pinned bar needs the preview list to own its own scroll container (so sticky has slack) or a fixed
+> bar offset by the bottom nav's height; both restructure `/capture`, so it is scheduled as **4.3.1c**
+> with the measurement rather than shipped as CSS that does nothing. Note also that docs/02 §4.3's
+> wireframe draws the confirm **inline at the end of the card**, which is what ships — the two documents
+> disagree, and this note is where the disagreement is recorded rather than silently resolved.
+
 ### 4.2 Bottom sheet vs full page
 
 | Bottom **sheet** when… | Full **page** when… |
@@ -219,6 +239,13 @@ chrome is for context, not for the actions a user performs every session.
 **Dialogs are reserved for destructive confirmation**: `role="alertdialog"`, no forms inside, always naming
 the object at risk. Sheets must be draggable-to-dismiss, trap and restore focus (§7.4), set the background
 `inert`, and — when dirty — turn a swipe-down into a discard confirm rather than losing a money field.
+> **Build state (4.3.1b).** The Transaction edit sheet is a **native `<dialog>`** opened with `showModal()`,
+> which is what provides focus containment, `Esc`, the top layer and the page behind it being inert — a
+> div-based modal reimplements all four and usually gets one wrong. `Esc` and the swipe now go through the
+> dirty guard described in §4.1's note. What is **not** here: a general `ui-sheet` primitive. docs/02 §7
+> lists one, and it stays unbuilt on purpose — with `showModal()` the platform *is* the primitive, and a
+> wrapper with a single consumer would be indirection. If a second sheet appears, that decision is worth
+> revisiting.
 
 ### 4.3 Safe-area insets and notches
 

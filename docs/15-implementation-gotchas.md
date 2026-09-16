@@ -950,6 +950,18 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   false positives. The instrument is the measurement: resolve the computed `color` and the nearest
   non-transparent ancestor background and compute the ratio (a few lines, run through Playwright).
 
+- **`position: sticky` does nothing when the element is the last child of its containing block.** The
+  shift a sticky element may take is bounded by its containing block, so a bar at the *end* of a column has
+  no slack below it to be pulled up into — it stays exactly where it would have been. Measured in 4.3.1b:
+  `position: sticky; inset-block-end: 0` on the capture screen's action row computed to `sticky` while the
+  confirm button still sat **1431 px down on a 720 px viewport**. The trap is that a sticky rule which does
+  nothing looks identical to one that works if you only measure at the end of the scroll: scrolling to the
+  document end puts the element there naturally, so the check passes for the wrong reason (the first
+  version of this very check did). Measure the *middle* of a scroll. The fixes are to give a parent
+  `overflow-y: auto` and stick *inside* that scroll container — where the slack is the scrollable overflow
+  — or to leave the flow entirely with `position: fixed`, offset by whatever sits below. Recorded for
+  `/capture` as task 4.3.1c.
+
 - **No hardcoded user-facing copy.** Every string goes through `I18nService.t('key')`. English is
   primary and is the source of the key set: add the string to `translations/en.ts` first, then to
   `sr-latn.ts` (typed, so a miss is a compile error). `sr-Cyrl` is generated — never edit it. A
@@ -1034,6 +1046,19 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   - **Mount it directly**: `setSignalInput(component, 'name', value)` from `apps/web/test/angular-testing.ts`
     (`Reflect.get(field, ɵSIGNAL)` + `applyValueToInputSignal`), which is how the consent card and sheet
     specs assert their sentences.
+  - **And not `viewChild()` either** (found in 4.3.1b): a `viewChild.required<ElementRef<...>>('x')` on an
+    element the template *does* render still throws NG0951 under JIT, so a component that touches its own
+    DOM through a signal query cannot be mounted in a spec at all. `@ViewChild` (the decorator) is
+    discovered; the signal API is not. When a spec needs the behaviour anyway, **spy on the private method
+    that consumes the query** — `vi.spyOn(component as unknown as { close: () => void }, 'close')
+    .mockImplementation(() => undefined)` — and assert the decision, then verify the platform half live.
+  - **jsdom implements no `<dialog>`**: `HTMLDialogElement.prototype.showModal` and `close` are both
+    `undefined`, so a native-dialog sheet cannot be opened, closed or cancelled in a spec — `close()`
+    neither sets `open = false` nor fires a `close` event. Everything a dialog does for free (top layer,
+    focus containment, `Esc`, inertness of the page behind it) is therefore platform behaviour, verified
+    in a browser (4.3.1b's live pass) and not in CI. Do not paper over it with a hand-rolled div modal:
+    the platform version is the one that is correct.
+
   Callers that need the *real* child rendered inside a parent have no option yet: AOT-compiled tests would
   fix it and the repo does not run them. `capture.component.spec.ts` drops both `fm-money` and
   `fm-consent-sheet` for this reason, and asserts amounts and the trigger on the component's own state.
@@ -1124,6 +1149,23 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   renders, then query inside it.
 
 ## 10. Cross-cutting rules of the codebase
+
+- **A live check that measures the wrong element lies in both directions.** Three times in 4.3.1 a
+  browser assertion was wrong about the app rather than wrong in the app, and each had the same shape:
+  the selector matched a *different* element that happened to satisfy it. (1) `fm-capture .actions`
+  matched the **consent sheet's** action row, because the sheet renders inside the capture screen and
+  comes first in DOM order — the check then reported a static bar and "proved" the pinned bar was broken.
+  (2) `page.fill('input[formcontrolname="amount"]', ...)` filled the capture screen's amount field rather
+  than the dialog's, silently, because page-level `fill` uses the **first** match while `locator()` is
+  strict — so the sheet's form never became dirty and the dirty guard looked broken (it works: with the
+  locator scoped to `dialog[open]`, `Esc` raises the confirm). (3) A count taken immediately after a
+  route change read `0` while the next `click()` on the same locator succeeded — a missing `waitFor`, not
+  a missing row.
+  The rules that follow: **scope every locator to the component under test** (`dialog[open] …`,
+  `.preview .actions`), never to a bare class name that another component may also use; prefer
+  `locator()` over page-level `fill`/`click`, and read the complaint when it is strict about two matches;
+  and when a check fails, prove the *element* before believing the *finding* — in all three cases the
+  app was fine and the instrument was pointed at the wrong node.
 
 Short, and load-bearing.
 

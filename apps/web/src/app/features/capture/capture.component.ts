@@ -830,6 +830,14 @@ interface RowError {
         gap: var(--space-2);
         margin-block-start: var(--space-4);
       }
+      /* docs/07 section 4.1 asks for the primary action in the lower third on compact ("the pinned
+         capture bar"). It is NOT pinned, and the measurement is why: position sticky with inset-block-end
+         zero computes but does nothing here, because this row is the last child of its containing block
+         and so has no slack to stick into - the confirm button still measured 1431 px down on a 720 px
+         viewport. A real pinned bar needs the preview list to own a scroll container (sticky inside it)
+         or a fixed bar offset by the bottom nav; both restructure this screen and neither has had a human
+         look at it. Scheduled as 4.3.1c and recorded in docs/07 section 4.1 rather than faked with CSS
+         that does nothing. */
       .btn {
         padding: var(--space-2) var(--space-4);
         border: 1px solid var(--color-border);

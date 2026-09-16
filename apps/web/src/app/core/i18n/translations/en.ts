@@ -501,6 +501,10 @@ export const en = {
   // ---- transaction detail / edit ----
   'transactions.editTitle': 'Edit transaction',
   'transactions.close': 'Close',
+  'transactions.discardTitle': 'Discard your changes?',
+  'transactions.discardBody': 'This row has edits that have not been saved. Closing now loses them.',
+  'transactions.discard': 'Discard changes',
+  'transactions.keepEditing': 'Keep editing',
   'transactions.save': 'Save changes',
   'transactions.saving': 'Saving…',
   'transactions.delete': 'Delete',

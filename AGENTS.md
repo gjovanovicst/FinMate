@@ -80,9 +80,20 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   decision, not a patch. The same pass measured the shell overflowing at 320 px by 48 px (the bottom nav
   is 368 px wide) — **fixed in 4.3.1a**, which traced it to one missing declaration and audited all 18
   authenticated routes at three widths at zero overflow.
-- **Next**: the **human visual pass** at 320/768/1280 px that no screen has
-  had (Phase 1's own gate, and 4.3 is where it belongs), 4.3 (mobile polish, incl. **4.3.5**), then
-  Phase 5 (hardening and beta).
+- **4.3.1 is split in three, and a and b are done.** The layout half (4.3.1a) fixed a **48 px overflow on
+  all 18 authenticated routes** — one missing `grid-template-columns`, because an implicit `auto` track is
+  sized to its items' min-content and `min-inline-size: 0` does not change a flex item's min-content
+  *contribution* — then **measured 50/50 route-width pairs at zero overflow**, adding the header's
+  safe-area inset and two `vh`→`dvh` fixes. The interaction half (4.3.1b) gave the edit sheet the
+  dismissal contract docs/07 §4.2 asks for: the close button, `Esc` and a **swipe-down** now pass one
+  **dirty guard** (an in-sheet *Discard changes* / *Keep editing*), so a half-typed amount can no longer
+  be lost to a stray `Esc`. It also *deleted* a plan item honestly: a **pinned** capture bar is **4.3.1c**,
+  not a CSS one-liner — `position: sticky` on that row computes and does nothing, because a bar that is
+  the last child of its containing block has no slack to stick into (measured: still 1431 px down a 720 px
+  viewport), and docs/02 §4.3's wireframe draws it inline anyway.
+- **Next**: **4.3.1c** (the pinned capture bar — two designs, and the choice needs somebody looking at the
+  screen), the **human visual pass** at 320/768/1280 px that no screen has had (Phase 1's own gate),
+  **4.3.5** (the R-26 cookie path), then 4.3.3/4.3.4 and Phase 5.
 
 **The long form is in the docs, deliberately.** Each task's decisions, its deviations from these
 specifications and every defect it found live are recorded where they belong: docs/09 §6 for sequencing,
@@ -177,7 +188,7 @@ Read the document that owns your task before starting:
 | If you are… | Read first |
 |---|---|
 | starting any task | `docs/05-architecture.md` §2 — monorepo layout + the dependency rule |
-| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 138 entries, each saying what the failure looks like |
+| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 140 entries, each saying what the failure looks like |
 | touching money, Transactions, balances | `docs/03-domain-model.md` — **canonical glossary, DDL, invariants** |
 | adding or changing a feature | `docs/01-product-requirements.md` — the `F-xx` catalogue |
 | touching categorization, rules, prompts, AI | `docs/04-categorization-and-ai-engine.md` |
@@ -272,7 +283,7 @@ A change is not done until (doc 09 §8):
 
 ## Gotchas
 
-**The full list — 138 entries in 10 groups, each written to say what it looks like when it goes wrong —
+**The full list — 140 entries in 10 groups, each written to say what it looks like when it goes wrong —
 is [`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md). Read it before debugging
 anything that "should work".** It was split out because this file had grown past the instruction budget
 and was being truncated on load. The ones below stay here because they are the ones that bite hardest,

@@ -353,7 +353,14 @@ The full-screen / sheet variant of §3, with the receipt entry point.
 ```
 
 Mobile collapses Account and date into one summary chip (*Kartica · danas*); desktop shows them as an
-always-visible column. `📷` moves to overflow when the field is non-empty, so it never competes with
+always-visible column.
+
+> **Build state (4.3.1b).** The confirm row ships **inline at the end of the card**, as drawn above. Its
+> pinned variant ([07 §4.1](07-platform-strategy-mobile-desktop.md)) is **not built**: `position: sticky`
+> on that row computes and does nothing, because the row is the last child of its containing block and has
+> no slack to stick into — measured, the button sat 1431 px down on a 720 px viewport. A real pinned bar
+> needs this screen to own a scroll container or a fixed bar offset by the bottom nav; scheduled as
+> **4.3.1c** rather than faked. `📷` moves to overflow when the field is non-empty, so it never competes with
 commit.
 
 > **Build state.** The screen ships without the `📷 Račun` affordance, at every size. A photo does not
@@ -1210,7 +1217,7 @@ variants are the only permitted styling axis.
 | `ui-confidence-badge` | Gate state per ADR-009 | `confidence: number \| null`, `state: 'auto' \| 'verify' \| 'ask' \| 'pending'`, `size`, `showPercent`, `srOnlyLabel` |
 | `ui-category-picker` | Category selection | `kind: 'EXPENSE' \| 'INCOME'`, `value`, `recent`, `allowCreate`, `excludeIds`, `showPath`; keyboard-first, filter-as-you-type |
 | `ui-entity-picker` | Merchant / Counterparty selection | `kind: 'merchant' \| 'counterparty'`, `value`, `allowCreate`, `aliases` |
-| `ui-sheet` | Modal surface | `variant: 'bottom' \| 'side' \| 'center'`, `size`, `dismissible`, `ariaLabel`; focus trap + restore |
+| `ui-sheet` | Modal surface — **deliberately not built** (4.3.1b): a native `<dialog>` + `showModal()` already gives focus containment, `Esc`, the top layer and an inert background, which is the whole prop list; a wrapper with one consumer would be indirection. The Transaction sheet is the only sheet, and it is a `<dialog>` |
 | `ui-toast` | Transient feedback with an action | `variant`, `action`, `duration`, `ariaLive` |
 | `ui-bulk-action-bar` | Multi-select actions | `count`, `actions`, `onClear`; sticky on mobile |
 | `ui-split-editor` | Splits with a live difference | `totalMinor`, `currency`, `rows`, `showDifference`; blocks save until difference = 0 |

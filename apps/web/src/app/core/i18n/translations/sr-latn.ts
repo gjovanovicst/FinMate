@@ -495,6 +495,10 @@ export const srLatn: Record<keyof typeof en, string> = {
   // ---- transaction detail / edit ----
   'transactions.editTitle': 'Izmena transakcije',
   'transactions.close': 'Zatvori',
+  'transactions.discardTitle': 'Odbaciti izmene?',
+  'transactions.discardBody': 'Na ovoj stavci ima izmena koje nisu sačuvane. Ako je zatvoriš sada, izmene se gube.',
+  'transactions.discard': 'Odbaci izmene',
+  'transactions.keepEditing': 'Nastavi izmenu',
   'transactions.save': 'Sačuvaj izmene',
   'transactions.saving': 'Čuvanje…',
   'transactions.delete': 'Obriši',

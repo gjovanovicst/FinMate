@@ -17,6 +17,7 @@ import { RouterLink } from '@angular/router';
 import { parseAmount } from '@finmate/domain';
 
 import { ErrorMessageService } from '../../core/api/error-message.service';
+import { dragOffset, dragShouldDismiss, DRAG_DISMISS_PX } from '../../shared/ui/sheet-drag';
 import { GraphqlClient, GraphQLRequestError } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import { isRetryable } from '../../core/offline/outbox';
@@ -208,21 +209,53 @@ const DELETE_TRANSACTION = /* GraphQL */ `
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, MoneyComponent, RouterLink, ReceiptAttachmentComponent],
   template: `
-    <dialog #dialog class="sheet" (close)="closed.emit()" (cancel)="closed.emit()">
+    <dialog
+      #dialog
+      class="sheet"
+      [style.transform]="dragOffsetPx() > 0 ? 'translateY(' + dragOffsetPx() + 'px)' : null"
+      (close)="onClose()"
+      (cancel)="onCancel($event)"
+    >
       <form class="sheet__form" [formGroup]="form" (ngSubmit)="save()" novalidate>
-        <header class="sheet__head">
+        <!-- The drag handle (docs/07 §4.2). Only a shortcut: the close button beside it and Esc are the
+             real routes, and all three end in the same guard (WCAG 2.2 SC 2.5.7). -->
+        <header
+          class="sheet__head"
+          (pointerdown)="onDragStart($event)"
+          (pointermove)="onDragMove($event)"
+          (pointerup)="onDragEnd($event)"
+          (pointercancel)="onDragCancel()"
+        >
+          <span class="sheet__grabber" aria-hidden="true"></span>
           <h2 class="sheet__title">{{ i18n.t('transactions.editTitle') }}</h2>
           <button class="sheet__dismiss" type="button" (click)="dismiss()">
             {{ i18n.t('transactions.close') }}
           </button>
         </header>
 
+        @if (confirmingDiscard()) {
+          <!-- docs/07 §4.2: a sheet whose money field is dirty turns a dismissal into a discard confirm.
+               An alertdialog with no data entry in it, and the two answers are peers. -->
+          <div class="confirm" role="alertdialog" aria-labelledby="discard-heading">
+            <p class="confirm__title" id="discard-heading">{{ i18n.t('transactions.discardTitle') }}</p>
+            <p class="confirm__body">{{ i18n.t('transactions.discardBody') }}</p>
+            <div class="confirm__actions">
+              <button class="btn btn--danger" type="button" (click)="discard()">
+                {{ i18n.t('transactions.discard') }}
+              </button>
+              <button class="btn" type="button" (click)="keepEditing()">
+                {{ i18n.t('transactions.keepEditing') }}
+              </button>
+            </div>
+          </div>
+        }
+
         @if (error(); as message) {
           <p class="alert" role="alert">{{ message }}</p>
           @if (conflicted()) {
             <!-- The row moved on under us, so the only useful action is to look again. Saving over
                  it would need a merge decision the user has not been shown. -->
-            <button class="sheet__dismiss" type="button" (click)="dismiss()">
+            <button class="sheet__dismiss" type="button" (click)="discard()">
               {{ i18n.t('transactions.conflictReload') }}
             </button>
           }
@@ -390,6 +423,36 @@ const DELETE_TRANSACTION = /* GraphQL */ `
         align-items: baseline;
         justify-content: space-between;
         gap: var(--space-3);
+        /* The drag target is the header, so it must not select text or scroll the sheet under the
+           finger while it is being dragged. */
+        touch-action: none;
+      }
+      .sheet__grabber {
+        align-self: center;
+        inline-size: 2.5rem;
+        block-size: 0.25rem;
+        border-radius: var(--radius-pill);
+        background: var(--color-border);
+      }
+      .confirm {
+        display: grid;
+        gap: var(--space-3);
+        padding: var(--space-4);
+        border: 1px solid var(--color-danger);
+        border-radius: var(--radius-md);
+        background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+      }
+      .confirm__title {
+        margin: 0;
+        font-weight: 600;
+      }
+      .confirm__body {
+        margin: 0;
+      }
+      .confirm__actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
       }
       .sheet__title {
         margin: 0;
@@ -560,6 +623,31 @@ export class TransactionDetailComponent implements OnInit {
 
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
+  /**
+   * docs/07 §4.2's dirty guard: raised when a dismissal would throw an unsaved edit away.
+   *
+   * In-sheet rather than a native `confirm()`: the browser dialog cannot be translated, blocks the
+   * event loop, and cannot name the two answers in the product's own words.
+   */
+  readonly confirmingDiscard = signal(false);
+
+  /** How far the sheet has followed a downward drag, in px. Zero when it is not being dragged. */
+  readonly dragOffsetPx = signal(0);
+
+  /**
+   * The form as it was loaded — what "unchanged" means to the guard.
+   *
+   * Taken from the controls rather than from the input, because the question is whether anything the
+   * user can see differs from what they were shown, not whether it differs from the database.
+   */
+  private loaded: Record<string, unknown> | null = null;
+
+  private dragStartY: number | null = null;
+  private dragPointerId: number | null = null;
+
+  /** Exposed for the template's hint, so the threshold has one definition. */
+  readonly dragDismissPx = DRAG_DISMISS_PX;
+
   readonly busy = signal(false);
   readonly error = signal<string | null>(null);
   /** True when the API refused the write because somebody else changed the row first. */
@@ -647,10 +735,96 @@ export class TransactionDetailComponent implements OnInit {
     // A split Transaction's total is fixed by its parts, so the field is not offered at all rather
     // than offered and then refused (I-1).
     if (this.hasSplits()) this.form.controls.amount.disable();
+
+    this.loaded = this.form.getRawValue();
   }
 
+  /**
+   * Whether dismissing would throw work away — the case docs/07 §4.2 exists for.
+   *
+   * Deliberately **not** `planEdit`: that answers "what should the save do", and it compares a *parsed*
+   * amount, so a half-typed one (`12,`) reads as unchanged — which is precisely the edit a guard must
+   * not lose. This compares the form against the snapshot it was loaded with, as text. `remember` is
+   * excluded: it is not part of the record, only a modifier of the save, so dismissing loses the intent
+   * to also teach a rule and nothing else. A split Transaction's total is excluded for the same reason
+   * `planEdit` excludes it — it is not editable (I-1).
+   */
+  hasUnsaved(): boolean {
+    if (this.loaded === null) return false;
+    const now = { ...this.form.getRawValue() } as Record<string, unknown>;
+    delete now['remember'];
+    const then = { ...this.loaded };
+    delete then['remember'];
+    return JSON.stringify(now) !== JSON.stringify(then);
+  }
+
+  /** User-initiated dismissal: guarded. */
   dismiss(): void {
+    if (this.hasUnsaved() && !this.confirmingDiscard()) {
+      this.confirmingDiscard.set(true);
+      return;
+    }
+    this.close();
+  }
+
+  /** "Discard" — the one path that is allowed to lose the edit. */
+  discard(): void {
+    this.confirmingDiscard.set(false);
+    this.close();
+  }
+
+  keepEditing(): void {
+    this.confirmingDiscard.set(false);
+  }
+
+  /**
+   * `Esc` on a native `<dialog>` fires `cancel` and closes unless it is prevented.
+   *
+   * Preventing it is what keeps the sheet open behind the confirm: `close()` would take the form with it.
+   */
+  onCancel(event: Event): void {
+    if (this.hasUnsaved() && !this.confirmingDiscard()) {
+      event.preventDefault();
+      this.confirmingDiscard.set(true);
+    }
+  }
+
+  onClose(): void {
+    this.confirmingDiscard.set(false);
+    this.closed.emit();
+  }
+
+  /** Machine-initiated close — a landed write, or a reload the user asked for. Never guarded. */
+  private close(): void {
     this.dialog().nativeElement.close();
+  }
+
+  onDragStart(event: PointerEvent): void {
+    // Touch and pen only: a mouse drag inside a form is a text selection, and the desktop route to
+    // closing is the button or Esc.
+    if (event.pointerType === 'mouse' || !event.isPrimary) return;
+    this.dragStartY = event.clientY;
+    this.dragPointerId = event.pointerId;
+  }
+
+  onDragMove(event: PointerEvent): void {
+    if (this.dragStartY === null || event.pointerId !== this.dragPointerId) return;
+    this.dragOffsetPx.set(dragOffset(this.dragStartY, event.clientY));
+  }
+
+  onDragEnd(event: PointerEvent): void {
+    if (this.dragStartY === null || event.pointerId !== this.dragPointerId) return;
+    const offset = dragOffset(this.dragStartY, event.clientY);
+    this.onDragCancel();
+    // Through the same guard as Esc and the close button: a deliberate flick over a dirty form asks
+    // first, and a short drag simply springs back.
+    if (dragShouldDismiss(offset)) this.dismiss();
+  }
+
+  onDragCancel(): void {
+    this.dragStartY = null;
+    this.dragPointerId = null;
+    this.dragOffsetPx.set(0);
   }
 
   categoryLabel(categoryId: string): string {
@@ -739,7 +913,9 @@ export class TransactionDetailComponent implements OnInit {
 
       if (this.proposal() === null) {
         this.saved.emit();
-        this.dismiss();
+        // The write landed, so there is nothing to guard: `dismiss()` would ask about an edit that is
+        // already stored.
+        this.close();
       }
       // Otherwise the sheet stays open with the prompt, and `acceptProposal` finishes the job.
     } catch (error) {
@@ -787,7 +963,7 @@ export class TransactionDetailComponent implements OnInit {
     await this.sync.enqueueEdit(plan.edit as unknown as TransactionEditInput, plan.before);
     this.queued.set(true);
     this.saved.emit();
-    this.dismiss();
+    this.close();
   }
 
   /** Keep whatever the correction offered, so the prompt can be answered after the save. */
@@ -826,7 +1002,7 @@ export class TransactionDetailComponent implements OnInit {
       }
       this.proposal.set(null);
       this.saved.emit();
-      this.dismiss();
+      this.close();
     } catch (error) {
       this.error.set(this.errors.for(error));
     } finally {
