@@ -6,7 +6,7 @@ import { AccountsModule } from '../accounts/accounts.module';
 import { BudgetingModule } from '../budgeting/budgeting.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { TaxonomyModule } from '../taxonomy/taxonomy.module';
-import { NARRATOR, UNCONFIGURED_NARRATOR, type AssistantNarrator } from './assistant-narrator';
+import { AiModule } from '../ai/ai.module';
 import { AssistantResolver } from './assistant.resolver';
 import { AssistantService } from './assistant.service';
 import { FactAssemblyService } from './fact-assembly.service';
@@ -38,12 +38,14 @@ import { FactAssemblyService } from './fact-assembly.service';
  * `GraphqlScalarsModule`. Providing any of them again gives the schema two types with one name,
  * which is a boot failure rather than a test failure (the 3.1.2 lesson in docs/15).
  *
- * ## The narrator is unconfigured in this build
+ * ## The narrator comes from the AI composition root
  *
- * No AI provider is configured at all, so `NARRATOR` resolves to {@link UNCONFIGURED_NARRATOR} and
- * every answer is the deterministic template rendering — with `narrationMode = TEMPLATE_FALLBACK`
- * reported honestly rather than pretending a model ran. `RoutedNarrator` is built and tested against
- * a stub router, so registering a provider is what switches it on (ADR-021's seam, one layer up).
+ * `NARRATOR` is provided by `AiModule` (ADR-031 decision 6), not here: whether a model can narrate is
+ * a property of the deployment's configuration, and the assistant must not be the second place that
+ * decides it. With no `NARRATE` endpoint the token is `UNCONFIGURED_NARRATOR`, `available` is `false`,
+ * and every answer is the deterministic template rendering — with `narrationMode = TEMPLATE_FALLBACK`
+ * reported honestly rather than pretending a model ran. A live provider switches it on with no change
+ * to this file.
  *
  * @module apps/api/src/modules/assistant
  */
@@ -55,12 +57,12 @@ import { FactAssemblyService } from './fact-assembly.service';
     BudgetingModule,
     LedgerModule,
     TaxonomyModule,
+    AiModule,
   ],
   providers: [
     FactAssemblyService,
     AssistantService,
     AssistantResolver,
-    { provide: NARRATOR, useValue: UNCONFIGURED_NARRATOR satisfies AssistantNarrator },
   ],
   exports: [FactAssemblyService, AssistantService],
 })

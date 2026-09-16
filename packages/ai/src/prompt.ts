@@ -120,12 +120,38 @@ export function renderClassifyContext(input: {
 }
 
 /**
- * Append the "return JSON" instruction that `json_object` mode requires.
+ * Append the "return JSON" instruction that `json_object` mode requires — **including the shape**.
  *
- * DeepSeek's JSON mode is documented to need the word "JSON" in the prompt and a described shape;
- * OpenAI's structured-output mode does not. Rendering it unconditionally for the weaker mode only
- * keeps the two request bodies honestly different instead of pretending they are the same.
+ * ## Why the schema has to travel in the prompt
+ *
+ * `json_object` mode constrains the *syntax* of the answer and nothing else: the provider guarantees
+ * valid JSON and says nothing about its keys. `json_schema` mode transmits the schema and the provider
+ * enforces it; a `json_object` endpoint has no such channel, so the only place the field names can come
+ * from is the prompt. This function used to append the sentence without the shape — while its own doc
+ * comment claimed otherwise — and the first live DeepSeek call answered
+ * `{ "category_id": "c2", "reason": "…" }`: `snake_case`, its own idea of the key names, and an
+ * `alternatives` array of strings. Every field the adapter reads was therefore absent, and the
+ * proposal came back `categoryId: null` on fragments a model categorises easily.
+ *
+ * The schema passed here is the **same constant** the `json_schema` path transmits
+ * ({@link CLASSIFY_SCHEMA}, `PARSE_SCHEMA`, `OCR_SCHEMA`), so the two modes cannot describe different
+ * shapes — which is the whole reason the weaker mode is steered rather than re-specified.
+ *
+ * It costs tokens on every call to a `json_object` endpoint. That is the honest price of a provider
+ * that does not enforce a schema, and it is cheaper than a silently empty proposal: `json_schema`
+ * providers pay nothing because they never reach this function.
  */
-export function withJsonInstruction(user: string): string {
-  return `${user}\n\nRespond with a single JSON object and nothing else.`;
+export function withJsonInstruction(
+  user: string,
+  schema?: Readonly<Record<string, unknown>>,
+): string {
+  const instruction =
+    schema === undefined
+      ? 'Respond with a single JSON object and nothing else.'
+      : [
+          'Respond with a single JSON object and nothing else.',
+          'It must have exactly these fields, described as JSON Schema:',
+          JSON.stringify(schema),
+        ].join('\n');
+  return `${user}\n\n${instruction}`;
 }

@@ -154,10 +154,16 @@ export function endpointsForTask(table: RoutingTable, task: Task): readonly Endp
 /**
  * Validate one route against the residency rule.
  *
+ * @param consentRecorded Whether a **consent gate is in place** for this route. It defaults to
+ *   `false`, so the safe answer is the one you get by not thinking about it. Two callers pass `true`:
+ *   {@link validateRouting} when the router was constructed with a gate (the table then names a
+ *   *gated exception* rather than an unguarded transfer), and a test asserting the opposite side of
+ *   the predicate. Passing `true` does not admit an endpoint for a Household — that decision is made
+ *   per call, by the gate, against the Household's own record (docs/08 §6.6).
  * @throws {AiRoutingError} `RESIDENCY_VIOLATION` when a sensitive task would leave the EEA, or
  *   `EMBED_MUST_BE_LOCAL` when `EMBED` is pointed at a cloud endpoint.
  */
-export function assertAllowedRoute(task: Task, route: TaskRoute): void {
+export function assertAllowedRoute(task: Task, route: TaskRoute, consentRecorded = false): void {
   const chain = route.fallback === null ? [route.primary] : [route.primary, route.fallback];
 
   for (const endpoint of chain) {
@@ -175,7 +181,9 @@ export function assertAllowedRoute(task: Task, route: TaskRoute): void {
     }
 
     // 2. `EMBED` may only ever be LOCAL — even an EEA cloud endpoint is refused, because the
-    //    vectors are built from the Household's own entity names (docs/08 §6.5).
+    //    vectors are built from the Household's own entity names (docs/08 §6.5). Consent cannot
+    //    buy this one: there is no non-EEA embedding option that is acceptable, so the predicate
+    //    is not consulted at all.
     if (task === 'EMBED') {
       if (!isLocalOnly(endpoint)) {
         throw new AiRoutingError(
@@ -190,14 +198,17 @@ export function assertAllowedRoute(task: Task, route: TaskRoute): void {
       continue;
     }
 
-    // 3. Every other task may reach LOCAL or an explicit `_EU` endpoint, and nothing else.
-    if (!isEeaOrLocal(endpoint)) {
+    // 3. Every other task may reach LOCAL or an explicit `_EU` endpoint, and nothing else —
+    //    unless a consent gate is in place and the endpoint is one of the names
+    //    NON_EEA_ENDPOINTS lists, which is ADR-007's consent-gated exception (ADR-031).
+    if (!isAdmissible(endpoint, consentRecorded)) {
       throw new AiRoutingError(
         'RESIDENCY_VIOLATION',
-        `"${endpoint}" is neither LOCAL nor an EEA endpoint. ${task} carries the Household's own ` +
-          `text (or, for OCR, an image) and routing it there is a GDPR Chapter V transfer ` +
-          `requiring the Household's explicit recorded consent (AGENTS.md rule 5, ADR-007, ` +
-          `docs/08 §6.6). A config typo must not become a data transfer, so this route is refused.`,
+        `"${endpoint}" is neither LOCAL nor an EEA endpoint, and no consent gate admits it. ` +
+          `${task} carries the Household's own text (or, for OCR, an image) and routing it there ` +
+          `is a GDPR Chapter V transfer requiring the Household's explicit recorded consent ` +
+          `(AGENTS.md rule 5, ADR-007, docs/08 §6.6). A config typo must not become a data ` +
+          `transfer, so this route is refused.`,
         task,
         endpoint,
       );
@@ -216,13 +227,17 @@ export function assertAllowedRoute(task: Task, route: TaskRoute): void {
  * An unrouted task is not an error. `EMBED` with no local model running is a legitimate
  * configuration that degrades to keyword-only resolution (docs/04 §4 step 5).
  *
+ * @param consentRecorded Passed straight through to {@link assertAllowedRoute}: `true` when a
+ *   per-call consent gate is installed, which is what makes a non-EEA endpoint a *gated exception*
+ *   instead of a violation. The gate is a runtime predicate the router consults on every call, so
+ *   this flag alone never lets a byte leave.
  * @throws {AiRoutingError}
  */
-export function validateRouting(table: RoutingTable): void {
+export function validateRouting(table: RoutingTable, consentRecorded = false): void {
   for (const task of TASKS) {
     const route = table[task];
     if (route === undefined) continue;
-    assertAllowedRoute(task, route);
+    assertAllowedRoute(task, route, consentRecorded);
   }
 }
 

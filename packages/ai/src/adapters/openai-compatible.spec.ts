@@ -110,6 +110,25 @@ describe('the DeepSeek adapter request', () => {
     expect(JSON.stringify(body)).toContain('JSON object');
   });
 
+  it('describes the schema fields in the prompt, which json_object mode does not enforce', async () => {
+    // The second half of the first-live-call defect. `json_object` guarantees syntax and not keys, so
+    // a prompt that asks for "a JSON object" and never names the fields produced
+    // `{"category_id": "c2", "reason": "…"}` — an answer the adapter could not read at all. Naming the
+    // fields is the only channel this mode has.
+    const stub = stubFetch([{ body: chatCompletion({ categoryId: 'c1', confidence: 0.8 }) }]);
+    const provider = createDeepSeekProvider({ apiKey: 'k', fetch: stub.fetch });
+
+    await provider.classify(classifyInput());
+
+    const user = (stub.lastRequest.body['messages'] as { role: string; content: string }[]).find(
+      (message) => message.role === 'user',
+    );
+    const text = String(user?.content);
+    for (const field of ['categoryId', 'confidence', 'rationale', 'alternatives', 'extracted']) {
+      expect(text).toContain(field);
+    }
+  });
+
   it('posts to the DeepSeek path — no /v1 — with a bearer token', async () => {
     const stub = stubFetch([{ body: chatCompletion({ ok: true }) }]);
     const provider = createDeepSeekProvider({ apiKey: 'secret-key', fetch: stub.fetch });
@@ -154,6 +173,9 @@ describe('the OpenAI adapter request', () => {
     expect(format.json_schema.strict).toBe(true);
     expect(format.json_schema.name).toBe('classify_proposal');
     expect(format.json_schema.schema).toEqual(CLASSIFY_SCHEMA);
+    // …and for that reason the prompt does not repeat it: the provider is enforcing the identical
+    // constant, so describing it again would be tokens spent on a second copy that can drift.
+    expect(JSON.stringify(stub.lastRequest.body['messages'])).not.toContain('JSON Schema');
     expect(stub.lastRequest.body['model']).toBe(OPENAI_DEFAULT_MODEL);
     expect(stub.lastRequest.body['temperature']).toBe(0);
     expect(stub.lastRequest.url).toBe('https://api.openai.com/v1/chat/completions');

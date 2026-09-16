@@ -257,6 +257,66 @@ describe('validateRouting — EMBED may only ever be LOCAL', () => {
   });
 });
 
+describe('the consent argument — a gated exception, never a default', () => {
+  /**
+   * ADR-031's second half. `isAdmissible(endpoint, consent)` existed from the start but nothing
+   * passed `true`, so `DEEPSEEK_GLOBAL` was admissible-by-name and unreachable in fact. These cases
+   * pin both sides of the argument: the default is refusal, and consent buys exactly one endpoint
+   * class and nothing else.
+   */
+  it('refuses DEEPSEEK_GLOBAL when no consent is recorded, which is the default', () => {
+    const table = {
+      CLASSIFY: { primary: 'DEEPSEEK_GLOBAL', fallback: null },
+    } as unknown as RoutingTable;
+
+    expect(() => validateRouting(table)).toThrow(AiRoutingError);
+    try {
+      validateRouting(table, false);
+    } catch (error) {
+      expect((error as AiRoutingError).code).toBe('RESIDENCY_VIOLATION');
+      expect((error as AiRoutingError).endpoint).toBe('DEEPSEEK_GLOBAL');
+    }
+  });
+
+  it('admits DEEPSEEK_GLOBAL for a sensitive task once a gate is installed', () => {
+    for (const task of SENSITIVE_TASKS) {
+      const table = {
+        [task]: { primary: 'DEEPSEEK_GLOBAL', fallback: null },
+      } as unknown as RoutingTable;
+
+      expect(() => validateRouting(table, true)).not.toThrow();
+      expect(() =>
+        assertAllowedRoute(task, { primary: 'DEEPSEEK_GLOBAL', fallback: null }, true),
+      ).not.toThrow();
+    }
+  });
+
+  it('does not let consent admit a spelling that is not a known endpoint', () => {
+    // Consent answers "may this Household's text leave the EEA?", not "does this provider exist?".
+    // A typo must still fail closed even in a consenting deployment.
+    for (const task of SENSITIVE_TASKS) {
+      expect(() =>
+        assertAllowedRoute(task, { primary: 'OPENAI' as never, fallback: null }, true),
+      ).toThrow(AiRoutingError);
+      expect(() =>
+        assertAllowedRoute(task, { primary: 'DEEPSEEK_GLOBAL' as never, fallback: 'GEMINI' as never }, true),
+      ).toThrow(AiRoutingError);
+    }
+  });
+
+  it('never lets consent move EMBED off this node', () => {
+    // docs/08 §6.5: the vectors are built from the Household's own entity names, and there is no
+    // non-EEA embedding option that is acceptable. The predicate is not consulted for EMBED at all.
+    expect(() =>
+      validateRouting({ EMBED: { primary: 'DEEPSEEK_GLOBAL', fallback: null } } as unknown as RoutingTable, true),
+    ).toThrow(/EMBED/);
+  });
+
+  it('leaves the shipped default table valid, because it names no non-EEA endpoint', () => {
+    expect(() => validateRouting(DEFAULT_ROUTING, true)).not.toThrow();
+  });
+});
+
 describe('endpointsForTask', () => {
   it('returns primary then fallback', () => {
     // A configured chain, not the default: ADR-031 removed the default's fallback because the

@@ -699,6 +699,19 @@ Current state is the newest row per `(household_id, purpose)`; the table is appe
 the evidence. Consent records survive an `EVAL_DATASET` withdrawal (we must prove when consent was held) and
 are removed only by the Household purge, except the §8.5 tombstone.
 
+> **Implementation note (ADR-032, task ADR-031 decision 6).** The shipped table is **[03 §4](03-domain-model.md#4-ddl)'s**,
+> not the sketch above: `kind` (with `CHECK (kind IN ('AI_DATA_PROCESSING','EVAL_DATASET','MARKETING_EMAIL','CLOUD_OCR'))`),
+> `granted`, `policy_version`, `recorded_at`, `withdrawn_at`, `evidence`. The four purposes above are the **product**
+> vocabulary and map onto it — `AI_TEXT_EGRESS` + `AI_NARRATION` → `AI_DATA_PROCESSING`, `AI_RECEIPT_OCR` →
+> `CLOUD_OCR`, `EVAL_DATASET` → `EVAL_DATASET` — in `apps/api/src/modules/consent/consent.ts`; every row returned by
+> `aiConsents` carries the mapping so no client re-derives it. `WITHDRAWN` is stored as `granted = false` **plus**
+> `withdrawn_at`, which is how §6.6's state machine is expressed without a migration. Enforcement is
+> `AiRouter`'s injected `ConsentGate`, asked once per non-EEA endpoint per call and failing closed; a routing table
+> that names a non-EEA endpoint **cannot be constructed** without a gate (ADR-032). What is **not** built: the
+> first-use sheet (§6.6's flow), `EVAL_DATASET` consumption (§8.7), an `audit_log` entry per transition, and the
+> two-tap withdrawal surface — all recorded as gaps rather than implied. Until the sheet exists, a Household is
+> `NOT_ASKED` by default and therefore refused, which is §6.6's rule working as written.
+
 ### 6.7 What degrades without AI consent
 
 Money correctness never changes: every deterministic feature remains, because the deterministic core never

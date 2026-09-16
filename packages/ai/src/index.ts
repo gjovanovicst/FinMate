@@ -9,7 +9,9 @@
  *    (ADR-001). The boundary rule enforces the second half: the database lives in `scope:api`,
  *    which this package may not import.
  *  - Routing is **LOCAL or EEA-endpoint only** for PARSE/CLASSIFY/NARRATE/OCR. An endpoint without
- *    an explicit `_EU` suffix is a GDPR Chapter V transfer and needs recorded consent.
+ *    an explicit `_EU` suffix is a GDPR Chapter V transfer and needs recorded consent: it is
+ *    admissible only when the router was constructed with a {@link ConsentGate}, and that gate is
+ *    asked on **every call** (docs/08 §6.6, ADR-031).
  *
  * Implemented in Phase 2 tasks 2.2.1 (provider abstraction) and 2.2.2 (structured-output validation
  * and confidence calibration).
@@ -24,7 +26,8 @@
  * };
  *
  * // 2. Construct the router. This validates residency and THROWS on a table that would egress
- * //    outside the EEA — the misconfiguration never becomes a data transfer.
+ * //    outside the EEA — the misconfiguration never becomes a data transfer. A non-EEA endpoint is
+ * //    admissible only with a `consent` gate, which is asked per call and fails closed.
  * const router = new AiRouter({ routing: DEFAULT_ROUTING, providers });
  *
  * // 3. Route a task. A failure is a value: `rung` is the degradation ladder the UI renders.
@@ -83,11 +86,15 @@ export {
   DEFAULT_ROUTING,
   EEA_ENDPOINT_SUFFIX,
   ENDPOINTS,
+  NON_EEA_ENDPOINTS,
   VALIDATED_DEFAULT_ROUTING,
   assertAllowedRoute,
   endpointsForTask,
+  isAdmissible,
   isEeaOrLocal,
+  isKnownEndpoint,
   isLocalOnly,
+  isNonEea,
   validateRouting,
   type Endpoint,
   type RoutingTable,
@@ -103,6 +110,7 @@ export {
   AiUnavailableError,
   type AiErrorCode,
   type ProviderFailure,
+  type ProviderFailureReason,
 } from './errors';
 
 // --- the ladder ---------------------------------------------------------------------------------
@@ -119,6 +127,7 @@ export {
   type AiCallFailure,
   type AiCallResult,
   type AiCallSuccess,
+  type ConsentGate,
   type DegradationReason,
   type DegradationRung,
   type RouterOptions,
@@ -258,6 +267,7 @@ export {
   LOCAL_DEFAULT_MODEL,
   OPENAI_BASE_URL,
   OPENAI_DEFAULT_MODEL,
+  REQUIRES_CONFIGURED_BASE_URL,
   UNIMPLEMENTED_ENDPOINTS,
   createDeepSeekProvider,
   createLocalProvider,

@@ -1,35 +1,39 @@
 /**
  * The classify prompt — docs/04-categorization-and-ai-engine.md §6.3, rendered in-process.
  *
- * ## Prompt content lives here, not in `packages/ai`
+ * ## The caller owns the *instructions*; the adapter owns the *payload*
  *
- * `@finmate/ai` is transport: it redacts, ships, times, prices and returns. It does not own prompt
- * text (see its module header), because a prompt is product content that changes on a product
- * schedule and must be versioned independently of the adapter. {@link CLASSIFY_PROMPT} carries that
- * version, and every audit row stores it, which is what makes an accuracy regression attributable to
- * a prompt change rather than a guess (docs/04 §9).
+ * That split is not a preference, it is the only one that works, and this file used to get it wrong.
+ * The category list cannot be rendered here: `packages/ai` replaces every category id with an opaque
+ * placeholder (`u1`, `c1`, `n1`) before the request ships, so the ids the model is allowed to answer
+ * with do not exist until the adapter builds the message (docs/08 §6.3 — the model never sees a real
+ * id, and the redaction map is the only way back). A caller that renders the list itself renders a
+ * *second*, different list — and a model told "choose only from the provided list" then answers with
+ * an id the redaction map cannot resolve, which validation turns into `null`.
  *
- * ## Two things the §6.3 shape buys
+ * So: this module renders the rules and the task instruction. The adapter appends the closed category
+ * list (with placeholders), the known entities, the few-shot examples and the redacted fragment.
  *
- * - **The category list is closed and small.** §6.3's "top ~25 by keyword/embedding retrieval, not
- *   the whole tree for large households" is the cost control; the caller passes the list and §6.2's
- *   validation refuses anything outside it.
- * - **The fragment is delimited as untrusted data.** `asUntrusted` wraps it, so a fragment that says
- *   "ignore previous instructions" is data, not an instruction (docs/08 §6.9 defence 3).
+ * ## Why the text still lives here
+ *
+ * `@finmate/ai` is transport: it redacts, ships, times, prices and returns. Prompt *content* is product
+ * content that changes on a product schedule and must be versioned independently of the adapter.
+ * {@link CLASSIFY_PROMPT} carries that version and every audit row stores it, which is what makes an
+ * accuracy regression attributable to a prompt change rather than a guess (docs/04 §9).
  *
  * @module apps/api/src/modules/classification
  */
 
-import { asUntrusted, renderClassifyContext, UNTRUSTED_SYSTEM_PREAMBLE } from '@finmate/ai';
-import type { TransactionFragment } from '@finmate/nlp';
-import type { KeywordCandidate } from '@finmate/rules-engine';
+import { UNTRUSTED_SYSTEM_PREAMBLE } from '@finmate/ai';
 
 /**
- * One entry of the closed category list the prompt renders.
+ * One entry of the closed category list the **adapter** renders, as the caller knows it.
  *
  * `path` is the display breadcrumb the model reads (`Hrana / Supermarket`); `id` is the only thing it
- * may return (docs/04 §6.2). Kept a separate type from the pipeline's `PipelineCategory` so a caller
- * cannot accidentally make the prompt depend on a database column it does not need.
+ * may return (docs/04 §6.2) — and `packages/ai` substitutes that id for a placeholder before the
+ * request ships, so this shape is the caller-side view rather than the wire's. Kept separate from the
+ * pipeline's `PipelineCategory` so a caller cannot accidentally make the prompt depend on a database
+ * column it does not need.
  */
 export interface PromptCategory {
   readonly id: string;
@@ -39,20 +43,14 @@ export interface PromptCategory {
 }
 
 /**
- * Inputs {@link promptFor} renders.
+ * What the caller must hand {@link promptFor}.
  *
- * `categories` is typed to the *prompt's* needs, not the pipeline's, so `ClassifyRequest` stays the
- * only place that knows about both.
+ * Deliberately empty, and typed as an object rather than removed so the call site reads the same and a
+ * future instruction parameter has an obvious home. Every field this interface used to carry —
+ * `fragment`, `categories`, the entity names, the keyword candidates — belongs to the adapter's
+ * payload, not the caller's instructions (see the module header).
  */
-export interface ClassifyPromptInput {
-  readonly fragment: TransactionFragment;
-  /** The resolved entity names, when stage 3 hit. */
-  readonly merchantName?: string;
-  readonly counterpartyName?: string;
-  /** The scored keyword candidates, attached as context (docs/04 §5.4). */
-  readonly keywordCandidates: readonly KeywordCandidate[];
-  readonly categories: readonly PromptCategory[];
-}
+export type ClassifyPromptInput = Record<string, never>;
 
 /** A rendered prompt: the two strings the provider receives. */
 export interface RenderedPrompt {
@@ -67,7 +65,7 @@ export interface RenderedPrompt {
  * (*never invent an id*, *never perform arithmetic*, the Serbian amount/income conventions) because
  * those sentences are the prompt's actual contract with the model.
  */
-export function promptFor(input: ClassifyPromptInput): RenderedPrompt {
+export function promptFor(_input: ClassifyPromptInput = {}): RenderedPrompt {
   const system = [
     UNTRUSTED_SYSTEM_PREAMBLE,
     'You extract and classify household financial transactions for a Serbian household.',
@@ -81,23 +79,13 @@ export function promptFor(input: ClassifyPromptInput): RenderedPrompt {
     'Respond with JSON matching the required schema and nothing else.',
   ].join('\n');
 
-  const knownMerchants = input.merchantName ? `Known merchant: ${input.merchantName}` : null;
-  const knownPeople = input.counterpartyName ? `Known person: ${input.counterpartyName}` : null;
-
+  // No category list, no fragment, no entity names: the adapter appends all four, redacted and with
+  // the ids substituted. Anything rendered here would be a second copy the model could answer with.
   const user = [
-    renderClassifyContext({
-      categories: input.categories.map((category) => ({
-        id: category.id,
-        path: category.path,
-        ...(category.description ? { description: category.description } : {}),
-      })),
-      ...(knownMerchants ? { knownMerchants: [knownMerchants] } : {}),
-      ...(knownPeople ? { knownPeople: [knownPeople] } : {}),
-    }),
-    // The fragment is the one part of the prompt a user controls, so it is the one part that is
-    // delimited (docs/08 §6.9 defence 3).
-    `Input: ${asUntrusted(input.fragment.rawText)}`,
-  ].join('\n\n');
+    'Classify the household transaction given below.',
+    'The candidate categories, the known merchants and people, and the input itself follow in the next message.',
+    'Choose an id exactly as it is written in that candidate list, or null when nothing fits.',
+  ].join('\n');
 
   return { system, user };
 }

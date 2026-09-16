@@ -692,6 +692,45 @@ type CommittedTransactionModel {
   wasReplayed: Boolean!
 }
 
+"""
+A purpose the Household decides on separately (docs/08 §6.6). The stored `kind` vocabulary is docs/03 §4's; each maps onto one or two docs/08 purposes, which `purposes` returns.
+"""
+enum ConsentKind {
+  AI_DATA_PROCESSING
+  CLOUD_OCR
+  EVAL_DATASET
+}
+
+type ConsentModel {
+  kind: ConsentKind!
+
+  """
+  The revision of the consent copy that was shown. A bump forces re-consent.
+  """
+  policyVersion: String
+
+  """
+  The docs/08 §6.6 purpose vocabulary this stored kind stands for — AI_TEXT_EGRESS and AI_NARRATION share one record, because docs/03 §4's CHECK has no value between them.
+  """
+  purposes: [String!]!
+
+  """
+  When the newest record was written. Null when the Household has never decided.
+  """
+  recordedAt: DateTime
+  state: ConsentState!
+}
+
+"""
+NOT_ASKED is treated as DECLINED by every enforcement point: absence of consent is never permission (docs/08 §6.6). The two are still distinguished in the record, which is the evidence.
+"""
+enum ConsentState {
+  DECLINED
+  GRANTED
+  NOT_ASKED
+  WITHDRAWN
+}
+
 input ContributeToGoalInput {
   amount: Money!
 
@@ -1600,6 +1639,11 @@ type Mutation {
   reconcileReceipt(input: ReconcileReceiptInput!): ReceiptModel!
 
   """
+  Grant, decline or withdraw one AI consent purpose. OWNER-only (docs/08 §6.6, Q-11). A withdrawal takes effect before the next AI call.
+  """
+  recordAiConsent(input: RecordConsentInput!): ConsentModel!
+
+  """
   Register or re-register this browser endpoint for the session's Household and user. `endpoint` is unique, so a re-subscribe updates `lastSeenAt` and revives a retired row rather than duplicating it (ADR-028 decision 3).
   """
   registerPushSubscription(input: PushSubscriptionInput!): PushSubscriptionModel!
@@ -1987,6 +2031,11 @@ type Query {
   ): AccountConnection!
 
   """
+  The Household decision for every purpose this build enforces, including the ones never asked. Never a bare boolean: a screen has to be able to say "not asked yet".
+  """
+  aiConsents: [ConsentModel!]!
+
+  """
   The Household alert rules, including the documented defaults once anything has run.
   """
   alerts: [AlertRuleModel!]!
@@ -2294,6 +2343,28 @@ enum ReconciliationState {
   MATCHED
   MISMATCH
   PENDING
+}
+
+input RecordConsentInput {
+  kind: ConsentKind!
+
+  """
+  The locale the copy was shown in. Part of the evidence, not a preference.
+  """
+  locale: String
+
+  """Defaults to this build's copy revision (2026-09-ai-egress-1)."""
+  policyVersion: String
+
+  """
+  GRANTED, DECLINED or WITHDRAWN. NOT_ASKED is the absence of a record and cannot be written.
+  """
+  state: ConsentState!
+
+  """
+  The UI surface that showed the copy, e.g. `settings` or `capture-sheet`.
+  """
+  surface: String
 }
 
 type RecurringOccurrenceModel {

@@ -473,8 +473,8 @@ export class OpenAiCompatibleProvider implements RoutedProvider {
         role: 'user',
         content:
           extraParts.length === 0
-            ? this.steerJson(user, task)
-            : [{ type: 'text', text: this.steerJson(user, task) }, ...extraParts],
+            ? this.steerJson(user, task, schema)
+            : [{ type: 'text', text: this.steerJson(user, task, schema) }, ...extraParts],
       },
     ];
 
@@ -496,10 +496,21 @@ export class OpenAiCompatibleProvider implements RoutedProvider {
     return body;
   }
 
-  /** `json_object` mode must be asked for JSON in the prompt; `json_schema` mode must not be. */
-  private steerJson(user: string, task: Task): string {
+  /**
+   * `json_object` mode must be asked for the JSON *and its shape* in the prompt; `json_schema` mode
+   * must not be asked for either, because the provider enforces it.
+   *
+   * Threading `schema` here rather than letting the prompt builder guess is what keeps the two modes
+   * describing one shape: the identical constant is either transmitted or described.
+   */
+  private steerJson(
+    user: string,
+    task: Task,
+    schema: Readonly<Record<string, unknown>> | null,
+  ): string {
     if (this.config.responseFormat !== 'json_object') return user;
-    return task === 'NARRATE' ? user : withJsonInstruction(user);
+    if (task === 'NARRATE') return user;
+    return withJsonInstruction(user, schema ?? undefined);
   }
 
   private responseFormat(

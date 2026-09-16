@@ -8,6 +8,10 @@ import { ConfigModule } from './config/config.module';
 import { GraphqlModule } from './graphql/graphql.module';
 import { HealthController } from './health/health.controller';
 import { AccountsModule } from './modules/accounts/accounts.module';
+// The AI composition root (ADR-031 decision 6): config → routing → adapters → the per-task seams.
+import { AiModule } from './modules/ai/ai.module';
+// The consent record, and the gate the router asks before a non-EEA endpoint (docs/08 §6.6).
+import { ConsentModule } from './modules/consent/consent.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AssistantModule } from './modules/assistant/assistant.module';
 import { BudgetingModule } from './modules/budgeting/budgeting.module';
@@ -37,6 +41,10 @@ import { PrismaModule } from './prisma/prisma.module';
     PrismaModule,
     AuthModule,
     GraphqlModule,
+    // Consent first: the AI root installs `ConsentsService` as the router's gate, so a withdrawal is
+    // read by the same service the settings surface writes through.
+    ConsentModule,
+    AiModule,
     AccountsModule,
     TaxonomyModule,
     LedgerModule,

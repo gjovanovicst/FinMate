@@ -53,6 +53,16 @@ export type AiErrorCode =
   /** The task call itself has no endpoint (e.g. `LOCAL` configured but no base URL). */
   | 'ENDPOINT_NOT_CONFIGURED';
 
+/**
+ * Why an endpoint was **not** tried, as opposed to why it failed.
+ *
+ * `CONSENT_DECLINED` is deliberately a member of this union rather than a fourth error class: it is
+ * not a fault, and it is not thrown. It is the recorded answer to ADR-007's question — "may this
+ * Household's text reach a non-EEA endpoint?" — and the router turns a `false` into a skipped
+ * endpoint and a `CONSENT_DECLINED` degradation reason (docs/08 §6.6, ADR-031).
+ */
+export type ProviderFailureReason = AiErrorCode | 'CIRCUIT_OPEN' | 'CONSENT_DECLINED';
+
 /** The routing configuration violates the residency rule and was refused. */
 export class AiRoutingError extends Error {
   readonly code: AiErrorCode;
@@ -119,8 +129,11 @@ export interface ProviderFailure {
   /** The endpoint that was tried, or skipped. */
   readonly endpoint: string;
   readonly provider: ProviderName | null;
-  /** `CIRCUIT_OPEN` when the breaker short-circuited before a call was made. */
-  readonly reason: AiErrorCode | 'CIRCUIT_OPEN';
+  /**
+   * `CIRCUIT_OPEN` when the breaker short-circuited before a call was made; `CONSENT_DECLINED` when
+   * the Household's recorded consent did not admit this endpoint, so no call was made at all.
+   */
+  readonly reason: ProviderFailureReason;
   readonly message: string;
   /** True when the failure counts against the provider's circuit breaker. */
   readonly countsAgainstCircuit: boolean;

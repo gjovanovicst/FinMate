@@ -10,6 +10,25 @@ import { z } from 'zod';
 
 const DEV_JWT_PLACEHOLDER = 'dev-only-not-a-real-secret-change-me';
 
+/**
+ * An env var that is **absent** when it is empty or whitespace-only.
+ *
+ * `node --env-file` (and `dotenv`, and Docker Compose) turn `KEY=` into `KEY=""` — a *present*
+ * variable holding nothing. Every inert-seam check in this codebase is `=== undefined`, so a blank
+ * value does not mean "unconfigured": it means configured *with nothing*. That is how a copied
+ * `.env.example` produced a VAPID pair of `""` (a push sender that throws on the first send), an
+ * `_EU_BASE_URL=""` (a boot failure from `z.string().url()`), and would have produced a `LOCAL`
+ * provider pointed at `""`. Normalising at the schema is the one place that fixes all of them.
+ */
+const blankIsAbsent = (value: unknown): unknown =>
+  typeof value === 'string' && value.trim() === '' ? undefined : value;
+
+/** Optional free text; `KEY=` counts as unset. */
+const optionalText = z.preprocess(blankIsAbsent, z.string().optional());
+
+/** Optional URL; `KEY=` counts as unset, and a non-empty value must parse as a URL. */
+const optionalUrl = z.preprocess(blankIsAbsent, z.string().url().optional());
+
 export const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -44,7 +63,7 @@ export const envSchema = z
      * of the app renders, and `formatMoney`'s own default is this value.
      */
     APP_DEFAULT_LOCALE: z.string().default('sr-Latn-RS'),
-    SMTP_URL: z.string().optional(),
+    SMTP_URL: optionalText,
 
     /** Login throttling (docs/08 §3 — credential stuffing is threat T-02). */
     LOGIN_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
@@ -75,10 +94,33 @@ export const envSchema = z
      * default: the previous default was the provider's global platform (`api.deepseek.com`,
      * `api.openai.com`), which is how an `_EU` suffix came to sit on a non-EEA host.
      */
-    DEEPSEEK_EU_BASE_URL: z.string().url().optional(),
-    OPENAI_EU_BASE_URL: z.string().url().optional(),
-    ANTHROPIC_EU_BASE_URL: z.string().url().optional(),
-    GEMINI_EU_BASE_URL: z.string().url().optional(),
+    DEEPSEEK_EU_BASE_URL: optionalUrl,
+    OPENAI_EU_BASE_URL: optionalUrl,
+    ANTHROPIC_EU_BASE_URL: optionalUrl,
+    GEMINI_EU_BASE_URL: optionalUrl,
+
+    /**
+     * The host a *credential* belongs to. Only meaningful when a task primary names the endpoint,
+     * and read by `modules/ai` when it assembles adapters (ADR-031 decision 6).
+     *
+     * They live here, not in the AI package, for the reason `packages/ai`'s factory header states:
+     * a library that reads `process.env` cannot be unit-tested without mutating global state. The
+     * package takes the key as an argument; this file owns the variable names.
+     */
+    DEEPSEEK_API_KEY: optionalText,
+    OPENAI_API_KEY: optionalText,
+
+    /**
+     * The local sidecar (Ollama / `llama.cpp`) — docs/08 §6.8. **No default**, deliberately.
+     *
+     * Setting this is a *claim* that a model is listening there, and `modules/ai` takes it at its
+     * word: with it set, every `LOCAL`-routed task opens a socket, and with it blank the task is
+     * simply unrouted and the pipeline stays at rules and keywords instantly. The old default
+     * (`http://localhost:11434`) was the reverse — a claim nobody had made, on a port nothing
+     * listened on, which the composition root would have turned into a refused connection on every
+     * unmatched fragment.
+     */
+    LOCAL_AI_BASE_URL: optionalUrl,
 
     /**
      * S3-compatible object storage (ADR-018, task 4.1.1). All optional: with none of them set the
@@ -86,11 +128,11 @@ export const envSchema = z
      * URL, exactly as `EMBEDDINGS` is inert without a model (ADR-021). `attachments` is still the
      * table — a deployment without storage simply cannot accept an upload.
      */
-    S3_ENDPOINT: z.string().optional(),
-    S3_BUCKET: z.string().optional(),
+    S3_ENDPOINT: optionalText,
+    S3_BUCKET: optionalText,
     S3_REGION: z.string().default('us-east-1'),
-    S3_ACCESS_KEY_ID: z.string().optional(),
-    S3_SECRET_ACCESS_KEY: z.string().optional(),
+    S3_ACCESS_KEY_ID: optionalText,
+    S3_SECRET_ACCESS_KEY: optionalText,
     /** Presigned URL lifetimes, from docs/06 §9.2/§9.4. */
     S3_UPLOAD_URL_TTL_SECONDS: z.coerce.number().int().min(1).max(604_800).default(900),
     S3_DOWNLOAD_URL_TTL_SECONDS: z.coerce.number().int().min(1).max(604_800).default(300),
@@ -105,8 +147,8 @@ export const envSchema = z
      * the push services may use to reach the operator; it has a safe default because web-push
      * requires one whenever keys are set.
      */
-    VAPID_PUBLIC_KEY: z.string().optional(),
-    VAPID_PRIVATE_KEY: z.string().optional(),
+    VAPID_PUBLIC_KEY: optionalText,
+    VAPID_PRIVATE_KEY: optionalText,
     VAPID_SUBJECT: z.string().default('mailto:noreply@localhost'),
   })
   .superRefine((env, ctx) => {

@@ -1691,6 +1691,127 @@ satisfy while the traffic goes elsewhere is worse than no guarantee, because it 
 - **(e) Build the composition root first and decide this later.** It would wire the same false labels
   into a path that actually sends data, turning a documented defect into an incident.
 
+### ADR-032 — Consent is a per-Household record, and the router asks it on every call
+**Status:** Accepted
+
+**Context.** ADR-031 removed a false residency guarantee and recorded that two things must exist before
+anything could leave the EEA: a composition root (config → routing → adapters → the injected seams) and
+a per-Household consent store with enforcement. It also said the gate had to land *before* the routing,
+"or the exception ADR-007 allows would be an exception nobody granted". Building both turned up four
+things worth deciding rather than discovering:
+
+1. **A `consents` table already exists and does not say what docs/08 §6.6 says.** docs/03 §4 owns the
+   DDL — `kind TEXT CHECK (kind IN ('AI_DATA_PROCESSING','EVAL_DATASET','MARKETING_EMAIL','CLOUD_OCR'))`,
+   `granted BOOLEAN`, `policy_version`, `recorded_at`, `withdrawn_at`, `evidence JSONB` — and it is
+   applied. docs/08 §6.6 sketches a different table: `purpose` with four values
+   (`AI_TEXT_EGRESS`, `AI_RECEIPT_OCR`, `AI_NARRATION`, `EVAL_DATASET`), a `state` enum and
+   `decided_at`. docs/06 §4 sketches a **third** answer: a single `aiConsentGiven: Boolean!` on
+   `HouseholdSettings`, and on `SignUpInput` "cannot be omitted".
+2. **`AiRouter` had no way to ask.** `isAdmissible(endpoint, consentRecorded)` existed from 2.2.1 and
+   nothing passed `true`, so `validateRouting` refused every non-EEA endpoint and the consent question
+   was unreachable rather than answered.
+3. **The capture path already had a `allowAi` flag** (docs/06 §5.1) defaulting to `true`. Treating that
+   as the consent record was the tempting shortcut, and it is wrong: a per-request flag set by a client
+   is not a recorded decision by the data subject, and "absent means yes" is the opposite of docs/08
+   §6.6's rule.
+4. **The first live provider found two defects** that no test could see, because both live in the seam
+   between two packages rather than in either one (§ "What the live call found").
+
+**Decision.**
+
+1. **The record is the shipped table, and the purposes map onto it.** `consents` stays as docs/03 §4
+   defines it; docs/08 §6.6's four purposes are the *product* vocabulary and map onto two stored kinds —
+   `AI_TEXT_EGRESS` + `AI_NARRATION` → `AI_DATA_PROCESSING`, `AI_RECEIPT_OCR` → `CLOUD_OCR`,
+   `EVAL_DATASET` → `EVAL_DATASET`. The mapping lives in one place
+   (`apps/api/src/modules/consent/consent.ts`) and travels to the client on every row, so no screen
+   invents it. Reshaping the table to four purposes is **deferred**, not refused: it is a migration with
+   no data and no consumer yet, and the coarser record loses no meaning, only granularity between two
+   text purposes that share an endpoint.
+2. **The gate is a callback on the router, asked once per non-EEA endpoint per call.**
+   `RouterOptions.consent?: ConsentGate` with `permits(task): boolean | Promise<boolean>`. The
+   constructor **refuses a table that names a non-EEA endpoint when no gate is installed**, so such a
+   route cannot exist in a process that has no way to say no to it. Asking on every call is what makes
+   withdrawal immediate (docs/08 §6.6); a memoised grant would outlive it. A gate that throws is a
+   refusal, and the refusal is a value — `CONSENT_DECLINED`, a rung of the ladder, never an exception.
+3. **`apps/api/src/modules/ai` is the composition root and the only place a model's host or key is
+   read.** It assembles the routing table and one adapter per usable endpoint from validated config,
+   installs `ConsentsService` as the gate, and provides `AI_CLASSIFIER`, `NARRATOR`, `OCR` and
+   `EMBEDDINGS`. `LOCAL` is usable **only** when `LOCAL_AI_BASE_URL` is set, because setting it is a
+   claim that a model is listening and the old default claimed it on a port nothing listened on.
+   `EMBEDDINGS` stays the unconfigured twin: rung 5 needs a model and a *width*
+   (`entity_embeddings.embedding` is `vector(384)`), not a host (ADR-021).
+4. **The consent surface is `aiConsents` + `recordAiConsent`, OWNER-only** (docs/08 §6.6, Q-11), and the
+   record is append-only with `WITHDRAWN` stored as `granted = false` plus `withdrawn_at`, which is how
+   docs/03 §4's columns express docs/08 §6.6's state machine without a migration. docs/06 §4's
+   `SignUpInput.aiConsentGiven` / `HouseholdSettings.aiConsentGiven` booleans are **not implemented**:
+   a boolean cannot answer "may the Receipt image go?" separately from "may the free text go?", so it
+   contradicts docs/08 §6.6's granularity requirement in the same document set. Recorded as a doc
+   defect rather than reconciled silently.
+5. **`allowAi` stays, and is not consent.** It is a per-request opt-out (default `true`) meaning "not
+   this request"; consent is a per-Household record (default absent ⇒ refused) meaning "this Household
+   may". Both must pass before a non-EEA endpoint is called. Conflating them would either make the
+   default an unlawful assumption or make every capture a consent decision.
+6. **What the live call found is part of the decision that the root exists to be verifiable.** With
+   `AI_CLASSIFY_PRIMARY=DEEPSEEK_GLOBAL` and a recorded grant, every answer came back `categoryId:
+   null`. Two independent defects, both fixed here: the category list was rendered **twice** — by the
+   caller with real UUIDs and by the adapter with its placeholders — so the model answered in a
+   vocabulary the redaction map could not resolve; and `json_object` mode, which constrains syntax and
+   not keys, was **never told the field names**, so DeepSeek invented them
+   (`{"category_id": …, "reason": …}`). The split is now explicit: **the caller renders the
+   instructions, the adapter renders the payload**, and the `json_object` prompt carries the same schema
+   constant the `json_schema` path transmits. Both have regression tests at the composed seam, which is
+   where they belong — neither package's own suite could have caught either.
+
+**Consequences.**
+- ✅ **The residency rule is now enforced against a record, not a configuration.** A deployment may name
+  `DEEPSEEK_GLOBAL`; a Household with no `GRANTED` row still gets rules and keywords, instantly, with no
+  socket opened. Verified live: `usedAi: false` / `RUNG: RULES_KEYWORDS_ONLY` before the grant,
+  `decidedBy: AI` with provider `DEEPSEEK`, model `deepseek-flash`, latency and `cost_micros` in
+  `classification_decisions` after it, and refused again the moment it was withdrawn.
+- ✅ **`Lidl 2000` still resolves by keyword** (`decidedBy: KEYWORD`, 0.923) with a provider configured.
+  ADR-002 is untouched — the AI is the exception path, and the first live run is the evidence.
+- ✅ **The two prompt defects are the strongest argument for this ADR's existence.** Neither was visible
+  to typecheck, lint, `web:build`, the 2 400-test suite or the eval gates; both were found within a
+  minute of the first real call, because the root made the composed path *runnable*.
+- ⚠️ **The consent sheet is unbuilt.** A Household can record consent only through the mutation, so on
+  any deployment without a client for it, every Household is `NOT_ASKED` and gets rules-only. That is
+  the safe direction and it is a real product gap: the sheet is docs/02 §4.18's *AI podešavanja*, part of
+  the settings work. Recorded as R-25.
+- ⚠️ **`AI_CLASSIFY_PRIMARY` is set to `DEEPSEEK_GLOBAL` in the dev `.env` only.** `.env.example` keeps
+  `LOCAL`, because a deployment should not default to a non-EEA provider; the file now documents why
+  naming it is safe rather than forbidden.
+- ⚠️ **The `json_object` steering costs tokens on every call to such an endpoint** (~400 for the
+  classify schema). `json_schema` providers pay nothing. This is a documented cost, not a regression.
+- ⚠️ **`LOCAL_AI_BASE_URL` has no default any more, and `.env.example` leaves it blank.** A deployment
+  that had relied on the old `http://localhost:11434` default must now set it — which is the point: the
+  default was a claim about a model that was not running.
+- ⚠️ **Rung 5 is still inert** (ADR-021) and **`EVAL_DATASET` consent is recordable but read by
+  nothing** (docs/08 §8.7 is unbuilt). Both are named, not implied.
+- ⚠️ Consent is **not** audited into `audit_log` yet, and `gdpr.purge` does not exist, so a
+  `consents` row currently has no erasure path other than the Household cascade. Named in the task list.
+
+**Alternatives rejected.**
+- **(a) One `aiConsentGiven` boolean, as docs/06 sketches.** It cannot distinguish text from image, and
+  it moves the decision to signup, which docs/08 §6.6 explicitly rejects ("requested at first use, not
+  buried in onboarding").
+- **(b) Reshape `consents` to docs/08 §6.6's four purposes now.** A migration against an empty table,
+  changing the canonical DDL for a granularity nothing consumes. Deferred with the mapping recorded
+  instead — the reverse of a silent reconciliation.
+- **(c) Enforce consent in the boot guard.** It cannot be done: consent is per Household and revocable
+  at runtime, so a validated-once value is either a false guarantee or a full restart per withdrawal.
+- **(d) Have `packages/ai` read the consent record.** The package has no database by construction, and
+  giving it one would put tenancy and residency in a library. The callback keeps the decision in
+  `apps/api` and the mechanism in the package.
+- **(e) Treat `allowAi: true` as consent.** A client-set request flag is not evidence of a lawful basis,
+  and its default would be the assumption docs/08 §6.6 forbids.
+- **(f) Make the adapter tolerant of the model's own key names** (`category_id`, `reason`,
+  `alternatives` as strings). It would have made the first live call "work" by guessing at a schema —
+  and guessing is how a plausible wrong field becomes a persisted decision. Describing the shape is
+  the fix; leniency is a second bug wearing the first one's coat.
+- **(g) Send `response_format: json_schema` to DeepSeek.** Its platform does not offer the mode (the
+  factory says so), so the request would either be rejected or silently ignored — a configuration that
+  looks enforced and is not.
+
 ---
 
 ## Part 2 — Risk register
@@ -1727,12 +1848,14 @@ owner and a checkpoint in [09](09-implementation-plan.md).
 | **R-23** | ~~**The offline cache depends on an app lock that no task builds** (ADR-025), so F-26's offline capture is session-only and Sprint 4.2's exit criterion cannot be met as written~~ **CLOSED in 4.2.6b** | 4 | 3 | ~~12~~ **0** | The lock's core shipped in 4.2.6a (ADR-029) and the **device panel and re-auth screen that arm it** in 4.2.6b, so a user can turn persistence on and offline capture survives a reload. An install that leaves the lock off still persists nothing — deliberately (ADR-025's rejected alternative (c)), and the tray's copy now says so instead of claiming *"Nothing here is lost."* | Closed; the residual "the user has not armed it" case is Phase 4.3's onboarding copy, not a risk |
 | **R-24** | **The push payload is coupled to `ngsw-worker.js`'s undocumented `handlePush`/`onActionClick`** (ADR-028's 4.2.5 amendment), so an `@angular/service-worker` upgrade could make every push silently display nothing — `dispatch` still reports `SENT`, so nothing looks broken server-side | 3 | 3 | 9 | The dependency is pinned and the coupling is written down in the payload module and here; `web-push-payload.spec.ts` pins the exact block the worker reads; the in-app centre is the source of truth and is complete without push (docs/07 §4.8), so a silent failure costs nagging, not data; re-check `ngsw-worker.js` on every Angular major | Every Angular upgrade + Phase 5 beta gate |
 
+| **R-25** | **The consent gate ships without a consent sheet** — a Household can record AI consent only through the `recordAiConsent` mutation, so on any deployment with no client for it every Household stays `NOT_ASKED` and the AI path is rules-only (ADR-032) | 4 | 2 | 8 | The safe direction is the default: absence of a record is refused, and the record, the enforcement and the audit row are built and verified live; the sheet is docs/02 §4.18's *AI podešavanja* and belongs to the settings work whose first section shipped in 4.2.6b | Phase 4.3/5 — before any deployment that claims AI categorisation |
+
 ### Top five by exposure
 1. **R-01 onboarding cold-start (20)** — the single biggest threat, and the one the plan spends the most disproportionate effort on.
 2. **R-12 retention (16)** — a working product that people stop using is still a failed product.
 3. **R-03 / R-04 / R-05 / R-06 / R-07 / R-08 / R-14 / R-15 / R-16 / R-23 (12 each)** — a cluster of medium-high risks, all addressed by decisions already taken above (R-23 by an ADR that names the missing task rather than assuming it).
 4. **R-02 / R-09 / R-10 / R-20 (10 each)** — low-likelihood, catastrophic-impact; these justify the reconciliation job, backup rehearsal and tenancy tests even though they are unlikely.
-5. **R-11 / R-13 / R-17 / R-19 / R-22 (8–9)** — monitor, do not over-invest.
+5. **R-11 / R-13 / R-17 / R-19 / R-22 / R-25 (8–9)** — monitor, do not over-invest.
 
 ---
 

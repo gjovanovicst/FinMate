@@ -33,8 +33,11 @@ import {
   type ClassifyProposal,
 } from '@finmate/ai';
 
+import type { TransactionFragment } from '@finmate/nlp';
+import type { KeywordCandidate } from '@finmate/rules-engine';
+
 import type { AiClassifyResult, AiStageResult, PipelineCategory, PipelineHousehold } from './classification.pipeline';
-import { promptFor, type ClassifyPromptInput, type PromptCategory } from './classify-prompt';
+import { promptFor, type PromptCategory } from './classify-prompt';
 
 /**
  * Everything the classifier needs for one fragment.
@@ -42,8 +45,19 @@ import { promptFor, type ClassifyPromptInput, type PromptCategory } from './clas
  * It is not `AiStageInput` because the classifier also needs the closed category list and the fitted
  * calibration maps — both owned by the caller (the service), neither of which belongs in the pure
  * pipeline stage.
+ *
+ * The payload fields (`fragment`, the entity names, `keywordCandidates`) are here because
+ * `ClassifyInput` carries them to the adapter, which renders them — not because the prompt in
+ * `classify-prompt.ts` does. See that module's header: rendering them twice is how the model came to
+ * be offered two different id vocabularies and answered with one the map could not resolve.
  */
-export interface ClassifyRequest extends ClassifyPromptInput {
+export interface ClassifyRequest {
+  readonly fragment: TransactionFragment;
+  /** The resolved entity names, when stage 3 hit. */
+  readonly merchantName?: string;
+  readonly counterpartyName?: string;
+  /** The scored keyword candidates, attached as context (docs/04 §5.4). */
+  readonly keywordCandidates: readonly KeywordCandidate[];
   /** The closed list the model may choose from. An id outside it is nulled by validation (§6.2). */
   readonly categories: readonly PipelineCategory[];
   readonly household: PipelineHousehold;
@@ -107,19 +121,9 @@ export class RoutedAiClassifier {
   ) {}
 
   async classify(request: ClassifyRequest): Promise<AiStageResult> {
-    // The prompt reads `path` (the display breadcrumb); the pipeline carries `name`. Mapped here so
-    // neither side has to know the other's field names.
-    const prompt = promptFor({
-      fragment: request.fragment,
-      ...(request.merchantName ? { merchantName: request.merchantName } : {}),
-      ...(request.counterpartyName ? { counterpartyName: request.counterpartyName } : {}),
-      keywordCandidates: request.keywordCandidates,
-      categories: request.categories.map((category) => ({
-        id: category.id,
-        path: category.name,
-        ...(category.aiDescription ? { description: category.aiDescription } : {}),
-      })),
-    });
+    // Instructions only. The adapter renders the payload — the closed list included — because it owns
+    // the id substitution the model answers in (see `classify-prompt.ts`).
+    const prompt = promptFor();
     const allowedIds = request.categories.map((category) => category.id);
 
     const input: ClassifyInput = {

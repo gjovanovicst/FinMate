@@ -317,6 +317,21 @@ type HouseholdSettings {
   aiRouting: [AiRoutingEntry!]!
 }
 
+# IMPLEMENTATION NOTE (ADR-032). `aiConsentGiven` and `AiRoutingEntry` above are NOT what shipped, and the
+# deviation is deliberate rather than pending. The shipped consent surface is:
+#
+#   query    aiConsents: [ConsentModel!]!          # kind, state (NOT_ASKED|GRANTED|DECLINED|WITHDRAWN),
+#                                                  # recordedAt, policyVersion, purposes
+#   mutation recordAiConsent(input): ConsentModel! # OWNER-only (docs/08 §6.6, Q-11); append-only
+#
+# A single boolean cannot express docs/08 §6.6's granularity — it cannot answer "may the Receipt image go?"
+# separately from "may the free text go?" — and `SignUpInput.aiConsentGiven` below ("cannot be omitted")
+# contradicts the same section's "requested at first use, not buried in onboarding". Consent is recorded
+# per purpose, so the surface is a list of per-purpose states plus one append-only mutation; the boolean
+# is what a *screen* may render as a summary of it. `AiRoutingEntry.effectiveProvider` is also unbuilt:
+# the composition root logs the routes at boot (`AiSeams`) and no query exposes them, so an operator reads
+# the log rather than a field. Both deviations are recorded in docs/14 ADR-032.
+
 type AiRoutingEntry {
   task: AiTask!
   primary: AiProviderName!

@@ -551,3 +551,150 @@ describe('provider names never leak as user-visible copy', () => {
     expect(new Set(endpoints).size).toBe(5);
   });
 });
+
+describe('the consent gate — the only way a non-EEA endpoint is reachable', () => {
+  /**
+   * ADR-031's enforcement half. `isAdmissible` was a predicate with no caller: `DEEPSEEK_GLOBAL`
+   * could be named in a routing table and `validateRouting` refused it, so there was no path by which
+   * consent could ever be *asked*. These cases pin the two properties that matter:
+   *
+   * 1. a table naming a non-EEA endpoint cannot be constructed **without** a gate — installing one is
+   *    what makes the route legal, so a deployment cannot forget; and
+   * 2. the gate's answer is asked on **every call** and a `false` means no socket is opened.
+   */
+  const NON_EEA_ROUTING: RoutingTable = {
+    CLASSIFY: { primary: 'DEEPSEEK_GLOBAL', fallback: null },
+  };
+
+  it('refuses to construct a router over a non-EEA route when no gate is installed', () => {
+    expect(
+      () => new AiRouter({ routing: NON_EEA_ROUTING, providers: { DEEPSEEK_GLOBAL: provider() } }),
+    ).toThrow(/Chapter V/);
+  });
+
+  it('never calls the provider when the Household has not consented', async () => {
+    const stub = provider();
+    const router = new AiRouter({
+      routing: NON_EEA_ROUTING,
+      providers: { DEEPSEEK_GLOBAL: stub },
+      consent: { permits: () => false },
+    });
+
+    const result = await router.invoke<ClassifyProposal>('CLASSIFY', classifyInput());
+
+    expect(stub.calls).toEqual([]);
+    if (result.ok) throw new Error('expected a refusal');
+    expect(result.reason).toBe('CONSENT_DECLINED');
+    expect(result.rung).toBe('RULES_KEYWORDS_ONLY');
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]?.reason).toBe('CONSENT_DECLINED');
+    // Not a provider fault, so nothing may be charged against the endpoint's health.
+    expect(result.failures[0]?.countsAgainstCircuit).toBe(false);
+  });
+
+  it('calls the provider when consent is recorded, and reports the full pipeline rung', async () => {
+    const stub = provider();
+    const router = new AiRouter({
+      routing: NON_EEA_ROUTING,
+      providers: { DEEPSEEK_GLOBAL: stub },
+      consent: { permits: () => true },
+    });
+
+    const result = await router.invoke<ClassifyProposal>('CLASSIFY', classifyInput());
+
+    expect(stub.calls).toEqual(['CLASSIFY']);
+    if (!result.ok) throw new Error(`expected success: ${result.failures.map((f) => f.reason).join()}`);
+    expect(result.rung).toBe('FULL_PIPELINE');
+    expect(result.endpoint).toBe('DEEPSEEK_GLOBAL');
+  });
+
+  it('asks again on the next call, so a withdrawal takes effect immediately', async () => {
+    // docs/08 §6.6: "takes effect before the next AI call — cached grants are invalidated
+    // immediately". A router that resolved consent once at construction would violate that.
+    let granted = true;
+    const stub = provider();
+    const router = new AiRouter({
+      routing: NON_EEA_ROUTING,
+      providers: { DEEPSEEK_GLOBAL: stub },
+      consent: {
+        permits: () => {
+          const answer = granted;
+          granted = false;
+          return answer;
+        },
+      },
+    });
+
+    const first = await router.invoke<ClassifyProposal>('CLASSIFY', classifyInput());
+    const second = await router.invoke<ClassifyProposal>('CLASSIFY', classifyInput());
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(false);
+    expect(stub.calls).toEqual(['CLASSIFY']);
+  });
+
+  it('treats a gate that throws as a refusal rather than as egress', async () => {
+    const stub = provider();
+    const router = new AiRouter({
+      routing: NON_EEA_ROUTING,
+      providers: { DEEPSEEK_GLOBAL: stub },
+      consent: {
+        permits: () => {
+          throw new Error('no tenant context');
+        },
+      },
+    });
+
+    const result = await router.invoke<ClassifyProposal>('CLASSIFY', classifyInput());
+
+    expect(stub.calls).toEqual([]);
+    if (result.ok) throw new Error('expected a refusal');
+    expect(result.reason).toBe('CONSENT_DECLINED');
+  });
+
+  it('never asks the gate for a LOCAL-only route', async () => {
+    // The common case must not pay for a database read, and a gate that cannot answer must not be
+    // able to break a call that never needed consent.
+    let asked = 0;
+    const stub = provider();
+    const router = new AiRouter({
+      routing: DEFAULT_ROUTING,
+      providers: { LOCAL: stub },
+      consent: {
+        permits: () => {
+          asked += 1;
+          throw new Error('the gate must not be consulted for LOCAL');
+        },
+      },
+    });
+
+    const result = await router.invoke<ClassifyProposal>('CLASSIFY', classifyInput());
+
+    expect(result.ok).toBe(true);
+    expect(asked).toBe(0);
+  });
+
+  it('reports a provider outage, not a refusal, when the EEA half of a chain also failed', async () => {
+    const router = new AiRouter({
+      routing: { CLASSIFY: { primary: 'LOCAL', fallback: 'DEEPSEEK_GLOBAL' } },
+      providers: {},
+      consent: { permits: () => false },
+    });
+
+    const result = await router.invoke<ClassifyProposal>('CLASSIFY', classifyInput());
+
+    if (result.ok) throw new Error('expected a failure');
+    // `LOCAL` failed for its own reason (no adapter registered), so the outcome is an outage. The
+    // consent refusal is still recorded per endpoint for the operator.
+    expect(result.reason).toBe('PROVIDER_UNAVAILABLE');
+    expect(result.failures.map((failure) => failure.reason)).toEqual([
+      'UNKNOWN_PROVIDER',
+      'CONSENT_DECLINED',
+    ]);
+  });
+});
+
+/** A `CLASSIFY`-answering stub, so a consent case never needs HTTP. */
+function provider(): StubProvider {
+  return new StubProvider('DEEPSEEK', ok(GOOD));
+}

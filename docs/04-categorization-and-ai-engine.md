@@ -332,6 +332,19 @@ Any `categoryId` not present in the supplied list is **rejected by validation** 
 
 ### 6.3 Prompt shape (classify)
 
+> **Implementation note (ADR-032).** The §6.3 prompt is rendered by **two layers**, and the split is load-bearing:
+> `apps/api`'s `classify-prompt.ts` renders the **instructions** (the rule list, the untrusted-content preamble and
+> one task sentence), and `packages/ai`'s adapter renders the **payload** — the closed category list, the known
+> entities, the few-shot examples and the redacted fragment. The adapter must be the one that renders the category
+> list, because it is also the layer that substitutes every real id for an opaque placeholder (`c1`, `c2`, …) before
+> the request ships, so only it can produce a list whose ids the redaction map can resolve back. Rendering that list
+> in both layers — which is what shipped until the first live call — offers the model two disjoint id vocabularies
+> and produces `categoryId: null` for every answer. A second defect on the same path: `json_object` mode constrains
+> syntax and **not** keys, so `withJsonInstruction` now carries the same schema constant the `json_schema` path
+> transmits; without it the model invents field names (`{"category_id": …, "reason": …}`) and every field the
+> adapter reads is absent. Both are asserted at the composed seam in
+> `apps/api/src/modules/classification/ai-classifier.spec.ts`.
+
 ```text
 SYSTEM
 You extract and classify household financial transactions for a Serbian household.

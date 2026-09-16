@@ -3,12 +3,7 @@ import { Module } from '@nestjs/common';
 
 import { GraphqlScalarsModule } from '../../graphql/scalars/scalars.module';
 import { PrismaModule } from '../../prisma/prisma.module';
-import {
-  AI_CLASSIFIER,
-  UNCONFIGURED_AI_CLASSIFIER,
-  type AiClassifier,
-} from './ai-classifier';
-import { EMBEDDINGS, UNCONFIGURED_EMBEDDINGS, type EmbeddingProvider } from './embedding-provider';
+import { AiModule } from '../ai/ai.module';
 import { EntityEmbeddingsService } from './entity-embeddings.service';
 import { ClassificationResolver } from './classification.resolver';
 import { CorrectionsService } from './corrections.service';
@@ -30,18 +25,17 @@ import {
  * which the boundary rule allows for `scope:api`. It does **not** import an AI adapter directly: the
  * classifier goes through `AiRouter`, so the provider stays swappable (AGENTS.md rule 10, ADR-007).
  *
- * ## The AI provider is not configured yet
+ * ## The AI provider comes from the composition root
  *
- * `AI_CLASSIFIER` resolves to {@link UNCONFIGURED_AI_CLASSIFIER}, which reports the
- * `RULES_KEYWORDS_ONLY` rung rather than pretending a call happened. That is not a stub: with all API
- * keys empty and no local model listening, "no reachable provider" is the true state, and the
- * degradation ladder is supposed to make capture succeed anyway (docs/04 §9). Wiring the real
- * `RoutedAiClassifier` is a two-line change here once provider configuration exists — the router, its
- * fail-closed residency check and the adapters are already built and tested in `packages/ai` — and the
- * tests inject a stub provider instead of reaching the network.
+ * `AI_CLASSIFIER` and `EMBEDDINGS` are provided by `AiModule` (ADR-031 decision 6) from the validated
+ * configuration and the Household's consent record. With no endpoint configured the tokens are the
+ * `UNCONFIGURED_*` twins, which report the `RULES_KEYWORDS_ONLY` rung rather than pretending a call
+ * happened — and that remains the true state of a deployment with no key and no local model, so the
+ * degradation ladder still makes capture succeed (docs/04 §9). The tests inject a stub provider
+ * instead of reaching the network.
  */
 @Module({
-  imports: [PrismaModule, GraphqlScalarsModule],
+  imports: [PrismaModule, GraphqlScalarsModule, AiModule],
   providers: [
     ClassificationService,
     ClassificationResolver,
@@ -55,24 +49,24 @@ import {
     ReviewService,
     // `JSON` comes from `GraphqlScalarsModule` (imported above), not from this module's providers:
     // providing the same scalar twice gives the schema two types named `JSON` and a boot failure.
-    { provide: AI_CLASSIFIER, useValue: UNCONFIGURED_AI_CLASSIFIER satisfies AiClassifier },
-    // docs/04 §4 rung 5. Same shape and same honesty as the classifier above: no local embedding model
-    // is configured in this build, so rung 5 is INERT and the ladder ends at rung 4 (ADR-021). A real
-    // local provider is a one-line swap here; nothing else in the pipeline changes.
-    { provide: EMBEDDINGS, useValue: UNCONFIGURED_EMBEDDINGS satisfies EmbeddingProvider },
     EntityEmbeddingsService,
     { provide: CALIBRATION_STORE, useValue: NO_CALIBRATION },
   ],
   // Exported so the ledger (task 2.2.5's `captureCommit`) can attach a decision to the Transaction it
   // wrote and can re-classify a row that never went through a preview, without a second pipeline.
+  //
+  // `AiModule` is re-exported rather than `AI_CLASSIFIER` listed directly: Nest refuses to export a
+  // provider the module only *imports* ("Nest cannot export a provider/module that is not a part of
+  // the currently processed module"), which is the boot failure this line was. Re-exporting the
+  // module is the supported form and preserves the ledger's import list.
   exports: [
     EntityEmbeddingsService,
     ClassificationService,
     RulesService,
     CorrectionsService,
     ReviewService,
-    AI_CLASSIFIER,
     CALIBRATION_STORE,
+    AiModule,
   ],
 })
 export class ClassificationModule {}

@@ -144,4 +144,28 @@ describe('withJsonInstruction', () => {
   it('names JSON explicitly, which DeepSeek json_object mode requires', () => {
     expect(withJsonInstruction('klasifikuj')).toContain('JSON');
   });
+
+  it('describes the shape when a schema is given', () => {
+    // The defect this case exists for: `json_object` mode constrains syntax and not keys, so a prompt
+    // that asks for "a JSON object" without naming the fields is an invitation to invent them. The
+    // first live DeepSeek answer was `{"category_id": "c2", "reason": "…"}` — every field the adapter
+    // reads was absent, and the proposal came back empty.
+    const schema = {
+      type: 'object',
+      required: ['categoryId'],
+      properties: { categoryId: { type: ['string', 'null'] } },
+    };
+    const steered = withJsonInstruction('klsifikuj', schema);
+
+    expect(steered).toContain('categoryId');
+    expect(steered).toContain('JSON Schema');
+    // The schema travels verbatim, so the two response modes cannot describe different shapes.
+    expect(steered).toContain(JSON.stringify(schema));
+  });
+
+  it('stays a one-line instruction when no schema is available', () => {
+    // `NARRATE` is prose and never reaches this function; anything else arriving without a schema is a
+    // caller that has nothing to enforce, and inventing a shape here would be worse than asking.
+    expect(withJsonInstruction('klsifikuj')).not.toContain('JSON Schema');
+  });
 });

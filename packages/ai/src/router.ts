@@ -36,9 +36,15 @@
  * @module @finmate/ai
  */
 
-import { AiRequestError, AiTransientError, type AiErrorCode, type ProviderFailure } from './errors';
+import {
+  AiRequestError,
+  AiTransientError,
+  type ProviderFailure,
+  type ProviderFailureReason,
+} from './errors';
 import {
   endpointsForTask,
+  isEeaOrLocal,
   validateRouting,
   type Endpoint,
   type RoutingTable,
@@ -128,6 +134,35 @@ export interface RouterOptions {
   /** Adapters by endpoint. A missing endpoint is a typed provider failure, not a crash. */
   readonly providers: Readonly<Partial<Record<Endpoint, AiProvider>>>;
   readonly circuit?: CircuitBreakerOptions;
+  /**
+   * The per-Household consent gate for non-EEA endpoints (docs/08 §6.6, ADR-007, ADR-031).
+   *
+   * **Optional, but required the moment the table names an endpoint that is not LOCAL or `_EU`** —
+   * the constructor refuses that combination, so a non-EEA route cannot exist in a process that has
+   * no way to say no to it. Installing a gate is not permission: it is the *mechanism* that makes
+   * permission possible, and its answer is asked on **every call**, because consent is revoked and a
+   * cached `true` would outlive the withdrawal.
+   *
+   * It is a callback rather than a boolean for the same reason `fetch` and the fold are injected: the
+   * answer depends on the request's `TenantContext` and on a row that can change between two calls,
+   * and the package that owns routing must not reach into either.
+   */
+  readonly consent?: ConsentGate;
+}
+
+/**
+ * The question ADR-007 asks before a sensitive task may leave the EEA.
+ *
+ * `permits` is called once per endpoint that is not `LOCAL` or `_EU`, with the task whose payload is
+ * about to ship. Async because the honest answer in `apps/api` is a database read; boolean-returning
+ * gates are accepted so a test can answer without a database.
+ *
+ * A gate **must fail closed**: an implementation that cannot tell whose Household it is answering for
+ * returns `false`. The router treats a throw as a refusal too, so a broken gate degrades to
+ * rules-only rather than to egress.
+ */
+export interface ConsentGate {
+  permits(task: Task): boolean | Promise<boolean>;
 }
 
 /** Per-task dependencies the router needs to build the adapter input. */
@@ -145,13 +180,17 @@ export class AiRouter {
 
   private readonly providers: Readonly<Partial<Record<Endpoint, AiProvider>>>;
   private readonly breakers: CircuitBreakers;
+  private readonly consent: ConsentGate | undefined;
 
   constructor(options: RouterOptions) {
-    // Fail closed: a table that would egress outside the EEA never produces a router at all.
-    validateRouting(options.routing);
+    // Fail closed: a table that would egress outside the EEA never produces a router at all — unless
+    // a consent gate is installed, in which case a non-EEA endpoint is a *gated* exception and the
+    // per-call answer below is what decides (ADR-031).
+    validateRouting(options.routing, options.consent !== undefined);
     this.routing = options.routing;
     this.providers = options.providers;
     this.breakers = new CircuitBreakers(options.circuit ?? {});
+    this.consent = options.consent;
   }
 
   /** The endpoints that will be tried for a task, in order. */
@@ -174,8 +213,46 @@ export class AiRouter {
   async invoke<T>(task: Task, input: unknown): Promise<AiCallResult<T>> {
     const failures: ProviderFailure[] = [];
 
+    /**
+     * The gate's answer for this call, resolved lazily and at most once.
+     *
+     * `undefined` means "not asked yet". A route that is entirely `LOCAL`/`_EU` never asks, so the
+     * common case costs no extra query. A throw is a refusal: a gate that cannot answer must not
+     * become egress.
+     */
+    let consented: boolean | undefined;
+    const consentGiven = async (): Promise<boolean> => {
+      if (consented !== undefined) return consented;
+      if (this.consent === undefined) {
+        consented = false;
+        return consented;
+      }
+      try {
+        consented = await this.consent.permits(task);
+      } catch {
+        consented = false;
+      }
+      return consented;
+    };
+
     for (const endpoint of this.endpoints(task)) {
       const provider = this.providers[endpoint];
+
+      // Residency before anything else: an endpoint outside the EEA is only reachable at all when
+      // the Household's own recorded consent admits it (docs/08 §6.6, ADR-031). This is the
+      // enforcement point — `validateRouting` only established that a gate *exists*.
+      if (!isEeaOrLocal(endpoint) && !(await consentGiven())) {
+        failures.push(
+          failure(
+            endpoint,
+            provider?.name ?? null,
+            'CONSENT_DECLINED',
+            `${endpoint} is outside the EEA and this Household has no recorded consent for ` +
+              `${task}, so nothing was sent (docs/08 §6.6, ADR-007).`,
+          ),
+        );
+        continue;
+      }
 
       if (provider === undefined) {
         failures.push(failure(endpoint, null, 'UNKNOWN_PROVIDER', `no adapter is registered for ${endpoint}`));
@@ -244,10 +321,17 @@ export class AiRouter {
       }
     }
 
+    // Every endpoint was skipped because the Household's consent did not admit it. That is not a
+    // provider outage and it must not be reported as one: the caller renders a different sentence for
+    // "the AI is down" than for "you have not allowed this", and docs/06 §8.5 makes the distinction
+    // user-facing. `CONSENT_DECLINED` is the only reason the ladder offers for it.
+    const consentOnly =
+      failures.length > 0 && failures.every((failure) => failure.reason === 'CONSENT_DECLINED');
+
     return {
       ok: false,
       rung: 'RULES_KEYWORDS_ONLY',
-      reason: 'PROVIDER_UNAVAILABLE',
+      reason: consentOnly ? 'CONSENT_DECLINED' : 'PROVIDER_UNAVAILABLE',
       task,
       failures,
       error: null,
@@ -304,7 +388,7 @@ export function supportsTask(provider: AiProvider, task: Task): boolean {
 function failure(
   endpoint: Endpoint,
   provider: ProviderName | null,
-  reason: AiErrorCode | 'CIRCUIT_OPEN',
+  reason: ProviderFailureReason,
   message: string,
 ): ProviderFailure {
   return {
@@ -396,7 +480,7 @@ export function classifyFailure(
  * deterministic to fall back on, which is why the caller — not the router — decides when to drop to
  * `DETERMINISTIC_ONLY`: only the caller knows whether its own extractor produced anything.
  */
-export function rungForFailure(_reason: AiErrorCode | 'CIRCUIT_OPEN'): DegradationRung {
+export function rungForFailure(_reason: ProviderFailureReason): DegradationRung {
   return 'RULES_KEYWORDS_ONLY';
 }
 

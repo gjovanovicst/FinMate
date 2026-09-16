@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../prisma/prisma.module';
+import { AiModule } from '../ai/ai.module';
 import { ClassificationModule } from '../classification/classification.module';
 import { FilesModule } from '../files/files.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { ReceiptsResolver } from './receipts.resolver';
 import { ReceiptsService } from './receipts.service';
-import { OCR, UNCONFIGURED_OCR } from './ocr';
 
 /**
  * Receipts (F-14) — docs/05 §3's `receipts` module, task 4.1.3.
@@ -23,15 +23,15 @@ import { OCR, UNCONFIGURED_OCR } from './ocr';
  *   (I-1, I-3, I-10) rather than an insert of its own.
  *
  * The `OCR` token is the third seam of its kind in this codebase (`AI_CLASSIFIER`, `NARRATOR`) and it
- * resolves to {@link UNCONFIGURED_OCR} in this build: no provider is configured, so receipts are
- * itemised by hand. Wiring one changes this line to a factory over `@finmate/ai`'s router and nothing
- * else in the flow moves.
+ * comes from `AiModule` (ADR-031 decision 6): with no `OCR` endpoint `RoutedOcrService` is not built
+ * and the token is `UNCONFIGURED_OCR`, so receipts are itemised by hand and the screen never offers
+ * extraction it cannot perform.
  *
  * @module apps/api/src/modules/receipts
  */
 @Module({
-  imports: [PrismaModule, FilesModule, LedgerModule, ClassificationModule],
-  providers: [ReceiptsService, ReceiptsResolver, { provide: OCR, useValue: UNCONFIGURED_OCR }],
+  imports: [PrismaModule, FilesModule, LedgerModule, ClassificationModule, AiModule],
+  providers: [ReceiptsService, ReceiptsResolver],
   exports: [ReceiptsService],
 })
 export class ReceiptsModule {}

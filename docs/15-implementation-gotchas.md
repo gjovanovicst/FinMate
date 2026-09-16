@@ -102,6 +102,18 @@ Everything here has cost time at least once, and most of it fails in a way that 
 
 ---
 
+- **`KEY=` in `.env` is not "unset" — it is a present variable holding nothing, and every seam in this
+  codebase tests `=== undefined`.** `node --env-file`, `dotenv` and Compose all turn an empty value into
+  `''`, so `cp .env.example .env` did not mean "leave these blank"; it meant "configure them with
+  nothing". Three real consequences, all silent: `VAPID_PUBLIC_KEY=''`/`VAPID_PRIVATE_KEY=''` produced a
+  real `RfcWebPushSender` (constructed with empty keys) instead of the inert sender its own header
+  promises; `DEEPSEEK_EU_BASE_URL=''` failed boot with *"Invalid url"* — a message about a typo, for a
+  variable that is visibly empty; and a future `LOCAL_AI_BASE_URL=''` would have handed the composition
+  root a base URL of `''`. **Fixed**: `config.ts` normalises a blank value to `undefined` once
+  (`blankIsAbsent` + `optionalText`/`optionalUrl`) for every optional setting, so "not configured" has a
+  single representation. The general rule: when a seam decides by `=== undefined`, the schema must make
+  blank mean undefined, not the seam.
+
 ## 2. Prisma and the database
 
 Prisma 7 plus a tenancy extension plus hand-written SQL means the driver is not the only thing deciding what a query does.
@@ -210,6 +222,27 @@ ADR-008 is enforced by an extension, not by discipline — which is why these tw
   two values always agree there — and what makes a mismatched pair meaningless in a test.
 
 ---
+
+- **Nest refuses to export a provider a module only *imports*.** Moving `AI_CLASSIFIER` into the AI
+  composition root and leaving `{ exports: [AI_CLASSIFIER] }` on `ClassificationModule` does not fail
+  typecheck, lint or any unit test — it fails at **boot** with `UnknownExportException: Nest cannot
+  export a provider/module that is not a part of the currently processed module`. Re-export the *module*
+  (`exports: [AiModule]`) instead, and treat "module graph changed" as a reason to boot the API before
+  handing work back.
+
+- **A spec that deletes a `households` row must do it inside a tenant context.** `households` is scoped
+  by its own primary key (docs/15 group 3), so `prisma.client.households.deleteMany(...)` in an
+  `afterAll` throws `TenantContextMissingError` — after every test has passed, which vitest reports as a
+  failed *suite* with 10 green tests and no obvious connection to the teardown. Wrap each delete in
+  `runWithTenant(ctx, ...)`.
+
+- **"Newest row wins" needs a tiebreaker, and the tie is the dangerous case.** `consents` records its
+  state as the newest row per `(household_id, kind)`, ordered by `recorded_at`. Two decisions a
+  millisecond apart — a GRANT followed immediately by a WITHDRAW — share a `recorded_at`, because
+  `recorded_at` is `timestamptz` but the value comes from a JS `Date`. Postgres is then free to return
+  either, and the wrong answer silently re-admits egress after a user revoked it. Order by
+  `[{ recorded_at: 'desc' }, { id: 'desc' }]`: `id` is a UUIDv7 whose 12-bit in-millisecond sequence
+  makes "newest" total.
 
 ## 4. GraphQL and the API surface
 
@@ -580,6 +613,38 @@ docs/04 is canonical for all of this. The recurring theme is that a second copy 
   silently makes every rate that is a fraction of cases look better (docs/10 §5.9).
 
 ---
+
+- **The first real AI provider found two prompt defects that no test, typecheck, lint or build could
+  see.** Both were in the *composition* of `apps/api`'s prompt with `packages/ai`'s adapter, which is
+  why neither package's own suite caught them: `packages/ai`'s adapter specs build their own `user`
+  string, and `apps/api`'s tests asserted the prompt `promptFor` produced rather than the request that
+  shipped. Every AI answer came back `decidedBy: AI` with `categoryId: null`.
+
+  1. **The category list was rendered twice — once with real UUIDs, once with placeholders.** The
+     adapter replaces every id with an opaque placeholder (`c1`, `c2`, …) before the request ships
+     (docs/08 §6.3), so an id is not resolvable unless the adapter rendered it. `promptFor` was also
+     rendering the list, with real ids, because the system prompt says *"choose a category ONLY from
+     the provided list of ids"*. The model answered with a real id; `resolveId` correctly refused it,
+     because the map only knows placeholders. **The split is: the caller renders the instructions, the
+     adapter renders the payload.** `promptFor()` now returns the rules and one task sentence, and
+     nothing that the adapter appends. Regression: `apps/api/src/modules/classification/ai-classifier.spec.ts`,
+     which asserts the *shipped* message has exactly one category list, that it is the placeholder list,
+     and that a `c2` answer resolves to the real id.
+
+  2. **`json_object` mode was never told the field names.** `withJsonInstruction` appended
+     *"Respond with a single JSON object and nothing else."* — while its own doc comment claimed the
+     shape was described. `json_object` constrains syntax and says nothing about keys, so DeepSeek
+     answered `{"category_id": "c2", "reason": "…", "alternatives": ["c3","c1"]}`: snake_case, its own
+     key names, and alternatives as bare strings. Every field the adapter reads was absent. The
+     `json_schema` path transmits the schema, so OpenAI was never affected — which is exactly why the
+     defect survived: the one provider that needed steering was the one nobody had configured. **Fixed**
+     by threading the schema into `withJsonInstruction(user, schema)` from the same constant the
+     `json_schema` path transmits, so the two modes cannot describe different shapes. It costs tokens
+     on every `json_object` call, which is the honest price of a provider that does not enforce a
+     schema.
+
+  The lesson for any seam that composes several layers into one wire message: **assert the bytes that
+  ship**, not the value each layer returns.
 
 ## 7. Capture and the commit path
 
@@ -972,9 +1037,11 @@ Short, and load-bearing.
   supplied for evaluation. **Fixed for the registry in ADR-031**: an `*_EU` endpoint must be configured
   with the EEA host it means and has no default, DeepSeek's own platform is named `DEEPSEEK_GLOBAL`
   (in `NON_EEA_ENDPOINTS`, admitted only through `isAdmissible(endpoint, consent)`), and
-  `DEFAULT_ROUTING` is `LOCAL`-only. The *consent gate itself* and the composition root that would
-  actually send anything are still unbuilt, so nothing egresses today — and the lesson generalises:
-  when a rule is enforced by string matching, the string is the attack surface.
+  `DEFAULT_ROUTING` is `LOCAL`-only. **Both halves landed in ADR-032** — the composition root and the
+  per-Household consent gate — and the lesson generalises twice over: when a rule is enforced by string
+  matching, the string is the attack surface; and a residency guarantee that no code path exercises is
+  a guarantee nobody has tested (wiring the first real provider immediately found two prompt defects —
+  see group 6).
 
 ---
 
