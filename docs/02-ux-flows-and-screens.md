@@ -360,7 +360,24 @@ always-visible column.
 > on that row computes and does nothing, because the row is the last child of its containing block and has
 > no slack to stick into — measured, the button sat 1431 px down on a 720 px viewport. A real pinned bar
 > needs this screen to own a scroll container or a fixed bar offset by the bottom nav; scheduled as
-> **4.3.1c** rather than faked. `📷` moves to overflow when the field is non-empty, so it never competes with
+> **4.3.1c** rather than faked.
+
+> **Build state (4.3.6b): the composer works offline, not just in-session.** §3's "fully functional"
+> offline row needed one thing the build did not have: an **account**. Offline, the screen's `accounts`
+> query fails, `accountId` stayed empty, and `commit()` sent `defaultAccountId: null` — which the server
+> refuses for the whole atomic batch (*a row with no accountId needs a defaultAccountId on the request*),
+> so a queued capture drained forever and wrote nothing (R-27(a2), measured in 4.3.6). The screen now
+> writes and reads **ADR-025 decision 5's taxonomy cache** — the record that already names "the categories
+> and accounts the composer needs", and which the `taxonomy` store had carried with no writer since 4.2.2
+> — so the account picker, the categories and the preview's category names all survive a failed read.
+> Verified live 8/8 against the production build: an airplane-mode `Lidl 2000` queues, drains on
+> reconnect, and **writes one transaction carrying the cached account**. Two limits, both honest and both
+> named: the cache is written only while the app is **unlocked** (ADR-025 decision 3 — with the lock off
+> nothing reaches disk, so a device that has never opened this screen while unlocked still queues without
+> an account and is refused in the tray with the server's own message, recoverable from `/pending`); and
+> the record expires with the store's **24 h** taxonomy TTL, so a capture after a longer offline stretch
+> falls back to that same residue. Whether a *reference* list deserves a longer TTL than a *figure* is a
+> decision nobody has made — recorded in docs/09's 4.3.6 row rather than changed here. `📷` moves to overflow when the field is non-empty, so it never competes with
 commit.
 
 > **Build state.** The screen ships without the `📷 Račun` affordance, at every size. A photo does not

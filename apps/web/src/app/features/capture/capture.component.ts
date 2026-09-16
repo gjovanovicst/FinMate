@@ -16,6 +16,7 @@ import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
 import { CAPTURE_COMMIT, SyncService } from '../../core/offline/sync.service';
+import { TaxonomyService } from '../../core/offline/taxonomy.service';
 import type { CaptureCommitInput } from '../../core/offline/sync.types';
 import { isRetryable } from '../../core/offline/outbox';
 import { toMajorString } from '../../shared/money-text';
@@ -864,6 +865,8 @@ export class CaptureComponent {
   private readonly graphql = inject(GraphqlClient);
   private readonly errors = inject(ErrorMessageService);
   private readonly sync = inject(SyncService);
+  /** ADR-025 decision 5's taxonomy cache: what the composer's two pickers work from offline. */
+  private readonly taxonomy = inject(TaxonomyService);
   private readonly auth = inject(AuthStore);
   /** Public because the template reads `routes()`, `saving()` and `error()` off it. */
   readonly consent = inject(ConsentService);
@@ -971,6 +974,18 @@ export class CaptureComponent {
     this.askKind.set(null);
   }
 
+  /**
+   * The composer's two reference lists, live when the server answers and cached when it does not.
+   *
+   * The cache is not a nicety: without an account this screen sends `defaultAccountId: null` and the
+   * server **refuses the whole batch**, so an offline capture can never land (R-27(a2), measured). The
+   * record is ADR-025 decision 5's taxonomy cache, written here after a successful read and read here
+   * when the read fails.
+   *
+   * A failure to *write* the cache is swallowed on purpose — it costs the next offline visit, not this
+   * one, and a screen that refused to work because IndexedDB declined a write would be worse than the
+   * gap it protects against. A failure to *read* it changes nothing: the live error stands.
+   */
   private async load(): Promise<void> {
     try {
       const [accounts, categories] = await Promise.all([
@@ -981,14 +996,49 @@ export class CaptureComponent {
       const live = accounts.accounts.edges
         .map((edge) => edge.node)
         .filter((account) => !account.isArchived);
+      const liveCategories = categories.categories.filter((category) => category.name !== '');
       this.accounts.set(live);
-      this.categories.set(categories.categories.filter((category) => category.name !== ''));
+      this.categories.set(liveCategories);
       this.noAccounts.set(live.length === 0);
       this.accountId.set(live[0]?.id ?? '');
+
+      // Only the live accounts: the picker never offers an archived one, so caching them would store
+      // rows the screen cannot use.
+      void this.taxonomy
+        .writeAccounts(live)
+        .then(() => this.taxonomy.writeCategories(liveCategories))
+        .catch(() => undefined);
     } catch (error) {
+      await this.useCachedTaxonomy();
       this.error.set(this.errors.for(error));
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  /**
+   * What the composer falls back to when its reference reads fail — normally because it is offline.
+   *
+   * Both lists are taken from the last successful read, so the account picker still works and the
+   * preview's category names still resolve. `noAccounts` is left alone: this screen cannot tell "the
+   * Household has no accounts" from "the server did not answer", and telling a Household with accounts
+   * to create one is a worse lie than an error message nobody can act on. An offline first capture on a
+   * device that has never loaded the lists therefore still queues without an account and is refused in
+   * the tray with the server's own message — recoverable, and the honest residue.
+   */
+  private async useCachedTaxonomy(): Promise<void> {
+    try {
+      const [accounts, categories] = await Promise.all([
+        this.taxonomy.readAccounts(),
+        this.taxonomy.readCategories(),
+      ]);
+      if (accounts !== null) {
+        this.accounts.set(accounts.accounts);
+        this.accountId.set(accounts.accounts[0]?.id ?? '');
+      }
+      if (categories !== null) this.categories.set(categories.categories);
+    } catch {
+      // A store that cannot be read leaves the live failure as the only thing to say.
     }
   }
 

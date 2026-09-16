@@ -1093,6 +1093,13 @@ a mocked `navigator.serviceWorker` cannot prove the real cache strategy works.
 > refused* it recorded came from a reload whose store had never reached IndexedDB (see R-27(a), whose
 > diagnosis measured that directly). And **an offline reload unlocks into `/sign-in`** with the queued
 > work unreachable.
+>
+> **Status (4.3.6a/4.3.6b).** Both holes in the capture path are closed and the pass was re-run against the
+> same harness: the shell boots offline, an airplane-mode `Lidl 2000` queues, the queue drains on
+> reconnect, and the drained batch **writes one transaction carrying the account the composer cached** —
+> which the 4.3.6 run could not do (8/8 live). What the harness still cannot assert is anything after a
+> *reload*: an offline reload renders the lock screen, unlocks, and lands on `/sign-in` (R-27(b), which
+> needs an ADR, not a test).
 > Both are **R-27** / task 4.3.6. A reusable version belongs in CI precisely because it found this on its
 > first run — which is the argument for deciding the dependency below.
 >

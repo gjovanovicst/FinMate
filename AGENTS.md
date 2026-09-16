@@ -103,27 +103,26 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   **measured** the tap-target gap: **17 controls sit under WCAG 2.2 AA's 24 px floor** (11 real buttons at
   21 px, incl. the consent sheet's *Allow*/*Decline*) and 37 more miss this repo's 44 px rule — open as
   **4.3.1e**. docs/09's row and docs/02 §9 carry the measurements.
-- **4.3.6 ran the offline pass F-26's exit criterion rests on, and it did not hold — for a store reason, not
-  a payload one.** The harness serves the **production build** (the worker is production-only) and drives a
-  real browser with the network cut: the shell boots offline from the cache, an offline capture queues, and
-  the queue drains on reconnect. The diagnosis found three defects and **refuted** the pass's first reading
-  (*dropped as sent*): the flush *is* refused by the server (`VALIDATION_FAILED` — *a row with no accountId
-  needs a defaultAccountId*), and the tray on the flushing page says so. The other two were the store:
-  `OfflineStoreHolder` had no `invalidate()` (though the app lock's doc named one), so the backing left
-  memory only if a *data* screen happened to ask after the unlock — IndexedDB's `outbox` was **empty** after
-  an offline capture the chip counted as queued — and a record that did reach disk was not read back, so a
-  reload's tray read *Nothing is waiting to be sent* while IndexedDB held it. **(a1) is fixed in 4.3.6a**
-  (ADR-025's amendment: a `durability` signal the holder watches, a `generation` signal `SyncService` reacts
-  to, and only a *change* invalidates) and **verified live 4/4**: a capture taken straight from the unlock
-  with no data screen visited is in IndexedDB and a reload's tray still holds it. **(a2)** — offline the
-  composer's `accounts` query fails, so it sends `defaultAccountId: null`, which is what the server refuses
-  — is next, and ADR-025 decision 5 already requires that cache; **(b)** an offline reload lands on
-  `/sign-in` and still needs an ADR.
-- **Next**: **R-27(a2)** — the account cache ADR-025 decision 5 already names, so a drained offline capture
-  lands — then **the human visual pass** — now a review rather than a click-through, because 4.3.1d produced
-  a contact sheet of all 20 screens at three widths plus the light theme, with the mechanical defects
-  already found and fixed. **4.3.1e** (control sizes) and **4.3.1c** (the pinned capture bar) are the two
-  decisions that pass feeds. Then 4.3.3 (mobile keyboard) / 4.3.4 (bundle + Lighthouse).
+- **4.3.6's offline pass found F-26's exit criterion failing; both R-27(a) halves are now fixed.** The harness
+  serves the **production build** (the worker is production-only) and drives a real browser with the network
+  cut. Three defects were measured, and the pass's own first reading (*dropped as sent*) was **refuted** — the
+  flush *is* refused by the server, and the tray on the flushing page says so. **(a1, 4.3.6a)** the store
+  backing could not follow the lock: `OfflineStoreHolder` had no `invalidate()` (though the app lock's doc
+  named one), so the queue stayed on the in-memory backing and a record that did reach IndexedDB was not read
+  back after a reload. Fixed with a `durability` signal the holder watches, a `generation` signal `SyncService`
+  reacts to, and only a *change* invalidating — ADR-025's amendment. **(a2, 4.3.6b)** offline the composer's
+  `accounts` query fails, so it sent `defaultAccountId: null` and the server refused the whole batch; the
+  composer now writes and reads ADR-025 decision 5's taxonomy cache — the categories and accounts it names,
+  and the `taxonomy` store's first writer since 4.2.2. **Verified live 8/8**: an airplane-mode `Lidl 2000`
+  queues, drains on reconnect, and **writes one transaction carrying the cached account**, with nothing
+  waiting or refused and no duplicate. **(b)** an offline reload still lands on `/sign-in`, so the queued work
+  is unreachable without a connection — a security decision (an unlocked lock authorising an offline session)
+  and the one half that still needs an ADR.
+- **Next**: **R-27(b)** — the offline reload's dead end, which needs an ADR — or **the human visual
+  pass**, now a review rather than a click-through because 4.3.1d produced a contact sheet of all 20
+  screens at three widths plus the light theme, with the mechanical defects already found and fixed.
+  **4.3.1e** (control sizes) and **4.3.1c** (the pinned capture bar) are the two decisions that pass
+  feeds. Then 4.3.3 (mobile keyboard) / 4.3.4 (bundle + Lighthouse).
 
 **The long form is in the docs, deliberately.** Each task's decisions, its deviations from these
 specifications and every defect it found live are recorded where they belong: docs/09 §6 for sequencing,
@@ -161,11 +160,11 @@ narrative above does not repeat them.
 | CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → lint → typecheck → test → **evals** → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
 | Web (0.8) | Angular 22, **zoneless** + signals, ADR-006. Responsive shell (bottom nav → sidebar at 1024px), design tokens (`apps/web/src/styles.css`), `fm-money` as the only Money renderer, auth pages, Accounts consuming GraphQL |
 | i18n | `core/i18n/`: **English primary**, Serbian latin + cyrillic. Runtime catalogue (no rebuild), `TranslationKey` derived from `en`, `sr-Cyrl` generated at runtime. Language switcher in the shell |
-| Tests | **2543 pass** — 951 API + 274 ai + 272 domain + 783 web + 149 nlp + 108 rules-engine + 6 worker (plus `contracts`, which ships no specs and passes with none) |
+| Tests | **2549 pass** — 951 API + 274 ai + 272 domain + 789 web + 149 nlp + 108 rules-engine + 6 worker (plus `contracts`, which ships no specs and passes with none) |
 | Worker | `apps/worker` **boots and is scheduled** (ADR-022, task 3.4.1): five BullMQ jobs over the API's own services — `recurring.materialise`, `recurring.detect`, `insights.generate` (generate *and* evaluate since 3.4.4), `notifications.dispatch`, `files.purge` (4.1.1) — `nx run worker:serve`. The remaining jobs in docs/05 §8's table are unbuilt, and ADR-022 makes stating what makes a job idempotent a precondition for adding one |
 | Receipts (F-14) | `apps/api/src/modules/receipts` **implemented in 4.1.3**: `createReceipt`, `extractReceipt`, `addReceiptItem`/`updateReceiptItem`/`removeReceiptItem`, `reconcileReceipt`, `receipts`/`receipt`. Item categories come from the **same** `ClassificationService.parse` a typed fragment uses (auditable in `classification_decisions`); I-6 lives in `@finmate/domain/src/receipts.ts` with both sides of the tolerance asserted. **No `OCR` endpoint is routed** (ADR-032 decision 3 leaves `EMBEDDINGS` inert and routes only the endpoints the config names), so extraction honestly reports `AI_UNAVAILABLE:no-provider-configured` and manual itemisation is the path, and the detail screen therefore does not offer extraction at all; the **OCR webhook (§9.5)** is not built. `commitReceipt` and `DETACH_TRANSACTION` are (4.1.4a) and both screens that call them are (4.1.4b/4.1.5, `/receipts` + `/receipts/:id`). `CreateReceiptInput.attachmentId` is **required**, so a Receipt exists only over a photo — the library's capture action is the only way in. `receipts` is a plain list with no `filter`/`totalCount`, so the library reads the first 50 and says `{count} shown, newest first` rather than claiming a total |
 | Service worker (F-26) | `apps/web/ngsw-config.json` + `@angular/service-worker`, **ADR-024**. It caches the **app shell only** — `/index.html`, `/*.js`, `/*.css`, 39 built URLs in all — and declares **no `dataGroups`**, so no API response can enter the HTTP cache (the offline data cache is IndexedDB, docs/08 §3.9); `navigationUrls` explicitly excludes `/graphql`, `/api/**`, `/auth/**`, `/v1/**` and the health paths, so the shell never answers for the API. Registered in the **production build only** (`enabled: !isDevMode()`), so `web:serve` has no worker and the built `dist` is what gets verified. The update flow is a **non-dismissible banner** that activates only on the user's click. ⚠️ **Not installable yet** — no manifest and no icons (4.3.2, and a manifest carries the undecided product name), and the Playwright offline pass docs/10 §8.3 specifies does not exist, so the cache strategy is verified by inspecting and serving the build rather than by throttling a browser. ⚠️ The deploy path has to serve `ngsw-worker.js`/`ngsw.json` unhashed and revalidated over HTTPS; nothing does yet (docs/11 §5, Q-7) |
-| Offline store (F-26) | `apps/web/src/app/core/offline/` — **ADR-025**. `offline-crypto` (AES-GCM-256, `OfflineDecryptError`, PBKDF2 key wrapping), `offline-key-provider` (the `OFFLINE_KEY_PROVIDER` token now resolves to the **app lock**, which reports `persistent = true` only while it is unlocked and delegates to `SessionKeyProvider` when no lock is configured), `offline-store` (encrypted `idb` over `outbox`/`snapshot`/`taxonomy` + a separate in-memory backing, TTLs 24 h/24 h/30 d, `sweep` on open, `purge`, the snapshot whitelist mapper) and `outbox` (ordered, idempotent flush with a pure retry/refusal classifier). `SnapshotService` (`core/offline/snapshot.service.ts`) is the same store's other consumer, and both go through one root-provided `OfflineStoreHolder`. ⚠️ **nothing confidential reaches disk until the app lock is armed** (ADR-025 decision 3): with no wrapping secret the store runs in memory and the outbox dies with the page. Arming it — `/settings` → `Bezbednost`, WebAuthn PRF or a PIN (ADR-029) — is *meant* to switch the backing to IndexedDB and make F-26's offline capture survive a reload (4.2.6b); and since 4.3.6a it really does — the provider announces a change and the holder and the queue react (ADR-025's amendment, R-27(a)). `idb` + `fake-indexeddb` are the only new dependencies |
+| Offline store (F-26) | `apps/web/src/app/core/offline/` — **ADR-025**. `offline-crypto` (AES-GCM-256, `OfflineDecryptError`, PBKDF2 key wrapping), `offline-key-provider` (the `OFFLINE_KEY_PROVIDER` token now resolves to the **app lock**, which reports `persistent = true` only while it is unlocked and delegates to `SessionKeyProvider` when no lock is configured), `offline-store` (encrypted `idb` over `outbox`/`snapshot`/`taxonomy` + a separate in-memory backing, TTLs 24 h/24 h/30 d, `sweep` on open, `purge`, the snapshot whitelist mapper) and `outbox` (ordered, idempotent flush with a pure retry/refusal classifier). `SnapshotService` (`core/offline/snapshot.service.ts`) is the same store's other consumer, and both go through one root-provided `OfflineStoreHolder`. ⚠️ **nothing confidential reaches disk until the app lock is armed** (ADR-025 decision 3): with no wrapping secret the store runs in memory and the outbox dies with the page. Arming it — `/settings` → `Bezbednost`, WebAuthn PRF or a PIN (ADR-029) — is *meant* to switch the backing to IndexedDB and make F-26's offline capture survive a reload (4.2.6b); and since 4.3.6a it really does — the provider announces a change and the holder and the queue react (ADR-025's amendment, R-27(a)). `idb` + `fake-indexeddb` are the only new dependencies. Since 4.3.6b the composer writes and reads the `taxonomy` record ADR-025 decision 5 names (categories + accounts), so an offline capture carries an account instead of being refused |
 | Attachments (F-34) | `apps/api/src/modules/files` **implemented in 4.1.1**: `POST /v1/files/presign`, `GET /v1/files/:id`, `attachment`/`commitAttachment`/`deleteAttachment`, and `files.purge`. Signing is in-repo SigV4 (**no vendor SDK**, ADR-023), storage is an injected seam that is inert without `S3_*`, and `pnpm storage:init` creates the bucket. ⚠️ **No virus scanner**: an accepted upload is `SKIPPED` (*not scanned*), never `CLEAN`; magic-byte sniffing, `Content-Disposition`/`nosniff` and re-encoding are unbuilt (docs/08 §9.4) |
 | Not yet built | the remaining background jobs; production build for apps/api (its own decision); a **web app manifest and icons** — so the PWA is still not *installable* even though the worker ships (4.3.2, blocked on the undecided product name, ADR-014); the dashboard's **pending strip** (the query selects no pending count; the queue's own count is the header chip); and the review-queue route for a re-classified offline row (it needs its own `ReviewReason` arm) |
 | Known gap → task 2.3.3 | **COMPLETE in 2.3.3a + 2.3.3b.** The content ships from `packages/domain/src/seed/` (**39** category nodes, 131 distinct keywords, **62** merchants) and `/onboarding` seeds it: six steps, resume-at-step, Skip at every one, and a redirect from the dashboard for a Household that has not finished. **What is deliberately NOT in the wizard**, each recorded in docs/02 §4.1: step 1 previews the tree rather than editing it (the shipped `/categories` editor owns that, with I-11/I-12 enforced); step 5 writes a whole-household monthly Budget instead of "monthly income + savings target", because SavingGoal is task 3.3.2 and the budget model is expense-side; step 3 has a category picker the wireframe does not show, without which it could only learn a bill and never a person. Still open and **not** part of F-13: the classifier cannot resolve a *global* seed merchant (`loadContext` filters `merchants WHERE household_id`), which docs/02 §4.1 used to promise for a skipped step 4 — fixing it needs a precedence rule for a Household's copy-on-write duplicate, so onboarding step 4 avoids the question by creating the Household's own rows |
@@ -205,7 +204,7 @@ API serves `/auth/*` and `/graphql` without one (docs/06). Changing the prefix o
 produces a 404 that looks like an auth failure — and the same fact, in the other direction, is why
 `PUBLIC_API_PREFIX` exists: anything the browser path-scopes (the refresh cookie) must name the
 *browser's* path, because the API never sees the prefix.
-Verified working: lint 9/9, typecheck 9/9, 2543 tests, `pnpm test:evals` gating green, `web:build`, GraphQL over HTTP through the
+Verified working: lint 9/9, typecheck 9/9, 2549 tests, `pnpm test:evals` gating green, `web:build`, GraphQL over HTTP through the
 browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, the presign → PUT to MinIO →
 `commitAttachment` → `302` download round trip (verified live, bytes compared), and `prisma migrate diff`
 reporting no drift.
@@ -220,7 +219,7 @@ Read the document that owns your task before starting:
 | If you are… | Read first |
 |---|---|
 | starting any task | `docs/05-architecture.md` §2 — monorepo layout + the dependency rule |
-| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 147 entries, each saying what the failure looks like |
+| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 148 entries, each saying what the failure looks like |
 | touching money, Transactions, balances | `docs/03-domain-model.md` — **canonical glossary, DDL, invariants** |
 | adding or changing a feature | `docs/01-product-requirements.md` — the `F-xx` catalogue |
 | touching categorization, rules, prompts, AI | `docs/04-categorization-and-ai-engine.md` |
@@ -315,7 +314,7 @@ A change is not done until (doc 09 §8):
 
 ## Gotchas
 
-**The full list — 147 entries in 10 groups, each written to say what it looks like when it goes wrong —
+**The full list — 148 entries in 10 groups, each written to say what it looks like when it goes wrong —
 is [`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md). Read it before debugging
 anything that "should work".** It was split out because this file had grown past the instruction budget
 and was being truncated on load. The ones below stay here because they are the ones that bite hardest,

@@ -1048,7 +1048,19 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   there the same query answered a moment earlier. The API will not default it (docs/06 §5.2.1) and refuses
   the whole atomic batch with its own message (*a row with no accountId needs a defaultAccountId on the
   request*), so an offline capture can never land until the composer has an account offline. Found by R-27's
-  diagnosis, 4.3.6.
+  diagnosis, 4.3.6. **Fixed in 4.3.6b**: the composer writes and reads ADR-025 decision 5's taxonomy
+  cache — the same record that names *"the categories and accounts the composer needs"* — so the
+  `taxonomy` store finally has a writer and a drained batch carries a real account.
+
+- **A cache warmed while the lock is off is memory-only, so the reload that arms it throws the cache away.**
+  Found while verifying 4.3.6b: the first live run opened `/capture` online *before* arming the app lock, so
+  the account and category lists went to the in-memory backing (ADR-025 decision 3 — with no wrapping secret
+  nothing confidential reaches disk), and after `reload` → arm → unlock the offline capture had no account
+  and was refused exactly as before the fix. The order is the whole story: **arm the lock, unlock, then let
+  the screen that caches something read it.** The same trap applies to the snapshot and the ledger cache —
+  both are written by whatever screen reads them, so a session that armed the lock afterwards has nothing
+  cached until it visits those screens again. (It also means the exit criterion is verified in the order a
+  user would take: nothing else about offline storage works before the lock is armed.)
 
 - **No hardcoded user-facing copy.** Every string goes through `I18nService.t('key')`. English is
   primary and is the source of the key set: add the string to `translations/en.ts` first, then to

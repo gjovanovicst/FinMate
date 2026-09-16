@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthStore } from '../../core/auth/auth.store';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { SyncService } from '../../core/offline/sync.service';
+import { TaxonomyService } from '../../core/offline/taxonomy.service';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import { ConsentSheetComponent } from '../../shared/ui/consent-sheet/consent-sheet.component';
 import { CaptureComponent } from './capture.component';
@@ -146,6 +147,13 @@ async function mount(
   client: GraphqlClient,
   sync?: Partial<SyncService>,
   role = 'OWNER',
+  /**
+   * Runs after the module is configured and before the component is created.
+   *
+   * The one thing a spec cannot do afterwards: seed a store the component reads in its constructor —
+   * `load()` runs on creation, so an offline fallback has to be in place before then.
+   */
+  seed?: () => Promise<void>,
 ): Promise<{
   fixture: ReturnType<typeof TestBed.createComponent<CaptureComponent>>;
   component: CaptureComponent;
@@ -170,6 +178,8 @@ async function mount(
     remove: { imports: [MoneyComponent, ConsentSheetComponent] },
     add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
+
+  await seed?.();
 
   const fixture = TestBed.createComponent(CaptureComponent);
   await fixture.whenStable();
@@ -347,6 +357,99 @@ describe('CaptureComponent (mounted)', () => {
 
     expect(enqueueCapture).not.toHaveBeenCalled();
     expect(component.text()).toBe('Lidl 2000');
+  });
+
+  /**
+   * R-27(a2), the half that makes an offline capture land.
+   *
+   * Offline, this screen's reference reads fail; without a cached account it sent
+   * `defaultAccountId: null` and the server refused the whole atomic batch, so the queue could drain
+   * forever and write nothing. ADR-025 decision 5 names the cache; these two specs pin the difference
+   * it makes, and pin the residue (no cache at all) rather than leaving it to be discovered again.
+   */
+  it('carries a cached account into a commit made while the server is unreachable', async () => {
+    const client = stubClient();
+    const commits: { readonly input: { readonly defaultAccountId: string | null } }[] = [];
+    (client.query as ReturnType<typeof vi.fn>).mockImplementation(
+      (document: string, variables?: unknown) => {
+        if (document.includes('CaptureAccounts') || document.includes('CaptureCategories')) {
+          // How a service worker answers an uncached request offline (docs/15): a 504, not a rejection.
+          return Promise.reject({ status: 504, message: 'Gateway Timeout', errors: [] });
+        }
+        if (document.includes('CaptureParse')) {
+          return Promise.reject({ status: 504, message: 'Gateway Timeout', errors: [] });
+        }
+        // Only the commit: this mock sees every operation, and a consent record's `input` has no
+        // `defaultAccountId` at all, which would make the assertion below pass for the wrong call.
+        if (document.includes('CaptureCommit')) {
+          commits.push(variables as { readonly input: { readonly defaultAccountId: string | null } });
+        }
+        return Promise.resolve({
+          captureCommit: {
+            __typename: 'CaptureCommitSuccessModel',
+            replayed: false,
+            reviewQueueCount: 0,
+            committed: [{ clientRowId: 'row-1', wasReplayed: false, transaction: { id: 'tx-1' } }],
+            duplicateSuspects: [],
+          },
+        });
+      },
+    );
+
+    const { component } = await mount(client.client, undefined, 'OWNER', async () => {
+      const taxonomy = TestBed.inject(TaxonomyService);
+      await taxonomy.writeAccounts([
+        { id: 'acct-1', name: 'Everyday', currency: 'RSD', isArchived: false },
+      ]);
+      await taxonomy.writeCategories([
+        { id: 'cat-food', name: 'Hrana', kind: 'EXPENSE', parentId: null },
+      ]);
+    });
+
+    component.onInput('Lidl 2000');
+    await component.commit();
+
+    expect(commits).toHaveLength(1);
+    expect(commits[0]?.input.defaultAccountId).toBe('acct-1');
+  });
+
+  it('still sends no account when nothing was ever cached — the residue, not a hidden failure', async () => {
+    const client = stubClient();
+    const commits: { readonly input: { readonly defaultAccountId: string | null } }[] = [];
+    (client.query as ReturnType<typeof vi.fn>).mockImplementation(
+      (document: string, variables?: unknown) => {
+        if (document.includes('CaptureAccounts') || document.includes('CaptureCategories')) {
+          return Promise.reject({ status: 504, message: 'Gateway Timeout', errors: [] });
+        }
+        if (document.includes('CaptureParse')) {
+          return Promise.reject({ status: 504, message: 'Gateway Timeout', errors: [] });
+        }
+        // Only the commit: this mock sees every operation, and a consent record's `input` has no
+        // `defaultAccountId` at all, which would make the assertion below pass for the wrong call.
+        if (document.includes('CaptureCommit')) {
+          commits.push(variables as { readonly input: { readonly defaultAccountId: string | null } });
+        }
+        return Promise.resolve({
+          captureCommit: {
+            __typename: 'CaptureCommitSuccessModel',
+            replayed: false,
+            reviewQueueCount: 0,
+            committed: [{ clientRowId: 'row-1', wasReplayed: false, transaction: { id: 'tx-1' } }],
+            duplicateSuspects: [],
+          },
+        });
+      },
+    );
+
+    const { component } = await mount(client.client);
+    // The screen says the server is unreachable rather than claiming the capture was clean — read
+    // before the commit, which clears the error as part of starting a fresh one.
+    expect(component.error()).toContain('not reachable');
+
+    component.onInput('Lidl 2000');
+    await component.commit();
+
+    expect(commits[0]?.input.defaultAccountId).toBeNull();
   });
 
   it('shows the duplicate chip against the row the user typed, and undoes it in one call', async () => {
