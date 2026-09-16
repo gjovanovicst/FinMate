@@ -83,17 +83,9 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   the shell overflowing at 320 px by 48 px (the bottom nav
   is 368 px wide) — **fixed in 4.3.1a**, which traced it to one missing declaration and audited all 18
   authenticated routes at three widths at zero overflow.
-- **4.3.1 is split in three, and a and b are done.** The layout half (4.3.1a) fixed a **48 px overflow on
-  all 18 authenticated routes** — one missing `grid-template-columns`, because an implicit `auto` track is
-  sized to its items' min-content and `min-inline-size: 0` does not change a flex item's min-content
-  *contribution* — then **measured 50/50 route-width pairs at zero overflow**, adding the header's
-  safe-area inset and two `vh`→`dvh` fixes. The interaction half (4.3.1b) gave the edit sheet the
-  dismissal contract docs/07 §4.2 asks for: the close button, `Esc` and a **swipe-down** now pass one
-  **dirty guard** (an in-sheet *Discard changes* / *Keep editing*), so a half-typed amount can no longer
-  be lost to a stray `Esc`. It also *deleted* a plan item honestly: a **pinned** capture bar is **4.3.1c**,
-  not a CSS one-liner — `position: sticky` on that row computes and does nothing, because a bar that is
-  the last child of its containing block has no slack to stick into (measured: still 1431 px down a 720 px
-  viewport), and docs/02 §4.3's wireframe draws it inline anyway.
+- **4.3.1's halves are done** (4.3.1a layout, 4.3.1b the sheet's dismissal contract, 4.3.1d the all-screens
+  audit) — the measurements, the `minmax(0, 1fr)` cause and the swipe/dirty-guard contract are in docs/09's
+  rows and docs/02 §9, not repeated here.
 - **And 4.3.5 closed R-26.** A cookie path is an attribute the *browser* checks, so it has to describe the
   URL the browser requests — and the server never sees the `/api` its proxy strips. The refresh cookie was
   scoped to `/auth`, the browser asks for `/api/auth/refresh`, so the cookie was never attached and **every
