@@ -2175,6 +2175,105 @@ what makes the rows auditable. **(d) Bump the policy version** — decision 4.
 
 ---
 
+### ADR-035 — The assistant may propose a write; only a human's click executes it
+
+**Status:** Accepted (2026-09-17), from Q-11 and [16](16-assistant-context-and-actions.md) Part B — task B-1.
+**Supersedes:** nothing. **Amends:** the scope of ADR-017, which covers *answers* and is silent on writes.
+
+**Context.** The owner's request was *"make our assistant smarter to answer on all questions related to our
+context app and even do actions in app — let's say to configure or add records, let's say add category name
+something and it does it"* ([16](16-assistant-context-and-actions.md), verbatim). Part A of that document is
+read coverage inside ADR-017's existing envelope and needs no decision. Part B is **writes**, and ADR-017
+says nothing about them: it constrains what a narrator may say about figures, not what the assistant may
+change.
+
+Three properties of the codebase made this a decision rather than a feature:
+
+1. **A wrong answer is recoverable and a wrong write is not.** ADR-017's whole design — a closed template
+   set, a numeric validator, a refusal when nothing matches — exists because a plausible wrong figure
+   destroys trust; a plausible wrong **write** changes the ledger, and merge is not reversible in the
+   current implementation.
+2. **The pattern already exists three times.** `captureParse` → `captureCommit`, `detectSubscriptions` →
+   `confirmDetectedSubscription`, and ADR-010's correction → rule. All three are *propose, then a human
+   confirms, then the backend writes*. This is the fourth instance, generalised, not an invention.
+3. **The tempting shortcut is forbidden.** Letting a model name a method is vendor tool/function calling
+   (rule 10) and would put the method choice inside the model; ADR-017's counter-argument — a closed
+   `Record` makes "the model decided something nobody wrote" a compile error — applies to writes at least
+   as strongly as to answers.
+
+Q-11 asked the owner two things, and both were answered on 2026-09-17: **may the assistant propose writes,
+and is every write confirmed?** Yes to proposing, and every write confirmed. **Where does a pending proposal
+live?** Redis, with a short TTL.
+
+**Decision.**
+
+1. **The assistant may *propose* a write; it may never execute one.** Execution requires a human click on a
+   rendered proposal. This is a hard constraint, not a default.
+2. **The confirmation carries only the `proposalId` and an `idempotencyKey`** — never the args, never the
+   question. The server re-reads its own stored proposal, so the executed action is byte-for-byte the action
+   the human saw. This is what closes the "the args changed between preview and execute" class of bug, and
+   it is why the narrator may be involved in the proposal and never in the execution.
+3. **A closed action registry, `Record<AssistantAction, ActionTemplate>`**, mirroring `INTENT_TEMPLATES`.
+   Each template's `mutation` **names an existing service method the UI's own GraphQL mutation already
+   calls**, so the assistant has no privilege the UI lacks: same service, same `TenantContext`, same
+   validation, same audit. There is **no generic `runGraphql`/`callTool` member and no `default:` arm**, so
+   "the model decided to call something nobody wrote" fails `tsc`.
+4. **No confidence-based auto-apply, at any confidence.** ADR-009's gates classify a *categorisation*; a
+   write is not a classification. "The assistant changed my budget by itself" is unrecoverable trust damage,
+   so a fast path is not a v2 candidate either — it would need its own ADR and its own evidence.
+5. **No model-supplied number and no model-supplied id.** Amounts come from `parseAmount`, dates from a
+   parser, ids from the database. Slots of a new `text` kind (a name the user invents in the same breath)
+   are length-bounded and **collision-checked in the preview**, because the service refuses a duplicate and
+   a button must not be offered for a write that will fail.
+6. **A proposal lives in Redis with a short TTL.** Redis is already running (ADR-004), so this adds no
+   datastore under rule 9. The constraint is stated with it: this needs a single API instance or a shared
+   Redis — an in-process map would silently fail to find a proposal confirmed against another instance —
+   and if the deployment grows a second instance the answer is a table with a purge job.
+7. **`destroys: true` actions are out of scope while no undo exists.** Merge is not reversible in the
+   current implementation and delete needs its own policy; a confirmation does not make an irreversible
+   write safe. Each action declares its undo, and an action with `undo: 'NONE'` is not offered.
+8. **A write's confirmation sentence is a template with the returned row's values substituted.** ADR-017
+   applies to it exactly as to an answer, and the narrator never describes a write as done before the
+   backend returned the row.
+9. **Actions are unavailable offline.** A proposal needs a server round trip; the offline route stays
+   `captureCommit`, which already queues (ADR-025/026).
+
+**Consequences.**
+- ✅ The assistant can act on the ledger without ever holding write authority: the model proposes, the
+  service validates, the human confirms, the service writes — the same four steps the capture path uses.
+- ✅ The registry makes the dangerous cases *unrepresentable* rather than policed: no vendor tool call, no
+  model-chosen method, no free-form SQL, no `householdId` slot (tenancy is always the session, ADR-008).
+- ✅ Undo is a first-class field, so an action whose undo does not exist cannot be added by omission.
+- ✅ A proposal that is never confirmed expires on its own; nothing accumulates in the ledger.
+- ⚠️ **A click per write, by design.** A Household that asks the assistant to add ten categories clicks ten
+  times. That is the price of the guarantee, and the owner chose it.
+- ⚠️ **Redis is not durable.** A restart loses unconfirmed proposals, which is acceptable (the user can ask
+  again) but must never be *mistaken* for durability: a confirmed proposal is consumed by the write, and the
+  TTL only bounds the unconfirmed ones. Recorded here rather than in [15](15-implementation-gotchas.md),
+  which holds what has already cost time.
+- ⚠️ **`SlotName` needs a `text` kind, and that is a real change**, not a widening: every existing slot is a
+  period, an id resolved from the database, or a count. The action planner shares the entity matcher with the
+  read planner but not the slot union, and this ADR does not pretend that is free.
+- ⚠️ **`ADD_TRANSACTION` inherits the capture path's own gaps.** The amount parser is ADR-003-correct, but
+  **relative dates have no parser** today (*"sledeći petak"*), so that action declares a restricted date
+  vocabulary or asks — a named gap, not an assumption ([16](16-assistant-context-and-actions.md) B.3).
+- ⚠️ **A confirmed write can still be wrong** — the human may click without reading, and a replayed
+  confirmation is bounded only by the proposal being consumed. The mitigations are the preview sentence, the
+  diff, the per-action undo, and the `idempotencyKey`; **R-29** carries the residual.
+
+**Alternatives rejected.** **(a) Vendor function/tool calling** — rule 10 forbids the vendor SDK, and it
+moves the method choice into the model, which is the one thing ADR-017's closed registry exists to prevent.
+**(b) Auto-apply above a confidence threshold** — ADR-009's gates are calibrated for categorisation and do
+not transfer; the failure is unrecoverable and viral (R-02's shape). **(c) Nothing stored; the client echoes
+the args back** — re-opens the changed-args bug that decision 2 exists to close, and makes the confirmation
+untrustworthy. **(d) A proposal table in v1** — a migration, a purge job and ADR-022's idempotency
+precondition, for a mechanism whose entries live for minutes; the trigger to move is stated in decision 6.
+**(e) Destructive actions with a confirmation but no undo** — a confirmation is consent to *a* change, not
+to an irreversible one. **(f) Keep the assistant read-only** — the owner's Q-11 answer rejected it, and the
+propose→confirm pattern is already proven three times in this codebase.
+
+---
+
 ## Part 2 — Risk register
 
 Scored as **Likelihood (L)** and **Impact (I)** on 1–5; **Exposure = L × I**. Anything ≥ 12 gets an
@@ -2217,6 +2316,8 @@ owner and a checkpoint in [09](09-implementation-plan.md).
 
 | **R-28** | **The chosen product name is in use by existing finance products and was never screened.** The owner decided on 2026-09-17 that the name is `FinMate` (ADR-014's amendment) — a name this repo's own screening rejected (`Reject`, 56.1, docs/13) because other finance products already use it. No trademark search, domain check or app-store name check was run, and the product is heading for a public beta with an installable PWA (4.3.2) whose manifest carries the name. The failure is not technical: it is a rebrand after people have installed it — a new manifest identity, new icons, a new domain, a new email sender, and possibly a legal claim. | 3 | 3 | 9 | **Absorption is cheap and must happen before launch, not after**: (a) run [13 §5](13-brand-and-naming.md)'s screening checklist as written — trademark classes 9/36/42 in RS/EU, the `.rs`/`.com` domains, the Play Store and App Store listings, and a search for the Serbian market; (b) if it fails, the rename is one `APP_NAME` + `app.name` change plus the manifest (nothing hardcodes the string), which is the whole reason that rule exists; (c) if it passes, record the clearance date and scope in this register. **Owner:** product owner. **Checkpoint:** the Phase 5 launch gate ([09 §7](09-implementation-plan.md)) — and before any app-store submission or trademark filing, whichever comes first |
 
+| **R-29** | **A confirmed assistant write is wrong or duplicated** (ADR-035) — the human clicks without reading the preview, a confirmation is replayed, or a proposal lapses between render and click. A wrong **write** is not recoverable the way a wrong answer is, and merge has no undo, so this is the risk the propose→confirm design buys down rather than eliminates | 2 | 3 | 6 | The confirmation carries **only the `proposalId`**, so the executed action is byte-for-byte what was rendered; an `idempotencyKey` plus consuming the proposal bounds a replay; every action declares its undo and `destroys: true` actions are not offered at all; the preview sentence and diff are backend-rendered from the service's own validate path, never narrated; no auto-apply at any confidence. **Checkpoint:** B-2's live pass, then the Phase 5.1 security review |
+
 ### Top five by exposure
 1. **R-01 onboarding cold-start (20)** — the single biggest threat, and the one the plan spends the most disproportionate effort on.
 2. **R-12 retention (16)** — a working product that people stop using is still a failed product.
@@ -2247,7 +2348,7 @@ recommendation, an owner and a deadline; leaving them open past the deadline is 
 | Q-8 | **Is the free tier generous enough to seed word of mouth while protecting margin?** | Validate the quotas in [12](12-monetization-and-pricing.md) against beta usage before launch, not after | Product owner | Phase 5.6 |
 | Q-9 | **How much of the app must work if the user declines AI entirely?** | Everything except AI parse/classify/narrate/OCR — rules, manual entry, budgets, analytics, alerts all remain fully functional. This is a product commitment, not a fallback | Product owner | Phase 1 |
 | Q-10 | **Is a designer available for the correction and onboarding UX?** | Strongly recommended. These two surfaces determine retention more than any other part of the product, and they are the least tolerant of engineering-led design | Product owner | Phase 0 |
-| Q-11 | **May the assistant propose writes to the ledger, and is every write confirmed?** ([16](16-assistant-context-and-actions.md) Part B) | Yes to proposing, through a **closed action registry** that names existing service methods — and **every** write confirmed by a click in v1, with no confidence-based fast path (ADR-009's gates classify a categorisation; a write is not a classification). Gated by **ADR-035**, which must be written before any code | Product owner | Before B-1 |
+| Q-11 | ~~**May the assistant propose writes to the ledger, and is every write confirmed?**~~ **RESOLVED (2026-09-17) → [ADR-035](#adr-035--the-assistant-may-propose-a-write-only-a-humans-click-executes-it).** The owner answered both halves: yes to **proposing** through a closed action registry that names existing service methods, with **every** write confirmed by a click and **no** confidence-based fast path; and pending proposals live in **Redis** with a short TTL (ADR-004's existing dependency) | Product owner | **Closed** — B-1 (the ADR) is this decision's artefact |
 | Q-12 | **May the API record anything about a question it could not answer?** | Yes, minimally: the **unmatched folded token set**, with numerals and entity ids stripped — not the raw question. Raw-question logging needs its own purpose, retention and settings toggle, and is only justified if beta shows the token set is insufficient | Product owner + legal | Before A-7 |
 
 ---

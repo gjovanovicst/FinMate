@@ -1,13 +1,15 @@
 # 16 — Making the assistant answer more, and act
 
-> **Status: proposal. Nothing in this document is implemented, and nothing here is decided.**
-> Part A (read coverage) is completion work inside [ADR-017](14-decisions-and-risks.md)'s existing
-> envelope and needs no new decision. Part B (write actions) needs an **ADR-035 first**, because "may the
-> assistant write to the ledger, and under what confirmation policy" is an architectural decision — and
-> [the house rule](../AGENTS.md) is that architectural decisions are recorded, never taken silently.
+> **Status (2026-09-17).** **Part A** (read coverage) is inside [ADR-017](14-decisions-and-risks.md)'s
+> existing envelope and needs no new decision; **A-1, A-2, A-3, A-4a, A-4c, A-5, A-9, A-10, A-12 and
+> A-13a have shipped**, A-4b was measured and rejected, and A-6/A-7/A-8/A-11/A-13b remain. **Part B**
+> (write actions) needed a decision and now has one: the owner answered **Q-11** on 2026-09-17, and
+> **[ADR-035](14-decisions-and-risks.md#adr-035--the-assistant-may-propose-a-write-only-a-humans-click-executes-it)
+> records it** — the assistant may *propose* a write, only a human's click executes it, no
+> confidence-based fast path, and pending proposals live in Redis with a short TTL. B-1 is that ADR;
+> **B-2 is the first action to build.**
 >
-> Two rows were added to [14 §Part 3](14-decisions-and-risks.md) for the owner: **Q-11** (write
-> authority) and **Q-12** (refusal telemetry).
+> [14 §Part 3](14-decisions-and-risks.md) also carries **Q-12** (refusal telemetry), which A-8 needs.
 
 The request behind this document, verbatim:
 
@@ -257,8 +259,9 @@ Where the proposal lives is a genuine sub-decision with three options:
 (i) nothing stored — the client echoes the args back, which re-opens the "the args changed between
 preview and execute" class of bug, so **no**;
 (ii) a short-TTL entry in **Redis**, which is already running ([ADR-004](14-decisions-and-risks.md)) and
-therefore needs no new dependency under rule 9 — **recommended for v1**;
-(iii) a table, which survives a deploy but needs a migration and a purge job.
+therefore needs no new dependency under rule 9 — **decided in [ADR-035](14-decisions-and-risks.md#adr-035--the-assistant-may-propose-a-write-only-a-humans-click-executes-it)**;
+(iii) a table, which survives a deploy but needs a migration and a purge job — the trigger to move there is
+ADR-035 decision 6.
 The honest constraint on (ii): **if the API ever runs more than one instance, this moves to (iii) or to a
 shared Redis** — an in-process map would silently fail to find a proposal confirmed against the other
 instance. Recording that constraint now is cheaper than discovering it later.
@@ -331,7 +334,7 @@ One commit per row, per the working agreement. Part A rows are independent of Pa
 | A-12 | the keyword **exact** tier is `folded.includes(keyword)`, not a whole word — A-9's docs call it "whole word only" | the measurement in [06 §8.13](06-api-specification.md) | a keyword stops matching *inside* an inflected word, so `maxi` no longer hijacks `Maksiju` — **done** |
 | A-13a | `scopePhrase` preferred the Merchant while the router preferred the Category, so a figure could wear another scope's label | A-12 (removes the keyword-driven case) | the label names the scope `spend()` aggregated by, so the claim matches the figure — **done** |
 | A-13b | which scope a question that names **both** a Category and a Merchant *means* (*"na hranu u Lidlu"*) | **a product decision** — the label is honest since A-13a, so this is now only about the answer | the intersection, the Merchant, or an ambiguity refusal — the owner's call |
-| **B-1** | **ADR-035: propose writes, never execute them** | **Q-11** | the architectural gate |
+| **B-1** | **ADR-035: propose writes, never execute them** | **Q-11** — answered 2026-09-17 | the architectural gate — **done** ([ADR-035](14-decisions-and-risks.md#adr-035--the-assistant-may-propose-a-write-only-a-humans-click-executes-it)) |
 | B-2 | action registry + `ADD_CATEGORY` end to end | B-1 | the first action, no money, trivially undoable |
 | B-3 | `ADD_TRANSACTION` through the existing capture preview | B-2 | highest-value action, ~90 % already built |
 | B-4 | `SET_BUDGET`, `ADD_GOAL`, `ADD_TAG` | B-2 | "configure", as asked |
