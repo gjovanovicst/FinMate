@@ -276,21 +276,27 @@ export class AssistantActionService {
     const parentWord = copy.topLevel;
     const diff: ActionDiffEntry[] = [
       {
+        slot: 'name',
         field: copy.fields.name,
         before: null,
         after: slots.name,
+        afterValue: null,
         defaulted: template.defaultedSlots.includes('name'),
       },
       {
+        slot: 'kind',
         field: copy.fields.kind,
         before: null,
         after: kindWord,
+        afterValue: slots.kind,
         defaulted: template.defaultedSlots.includes('kind'),
       },
       {
+        slot: 'parentId',
         field: copy.fields.parent,
         before: null,
         after: parentWord,
+        afterValue: null,
         defaulted: template.defaultedSlots.includes('parentId'),
       },
     ];

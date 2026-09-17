@@ -947,6 +947,27 @@ infinity.
 > — a click in jsdom would not catch it. **Verified live 10/10** against the production build: no reload
 > on any of the three screens, the question is sent and answered (with an AI-narrated provenance line),
 > the goal and the rule are created and listed, and an incomplete rule is refused in place.
+>
+> **And since B-2b the screen can also *do* one thing** ([16](16-assistant-context-and-actions.md) Part B,
+> [ADR-035](14-decisions-and-risks.md), docs/06 §8.16). When the ledger refuses a question that named a
+> write — *"dodaj kategoriju Putovanja"* — a **proposal card** appears under the refusal, and it is the
+> first thing on this screen that can change the ledger:
+>
+> - The **backend's sentence** and a **field-by-field diff**, with any value the proposal filled rather
+>   than the question stating it marked *chosen for you*. The model never describes a write.
+> - A **Confirm** button, and nothing else applies: there is no confidence fast path at any threshold
+>   (ADR-035 decision 4). The card says outright that nothing has happened yet.
+> - The one editable field is the **`kind` toggle**, offered only where the server flagged the row
+>   `defaulted`; choosing one re-proposes, so the id a person confirms always names the action they were
+>   shown.
+> - After the write, the card quotes **the returned row** and offers **Undo**, which soft-deletes the
+>   Category through the same mutation `/categories` calls. A lapsed offer says so instead of failing
+>   under a button that cannot work.
+>
+> ⚠️ **Not the same thing as F-30's *Primeni*.** The savings proposal's button is still unbuilt and still
+> its own product decision (docs/06 §8.8): applying *that* means deciding what "apply" does to a Budget
+> that already exists. This card applies a **registered action** with a declared undo and no money in it,
+> which is why ADR-035 could decide it and §8.8's question could not be answered by it.
 
 ### 4.17 Notifications centre — F-22
 

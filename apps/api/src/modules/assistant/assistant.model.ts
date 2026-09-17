@@ -4,7 +4,7 @@ import { JsonScalar } from '../../graphql/scalars/json.scalar';
 import { BalanceScalar } from '../../graphql/scalars/balance.scalar';
 import { LocalDateScalar, UuidScalar } from '../../graphql/scalars/uuid.scalar';
 import { AssistantIntentEnum, type AssistantIntent } from './assistant-intents';
-import type { AssistantAction } from './assistant-actions';
+import type { ActionSlotName, AssistantAction } from './assistant-actions';
 import type { ActionDiffEntry } from './pending-action.store';
 import type { AssistantAnswerView, DrillThroughView, NarrationMode } from './assistant.service';
 import type { AssistantFactsView, FactRowView, FactTotalView, ProvenanceView } from './fact-assembly.service';
@@ -236,9 +236,40 @@ registerEnumType(AssistantActionEnum, {
   description: 'A registered assistant action. Closed: the registry has no unregistered member (ADR-035).',
 });
 
+/**
+ * The slots a proposal's diff can name, mirroring `ActionSlotName`.
+ *
+ * Registered separately from the action enum because the two answer different questions: the action is
+ * *what will happen*, the slot is *which field of the card*. A client identifies a row by the slot and
+ * renders it with `field`.
+ *
+ * ⚠️ **The member names are lower case, and that is load-bearing.** GraphQL serialises a string enum by
+ * its member **key**, not by its value, so an `enum { KIND = 'kind' }` reaches a client as `"KIND"` —
+ * measured on this very field, where the card's `slot === 'kind'` comparison silently never matched
+ * (docs/15). Naming each member after the value it carries keeps one vocabulary from the registry's
+ * `ActionSlotName` to the wire, which is the whole reason the field exists.
+ */
+export enum AssistantActionSlotEnum {
+  name = 'name',
+  kind = 'kind',
+  parentId = 'parentId',
+}
+
+registerEnumType(AssistantActionSlotEnum, {
+  name: 'AssistantActionSlot',
+  description: 'Which slot of a proposal a diff row is. Stable across languages; `field` is the label.',
+});
+
 @ObjectType({ description: 'One field of a proposal, as the confirmation card renders it.' })
 export class ActionDiffEntryModel {
-  @Field(() => String)
+  @Field(() => AssistantActionSlotEnum, {
+    description:
+      'Which slot this row is, stably. The card needs it to attach a control to the right row — ' +
+      '`field` is localized for the reader and therefore cannot be an identifier.',
+  })
+  slot!: ActionSlotName;
+
+  @Field(() => String, { description: 'The field label, in the Household\'s language.' })
   field!: string;
 
   @Field(() => String, { nullable: true, description: 'The value before, or null when there is none.' })
@@ -246,6 +277,15 @@ export class ActionDiffEntryModel {
 
   @Field(() => String, { nullable: true, description: 'The value after, or null (e.g. "top level").' })
   after?: string | null;
+
+  @Field(() => String, {
+    nullable: true,
+    description:
+      'The same value in the machine\'s own vocabulary where the slot has one (`EXPENSE`/`INCOME` ' +
+      'for `kind`), because a localized label cannot tell a card which option is currently proposed. ' +
+      'Null for a free-text slot.',
+  })
+  afterValue?: string | null;
 
   @Field(() => Boolean, {
     description:

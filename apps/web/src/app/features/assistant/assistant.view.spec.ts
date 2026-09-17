@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  actionDiffRows,
+  actionRefusalKey,
   canExpand,
   drillThroughLabelKey,
   drillThroughTarget,
@@ -8,6 +10,8 @@ import {
   factTotals,
   fallbackNoteKey,
   isProposal,
+  expiryTime,
+  kindChoice,
   narrationKey,
   narrationReasonKey,
   moneyRow,
@@ -16,7 +20,12 @@ import {
   proposalLabelKey,
   proposalSummary,
   provenanceKey,
+  renderableProposal,
   suggestionChips,
+  undoPlan,
+  type ActionPreview,
+  type ActionProposal,
+  type ActionResult,
   type AssistantAnswer,
   type AssistantFacts,
   type Provenance,
@@ -317,5 +326,122 @@ describe('how the answer was put into words', () => {
         answer({ answered: false, narrationMode: 'TEMPLATE_FALLBACK', reason: 'CONSENT_DECLINED:x' }),
       ),
     ).toBeNull();
+  });
+});
+
+/**
+ * The write path's decisions — B-2b.
+ *
+ * These are the ones that go wrong **quietly**: a card drawn for a proposal the server refused, a kind
+ * toggle attached to a row the user stated rather than the server defaulted, an Undo button whose
+ * mutation belongs to a different action. Each is a possibility of a wrong *write*, which is why the
+ * helpers are pure and tested apart from the component (R-29).
+ */
+describe('the assistant write path (docs/06 §8.16)', () => {
+  const preview = (diff: ActionPreview['diff']): ActionPreview => ({
+    sentence: 'Nova kategorija „Putovanja” (rashod, bez nadređene)',
+    diff,
+  });
+
+  const KIND_ROW = {
+    slot: 'kind' as const,
+    field: 'vrsta',
+    before: null,
+    after: 'rashod',
+    afterValue: 'EXPENSE',
+    defaulted: true,
+  };
+
+  const proposal = (over: Partial<ActionProposal> = {}): ActionProposal => ({
+    proposed: true,
+    reason: null,
+    proposalId: 'p1',
+    action: 'ADD_CATEGORY',
+    preview: preview([KIND_ROW]),
+    expiresAt: '2026-09-20T10:10:00.000Z',
+    ...over,
+  });
+
+  const result = (over: Partial<ActionResult> = {}): ActionResult => ({
+    action: 'ADD_CATEGORY',
+    createdId: 'c1',
+    createdLabel: 'Putovanja',
+    undo: 'SOFT_DELETE',
+    sentence: 'Nova kategorija „Putovanja” (rashod, bez nadređene)',
+    replayed: false,
+    ...over,
+  });
+
+  it('renders a proposal only when the server proposed one and identified it', () => {
+    expect(renderableProposal(proposal())).not.toBeNull();
+    // A refusal, whatever its reason, is not a card.
+    expect(renderableProposal(proposal({ proposed: false, reason: 'NOT_AN_ACTION' }))).toBeNull();
+    // A proposal with no id could not be confirmed, so offering it would offer a button that cannot work.
+    expect(renderableProposal(proposal({ proposalId: null }))).toBeNull();
+    expect(renderableProposal(proposal({ preview: null }))).toBeNull();
+    expect(renderableProposal(null)).toBeNull();
+  });
+
+  it('says nothing about a question that is simply not an action', () => {
+    // Most questions land here: the read planner refused them and no action was named. Copy about the
+    // assistant's own vocabulary on every unanswerable question is exactly what §8.5's instinct was
+    // protecting against.
+    expect(actionRefusalKey('NOT_AN_ACTION')).toBeNull();
+    expect(actionRefusalKey(null)).toBeNull();
+    expect(actionRefusalKey('SOMETHING_NEW:x')).toBeNull();
+  });
+
+  it('asks for the missing detail when the request was unmistakable', () => {
+    expect(actionRefusalKey('UNRUNNABLE:name')).toBe('assistant.action.needName');
+    // An unrecognised slot still says the request cannot be built, rather than inventing which part.
+    expect(actionRefusalKey('UNRUNNABLE:kind')).toBe('assistant.action.notRunnable');
+    expect(actionRefusalKey('UNRUNNABLE:name,kind')).toBe('assistant.action.needName');
+  });
+
+  it('drops a diff row that becomes nothing, instead of printing an empty field', () => {
+    const rows = actionDiffRows(
+      preview([
+        { slot: 'name', field: 'naziv', before: null, after: 'Putovanja', defaulted: false },
+        { slot: 'parentId', field: 'nadređena', before: null, after: null, defaulted: false },
+      ]),
+    );
+
+    expect(rows.map((row) => row.field)).toEqual(['naziv']);
+    expect(actionDiffRows(null)).toEqual([]);
+  });
+
+  it('offers the kind toggle only for a row the server defaulted and gave a machine value', () => {
+    expect(kindChoice(preview([KIND_ROW]))).toEqual({ current: 'EXPENSE', other: 'INCOME' });
+    // The other direction, which is what a second click must produce.
+    expect(kindChoice(preview([{ ...KIND_ROW, after: 'prihod', afterValue: 'INCOME' }]))).toEqual({
+      current: 'INCOME',
+      other: 'EXPENSE',
+    });
+  });
+
+  it('refuses the toggle when the question stated the kind, or the value is only a label', () => {
+    // `defaulted: false` means the user said it — a kind that was asked for is not a suggestion.
+    expect(kindChoice(preview([{ ...KIND_ROW, defaulted: false }]))).toBeNull();
+    // A label with no machine value would force the client to keep its own copy of the API's words.
+    expect(kindChoice(preview([{ ...KIND_ROW, afterValue: null }]))).toBeNull();
+    expect(kindChoice(preview([]))).toBeNull();
+    expect(kindChoice(null)).toBeNull();
+  });
+
+  it('offers an undo only where the server says one exists and this client knows how', () => {
+    expect(undoPlan(result())).toEqual({ action: 'ADD_CATEGORY', id: 'c1' });
+    // The server never offers a `NONE` action, so this is a belt-and-braces gate rather than a path.
+    expect(undoPlan(result({ undo: 'NONE' }))).toBeNull();
+    // A client one release behind a server that added an action: no control, rather than a call to
+    // whatever the fall-through happened to name.
+    expect(undoPlan(result({ action: 'ADD_TAG' }))).toBeNull();
+  });
+
+  it('renders the expiry as a clock time, and nothing at all when it cannot read one', () => {
+    expect(expiryTime('2026-09-20T10:10:00.000Z', 'en-GB')).toMatch(/\d{1,2}:\d{2}/);
+    expect(expiryTime(null, 'en-GB')).toBeNull();
+    expect(expiryTime('not a date', 'en-GB')).toBeNull();
+    // A locale the runtime does not know must not take the card down with it.
+    expect(expiryTime('2026-09-20T10:10:00.000Z', 'not a locale')).toBeNull();
   });
 });

@@ -1797,6 +1797,23 @@ Short, and load-bearing.
 
 ---
 
+- **GraphQL serialises a string enum by its member *key*, not its value — so `KIND = 'kind'` reaches the
+  client as `"KIND"`.** The proposal diff needed a *stable* name for each row (a `field` label is
+  localized — `naziv` in Serbian, `name` in English — so a card that attaches a control to one row cannot
+  identify it by label), and the first version declared `enum AssistantActionSlotEnum { NAME = 'name',
+  KIND = 'kind', PARENT_ID = 'parentId' }`. NestJS registered it faithfully, the SDL said
+  `enum AssistantActionSlot { NAME KIND PARENT_ID }`, and the wire carried `"KIND"` while the client
+  compared `slot === 'kind'`. **Every unit test passed**, because each one fed the helper the TypeScript
+  value the rest of the code uses; the defect was only reachable over HTTP, and the live pass found it on
+  the first call. Two lessons, both cheap: **name an enum's members after the values they carry** when the
+  value is the contract (`name`/`kind`/`parentId`), and **assert the wire vocabulary somewhere that goes
+  through the wire** — the `schema.gql` artifact is where the member names are reviewable, which is why it
+  is committed rather than generated in CI. Note this is invisible for `CategoryKind` (`EXPENSE =
+  'EXPENSE'`), where key and value happen to be identical; the trap needs a lower-case value to appear at
+  all.
+
+---
+
 ## Related
 
 - `docs/10-testing-and-quality.md` — what a change has to prove before it is done.

@@ -52,6 +52,11 @@ type ActionDiffEntryModel {
   """The value after, or null (e.g. "top level")."""
   after: String
 
+  """
+  The same value in the machine's own vocabulary where the slot has one (`EXPENSE`/`INCOME` for `kind`), because a localized label cannot tell a card which option is currently proposed. Null for a free-text slot.
+  """
+  afterValue: String
+
   """The value before, or null when there is none."""
   before: String
 
@@ -59,7 +64,14 @@ type ActionDiffEntryModel {
   True when the proposal filled this rather than the question stating it, so the card can offer to change it. Guessing silently is not an option; guessing visibly is (ADR-035 decision 5).
   """
   defaulted: Boolean!
+
+  """The field label, in the Household's language."""
   field: String!
+
+  """
+  Which slot this row is, stably. The card needs it to attach a control to the right row — `field` is localized for the reader and therefore cannot be an identifier.
+  """
+  slot: AssistantActionSlot!
 }
 
 type AiEgressModel {
@@ -236,6 +248,15 @@ type AssistantActionResultModel {
   How the action can be undone (`SOFT_DELETE`, `UNDO_CAPTURE`, `NONE`). An action with `NONE` is not offered at all, so this is never the reason a write is irreversible.
   """
   undo: String!
+}
+
+"""
+Which slot of a proposal a diff row is. Stable across languages; `field` is the label.
+"""
+enum AssistantActionSlot {
+  kind
+  name
+  parentId
 }
 
 """docs/06 §4.4 and §8.5."""

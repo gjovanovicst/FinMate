@@ -83,6 +83,14 @@ export interface Turn {
   readonly answer: AssistantAnswer | null;
   /** True when the request itself failed — a different state from the ledger refusing to answer. */
   readonly failed: boolean;
+  /**
+   * The write the answer refused to be, when the question asked for one.
+   *
+   * Absent for most turns: the proposal is only attempted after a **refusal**, which is the ordering
+   * docs/06 §8.16 records — the read planner answers a question it can answer, and a write is offered
+   * only when it had nothing to answer with.
+   */
+  readonly action?: TurnAction | null;
 }
 
 export type AnswerPhase = 'idle' | 'asking' | 'answered' | 'refused' | 'failed';
@@ -354,4 +362,215 @@ export function fallbackNoteKey(answer: AssistantAnswer): TranslationKey | null 
   return answer.reason?.split(':', 1)[0] === 'CONSENT_DECLINED'
     ? 'assistant.narration.consentNote'
     : null;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The write path — propose → confirm → execute (B-2b; docs/06 §8.16, ADR-035)
+// ---------------------------------------------------------------------------------------------
+
+/** The assistant's closed action set, mirroring the API's `AssistantAction`. */
+export const ASSISTANT_ACTIONS = ['ADD_CATEGORY'] as const;
+export type AssistantActionName = (typeof ASSISTANT_ACTIONS)[number];
+
+/**
+ * The slots a proposal's diff can name, mirroring the API's `AssistantActionSlot`.
+ *
+ * The client needs this because **a label is not an identifier**: `ActionDiffEntry.field` is rendered
+ * in the Household's language (`naziv`/`name`), so the card cannot use it to decide which row a control
+ * belongs to. It identifies rows by slot and renders them with the label.
+ */
+export type ActionSlotName = 'name' | 'kind' | 'parentId';
+
+export interface ActionDiffEntry {
+  readonly slot: string;
+  readonly field: string;
+  readonly before: string | null;
+  readonly after: string | null;
+  /** `after` in the machine's own vocabulary (`EXPENSE`/`INCOME` for `kind`), or `null`. */
+  readonly afterValue?: string | null;
+  readonly defaulted: boolean;
+}
+
+/** The backend-rendered proposal: one sentence and a diff. Never narrated (ADR-035 decision 8). */
+export interface ActionPreview {
+  readonly sentence: string;
+  readonly diff: readonly ActionDiffEntry[];
+}
+
+/**
+ * A proposed write, or the server's refusal to propose one.
+ *
+ * `proposed: false` is a **refusal, not an error** — the shape `answered: false` established. It is
+ * `NOT_AN_ACTION` for a question that asked for nothing the registry does (most questions are reads),
+ * and `UNRUNNABLE:<slots>` for an unmistakable request that did not say what to write.
+ */
+export interface ActionProposal {
+  readonly proposed: boolean;
+  readonly reason: string | null;
+  readonly proposalId: string | null;
+  readonly action: string | null;
+  readonly preview: ActionPreview | null;
+  readonly expiresAt: string | null;
+}
+
+/** The written row, and how it can be undone. */
+export interface ActionResult {
+  readonly action: string;
+  readonly createdId: string;
+  readonly createdLabel: string;
+  readonly undo: string;
+  readonly sentence: string;
+  readonly replayed: boolean;
+}
+
+/** One turn's write state: the proposal, the confirmation, its outcome, and the undo. */
+export interface TurnAction {
+  /**
+   * What the server said, or `null` when the proposal call itself failed.
+   *
+   * Null is not "not an action": the caller only asks after a refusal, so a failed second call leaves a
+   * turn that is exactly what a refusal alone looks like — plus, when there is one, a message saying why
+   * the write could not even be offered.
+   */
+  readonly proposal: ActionProposal | null;
+  /**
+   * Minted **once per proposal** and reused by every click, which is what makes a retry safe: the
+   * server remembers the outcome against it, so a repeated confirm replays the same result instead of
+   * writing a second row. A re-propose (the `kind` toggle) is a new proposal and gets a new key.
+   */
+  readonly idempotencyKey: string;
+  readonly result: ActionResult | null;
+  readonly confirming: boolean;
+  /** True while the `kind` toggle is asking the server for a replaced proposal. */
+  readonly switching: boolean;
+  readonly undoing: boolean;
+  readonly undone: boolean;
+  /**
+   * True once the server says the proposal is gone — expired, or already consumed.
+   *
+   * R-29 names exactly this: *"a proposal lapses between render and click"*. The card must stop
+   * offering a button that cannot work, which is different from a write that failed for a reason a
+   * retry could fix (an unreachable server never reached the proposal at all).
+   */
+  readonly stale: boolean;
+  /** A failure of the **write** — never of the question, which the refusal above already answered. */
+  readonly error: string | null;
+}
+
+/**
+ * A proposal the card may render: proposed, identified, and with something to show.
+ *
+ * Narrowed rather than merely checked, so the template gets a `preview` it can read without a `?` —
+ * the one place a view helper returns a *shape* instead of a boolean, because "may I draw this" and
+ * "here is what to draw" are the same question on this card.
+ */
+export interface RenderableProposal extends ActionProposal {
+  readonly proposed: true;
+  readonly proposalId: string;
+  readonly preview: ActionPreview;
+}
+
+export function renderableProposal(
+  proposal: ActionProposal | null | undefined,
+): RenderableProposal | null {
+  if (proposal == null || !proposal.proposed) return null;
+  if (proposal.proposalId === null || proposal.preview === null) return null;
+  return {
+    ...proposal,
+    proposed: true,
+    proposalId: proposal.proposalId,
+    preview: proposal.preview,
+  };
+}
+
+/**
+ * What the card says when the server **declined to propose** — or `null` when it should say nothing.
+ *
+ * `NOT_AN_ACTION` is the ordinary case and gets no copy: the answer was already a refusal, and telling
+ * the reader "that was not an action" adds a sentence about the assistant's internals to every
+ * unanswerable question. `UNRUNNABLE` is different: the request *was* unmistakable and the user can
+ * complete it, so the card asks for the missing detail instead of leaving them with "I cannot answer".
+ */
+export function actionRefusalKey(reason: string | null | undefined): TranslationKey | null {
+  if (reason == null) return null;
+  const [head, detail = ''] = reason.split(':', 2) as [string, string?];
+  if (head !== 'UNRUNNABLE') return null;
+  return detail.split(',').includes('name')
+    ? 'assistant.action.needName'
+    : 'assistant.action.notRunnable';
+}
+
+/**
+ * The rows the diff renders: everything the server says the field will become.
+ *
+ * A row with no `after` is dropped rather than printed with an em dash. The server always sends three
+ * rows so the shape is stable, but "this field is not part of the change" and "this field becomes
+ * nothing" are different statements and only the second belongs on a confirmation card.
+ */
+export function actionDiffRows(preview: ActionPreview | null | undefined): readonly ActionDiffEntry[] {
+  return (preview?.diff ?? []).filter((entry) => entry.after !== null);
+}
+
+/** One option of a two-way choice, as the card renders it. */
+export interface KindChoice {
+  readonly current: 'EXPENSE' | 'INCOME';
+  readonly other: 'EXPENSE' | 'INCOME';
+}
+
+/**
+ * The `kind` toggle, or `null` when the card must not offer one.
+ *
+ * Two conditions, both the server's to state:
+ *
+ * - the row is **`defaulted`** — the proposal filled it rather than the question stating it. That is
+ *   ADR-035 decision 5's flag, and it is what makes "guessing visibly" different from "guessing
+ *   silently"; a kind the user asked for is not a suggestion to revise.
+ * - the row carries an `afterValue` in the machine's vocabulary. Without it the client would have to
+ *   compare the localized word `rashod` against a vocabulary of its own — a second copy of the API's
+ *   words, which is the drift this codebase keeps paying for.
+ */
+export function kindChoice(preview: ActionPreview | null | undefined): KindChoice | null {
+  const row = actionDiffRows(preview).find((entry) => entry.slot === 'kind');
+  if (row?.defaulted !== true) return null;
+  const current = row.afterValue === 'EXPENSE' || row.afterValue === 'INCOME' ? row.afterValue : null;
+  if (current === null) return null;
+  return { current, other: current === 'EXPENSE' ? 'INCOME' : 'EXPENSE' };
+}
+
+/** A plan to undo a completed action: which action, and which row. */
+export interface UndoPlan {
+  readonly action: AssistantActionName;
+  readonly id: string;
+}
+
+/**
+ * How a completed action can be taken back — or `null` when this client cannot take it back.
+ *
+ * Two independent gates, and the second is the one that matters. `undo` is the **server's** field
+ * (ADR-035 decision 7: an action whose undo does not exist is not offered at all), so an action that
+ * cannot be undone never reaches this branch. But a client one release behind a server that added an
+ * action would know nothing about taking *that* action back, and `ASSISTANT_ACTIONS` being closed is
+ * what makes that a `null` here rather than a mutation call against the wrong row.
+ */
+export function undoPlan(result: ActionResult): UndoPlan | null {
+  if (result.undo !== 'SOFT_DELETE') return null;
+  if (!(ASSISTANT_ACTIONS as readonly string[]).includes(result.action)) return null;
+  return { action: result.action as AssistantActionName, id: result.createdId };
+}
+
+/**
+ * When the proposal stops being confirmable, as a local clock time — or `null` if it cannot be read.
+ *
+ * The API's TTL is ten minutes, and a card that silently stopped working would turn an honest `NOT_FOUND`
+ * into a mystery. The value is the server's own `expiresAt`; this only renders it.
+ */
+export function expiryTime(expiresAt: string | null | undefined, localeTag: string): string | null {
+  if (expiresAt == null) return null;
+  const at = new Date(expiresAt);
+  if (Number.isNaN(at.getTime())) return null;
+  try {
+    return new Intl.DateTimeFormat(localeTag, { hour: '2-digit', minute: '2-digit' }).format(at);
+  } catch {
+    return null;
+  }
 }

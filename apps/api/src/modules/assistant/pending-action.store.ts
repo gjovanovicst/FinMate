@@ -28,7 +28,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { RedisService } from '../../common/redis/redis.service';
-import type { AssistantAction } from './assistant-actions';
+import type { ActionSlotName, AssistantAction } from './assistant-actions';
 
 /** Ten minutes: long enough to read a card, short enough that an abandoned proposal is not a trap. */
 export const PROPOSAL_TTL_SECONDS = 600;
@@ -38,9 +38,27 @@ const RESULT_PREFIX = 'assistant:action:result:';
 
 /** One field of the preview's diff, as the card renders it. Always `before` × `after`, never a prose. */
 export interface ActionDiffEntry {
+  /**
+   * **Which** field this is, stably — the slot's own name, not its label.
+   *
+   * `field` is localized for the reader (`naziv` in Serbian, `name` in English), so it cannot be an
+   * identifier: a card that wants to offer a control for one field has to know which row that control
+   * belongs to, in every language. That is what this is for (B-2b's `kind` toggle).
+   */
+  readonly slot: ActionSlotName;
+  /** The label, in the Household's language. */
   readonly field: string;
   readonly before: string | null;
   readonly after: string | null;
+  /**
+   * `after` in the machine's own vocabulary, when the slot has one — `EXPENSE`/`INCOME` for `kind`.
+   *
+   * A label is not a value either: the card offers a control that re-proposes with the **chosen**
+   * kind, so it has to know which kind is currently proposed without comparing localized words. `null`
+   * for a slot whose value is free text (`name`) and for `parentId`, where a null parent *is* the
+   * honest value ("top level").
+   */
+  readonly afterValue: string | null;
   /** True when {@link ActionTemplate.defaultedSlots} filled it, so the card can offer to change it. */
   readonly defaulted: boolean;
 }

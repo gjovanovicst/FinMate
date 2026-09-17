@@ -8,7 +8,12 @@
 > records it** — the assistant may *propose* a write, only a human's click executes it, no
 > confidence-based fast path, and pending proposals live in Redis with a short TTL. B-1 is that ADR;
 > **B-2a built the server half** (registry, `text` slot, proposal store, propose/execute, `ADD_CATEGORY`
-> — docs/06 §8.16), and **B-2b is the proposal card** that makes it reachable by a person.
+> — docs/06 §8.16), and **B-2b built the proposal card** that makes it reachable by a person: offered
+> only when the ledger **refused** the question, it renders the backend sentence and diff, offers the
+> `kind` toggle the server marked `defaulted`, confirms with the proposal id plus one idempotency key,
+> and undoes through the same mutation `/categories` calls. Building it found and fixed two defects in
+> its own foundation — the action planner read attributive adjectives as imperatives, and a string enum
+> reaches a client by its member *key*, not its value (docs/15).
 >
 > [14 §Part 3](14-decisions-and-risks.md) also carries **Q-12** (refusal telemetry), which A-8 needs.
 
@@ -337,7 +342,7 @@ One commit per row, per the working agreement. Part A rows are independent of Pa
 | A-13b | which scope a question that names **both** a Category and a Merchant *means* (*"na hranu u Lidlu"*) | **a product decision** — the label is honest since A-13a, so this is now only about the answer | the intersection, the Merchant, or an ambiguity refusal — the owner's call |
 | **B-1** | **ADR-035: propose writes, never execute them** | **Q-11** — answered 2026-09-17 | the architectural gate — **done** ([ADR-035](14-decisions-and-risks.md#adr-035--the-assistant-may-propose-a-write-only-a-humans-click-executes-it)) |
 | B-2a | action registry + `text` slot + Redis proposals + `assistantProposeAction`/`assistantExecuteAction` + `ADD_CATEGORY` | B-1 | the first action, server-side and live-verifiable — **done** ([06 §8.16](06-api-specification.md)) |
-| B-2b | the proposal card on `/assistant` (preview, diff, **confirm**, the `kind` toggle, the undo affordance) | B-2a | the same action, reachable by a person — the half B-2a deliberately leaves |
+| B-2b | the proposal card on `/assistant` (preview, diff, **confirm**, the `kind` toggle, the undo affordance) | B-2a | the same action, reachable by a person — the half B-2a deliberately leaves — **done** ([06 §8.16](06-api-specification.md), [02 §4.16](02-ux-flows-and-screens.md)) |
 | B-3 | `ADD_TRANSACTION` through the existing capture preview | B-2 | highest-value action, ~90 % already built |
 | B-4 | `SET_BUDGET`, `ADD_GOAL`, `ADD_TAG` | B-2 | "configure", as asked |
 | B-5 | `CREATE_RULE_FROM_CORRECTION` | B-2 | ADR-010's confirmation, reached by question |
@@ -349,7 +354,9 @@ naming both a Category and a Merchant no longer prints one scope's figure under 
 what such a question should *answer* (the intersection, the Merchant, or an ambiguity refusal) is a
 product decision, not a matcher fix. The other open rows need no decision: **A-6/A-7** are a contract
 extension and catalogue entries, **A-11** a `RecurringService` read. The remaining battery gaps that are
-**not** A-rows are seed content for `kirija`/English (docs/04). Part B stays gated on **Q-11**.
+**not** A-rows are seed content for `kirija`/English (docs/04). **Part B is no longer gated**: Q-11 was
+answered, [ADR-035](14-decisions-and-risks.md) records it, and B-1/B-2a/B-2b shipped the first action end
+to end. What B-3–B-5 need is not a decision but the next executor and its own card affordances.
 
 ### B.8 What this deliberately does not build
 

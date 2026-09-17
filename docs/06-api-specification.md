@@ -3993,6 +3993,42 @@ did not say what to create, which asks the user rather than writing something no
 that is empty, over 80 characters, or already taken **does** throw (`VALIDATION_FAILED` / `CONFLICT`),
 because those are failures of a request the user made, not refusals to answer a question.
 
+**The card, and the ordering it needed (task B-2b, 2026-09-17).** `/assistant` renders the proposal
+after the answer, and **only after a refusal** — the client asks `assistantAnswer` first, and asks
+`assistantProposeAction` only when `answered: false`. The order is the second line of defence behind the
+cue list: a question the ledger can answer is never turned into an offer to change something, and no
+proposal is created that nobody sees. The cost is one extra round trip on a refusal and none on the
+ordinary path. The card itself: the server's sentence, the diff rows, a **`kind` toggle** offered only
+where the server flagged the row `defaulted`, a **Confirm** button, the TTL rendered as a local clock
+time, and — after the write — the returned row's sentence plus an **Undo** that calls `deleteCategory`,
+the same mutation `/categories` calls.
+
+Three things the card needed from the contract, each because a *label* cannot do a *control's* job:
+
+- **`slot`** on each diff row. `field` is localized (`naziv`/`name`), so a card that has to attach a
+  control to one row cannot identify it by name. ⚠️ **GraphQL serialises a string enum by its member
+  *key*, not its value** — the first version declared `KIND = 'kind'` and the wire carried `"KIND"`, so
+  the toggle silently never matched; the live pass caught it and the members are now named after their
+  values ([15](15-implementation-gotchas.md)).
+- **`afterValue`** on each row: `after` in the machine's vocabulary (`EXPENSE`/`INCOME` for `kind`),
+  because the toggle has to know which kind is *currently proposed* without comparing the Serbian word
+  `rashod` against a client-side copy of the API's vocabulary.
+- **`expiresAt`**, so the card can say when the offer lapses rather than letting a `NOT_FOUND` be a
+  mystery. A `NOT_FOUND` on confirm is handled as exactly that — R-29's *"a proposal lapses between
+  render and click"*: the card stops offering a button that cannot work, and says why. Every other
+  failure keeps the offer, because an unreachable server never reached the proposal and the same
+  `idempotencyKey` is the right thing to send again.
+
+⚠️ **A known limit of the re-propose design, measured live.** Re-proposing with the other `kind` stores a
+**second** proposal; the first is not revoked, it merely expires. The card only ever shows the newest, so
+the UI cannot confirm the stale one — and if anything did, the write is refused by the index
+(`CONFLICT`, verified), not silently duplicated. Stated rather than fixed: revoking the superseded id
+would need the store to track a lineage the design deliberately does not have.
+
+⚠️ **A residual, not a defect:** a Category created here does not refresh the offline `taxonomy` cache
+until `/capture` next reads the category list. The staleness is bounded by that screen's own mount, and a
+missing picker entry is not a wrong write — unlike R-27(a2), which this deliberately does not repeat.
+
 **A cue list is a heuristic, and B-2b measured it before rendering anything.** The action planner runs
 *before* the read planner, so a word in its vocabulary is a word that means the action wherever it
 appears. Listing the attributive adjectives `nova`/`novu`/`novi`/`novo`/`new` as verbs planned
@@ -4014,6 +4050,23 @@ unreachable, and the duplicate rule the preview checks is the one the index enfo
 (`/tmp/verify-b2a.mjs`): propose → confirm → the Category is in the tree → a retry replays the same id →
 a different key is refused → a read question proposes nothing → a nameless request is refused with the
 slot → the probe row was removed again.
+
+**B-2b verified**: `assistant.view.spec.ts` 36 and `assistant.component.spec.ts` 28 (the ordering, the
+confirm arguments, the key's stability across a repeat and its replacement on a re-propose, the toggle's
+absence when the row is not `defaulted`, the undo's mutation and id, the collision copy, a lapsed offer
+against a retryable failure). API **1069**, **2776 total**, lint 9/9, typecheck 9/9, `api:evals` green
+(battery 54/58 answerable, every gate passed), `web:build` + `bundle:budget` ok. **Live 19/19**
+(`/tmp/verify-b2b.mjs`, over HTTP against the real API): the diff's `slot`/`afterValue` reach the wire in
+the registry's own vocabulary, a re-propose replaces the id and the card, the confirmed row has the kind
+that was *confirmed*, the superseded proposal cannot duplicate the row (`CONFLICT`), the undo removes it,
+and the three cue regressions plus the two request shapes that must keep working all behave. **Browser
+22/23 + 2/2** (Playwright against `:4200`): the card renders under the refusal with its diff and the
+defaulted flag, no horizontal overflow at 320/768/1280 px, axe **0 critical / 0 serious** with the
+proposal *and* the result card, the toggle and the confirm both driven **by keyboard**, the write lands in
+`/categories`, the undo removes it — and the single failure was the probe's own wrong expectation (the
+`/categories` screen opens on the **EXPENSE** tree, so an INCOME category is not in the first list it
+renders; the follow-up check found it under the INCOME segment). Screenshots are in
+`.artifacts/visual-audit/b2b-*.png` for the human pass.
 
 > **Named, not fixed — and it is an authorisation gap, not an assistant one.** `MemberRole` declares
 > `VIEWER`, and **nothing enforces it**: `createCategory` — like every other taxonomy write — carries no

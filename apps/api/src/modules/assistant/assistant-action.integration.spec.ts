@@ -117,10 +117,16 @@ describe('assistant actions (integration)', () => {
     expect(proposal.action).toBe('ADD_CATEGORY');
     expect(proposal.preview.sentence).toBe('Nova kategorija „Putovanja” (rashod, bez nadređene)');
     // `kind` is filled by the proposal rather than the question, and the card is told so — guessing
-    // silently is not an option, guessing visibly is (ADR-035 decision 5).
-    const kind = proposal.preview.diff.find((entry) => entry.field === 'vrsta');
+    // silently is not an option, guessing visibly is (ADR-035 decision 5). The row is found by its
+    // **slot**, not by its label: the label is Serbian here, and a card that has to offer a control for
+    // one row cannot depend on the Household's language to identify it.
+    const kind = proposal.preview.diff.find((entry) => entry.slot === 'kind');
     expect(kind?.after).toBe('rashod');
     expect(kind?.defaulted).toBe(true);
+    expect(kind?.field).toBe('vrsta');
+    // …and the machine value travels with it, because the card's kind toggle has to know which option
+    // is currently proposed without comparing the localized word "rashod" to anything.
+    expect(kind?.afterValue).toBe('EXPENSE');
 
     // The proposal is a read.
     const after = await asTenant(() => categories.list(householdId));
