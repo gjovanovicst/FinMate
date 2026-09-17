@@ -158,6 +158,21 @@ Everything here has cost time at least once, and most of it fails in a way that 
   6.43:1 on that worst case and 7.55:1 on `--color-bg`, backgrounds keep `--color-primary`, and the global
   `a` rule and onboarding's textual uses move with it.
 
+- **"Installable" is a claim about the browser, not about the files — and the brand cannot live only in
+  config.** Two things 4.3.2a settled. (a) A PWA can have a manifest, icons and a service worker and still
+  not install, because Chromium's criteria are its own; the honest check is to ask it
+  (`Page.getInstallabilityErrors` over CDP, which returned **none** for this build) alongside a fetch that
+  **decodes each PNG's header** rather than trusting the sizes the manifest claims. A missing `purpose:
+  maskable` icon, a `display` other than `standalone`, an icon whose bytes are not the dimensions it
+  advertises, or a worker that never activates all produce the same user-visible symptom — no install
+  prompt — and only the browser names which one it is. (b) **`APP_NAME` and `app.name` are not the whole
+  brand surface.** `index.html`'s title, the manifest's `name`/`short_name`, the
+  `apple-mobile-web-app-title` meta are *static assets*, which cannot read
+  a config token; iOS additionally ignores the manifest's icons for Add-to-Home-Screen and uses
+  `apple-touch-icon` with its own mask, so a manifest-only implementation looks fine in Chrome and
+  installs with a screenshot-for-an-icon on Safari. A rename is therefore a search over the assets *and*
+  the two config values — worth writing down before someone trusts the rule's "one commit" shorthand.
+
 - **An nx target that writes files must declare `outputs`, or a cache hit reports success and restores
   nothing.** `targetDefaults.build` had `cache: true` and no `outputs`, so `nx run web:build` on a warm
   cache printed "read the output from the cache instead of running the command" while `apps/web/dist` did

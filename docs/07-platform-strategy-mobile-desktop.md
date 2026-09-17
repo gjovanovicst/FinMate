@@ -332,6 +332,19 @@ Never block the app behind install; never prompt during onboarding ([F-13](01-pr
 honest in the CTA ("Dodaj na početni ekran — dobijaš obaveštenja"); record `install.prompt_shown` /
 `install.accepted` so T3 is measurable.
 
+> **Built in 4.3.2a — the install itself.** `public/manifest.webmanifest`, four generated icons (the
+> maskable variant keeps the glyph inside Android's 80 % safe-zone circle; iOS gets a bleeding
+> `apple-touch-icon` plus the three legacy `apple-mobile-web-app-*` tags it reads instead of the manifest),
+> and the manifest and icons added to the service worker's `app` asset group so an installed app has them
+> offline. `pnpm icons:generate` writes them with a **dependency-free** PNG encoder over `node:zlib`.
+> **Verified against Chrome rather than against the files**: CDP `Page.getInstallabilityErrors` returns
+> **none**, the worker is `activated` at `/`, and every icon is fetched and its PNG header decoded rather
+> than trusted. **Not built (4.3.2b) is the funnel above** — the sheet, the 2nd-capture trigger, the
+> 30-day suppression and the two events — and the events currently have **no sink** (there is no analytics
+> endpoint; this document's §11 RUM is unwired), which is that task's own residual. ⚠️ The brand is now
+> written in `index.html`, the manifest and the apple title as well as in `APP_NAME`/`app.name`: a static
+> asset cannot read a config token, so a rename is a search over five places, not one.
+
 ### 4.8 iOS PWA push limitations — stated plainly
 
 The weakest link in the PWA strategy. Better to design around it than to pretend.

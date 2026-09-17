@@ -9,6 +9,17 @@
     <!-- Matches --color-bg so the browser chrome does not flash white on load. -->
     <meta name="theme-color" content="#101014" />
     <meta name="description" content="AI-first household budgeting." />
+    <!-- The brand is written here, in the manifest and in the apple title because a static asset cannot
+         read APP_NAME (docs/15). A rename is a find-and-replace over these plus one config value. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+    <!-- iOS reads none of the manifest's icons and applies its own mask, so it gets a bleeding square.
+         These three meta tags are what let Safari install at all — the manifest's `display` is ignored
+         for Add-to-Home-Screen there (docs/07 section 4.7). -->
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="FinMate" />
   </head>
   <body>
     <fm-root></fm-root>
