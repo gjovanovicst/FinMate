@@ -541,8 +541,22 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
     'placa', 'plaća', 'naplat', 'racun', 'račun', 'trosak', 'trošak',
     'payment', 'bill', 'charge', 'invoice',
   );
+  // ⚠️ A **spend verb with a resolved scope** outranks a recurring-rule *name*. A Household with a
+  // rule called `Netflix` or `Struja` otherwise had "how much did I spend on netflix" answered with the
+  // subscription list and "koliko sam platio struju" with the same — the rule name entering the branch
+  // before the spend branch was ever reached. The name is still evidence (it is why "kada mi sledeći
+  // Netflix dolazi" routes here), it just cannot outrank an explicit spend question about a scope the
+  // Household has a name for. Found by the A-4 battery fixture.
+  const spendVerb = has(
+    'potrosio', 'potrošio', 'potrosila', 'potrošila', 'trosio', 'trošio', 'kupio', 'kupila', 'kupovao',
+    'kupovala', 'platio', 'platila', 'placao', 'plaćao', 'dao', 'dala', 'dali', 'rashod',
+    'spent', 'spend', 'paid', 'bought', 'purchase', 'cost',
+  );
+  const namesRecurring =
+    cues.hasRecurringRule &&
+    !(spendVerb && (cues.hasMerchant || cues.hasCategory || cues.hasAccount || cues.hasTag));
   if (
-    cues.hasRecurringRule ||
+    namesRecurring ||
     has('pretplat', 'ponavljajuc', 'ponavljajuć', 'rekurentn', 'subscription', 'recurring', 'standing order') ||
     (imminent && charge)
   ) {
@@ -638,13 +652,7 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
   // question answerable that was not: this branch answers only when a Category, Merchant, Account or
   // Tag resolved, and refuses otherwise — so a question about something the Household has no name for
   // still refuses rather than totalling everything.
-  if (
-    has(
-      'potrosio', 'potrošio', 'potrosila', 'potrošila', 'trosio', 'trošio', 'kupio', 'kupila', 'kupovao',
-      'kupovala', 'platio', 'platila', 'placao', 'plaćao', 'dao', 'dala', 'dali', 'rashod',
-      'spent', 'spend', 'paid', 'bought', 'purchase', 'cost',
-    )
-  ) {
+  if (spendVerb) {
     if (cues.hasCategory) return note('SPEND_BY_CATEGORY', 'potrošio + kategorija');
     if (cues.hasMerchant) return note('SPEND_BY_MERCHANT', 'potrošio + prodavac');
     if (cues.hasAccount) return note('SPEND_BY_ACCOUNT', 'potrošio + račun');
@@ -767,7 +775,15 @@ function sharesStem(name: string, word: string): boolean {
   const shortest = Math.min(name.length, word.length);
   let common = 0;
   while (common < shortest && name[common] === word[common]) common += 1;
-  return common >= 3 && common >= shortest - 2;
+
+  // ⚠️ The whole difference must be a **case ending**: at most two characters at the end of the longer
+  // word. The previous rule bounded the difference by the *shorter* word (`common >= shortest - 2`),
+  // which let a four-character name diverge from the third character on — and a merchant called
+  // `Apoteka Benu` matched the word **`benzin`** on the three-letter prefix `ben`. The question
+  // "koliko sam potrošio na benzin" was then answered with the pharmacy's total: a wrong figure to a
+  // different question, which is what ADR-017 exists to prevent. Found by the A-4 battery fixture.
+  const longest = Math.max(name.length, word.length);
+  return common >= 3 && longest - common <= 2;
 }
 
 /**

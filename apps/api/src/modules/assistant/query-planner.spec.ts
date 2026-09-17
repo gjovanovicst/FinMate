@@ -373,6 +373,55 @@ describe('English questions route the same way (A-3b)', () => {
   });
 });
 
+describe('entity matching, and the two misroutes the A-4 fixture found', () => {
+  it('does not match a name on a three-character prefix (`Apoteka Benu` vs `benzin`)', () => {
+    // The stem rung bounded the difference by the *shorter* word, so a four-character name could
+    // diverge from its third character on: `benu` matched `benzin` on `ben`. The question about petrol
+    // was then answered with **the pharmacy's** total — a wrong figure to a different question, which
+    // is what ADR-017 exists to prevent.
+    const withPharmacy: PlannerContext = {
+      ...CONTEXT,
+      merchants: [...CONTEXT.merchants, { id: 'mer-benu', name: 'Apoteka Benu' }],
+    };
+    const result = planQuestion('koliko sam potrošio na benzin', withPharmacy);
+    expect(result.slots.merchantId).toBeUndefined();
+    expect(result.matchedOn.some((entry) => entry.includes('Benu'))).toBe(false);
+    // No Category or Merchant in this context is named `benzin`, so the scope is unresolved and the
+    // planner refuses rather than answering the month's whole spend.
+    expect(result.intent).toBe('NO_TEMPLATE_MATCH');
+  });
+
+  it('still matches a real Serbian case ending', () => {
+    // The other side of the same rule: the whole difference must be a case ending, and one or two
+    // characters at the end *is* one. These are the matches the rung exists for.
+    expect(plan('koliko sam potrošio na hranu').slots.categoryId).toBe('cat-food');
+    expect(plan('koliko sam potrošio na gorivo').slots.categoryId).toBe('cat-fuel');
+    // Two characters of difference, at the end: `Automobil` → `automobilu`.
+    expect(plan('koliko sam potrošio na automobilu').slots.categoryId).toBe('cat-fuel');
+    expect(plan('koliko sam potrošio u lidlu').slots.merchantId).toBe('mer-lidl');
+    // …and a name four or more characters longer than the word it shares a prefix with is not a case
+    // ending, which is the rule above.
+    expect(plan('koliko sam potrošio na supermarketu').slots.categoryId).toBe('cat-market');
+  });
+
+  it('lets a spend verb with a resolved scope outrank a recurring-rule name', () => {
+    // A Household with a rule called `Netflix` had "how much did I spend on netflix" answered with the
+    // subscription *list*, because the rule name entered the recurring branch before the spend branch
+    // was reached. The name is still evidence — it is why the second question routes here — it just
+    // cannot outrank an explicit spend question about a scope the Household has a name for.
+    const withRule: PlannerContext = {
+      ...CONTEXT,
+      merchants: [...CONTEXT.merchants, { id: 'mer-netflix', name: 'Netflix' }],
+      recurringRules: [{ id: 'rule-netflix', name: 'Netflix' }],
+    };
+    expect(planQuestion('how much did I spend on netflix', withRule).intent).toBe('SPEND_BY_MERCHANT');
+    expect(planQuestion('koliko sam potrošio na Netflix', withRule).intent).toBe('SPEND_BY_MERCHANT');
+    // …while a question that does not have a spend verb still goes to the schedule.
+    expect(planQuestion('kada mi sledeći Netflix dolazi', withRule).intent).toBe('RECURRING_UPCOMING');
+    expect(planQuestion('what are my subscriptions', withRule).intent).toBe('RECURRING_LIST');
+  });
+});
+
 describe('period resolution', () => {
   it('resolves the phrases a person actually types', () => {
     expect(resolvePeriod('danas', '2026-09-17')).toEqual({ start: '2026-09-17', end: '2026-09-17', matchedOn: 'danas' });

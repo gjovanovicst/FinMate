@@ -3485,6 +3485,35 @@ them would have published a contract the API could not keep. The module was regi
 >   change (the plan carries the template's `kind`, and the narration verb follows it). **Recorded,
 >   unscheduled**; the second question is additionally a *schedule* question, and `dueSoon` filters
 >   `kind: 'EXPENSE'`, so income occurrences are not listed either.
+> 6. **Two misroutes the A-4 battery fixture found before the gate was written — both FIXED (2026-09-17).**
+>    They are worth reading together, because one *lowered* the answered count and improved the product.
+>    - **`koliko sam potrošio na benzin` was answered with a pharmacy's total.** The planner's stem rung
+>      bounded the difference between a name and a word by the **shorter** of the two, so a
+>      four-character name could diverge from its third character on: `Apoteka Benu` matched the word
+>      `benzin` on the three-letter prefix `ben`. The rule now requires the **whole** difference to be a
+>      case ending — at most two characters at the end of the longer word — which still matches
+>      `hrana`/`hranu`, `automobil`/`automobilu` and `lidl`/`lidlu` and rejects `benu`/`benzin`. **The
+>      scope is now unresolved and the question refuses**: the Household has no Category named `benzin`,
+>      even though its tree carries `benzin` as a strong **keyword** of `Gorivo` (see the gap below).
+>    - **`how much did I spend on netflix` returned the subscription list**, and `koliko sam platio
+>      struju` would have too, for a Household with a rule of that name: a matching recurring-rule
+>      **name** entered the recurring branch before the spend branch was reached. A spend verb with a
+>      resolved scope now outranks a rule name; the name remains evidence (it is why *"kada mi sledeći
+>      Netflix dolazi"* still routes to the schedule), it just cannot outrank an explicit spend question.
+>
+>    Net effect on the measured battery: **52 → 51 answered**. One wrong answer became a refusal, which
+>    is the trade ADR-017 asks for — and the reason A-4 gates on *"every question behaves as declared"*
+>    rather than on maximising the answered count.
+>
+> - **The planner matches entity NAMES, not the CategoryKeywords the classifier uses.** `benzin` is a
+>   seeded strong keyword of `Gorivo` (the classifier categorises a typed `benzin 5000` correctly), but
+>   `PlannerContext` carries names and paths only, so *"koliko sam potrošio na benzin"* cannot resolve
+>   the Category the Household obviously means. This is the **single mechanism** behind three of the six
+>   remaining refusals — `benzin`, `kiriju`, and the English `food` (which needs English keywords on the
+>   seed tree to have anything to match). Carrying each Category's keywords into the planner's context
+>   is the fix, and it is one change rather than three: the vocabulary already exists, in the table the
+>   capture path uses. **Recorded, unscheduled.**
+>
 > - **`koliko sam dao za kiriju` is correct as it stands** — `dao` is a cue now, and this Household has no
 >   Category or Merchant named `Kirija`, so the question refuses instead of totalling everything. A
 >   Household that *does* have one gets `SPEND_BY_CATEGORY`. The battery counts it as a refusal; the
