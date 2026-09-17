@@ -230,6 +230,48 @@ describe('intent routing', () => {
     expect(plan('Колико сам потрошио на храну').intent).toBe('SPEND_BY_CATEGORY');
     expect(plan('KOLIKO SAM POTROŠIO NA HRANU').intent).toBe('SPEND_BY_CATEGORY');
   });
+
+  // ---------------------------------------------------------------------------------------------
+  // The phrasings a measured battery refused (A-3)
+  // ---------------------------------------------------------------------------------------------
+
+  it('takes a spend verb people actually use, `dao`', () => {
+    // "koliko sam dao za kiriju" refused because the verb list knew `potrošio`/`platio` and not `dao`.
+    // The safety net is unchanged: this branch answers only when a Category, Merchant, Account or Tag
+    // resolved, so a question about a name the Household does not have still refuses (asserted below).
+    expect(plan('koliko sam dao za hranu').intent).toBe('SPEND_BY_CATEGORY');
+    expect(plan('koliko sam dala za gorivo').intent).toBe('SPEND_BY_CATEGORY');
+    // …and an unresolvable scope is still refused rather than totalled.
+    expect(plan('koliko sam dao za nešto što ne postoji').intent).toBe('NO_TEMPLATE_MATCH');
+  });
+
+  it('reads a balance question in the order people write it', () => {
+    // The cue list knew `stanje na računu` and the inverted `na računu imam`, but not `imam na računu`.
+    expect(plan('koliko imam na računu').intent).toBe('ACCOUNT_BALANCE_ALL');
+    // A bare `koliko imam` is deliberately **not** a balance cue: it fronts goals, budgets and every
+    // other thing a Household has, so guessing "balance" would answer a different question.
+    expect(plan('koliko imam').intent).toBe('NO_TEMPLATE_MATCH');
+    // …and when it does front something, that thing's own cue wins. There is no "list my goals"
+    // template, so this is a goal question that refuses for want of a `goalId` — recorded, not hidden.
+    expect(plan('koliko imam ciljeva').intent).toBe('GOAL_PROGRESS');
+    expect(isRunnable(plan('koliko imam ciljeva'))).toBe(false);
+  });
+
+  it('reads net cashflow when a word is inserted into the phrase', () => {
+    expect(plan('koliko mi novca ostaje').intent).toBe('NET_CASHFLOW');
+    expect(plan('koliko mi ostaje').intent).toBe('NET_CASHFLOW');
+    // The budget branch still wins for a budget question, because it is ordered first and the two
+    // phrases overlap.
+    expect(plan('koliko mi je ostalo od budžeta').intent).toBe('BUDGET_STATUS');
+  });
+
+  it('routes a pace question that never says the word budget', () => {
+    // `da li sam preko plana` names the judgement and not the noun, and requiring *budžet* refused it.
+    expect(plan('da li sam preko plana').intent).toBe('BUDGET_PACE_VS_PLAN');
+    expect(plan('jesam li isplanirano').intent).toBe('BUDGET_PACE_VS_PLAN');
+    // With the noun it routes the same way, so the two phrasings cannot disagree.
+    expect(plan('da li sam preko plana sa budžetom').intent).toBe('BUDGET_PACE_VS_PLAN');
+  });
 });
 
 describe('period resolution', () => {

@@ -415,6 +415,12 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
   };
 
   // ---- budgets & pace (before spending: "koliko mi je ostalo od budžeta" contains "koliko")
+  // `da li sam preko plana` names the judgement and never the noun, and requiring *budžet* refused a
+  // question the pace template answers from the Household's own limits. It is checked **before** the
+  // budget branch because the phrase does not contain the word the branch looks for.
+  if (has('preko plana', 'iznad plana', 'isplanirano', 'prekoracio plan', 'prekoračio plan', 'odstupa od plana')) {
+    return note('BUDGET_PACE_VS_PLAN', 'preko plana');
+  }
   if (has('budzet') || has('budžet')) {
     if (has('tempo', 'preko plana', 'isplanirano', 'odstupa')) {
       return note('BUDGET_PACE_VS_PLAN', 'budžet + tempo');
@@ -463,13 +469,19 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
   }
 
   // ---- income & flow
-  if (has('neto', 'na neto', 'koliko mi ostaje', 'koliko mi je ostalo od prihoda', 'cashflow')) {
+  // `novca ostaje` covers "koliko mi novca ostaje", which inserts a word into `koliko mi ostaje` — the
+  // kind of phrasing a cue list written from one example never has.
+  if (has('neto', 'na neto', 'koliko mi ostaje', 'novca ostaje', 'koliko mi je ostalo od prihoda', 'cashflow')) {
     return note('NET_CASHFLOW', 'neto');
   }
   if (has('zaradio', 'zaradila', 'prihod', 'prihodi', 'primitak')) {
     return note('INCOME_TOTAL', 'prihod');
   }
-  if (has('stanje na racunu', 'stanje na računu', 'stanje racuna', 'stanje računa', 'na racunu imam', 'na računu imam')) {
+  // `imam na računu` is the phrasing people actually use ("koliko imam na računu"), and it was not a
+  // cue: the list knew `stanje na računu` and the inverted `na računu imam`, but not the natural order.
+  // `koliko imam` alone is deliberately **not** a cue — it fronts questions about goals, budgets and
+  // everything else a Household has.
+  if (has('stanje na racunu', 'stanje na računu', 'stanje racuna', 'stanje računa', 'na racunu imam', 'na računu imam', 'imam na racunu', 'imam na računu')) {
     return cues.hasAccount ? note('ACCOUNT_BALANCE', 'stanje + račun') : note('ACCOUNT_BALANCE_ALL', 'stanje');
   }
 
@@ -509,7 +521,11 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
   if (has('prikazi transakcije', 'lista transakcija', 'spisak transakcija', 'koje transakcije')) {
     return note('TRANSACTION_LIST', 'lista transakcija');
   }
-  if (has('potrosio', 'potrošio', 'potrosila', 'potrošila', 'trosio', 'trošio', 'kupio', 'kupila', 'platio', 'platila', 'rashod')) {
+  // `dao`/`dala` are as common as `potrošio` ("koliko sam dao za kiriju"). Adding them cannot make a
+  // question answerable that was not: this branch answers only when a Category, Merchant, Account or
+  // Tag resolved, and refuses otherwise — so a question about something the Household has no name for
+  // still refuses rather than totalling everything.
+  if (has('potrosio', 'potrošio', 'potrosila', 'potrošila', 'trosio', 'trošio', 'kupio', 'kupila', 'kupovao', 'kupovala', 'platio', 'platila', 'placao', 'plaćao', 'dao', 'dala', 'dali', 'rashod')) {
     if (cues.hasCategory) return note('SPEND_BY_CATEGORY', 'potrošio + kategorija');
     if (cues.hasMerchant) return note('SPEND_BY_MERCHANT', 'potrošio + prodavac');
     if (cues.hasAccount) return note('SPEND_BY_ACCOUNT', 'potrošio + račun');

@@ -3460,11 +3460,39 @@ them would have published a contract the API could not keep. The module was regi
 > is not in the Household's context, and answering the *unscoped* total instead would answer a
 > different question under the one that was asked (ADR-017). That one is the design working, not a gap —
 > the fix is merchant/alias coverage, not a weaker rule.
+>
+> **A-3 (2026-09-17) fixed the cue half of this list and re-classified the rest.** Three of the nine were
+> really vocabulary (§8.11): `koliko imam na računu`, `koliko mi novca ostaje`, `da li sam preko plana`,
+> plus `dao` as a spend verb. The other six are **not** cue gaps, and calling them that would have meant
+> adding phrases that answer a different question:
+>
+> - **Two are English** — the planner has no English cues *or* English period phrases while the catalogue
+>   is English-primary ([ADR-019](14-decisions-and-risks.md)). That is A-3b and it needs the ADR-019
+>   amendment §8.11 records, because "one ordered rule list, each rule multilingual" is an i18n decision
+>   rather than a phrase list.
+> - **`Maxi` vs `Maksiju` is a FOLD gap, not a cue one** — `normaliseForMatching('Maxi')` is `maxi` and
+>   `'Maksiju'` is `maksiju`, so neither the exact rung nor the three-character stem rung matches the
+>   Serbian spelling of a foreign name. It is not the assistant's to fix: the same fold decides whether a
+>   **typed** `Maksi 2000` resolves the `Maxi` Merchant in the classifier, so the fix belongs in
+>   `packages/nlp` (an `x`↔`ks` pair, or a seeded alias on the copy-on-write Merchant) and it changes
+>   stored keywords, which is why it is not a one-line change. **Recorded, unscheduled.**
+> - **`kolika mi je penzija` / `kada mi sledeća plata dolazi` are a REGISTRY gap** — `Penzija` and `Plata`
+>   are INCOME Categories and both resolve, but **no template aggregates income by Category**:
+>   `SPEND_BY_CATEGORY` declares `kind: 'EXPENSE'`, and `INCOME_TOTAL` accepts no `categoryId`. Routing
+>   them to the income total would answer "how much did I earn" rather than "how much is my pension", so
+>   the refusal is correct and the missing piece is a direction-aware category template — a registry
+>   change (the plan carries the template's `kind`, and the narration verb follows it). **Recorded,
+>   unscheduled**; the second question is additionally a *schedule* question, and `dueSoon` filters
+>   `kind: 'EXPENSE'`, so income occurrences are not listed either.
+> - **`koliko sam dao za kiriju` is correct as it stands** — `dao` is a cue now, and this Household has no
+>   Category or Merchant named `Kirija`, so the question refuses instead of totalling everything. A
+>   Household that *does* have one gets `SPEND_BY_CATEGORY`. The battery counts it as a refusal; the
+>   behaviour is the design working.
 
 `apps/api/src/modules/assistant/` — `assistant.service.ts` (the pipeline), `numeric-validator.ts`
 (**pure**), `narration-template.ts` (**pure**), `narrate-prompt.ts` (**pure**),
 `assistant-narrator.ts` (the `NARRATE` seam), `assistant.model.ts` + `assistant.resolver.ts` (the
-wire). 207 tests in the module, of which 23 script a model and 48 assemble facts against Postgres.
+wire). 211 tests in the module, of which 23 script a model and 48 assemble facts against Postgres.
 
 | Decision | Built | Why |
 |---|---|---|
@@ -3626,6 +3654,32 @@ unpaced run is how the first attempt "found" 35 refusals).
 > goal would be the planner inferring a scope the question did not state. That is a product call rather
 > than a bug, and it belongs with A-6's refusal work — the suggestions a refusal offers are still the six
 > static ones.
+
+### 8.11 The cue vocabulary a measured battery found missing (task A-3a, 2026-09-17)
+
+The battery's nine refusals were re-classified **before** any phrase was added, and only three were
+vocabulary. That distinction is the substance of this task: a cue list is easy to widen and the wrong
+widening answers a different question, so each addition below is paired with what it must *not* catch.
+
+| Cue added | The measured question | Why it is safe — and what it deliberately does not cover |
+|---|---|---|
+| `preko plana`, `iznad plana`, `isplanirano`, `prekoračio plan`, `odstupa od plana` — checked **before** the budget branch | `da li sam preko plana` | The rule lived *inside* `if (has('budžet'))`, so a question naming the judgement but not the noun was refused. Checked first because the phrase does not contain the word that branch looks for. With the noun it routes identically, so the two phrasings cannot disagree. |
+| `imam na računu` (and the `_ALL`/named-account split unchanged) | `koliko imam na računu` | The list knew `stanje na računu` and the inverted `na računu imam`, but not the natural order. ⚠️ **A bare `koliko imam` is deliberately not a cue**: it fronts goals, budgets and everything else a Household has, so treating it as "balance" would answer a different question. Whether the plan is `ACCOUNT_BALANCE` or `ACCOUNT_BALANCE_ALL` is decided by the **Household's own account names** — the demo has `Tekući račun`, so the same question resolves that account and answers for it. |
+| `novca ostaje` | `koliko mi novca ostaje` | `koliko mi ostaje` missed the version with a word inserted. The **budget** branch is ordered first and still wins for `koliko mi je ostalo od budžeta`, which the spec asserts. |
+| `dao`, `dala`, `dali`, `kupovao`, `kupovala`, `placao`/`plaćao` as spend verbs | `koliko sam dao za kiriju` | Adding a verb cannot make an unanswerable question answerable: that branch answers only when a Category, Merchant, Account or Tag resolved and refuses otherwise — so a question about a name the Household does not have still refuses rather than totalling everything. Asserted in both directions. |
+
+**Verified live 8/8** (`/tmp/verify-a3.mjs`), and **the battery went 28 → 31 answered, 9 → 6 refused**.
+The six are the re-classified ones above: two English (A-3b), `Maxi`/`Maksiju` (a fold gap),
+`kolika mi je penzija` and `kada mi sledeća plata dolazi` (a registry gap), and `koliko sam dao za
+kiriju` (correct as it stands — this Household has no such Category). All four additions are also
+asserted in `query-planner.spec.ts`, including the cases they must **not** catch.
+
+> **Not decided here:** English. The planner has no English cues and no English period phrases while the
+> catalogue is English-primary (ADR-019), and the two English questions in the battery are the visible
+> half of it — `resolvePeriod` is Serbian-only, so even a fully translated cue list would answer
+> *"how much did I spend last month"* with **this** month. A-3b owns that, with the ADR-019 amendment it
+> needs: one ordered rule list where each rule's phrases are per-locale, rather than a second rule list
+> that would let the locales drift apart.
 
 ---
 
