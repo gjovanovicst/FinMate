@@ -5,6 +5,7 @@ import { Router, RouterLink } from '@angular/router';
 import { ErrorMessageService } from '../../core/api/error-message.service';
 import { AuthStore } from '../../core/auth/auth.store';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { AUTH_STYLES } from './auth.styles';
 
 @Component({
   selector: 'fm-sign-in',
@@ -38,6 +39,12 @@ import { I18nService } from '../../core/i18n/i18n.service';
           />
         </label>
 
+        <!-- The way into the recovery flow (F-28, task 5.8). It sits under the fields rather than in the
+             alternate-links row, because "I cannot get in" is part of signing in. -->
+        <p class="auth__forgot">
+          <a routerLink="/reset-password">{{ i18n.t('signIn.forgot') }}</a>
+        </p>
+
         <!-- role="alert" so a screen reader announces the failure immediately rather than
              leaving the user to discover it by re-reading the form. -->
         @if (error()) {
@@ -54,70 +61,7 @@ import { I18nService } from '../../core/i18n/i18n.service';
       </p>
     </section>
   `,
-  styles: [
-    `
-      .auth {
-        max-inline-size: 380px;
-        margin-inline: auto;
-        padding-block-start: var(--space-6);
-      }
-      .auth__title {
-        font-size: var(--text-2xl);
-        margin-block: 0 var(--space-5);
-      }
-      .auth__form {
-        display: grid;
-        gap: var(--space-4);
-      }
-      .field {
-        display: grid;
-        gap: var(--space-1);
-      }
-      .field__label {
-        font-size: var(--text-sm);
-        color: var(--color-text-muted);
-      }
-      .field__input {
-        padding: var(--space-3);
-        font: inherit;
-        color: var(--color-text);
-        background: var(--color-surface);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-      }
-      .field__input:focus-visible {
-        border-color: var(--color-primary);
-      }
-      .auth__error {
-        margin: 0;
-        color: var(--color-danger);
-        font-size: var(--text-sm);
-      }
-      .auth__submit {
-        padding: var(--space-3);
-        font: inherit;
-        font-weight: 600;
-        color: var(--color-primary-contrast);
-        background: var(--color-primary);
-        border: none;
-        border-radius: var(--radius-md);
-        cursor: pointer;
-        transition: background var(--motion-fast) ease;
-      }
-      .auth__submit:hover:not(:disabled) {
-        background: var(--color-primary-hover);
-      }
-      .auth__submit:disabled {
-        opacity: 0.6;
-        cursor: default;
-      }
-      .auth__alt {
-        margin-block-start: var(--space-5);
-        font-size: var(--text-sm);
-        color: var(--color-text-muted);
-      }
-    `,
-  ],
+  styles: [AUTH_STYLES],
 })
 export class SignInComponent {
   readonly i18n = inject(I18nService);

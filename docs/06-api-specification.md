@@ -253,6 +253,25 @@ type ConflictError {
 > `Path=/` and no `Domain`, which a narrow path rules out). The build has no subdomains and prefers the
 > narrow scope; if one is ever added, that choice has to be revisited. Recorded rather than reconciled
 > silently — the security posture is docs/08's to own.
+>
+> **Client screens (task 5.8).** `verify-email`, `request-password-reset` and `reset-password` now have
+> their screens, at the paths these mails already carried — `/verify-email?token=…` and
+> `/reset-password?token=…`, both unguarded because a signed-in visitor is exactly who clicks an emailed
+> link (docs/02 §2.1). Two facts about this group that the screens had to be written *around*, recorded
+> here because they are the API's behaviour and not the client's:
+>
+> - **`request-password-reset` answers `204` for any address** (deliberate — a different answer would be
+>   an account-enumeration oracle), so the screen may not tell the user whether their account exists, and
+>   its copy is conditional for that reason.
+> - **`verify-email` sets `users.email_verified_at`, and nothing reads that column.** `login` does not
+>   require it, and no operation is gated on it. Verification is therefore **advisory in this build**: the
+>   link must work, but confirming an address changes nothing yet. What it should gate is a product and
+>   security decision (docs/09 5.8 names it), not something a screen may imply.
+> - **There is no re-send operation.** `issueEmailToken` is called by `signup` and by
+>   `request-password-reset` only, so an expired `VERIFY_EMAIL` token has **no in-app recovery** — the
+>   honest reason it costs nothing today is the bullet above. Adding one is a self-service,
+>   session-scoped `POST /auth/resend-verification`; it is unscheduled and named here rather than
+>   discovered later.
 
 
 ### 2.1 Token strategy

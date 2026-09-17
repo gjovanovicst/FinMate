@@ -70,62 +70,64 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   back `degraded` — the moment docs/08 §6.6 asks for. The sheet and `/settings`' card are **one component**
   (`ui-consent-purpose`), so the provider/region/never-sent/trade disclosure cannot drift between the two
   screens; the sheet adds only the reason and three verbs (Allow, a first-class Decline, and *Not now*,
-  which defers without writing because `NOT_ASKED` is the *absence* of a row). Verified live at
-  320/768/1280 px, 22 checks; it also found **R-26** and the 48 px shell overflow, both **fixed in 4.3.1a**.
-- **And 4.3.5 closed R-26**: a cookie path is what the *browser* checks, and the server never sees the
-  `/api` its proxy strips — so the refresh cookie scoped to `/auth` while the browser asks for
-  `/api/auth/refresh` signed the user out on **every hard reload**. It now follows `PUBLIC_API_PREFIX`.
-  **Live 9/9.**
+  which defers without writing because `NOT_ASKED` is the *absence* of a row). The pass found **R-26** and
+  the 48 px shell overflow, both **fixed in 4.3.1a**.
+- **And 4.3.5 closed R-26**: a cookie path is what the *browser* checks. The refresh cookie was scoped to
+  `/auth` while the browser asks for `/api/auth/refresh`, so **every hard reload signed the user out**; it
+  now follows `PUBLIC_API_PREFIX`. **Live 9/9.**
 - **4.3.1d measured every screen instead of assuming, and it paid twice.** A browser instrument walked all
   20 routes at 320/768/1280 px **and in the light theme**, capturing a contact sheet for the human pass
-  (`.artifacts/visual-audit/contact-sheet.md`); it found a systemic contrast defect (`--color-text-subtle` at
+  (`.artifacts/visual-audit/`); it found a systemic contrast defect (`--color-text-subtle` at
   **3.31:1** over **153 element-route pairs**, plus three uncoloured anchors at **2.02:1**), fixed at the
   class level. **0 contrast failures and 0 overflow** remain (two inactive controls are **exempt**, WCAG
   1.4.3), and it measured the tap-target gap — **corrected and closed by 4.3.1e below**, which found 0
   failures of SC 2.5.8 and a floor mistakenly gated on the pointer (docs/15).
 - **4.3.6's offline pass found F-26's exit criterion failing; R-27 is now closed in full.** Against the
   **production build** with the network cut, **(a1)** the store backing could not follow the lock
-  (`OfflineStoreHolder` had no `invalidate()`, so a record that did reach IndexedDB was not read back) —
-  fixed with a `durability` signal the holder watches and a `generation` signal `SyncService` reacts to,
-  ADR-025's amendment; **(a2)** offline the composer's `accounts` query failed, so it sent
-  `defaultAccountId: null` and the server refused the batch — it now reads ADR-025 decision 5's taxonomy
-  cache. **Verified live 8/8.** **(b, [ADR-033](docs/14-decisions-and-risks.md))** an unlocked install whose
+  (`OfflineStoreHolder` had no `invalidate()`) — fixed with a `durability` signal the holder watches and a
+  `generation` signal `SyncService` reacts to, ADR-025's amendment; **(a2)** offline the composer sent
+  `defaultAccountId: null` because its `accounts` query failed, so the server refused the batch — it now
+  reads ADR-025 decision 5's taxonomy cache. **Live 8/8.** **(b, [ADR-033](docs/14-decisions-and-risks.md))** an unlocked install whose
   session could not be restored because *nothing answered* renders a **read-only offline shell** — one
   sentence, two links (`/pending`, `/transactions`' cached ledger), no navigation, and **nothing sent
-  without a session** — **verified live 13/13**. It also **refuted its own first reading** (*dropped as
-  sent*): the flush *is* refused.
+  without a session** — **live 13/13**. It also **refuted its own first reading**: the flush *is* refused.
 - **And 4.3.7 closed the AI-disclosure audit** ([ADR-034](docs/14-decisions-and-risks.md)): the consent
-  sheet names what a *caller* can reach and prints one sentence per destination; `/assistant` says how each
-  answer was worded, in the provenance panel, with a `/settings` link only when withheld consent caused the
-  fallback — and docs/06 §8.5's *"make the fallback invisible"* is amended, not ignored. Both verified live.
+  sheet names what a *caller* can reach, one sentence per destination; `/assistant` says how each answer was
+  worded, linking `/settings` only when withheld consent caused the fallback — docs/06 §8.5's *"make the
+  fallback invisible"* is amended, not ignored. **Both live.**
 - **4.3.4 put the bundle budgets in CI and measured accessibility with axe.** **4.3.4a**: `pnpm
   bundle:budget` measures each route's **cold cost** against docs/07 §11 — warn 90 %, fail 100 %, and a
-  route with no entry fails (which showed §11 names 8 routes and the router has 24; the rest are held to the
-  documented 320 KB). **4.3.4b**: axe over all 20 routes found **20 serious contrast violations — the active
-  nav item on every route, 3.85:1**, which 4.3.1d's instrument missed; fixed with `--color-primary-text`
-  (**0 critical / 0 serious** now), with 21 moderate nested-`<main>` findings named as their own task.
+  route with no entry fails (so the 18 routes §11 does not name are held to 320 KB). **4.3.4b**: axe over all 20 routes found **20 serious contrast violations — the active
+  nav item, 3.85:1**, which 4.3.1d's instrument missed; fixed with `--color-primary-text` (**0 critical /
+  0 serious**), with 21 moderate nested-`<main>` findings named as their own task.
   **Lighthouse could not run** (a sandboxed launcher temp dir) → deferred CI job.
 - **4.3.2 made the app installable and built the funnel that offers it.** **(a)** A manifest, four generated
-  icons (`pnpm icons:generate`, a dependency-free PNG encoder; maskable inside Android's safe zone,
-  `apple-touch-icon` for iOS) and both in the worker's asset group — verified by **asking Chrome**: CDP
-  `Page.getInstallabilityErrors` returns **none** and every icon's PNG header was decoded. **(b, docs/07
+  icons (`pnpm icons:generate`, a dependency-free PNG encoder; maskable in Android's safe zone,
+  `apple-touch-icon` for iOS) and both in the worker's asset group — **asked Chrome**:
+  `Page.getInstallabilityErrors` returns **none**, and each icon's PNG header was decoded. **(b, docs/07
   §4.7)** `core/install/` + `ui-install-sheet`: the sheet opens on the **2nd** capture that actually landed
-  (never during onboarding, never in `display-mode: standalone`, once and then only after a dismissal's 30
-  days), Chromium gets a real button that calls `beforeinstallprompt`, iOS gets the Share steps and **no**
+  (never in onboarding, never standalone, once, and again only after a dismissal's 30 days), Chromium gets
+  a real button that calls `beforeinstallprompt`, iOS gets the Share steps and **no**
   button it could not honour, and the two events §4.7 asks for are recorded on-device — **their sink does
   not exist** (docs/05 §10's web hooks are unwired), recorded as this task's residual. It reuses
-  `core/push`'s `isIos`/`isStandalone`. **Verified live 25/25**, axe 0 violations
-  on the sheet. ⚠️ The brand now lives in static assets too, so a rename is a search over five places.
+  `core/push`'s `isIos`/`isStandalone`. **Live 25/25**, axe 0 on the sheet. ⚠️ The brand now lives in
+  static assets too, so a rename is a search over five places.
 - **4.3.1e met the house touch-target rule, and corrected the finding it came from.** With SC 2.5.8's own
   exceptions implemented (inline, spacing), "17 controls under 24 px" is **0 failures** — most were hidden
-  native inputs whose **label** is the target. The real gap was the floor: `styles.css` carried 44 px since
-  0.8 but gated on `(pointer: coarse)`, so a phone passed and a 320 px desktop window did not, and every
-  audit had measured a *fine* pointer (docs/15). One token (`--control-size`: 44 compact/coarse, 32 dense)
-  plus an element rule, a class rule and four scoped overrides. **After: 0 controls below the floor** in 4
-  contexts × 2 households (3,880 pairs), 0 overflow, axe 0/0. The rhythm call goes to the human pass.
+  native inputs whose **label** is the target. The real gap was the floor: it had been gated on
+  `(pointer: coarse)` since 0.8, so a phone passed and a 320 px desktop window did not, and every audit had
+  measured a *fine* pointer (docs/15). One token (`--control-size`) plus three rules and four
+  scoped overrides. **After: 0 below the floor** in 4 contexts × 2 households (3,880 pairs), 0 overflow,
+  axe 0/0. The rhythm call goes to the human pass.
+- **5.8 closed the last broken user flow: the emailed links land on screens.** `/reset-password` (no token
+  ⇒ ask for the address; `?token=…` ⇒ ask for the new one) and `/verify-email?token=…`, at the paths the
+  mails already carried and **unguarded** — the reverse guard would bounce the signed-in person who clicks
+  an email. The four auth screens now share one style block and one password constant. **Live 17/17**
+  with Mailhog, including the link working while signed in and the demo password restored.
+  ⚠️ Named, not closed: `email_verified_at` is **read by nothing**, and there is **no re-send** (docs/09).
 - **Next**: the **human visual pass** (the new control rhythm, 4.3.1c's pinned capture bar, the nested-`<main>`
-  landmarks, and whether the install sheet should be a bottom sheet rather than a panel), then 4.3.3, the
-  password screens and 4.3.4b's Lighthouse job.
+  landmarks, and whether the install sheet should be a bottom sheet rather than a panel), then 4.3.3 and
+  4.3.4b's Lighthouse job.
 
 **The long form is in the docs.** Each task's decisions, deviations and live defects are recorded where
 they belong: docs/09 §6 (sequencing), docs/02's per-screen notes, docs/06 §5, docs/14 (ADRs and risks) and
@@ -161,13 +163,13 @@ docs/15 (gotchas).
 | CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → **seed** → lint → typecheck → test → **bundle budgets** → **evals** → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
 | Web (0.8) | Angular 22, **zoneless** + signals, ADR-006. Responsive shell (bottom nav → sidebar at 1024px), design tokens (`apps/web/src/styles.css`), `fm-money` as the only Money renderer, auth pages, Accounts consuming GraphQL |
 | i18n | `core/i18n/`: **English primary**, Serbian latin + cyrillic. Runtime catalogue (no rebuild), `TranslationKey` derived from `en`, `sr-Cyrl` generated at runtime. Language switcher in the shell |
-| Tests | **2620 pass** — 955 API + 275 ai + 272 domain + **855** web + 149 nlp + 108 rules-engine + 6 worker (plus `contracts`, which ships no specs and passes with none) |
+| Tests | **2635 pass** — 955 API + 275 ai + 272 domain + **870** web + 149 nlp + 108 rules-engine + 6 worker (plus `contracts`, which ships no specs and passes with none) |
 | Worker | `apps/worker` **boots and is scheduled** (ADR-022, task 3.4.1): five BullMQ jobs over the API's own services — `recurring.materialise`, `recurring.detect`, `insights.generate` (generate *and* evaluate since 3.4.4), `notifications.dispatch`, `files.purge` (4.1.1) — `nx run worker:serve`. The remaining jobs in docs/05 §8's table are unbuilt, and ADR-022 makes stating what makes a job idempotent a precondition for adding one |
 | Receipts (F-14) | `apps/api/src/modules/receipts` **implemented in 4.1.3**: `createReceipt`, `extractReceipt`, `addReceiptItem`/`updateReceiptItem`/`removeReceiptItem`, `reconcileReceipt`, `receipts`/`receipt`. Item categories come from the **same** `ClassificationService.parse` a typed fragment uses (auditable in `classification_decisions`); I-6 lives in `@finmate/domain/src/receipts.ts` with both sides of the tolerance asserted. **No `OCR` endpoint is routed** (ADR-032 decision 3 leaves `EMBEDDINGS` inert and routes only the endpoints the config names), so extraction honestly reports `AI_UNAVAILABLE:no-provider-configured` and manual itemisation is the path, and the detail screen therefore does not offer extraction at all; the **OCR webhook (§9.5)** is not built. `commitReceipt` and `DETACH_TRANSACTION` are (4.1.4a) and both screens that call them are (4.1.4b/4.1.5, `/receipts` + `/receipts/:id`). `CreateReceiptInput.attachmentId` is **required**, so a Receipt exists only over a photo — the library's capture action is the only way in. `receipts` is a plain list with no `filter`/`totalCount`, so the library reads the first 50 and says `{count} shown, newest first` rather than claiming a total |
 | Service worker (F-26) | `apps/web/ngsw-config.json` + `@angular/service-worker`, **ADR-024**. It caches the **app shell only** — `/index.html`, `/*.js`, `/*.css`, 39 built URLs in all — and declares **no `dataGroups`**, so no API response can enter the HTTP cache (the offline data cache is IndexedDB, docs/08 §3.9); `navigationUrls` explicitly excludes `/graphql`, `/api/**`, `/auth/**`, `/v1/**` and the health paths, so the shell never answers for the API. Registered in the **production build only** (`enabled: !isDevMode()`), so `web:serve` has no worker and the built `dist` is what gets verified. The update flow is a **non-dismissible banner** that activates only on the user's click. **Installable, with the docs/07 §4.7 funnel, since 4.3.2** (manifest, icons, sheet — Chrome-verified); the Playwright pass docs/10 §8.3 specifies does not exist, so the cache strategy is verified by serving the build. ⚠️ The deploy path must serve `ngsw-worker.js`/`ngsw.json` unhashed and revalidated (docs/11 §5, Q-7) |
 | Offline store (F-26) | `apps/web/src/app/core/offline/` — **ADR-025**. `offline-crypto` (AES-GCM-256, `OfflineDecryptError`, PBKDF2 key wrapping), `offline-key-provider` (the `OFFLINE_KEY_PROVIDER` token now resolves to the **app lock**, which reports `persistent = true` only while it is unlocked and delegates to `SessionKeyProvider` when no lock is configured), `offline-store` (encrypted `idb` over `outbox`/`snapshot`/`taxonomy` + a separate in-memory backing, TTLs 24 h/24 h/30 d, `sweep` on open, `purge`, the snapshot whitelist mapper) and `outbox` (ordered, idempotent flush with a pure retry/refusal classifier). `SnapshotService` (`core/offline/snapshot.service.ts`) is the same store's other consumer, and both go through one root-provided `OfflineStoreHolder`. ⚠️ **nothing confidential reaches disk until the app lock is armed** (ADR-025 decision 3): with no wrapping secret the store runs in memory and the outbox dies with the page. Arming it — `/settings` → `Bezbednost`, WebAuthn PRF or a PIN (ADR-029) — is *meant* to switch the backing to IndexedDB and make F-26's offline capture survive a reload (4.2.6b); and since 4.3.6a it really does — the provider announces a change and the holder and the queue react (ADR-025's amendment, R-27(a)). `idb` + `fake-indexeddb` are the only new dependencies. Since 4.3.6b the composer writes and reads the `taxonomy` record (categories + accounts), so an offline capture carries an account instead of being refused |
 | Attachments (F-34) | `apps/api/src/modules/files` **implemented in 4.1.1**: `POST /v1/files/presign`, `GET /v1/files/:id`, `attachment`/`commitAttachment`/`deleteAttachment`, and `files.purge`. Signing is in-repo SigV4 (**no vendor SDK**, ADR-023), storage is an injected seam that is inert without `S3_*`, and `pnpm storage:init` creates the bucket. ⚠️ **No virus scanner**: an accepted upload is `SKIPPED` (*not scanned*), never `CLEAN`; magic-byte sniffing, `Content-Disposition`/`nosniff` and re-encoding are unbuilt (docs/08 §9.4) |
-| Not yet built | **the password-reset and email-verify screens** — the API flow works and its mail links to `/reset-password`, which is not a route (docs/09 5.8); the remaining background jobs; production build for apps/api (its own decision); the dashboard's **pending strip** (the query selects no pending count; the queue's own count is the header chip); and the review-queue route for a re-classified offline row (it needs its own `ReviewReason` arm) |
+| Not yet built | the remaining background jobs; production build for apps/api (its own decision); the dashboard's **pending strip** (the query selects no pending count; the queue's own count is the header chip); and the review-queue route for a re-classified offline row (it needs its own `ReviewReason` arm) |
 | Known gap → task 2.3.3 | **COMPLETE in 2.3.3a + 2.3.3b.** The content ships from `packages/domain/src/seed/` (**39** category nodes, 131 distinct keywords, **62** merchants) and `/onboarding` seeds it: six steps, resume-at-step, Skip at every one, and a redirect from the dashboard for a Household that has not finished. **What is deliberately NOT in the wizard**, each recorded in docs/02 §4.1: step 1 previews the tree rather than editing it (the shipped `/categories` editor owns that, with I-11/I-12 enforced); step 5 writes a whole-household monthly Budget instead of "monthly income + savings target", because SavingGoal is task 3.3.2 and the budget model is expense-side; step 3 has a category picker the wireframe does not show, without which it could only learn a bill and never a person. Still open and **not** part of F-13: the classifier cannot resolve a *global* seed merchant (`loadContext` filters `merchants WHERE household_id`), which docs/02 §4.1 used to promise for a skipped step 4 — fixing it needs a precedence rule for a Household's copy-on-write duplicate, so onboarding step 4 avoids the question by creating the Household's own rows |
 | Known gap → **FIXED in 2.3.3, and it was the cold start itself** | **A keyword at the schema default weight can never decide a category.** docs/04 §5.4 decides from keywords only at a score of **2.0**; `category_keywords.weight` defaults to **1.0**. The shipped tree wrote all 137 keywords at the default, so a Household that completed onboarding step 1 had a full Serbian tree and **`Lidl 2000` still fell through to the AI** — or, with no provider, to the blocking lane. The demo Household hid it completely: its merchants carry `default_category_id`, and a merchant default is a different stage that always decides. Only a fresh signup exposed it. The tree now separates **`strong`** (weight 2.0, decisive alone: `lidl`, `gorivo`, `plata`, `struja`, `penzija`) from **`include`** (weight 1.0, needs corroboration: `market`, `kafa`, `voda`, `rata`) and **`exclude`** (hard-blocks on polarity). `kafa` is the case that shows why the split matters: buying coffee is `Kafa i kolači`, "kafa i mleko" is groceries. Both writers **raise** an existing keyword whose weight is wrong rather than skipping it, so an old Household repairs itself on its next onboarding visit. Asserted in `packages/domain/src/seed/seed.spec.ts` (every category with keywords has a decisive one) and `onboarding.integration.spec.ts` (the exit-criterion inputs decide with zero AI calls). docs/04 §8.1.3 |
 | Known gap → Phase 2 | **The fold is internally inconsistent for `đ`/`ђ` (verified).** Latin `đ` folds to `d` (hand-patched in 2.1.1 to fix the NFD gap) but Cyrillic `ђ` folds to `dj` (docs/04 §3.1's table). So `rođa` folds to `roda` while `рођа` folds to `rodja`, and the orthography-correct Cyrillic spelling of the canonical F-11 case resolves on the **trigram rung at 0.61 instead of normalized at 0.98** — a verify-lane match where an exact one was available. The other seven script pairs (`č/č`, `ć/ћ`, `š/ш`, `ž/ж`, `lj/љ`, `nj/њ`, `dž/џ`) are consistent; `đ/ђ` is the only broken one. Fix is one rule in `foldForMatching` (fold the digraph `dj`→`d` after transliteration, which does NOT change §3.1's transliteration table — `ђ`→`dj` stays correct for reading). It needs a re-fold of stored keywords/aliases, so do it before beta when there is no real data |
@@ -205,7 +207,7 @@ API serves `/auth/*` and `/graphql` without one (docs/06). Changing the prefix o
 produces a 404 that looks like an auth failure — and the same fact, in the other direction, is why
 `PUBLIC_API_PREFIX` exists: anything the browser path-scopes (the refresh cookie) must name the
 *browser's* path, because the API never sees the prefix.
-Verified working: lint 9/9, typecheck 9/9, 2620 tests, `pnpm test:evals` gating green, `web:build`, GraphQL over HTTP through the
+Verified working: lint 9/9, typecheck 9/9, 2635 tests, `pnpm test:evals` gating green, `web:build`, GraphQL over HTTP through the
 browser origin, the full signup → cookie → `/auth/me` → GraphQL flow, the presign → PUT to MinIO →
 `commitAttachment` → `302` download round trip (verified live, bytes compared), and `prisma migrate diff`
 reporting no drift. **CI seeds the globals (`pnpm db:seed`) before the suite**: three API integration specs
@@ -223,7 +225,7 @@ Read the document that owns your task before starting:
 | If you are… | Read first |
 |---|---|
 | starting any task | `docs/05-architecture.md` §2 — monorepo layout + the dependency rule |
-| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 161 entries, each saying what the failure looks like |
+| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 163 entries, each saying what the failure looks like |
 | touching money, Transactions, balances | `docs/03-domain-model.md` — **canonical glossary, DDL, invariants** |
 | adding or changing a feature | `docs/01-product-requirements.md` — the `F-xx` catalogue |
 | touching categorization, rules, prompts, AI | `docs/04-categorization-and-ai-engine.md` |
@@ -318,7 +320,7 @@ A change is not done until (doc 09 §8):
 
 ## Gotchas
 
-**The full list — 161 entries in 10 groups, each written to say what it looks like when it goes wrong —
+**The full list — 163 entries in 10 groups, each written to say what it looks like when it goes wrong —
 is [`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md). Read it before debugging
 anything that "should work".** It was split out because this file had grown past the instruction budget
 and was being truncated on load. The ones below stay here because they are the ones that bite hardest,

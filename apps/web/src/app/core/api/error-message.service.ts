@@ -32,7 +32,7 @@ export class ErrorMessageService {
     // `unreachable.ts`, because the auth store and the offline shell ask the same question (ADR-033).
     if (isUnreachable(error)) return this.i18n.t('error.UNREACHABLE');
 
-    const code = readCode(error);
+    const code = apiErrorCode(error);
     const key = code ? (`error.${code}` as TranslationKey) : undefined;
 
     // `t` falls back to the key itself when it is unknown, so a new server code shows as
@@ -44,7 +44,14 @@ export class ErrorMessageService {
   }
 }
 
-function readCode(error: unknown): string | null {
+/**
+ * The API's stable error `code`, read structurally.
+ *
+ * Exported because a screen sometimes has to branch on the code rather than render a sentence for it —
+ * `/reset-password` treats `VALIDATION_FAILED` as "this link is dead" (task 5.8). One reader, so the two
+ * places cannot disagree about where a code lives (docs/15).
+ */
+export function apiErrorCode(error: unknown): string | null {
   if (error && typeof error === 'object') {
     // GraphQLRequestError exposes `code` directly.
     if ('code' in error && typeof (error as { code?: unknown }).code === 'string') {

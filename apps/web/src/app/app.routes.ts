@@ -24,6 +24,22 @@ export const routes: Routes = [
     title: 'Registracija',
   },
   {
+    // Reached from an email link, so **no guard**: `anonymousGuard` would bounce a signed-in visitor to
+    // `/` and the reset would never happen, and a person who is signed in is exactly who clicks it
+    // (docs/15). The token, not a session, is what authorises the change.
+    path: 'reset-password',
+    loadComponent: () =>
+      import('./features/auth/reset-password.component').then((m) => m.ResetPasswordComponent),
+    title: 'Nova lozinka',
+  },
+  {
+    // Same reason as above: the confirmation link must work whether or not there is a session.
+    path: 'verify-email',
+    loadComponent: () =>
+      import('./features/auth/verify-email.component').then((m) => m.VerifyEmailComponent),
+    title: 'Potvrda email adrese',
+  },
+  {
     path: 'onboarding',
     canActivate: [authenticatedGuard],
     loadComponent: () =>

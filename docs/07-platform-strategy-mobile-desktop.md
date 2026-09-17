@@ -1047,7 +1047,8 @@ a self-launched Chrome did not take. That is an environment limitation, not a pr
 numbers belong with the CI job (a Linux runner has a writable temp dir), which is why that job is the
 deferred half of 4.3.4b rather than a locally-recorded number.
 
-⚠️ **Residual, recorded rather than hidden:** §11 names eight routes and the router has twenty-four, so
+⚠️ **Residual, recorded rather than hidden:** §11 names eight routes and the router has twenty-six (task 5.8's
+`/reset-password` and `/verify-email` are the newest two), so
 the rest are held to the single documented *total* (320 KB) through an explicit `UNLISTED` list in the
 tool. That list is what gives rule 7 teeth — a route in neither list fails the build — but naming a
 ceiling per route is a performance decision this task did not take. Also not built: the per-PR **delta

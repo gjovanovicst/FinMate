@@ -61,8 +61,10 @@ export const DOCUMENTED = [
  */
 export const UNLISTED = [
   'features/accounts/accounts.component.ts',
+  'features/auth/reset-password.component.ts',
   'features/auth/sign-in.component.ts',
   'features/auth/sign-up.component.ts',
+  'features/auth/verify-email.component.ts',
   'features/budgets/budgets.component.ts',
   'features/categories/categories.component.ts',
   'features/counterparties/counterparties.component.ts',

@@ -63,14 +63,31 @@ Household is resolved from the session, never the URL (ADR-008).
 
 | Route | Screen | F-IDs | Nav slot |
 |---|---|---|---|
-| `/auth/sign-in`, `/auth/sign-up`, `/auth/verify`, `/auth/reset` | Auth | F-28 | — |
+| `/sign-in`, `/sign-up`, `/reset-password`, `/verify-email` | Auth | F-28 | — |
 
-> **Build state (4.3.6's follow-up).** Only **`/auth/sign-in`** and **`/auth/sign-up`** exist. `/auth/verify` and
-> `/auth/reset` are specified above and unbuilt, and the password-reset mail the API sends links to
-> `${APP_BASE_URL}/reset-password?token=…` — a **third** path that is not a route either, so the link lands on the
-> shell with nothing in the outlet. The API half is complete and verified live (request → Mailhog → consume → sign
-> in), so this is UI only; scheduled as docs/09's **5.8**, with F-28. Until it ships, a forgotten password is
-> recovered through the API (or by a developer), which is not a beta-launchable state.
+> **Build state (5.8).** **All four exist**, and the row above was corrected to the paths that ship: the
+> inventory used to name `/auth/verify` and `/auth/reset`, which were never built, while the mails have always
+> linked to `/verify-email` and `/reset-password` — the app's convention is a flat kebab-case route beside
+> `/sign-in`, and the API's own endpoints are `verify-email`/`reset-password`. So the two screens were added at
+> **the paths the emails already carry** rather than renaming the mail template. Both are **unguarded**: the
+> reverse guard would bounce a signed-in visitor (exactly who clicks an emailed link) to `/`, and the token — not
+> a session — is what authorises the change.
+>
+> **`/reset-password` is one route with two questions**: no `token` asks for the address (reachable from
+> *Zaboravio si lozinku?* on `/sign-in`), and `?token=…` asks for the new password. The request answer is
+> deliberately the same whether or not the account exists, because the API answers `204` for any address; a spent
+> or expired token turns into the one action that helps — *Zatraži novi link*. The screen and `/sign-in` were
+> formerly one form twice over; the four auth screens now share one style block and one password-policy constant
+> (`features/auth/auth.styles.ts`, `password-policy.ts`). **Verified live 17/17** against the production build,
+> with Mailhog as the mail source: the link works **while signed in**, the changed password signs in, the demo
+> password was restored through the same flow, and a second click on a confirmation link reports the dead link.
+>
+> ⚠️ **Two gaps this task found and did not close, both named in docs/09's 5.8 row.** (1) `users.email_verified_at`
+> is written by `/verify-email` and **read by nothing** — logging in does not require it and no feature is gated on
+> it, so the confirmation screen's failure copy says so rather than implying a lockout; deciding what verification
+> *should* gate is a product and security decision, not a UI one. (2) There is **no way to re-send a verification
+> email**: only signup and the password-reset request issue tokens, so an expired confirmation link has no in-app
+> recovery. It costs the user nothing today *because* nothing is gated — the two gaps are the same gap.
 
 | `/onboarding` | Onboarding wizard | F-13 | — |
 | `/` | Dashboard | F-19, F-21 | Danas |

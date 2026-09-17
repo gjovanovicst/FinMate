@@ -1436,6 +1436,30 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   still fine, and the harness silently measures an empty case. Assert
   `matchMedia('(pointer: coarse)').matches` in the probe and print it, so a context says what it is.
 
+- **A router-bound `input()` is written `undefined` for an absent query parameter, which overrides the
+  input's own default — and `.trim()` then throws.** `/reset-password` and `/verify-email` read
+  `?token=…` (F-28, task 5.8), and the first version declared `readonly token = input('')` with the
+  router's `withComponentInputBinding` supposed to fill it. Navigating to `/reset-password` **without**
+  the parameter did not leave the default in place: the router wrote `undefined`, the component's
+  `this.token().trim()` threw `Cannot read properties of undefined (reading 'trim')` inside change
+  detection, and the page rendered an empty shell with no message (the unit specs set the input directly,
+  so all of them passed — the production build's first live visit is what found it). `input.required()`
+  is safe because a missing value is then a build-time-shaped error rather than a silent `undefined`; for
+  an **optional** parameter this codebase's convention is to read `ActivatedRoute.queryParamMap` and keep
+  the value in a signal, which is what `transactions.component.ts` does. That is also the only version
+  that survives the component's own *Request a new link* navigation: the router reuses the instance when
+  only the query changes, so a `snapshot` read at construction would keep serving the dead token.
+
+- **A `computed` over a reactive form caches for ever, because `errors` and `value` are not signals.**
+  The reset screen's "the two passwords are not the same" message was `computed(() =>
+  form.hasError('mismatch') && repeat.value !== '')`. The form's state is plain properties, so the
+  computation had **no dependencies to track**: it evaluated once (on the first read, when the field was
+  empty) and then returned the same `false` for the life of the component — the message never appeared,
+  in the browser or in the spec. A method is correct here (zoneless change detection re-renders on the
+  input event); a `signal` fed from `form.valueChanges` is the other option, and is worth it only when
+  something else consumes the value. The general rule: **`computed` tracks signals, and a reactive form
+  has none.**
+
 ## 10. Cross-cutting rules of the codebase
 
 - **A live check that measures the wrong element lies in both directions.** Three times in 4.3.1 a

@@ -78,6 +78,38 @@ export class AuthStore {
     this.restoreFailureSignal.set(null);
   }
 
+  /**
+   * Ask for a password-reset link (F-28, task 5.8).
+   *
+   * The API answers `204` even for an unknown address, so nothing here can report whether the account
+   * exists — that is deliberate, and the screen's copy has to keep the same promise (docs/06 §2).
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    await firstValueFrom(this.http.post('/api/auth/request-password-reset', { email }));
+  }
+
+  /**
+   * Consume a reset link.
+   *
+   * The API revokes **every** session for the user once this succeeds (a reset implies the old
+   * credentials may be compromised), so local state is cleared here: the access token this store may
+   * still hold is dead the moment the password changes, and the caller sends the person to sign-in.
+   */
+  async resetPassword(token: string, password: string): Promise<void> {
+    await firstValueFrom(this.http.post('/api/auth/reset-password', { token, password }));
+    this.clear();
+  }
+
+  /**
+   * Confirm an email address (F-28, task 5.8).
+   *
+   * The token is one-shot — consumed by the first call — so a screen that posts it twice reports a
+   * failure the second time and must not treat that as an error of its own.
+   */
+  async verifyEmail(token: string): Promise<void> {
+    await firstValueFrom(this.http.post('/api/auth/verify-email', { token }));
+  }
+
   async signOut(): Promise<void> {
     try {
       await firstValueFrom(this.http.post('/api/auth/logout', {}));

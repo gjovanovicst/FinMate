@@ -427,6 +427,45 @@ export const en = {
   'signIn.submitting': 'Signing in…',
   'signIn.noAccount': 'No account yet?',
   'signIn.register': 'Create one',
+  'signIn.forgot': 'Forgot your password?',
+
+  // ---- password reset (F-28, task 5.8) ----
+  // The request answer is the same whether or not the address exists: the API answers 204 either way
+  // so that this screen cannot be used to find out who has an account.
+  'reset.title': 'Reset password',
+  'reset.requestIntro': 'Enter the email on your account and we will send a link for setting a new password.',
+  'reset.email': 'Email',
+  'reset.requestSubmit': 'Send the link',
+  'reset.requestSubmitting': 'Sending…',
+  'reset.sentTitle': 'Check your email',
+  'reset.sent': 'If an account exists for {email}, the link is on its way. Use it soon — it expires.',
+  'reset.setTitle': 'New password',
+  'reset.setIntro': 'Choose a new password. Every device is signed out once it is changed.',
+  'reset.newPassword': 'New password',
+  'reset.repeat': 'Repeat password',
+  'reset.passwordHint': 'At least {min} characters.',
+  'reset.mismatch': 'The two passwords are not the same.',
+  'reset.setSubmit': 'Set the password',
+  'reset.setSubmitting': 'Saving…',
+  'reset.doneTitle': 'Password changed',
+  'reset.done': 'Sign in with the new password.',
+  'reset.expiredTitle': 'This link cannot be used',
+  'reset.expired': 'The link is invalid or has expired. Request a new one and use the newest email.',
+  'reset.requestAnother': 'Request a new link',
+  'reset.toSignIn': 'Back to sign in',
+
+  // ---- email confirmation (F-28, task 5.8) ----
+  // ⚠️ `verify.failed` says the truth as the build stands: `users.email_verified_at` is written here
+  // and **read nowhere**, so a dead verification link costs the user nothing today (docs/09 5.8).
+  'verify.title': 'Confirming your email',
+  'verify.working': 'Checking the link…',
+  'verify.doneTitle': 'Email confirmed',
+  'verify.done': 'Thank you — your address is confirmed.',
+  'verify.failedTitle': 'This link cannot be used',
+  'verify.failed': 'The link is invalid or has expired. You can sign in and keep using the app — confirming the address is not required yet.',
+  'verify.missing': 'This link is incomplete. Open the link from the email again.',
+  'verify.toApp': 'Open the app',
+  'verify.toSignIn': 'Sign in',
 
   // ---- sign up ----
   'signUp.title': 'Create account',

@@ -5,15 +5,15 @@ import { Router, RouterLink } from '@angular/router';
 import { ErrorMessageService } from '../../core/api/error-message.service';
 import { AuthStore } from '../../core/auth/auth.store';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { AUTH_STYLES } from './auth.styles';
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from './password-policy';
 
 /**
  * Sign-up.
  *
- * The password rule mirrors `PasswordService.MIN_PASSWORD_LENGTH` (12) on the server. Duplicating a
- * policy is normally a smell, but a client that only learns the rule after a round trip is worse —
- * and the server still enforces it, so this is a UX convenience, never the control.
+ * The password rule lives in `password-policy.ts` (it mirrors `PasswordService` on the API) and the
+ * form styles in `auth.styles.ts`, so this screen and the reset screen cannot drift about either.
  */
-const MIN_PASSWORD_LENGTH = 12;
 
 @Component({
   selector: 'fm-sign-up',
@@ -66,75 +66,7 @@ const MIN_PASSWORD_LENGTH = 12;
       <p class="auth__alt">{{ i18n.t('signUp.haveAccount') }} <a routerLink="/sign-in">{{ i18n.t('signUp.signIn') }}</a></p>
     </section>
   `,
-  styles: [
-    `
-      .auth {
-        max-inline-size: 380px;
-        margin-inline: auto;
-        padding-block-start: var(--space-6);
-      }
-      .auth__title {
-        font-size: var(--text-2xl);
-        margin-block: 0 var(--space-2);
-      }
-      .auth__hint {
-        margin-block: 0 var(--space-5);
-        font-size: var(--text-sm);
-        color: var(--color-text-muted);
-      }
-      .auth__form {
-        display: grid;
-        gap: var(--space-4);
-      }
-      .field {
-        display: grid;
-        gap: var(--space-1);
-      }
-      .field__label {
-        font-size: var(--text-sm);
-        color: var(--color-text-muted);
-      }
-      .field__hint {
-        font-size: var(--text-xs);
-        color: var(--color-text-subtle);
-      }
-      .field__input {
-        padding: var(--space-3);
-        font: inherit;
-        color: var(--color-text);
-        background: var(--color-surface);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-      }
-      .auth__error {
-        margin: 0;
-        color: var(--color-danger);
-        font-size: var(--text-sm);
-      }
-      .auth__submit {
-        padding: var(--space-3);
-        font: inherit;
-        font-weight: 600;
-        color: var(--color-primary-contrast);
-        background: var(--color-primary);
-        border: none;
-        border-radius: var(--radius-md);
-        cursor: pointer;
-      }
-      .auth__submit:hover:not(:disabled) {
-        background: var(--color-primary-hover);
-      }
-      .auth__submit:disabled {
-        opacity: 0.6;
-        cursor: default;
-      }
-      .auth__alt {
-        margin-block-start: var(--space-5);
-        font-size: var(--text-sm);
-        color: var(--color-text-muted);
-      }
-    `,
-  ],
+  styles: [AUTH_STYLES],
 })
 export class SignUpComponent {
   readonly i18n = inject(I18nService);
@@ -148,7 +80,14 @@ export class SignUpComponent {
   readonly form = this.fb.nonNullable.group({
     displayName: ['', [Validators.required, Validators.maxLength(80)]],
     email: ['', [Validators.required, Validators.email]],
-    password: ['', [Validators.required, Validators.minLength(MIN_PASSWORD_LENGTH)]],
+    password: [
+      '',
+      [
+        Validators.required,
+        Validators.minLength(MIN_PASSWORD_LENGTH),
+        Validators.maxLength(MAX_PASSWORD_LENGTH),
+      ],
+    ],
   });
 
   readonly submitting = signal(false);
