@@ -267,6 +267,15 @@ configured). The first run of the harness found and fixed two real defects — s
 | 5.5 | Onboarding funnel instrumentation + product analytics | 1.5 | Needed to read the launch metrics |
 | 5.6 | Load test at 10× expected beta volume; cost review vs. the model in [12](12-monetization-and-pricing.md) | 1 | |
 | 5.7 | Beta ops: invite flow, feedback capture, support runbook, incident checklist | 2 | |
+| 4.3.7 | **AI disclosure honesty — added by the 2026-09-17 AI audit.** Two things the routing change did not
+fix, both about telling the truth on screen: (a) **`/assistant` does not say when an answer is a
+deterministic template** — `narrationMode`/`reason` are deliberately unrendered, which was defensible when
+every deployment fell back and is now the only way to tell a narrated answer from a fallback (measured: the
+model answers in the Household locale, the fallback in English, which is a *clue* rather than a statement);
+(b) **`aiEgress` can name a task no code performs** — `PARSE` is routed and disclosed while only `CLASSIFY`
+is ever called (`AiClassifier` has no parse; `packages/nlp` parses locally), so the consent sheet could
+disclose an egress that never happens. Either drop `PARSE` from `ROUTED_TASKS` or make the disclosure name
+what is called; both are small, both need a decision about what the sheet promises | 0.5 | F-28, F-23 |
 | 5.8 | **The password-reset and email-verify screens — added by a live finding (see below).** docs/02 §2 lists
 `/auth/verify` and `/auth/reset` in the screen inventory and neither exists; the app has sign-in and sign-up only.
 The API half works end to end — `POST /auth/request-password-reset` mails a token, `POST /auth/reset-password`

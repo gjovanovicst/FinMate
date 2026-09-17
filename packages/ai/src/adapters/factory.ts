@@ -105,7 +105,17 @@ export function createDeepSeekProvider(
     path: '/chat/completions',
     responseFormat: 'json_object',
     ...(options.now === undefined ? {} : { now: options.now }),
-    models: { PARSE: DEEPSEEK_DEFAULT_MODEL, CLASSIFY: DEEPSEEK_DEFAULT_MODEL, ...options.models },
+    // `NARRATE` as well as the two classification tasks: docs/04 §9 routes it, the interface requires
+    // it, and a factory that omits it turns a legitimate narration route — an EEA host, or a
+    // non-EEA one this Household has consented to — into `TASK_NOT_SUPPORTED` at runtime, which the
+    // assistant can only answer with the template. `LOCAL` declared every task it serves from the
+    // start; the two cloud factories did not, and the gap was found live on `/assistant` (2026-09-17).
+    models: {
+      PARSE: DEEPSEEK_DEFAULT_MODEL,
+      CLASSIFY: DEEPSEEK_DEFAULT_MODEL,
+      NARRATE: DEEPSEEK_DEFAULT_MODEL,
+      ...options.models,
+    },
     ...(options.extraBody === undefined ? {} : { extraBody: options.extraBody }),
     ...(options.timeouts === undefined ? {} : { timeouts: options.timeouts }),
   };
@@ -129,7 +139,14 @@ export function createOpenAiProvider(options: EndpointAdapterOptions): OpenAiCom
     path: '/v1/chat/completions',
     responseFormat: 'json_schema',
     ...(options.now === undefined ? {} : { now: options.now }),
-    models: { PARSE: OPENAI_DEFAULT_MODEL, CLASSIFY: OPENAI_DEFAULT_MODEL, ...options.models },
+    // Same three chat tasks as DeepSeek's (see the note there): `NARRATE` belongs to the endpoint's
+    // model list, not to a capability flag.
+    models: {
+      PARSE: OPENAI_DEFAULT_MODEL,
+      CLASSIFY: OPENAI_DEFAULT_MODEL,
+      NARRATE: OPENAI_DEFAULT_MODEL,
+      ...options.models,
+    },
     supportsOcr: true,
     supportsEmbed: false,
     ...(options.extraBody === undefined ? {} : { extraBody: options.extraBody }),

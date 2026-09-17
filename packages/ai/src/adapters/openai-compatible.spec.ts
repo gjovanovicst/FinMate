@@ -506,6 +506,30 @@ describe('capability reporting', () => {
     expect(provider.supports('OCR')).toBe(false);
   });
 
+  it('gives every chat endpoint a model for each task docs/04 section 9 routes to it', () => {
+    // The chat tasks are `PARSE`, `CLASSIFY` and `NARRATE`; `LOCAL` additionally carries `OCR`
+    // and `EMBED`. A factory that omits one does not fail at boot — the adapter answers
+    // `TASK_NOT_SUPPORTED` on the first call instead, which the assistant renders as a template
+    // answer. That is exactly how `NARRATE` was missing from both cloud factories until 2026-09-17.
+    const unused = { post: () => Promise.reject(new Error('unused')) } as never;
+    const chat = ['PARSE', 'CLASSIFY', 'NARRATE'] as const;
+
+    const deepseek = createDeepSeekProvider({ endpoint: 'DEEPSEEK_GLOBAL', fetch: unused });
+    const openai = createOpenAiProvider({ baseUrl: 'https://eu.example/v1', fetch: unused });
+    const local = createLocalProvider({ baseUrl: 'http://localhost:11434', fetch: unused });
+
+    for (const task of chat) {
+      expect(deepseek.supports(task), `DEEPSEEK_GLOBAL ${task}`).toBe(true);
+      expect(openai.supports(task), `OPENAI_EU ${task}`).toBe(true);
+      expect(local.supports(task), `LOCAL ${task}`).toBe(true);
+    }
+    expect(local.supports('OCR')).toBe(true);
+    expect(local.supports('EMBED')).toBe(true);
+    // Neither cloud endpoint claims a task it has no model for.
+    expect(deepseek.supports('OCR')).toBe(false);
+    expect(deepseek.supports('EMBED')).toBe(false);
+  });
+
   it('names the endpoints that have no adapter yet', () => {
     expect(UNIMPLEMENTED_ENDPOINTS).toEqual(['ANTHROPIC_EU', 'GEMINI_EU']);
   });

@@ -795,6 +795,17 @@ const routing: Record<Task, { primary: Endpoint; fallback: Endpoint | null }> = 
 > means (there is no default), and DeepSeek's own platform is named `DEEPSEEK_GLOBAL` and reaches a
 > Household only with recorded consent.
 
+**A factory's model map is part of the routing table (measured 2026-09-17).** An adapter declares
+which tasks it can serve by *listing a model for them* — "a task with no entry is not supported by this
+adapter" — and the two cloud factories shipped with `PARSE` and `CLASSIFY` only while `LOCAL` listed all
+five. `NARRATE` was implemented, routed and disclosed by `aiEgress`, and still refused at call time with
+`TASK_NOT_SUPPORTED`, so `/assistant` fell back to the template on every question. The maps now declare
+`NARRATE` as well, and `openai-compatible.spec.ts` asserts each factory declares every chat task. Routing
+`NARRATE` to `DEEPSEEK_GLOBAL` is legitimate under the residency rule above (non-EEA, consent-gated) and is
+what the dev `.env` does; verified live end to end — `narrationMode: LLM`, a Serbian answer, ~1.2 s and 117
+micros, and withdrawing `AI_DATA_PROCESSING` drops the same question to `TEMPLATE_FALLBACK` with
+`CONSENT_DECLINED` before any socket is opened.
+
 Cross-cutting requirements on every adapter:
 
 - **Timeouts** (2 s parse/classify, 8 s narrate, 20 s OCR) with one retry on transient failure only.

@@ -1041,6 +1041,19 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   backing. A fix has to do both halves — rebuild **and** re-read — and the honest test is the user-visible
   one, not a count of IndexedDB records: reload, unlock, open the tray, and see the entry with its state. **Both halves are fixed in 4.3.6a** and verified live 4/4 against the production build.
 
+- **A task an adapter implements but a factory never declares is `TASK_NOT_SUPPORTED` at runtime.** The
+  assistant answered every question with the deterministic template — `narrationMode: TEMPLATE_FALLBACK`,
+  `reason: PROVIDER_UNAVAILABLE:TASK_NOT_SUPPORTED` — while `aiEgress` listed `NARRATE` as routed. Both cloud
+  factories declared only `PARSE` and `CLASSIFY` in their model map; `LOCAL` declared all five. The adapter's
+  `narrate()`/`callNarrate()` were implemented and tested, and the router's own `supportsTask` said yes, so the
+  refusal came from *inside* the adapter, where "a task with no entry in `models` is not supported by this
+  adapter" is the rule. A deployment that configured EEA-hosted narration — the configuration docs/04 §9
+  describes as the intended one — therefore got templates, silently, and the reason named the *task*, not the
+  map. Fixed by declaring `NARRATE` in both cloud factories, with a spec asserting every factory declares each
+  chat task. Two lessons: **`aiEgress` reports the routing table, not the adapter's capability**, so it is not
+  proof that a call will work; and when a seam has an `UNCONFIGURED_*` twin, read the factory's model map before
+  believing a task is routed.
+
 - **The same suite can differ from CI by *collation*, not by code.** The run right after the seed fix failed
   on one assertion: `tags.integration.spec.ts` listed `['alpha', 'Beta', '#vanredno']` where the test expected
   `['#vanredno', 'Beta', 'alpha']`. Nothing in the code had changed — the **database's collation** had. That
