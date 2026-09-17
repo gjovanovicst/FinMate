@@ -974,18 +974,19 @@ The tables hold platform content beside the Household’s own rows, which is whe
   "re-fold the data" migration, check which of the two you actually have: **matching self-heals; identity
   does not** (docs/04 §8.1.7).
 
-- **The planner's *exact* tier is `folded.includes(name)` — a substring test, not word equality — so a
-  `CategoryKeyword` can match *inside* an inflected word.** The shipped tree lists the merchant names
-  `maxi`, `lidl`, `idea`, `dis` as strong keywords of `Supermarket` (docs/04 §8.1.3), so
-  *"koliko sam potrošio u Maksiju"* resolves **both** that Category (keyword `maksi` sitting inside
-  `maksiju`) and the `Maxi` Merchant — and the router's `hasCategory` branch wins while `scopePhrase`
-  prefers the Merchant, so the answer is the **Category subtree's** total wearing the label *"at Maxi"*.
-  This is pre-existing (`u Lidlu` already did it) and A-9's comment claims a keyword matches "as a whole
-  word only", which the code does not do; A-10's fold only made it reachable for `Maksiju` too. The
-  battery cannot see it because its frozen context omits the seed's merchant-name keywords. When a scope
-  resolves to something surprising, **print `matchedOn` before blaming a rung**: the substring tier fires
-  before the case-ending rung ever runs, so "the stem matched" is usually the wrong explanation
-  (docs/06 §8.13, docs/16 A-12/A-13).
+- **A matcher tier named "exact" can be a *substring* test — and when it is, a keyword matches inside an
+  inflected word.** The planner's exact tier was `folded.includes(name)` for both names and keywords, so
+  the seeded `Supermarket` keyword `maxi` (folded `maksi`) matched *inside* `maksiju`: both the Category
+  and the `Maxi` Merchant resolved, `hasCategory` won the route, and `scopePhrase` — which prefers a
+  Merchant — labelled the **Category subtree's** total *"at Maxi"* (ADR-017). It was already true of
+  `u Lidlu`. **A-12 made the keyword tier whole-word/whole-phrase** (`containsSequence`, its own
+  `allWords` tokenization, no case-ending rung) while **names keep both rungs** — Serbian endings attach
+  to names in a question (`na hranu` → `Hrana`). The price is asserted, not discovered: `na benzina` no
+  longer reaches `Gorivo` and refuses instead. Two lessons worth carrying: when a scope resolves to
+  something surprising, **print `matchedOn` before blaming a rung** (the substring tier fires before the
+  case-ending rung ever runs), and **a fixture context materially simpler than the shipped seed is a hole
+  in the gate** — the battery missed this for a whole task because it omitted the seed's merchant-name
+  keywords. See docs/06 §8.13–§8.14.
 
 ---
 

@@ -3479,9 +3479,9 @@ them would have published a contract the API could not keep. The module was regi
 >   fold makes a **typed** `Maksi 2000` resolve the `Maxi` Merchant in the classifier. The re-fold of stored
 >   keywords/aliases this was expected to need turned out to be **unnecessary**: every reader re-folds
 >   stored folded text through the current folder, so the change is retroactive (docs/04 §8.1.7, which also
->   records the one lookup that does *not* self-heal). ⚠️ **Live it answers the Category, not the Merchant**
->   — a pre-existing keyword-substring collision A-10 exposed, named as **A-12/A-13**; §8.13 has the
->   measurement.
+>   records the one lookup that does *not* self-heal). ✅ **Live it answered the Category rather than the
+>   Merchant** at first — a pre-existing keyword-substring collision A-10 exposed and A-12 **fixed** (§8.14):
+>   the demo now answers `SPEND_BY_MERCHANT` with `scope: at Maxi`.
 > - **`kolika mi je penzija` / `kada mi sledeća plata dolazi` were a REGISTRY gap — FIXED in A-9 (§8.12).**
 >   `Penzija` and `Plata` are INCOME Categories and both resolved, but no template aggregated income by
 >   Category: `SPEND_BY_CATEGORY` declares `kind: 'EXPENSE'` and `INCOME_TOTAL` accepts no `categoryId`.
@@ -3742,7 +3742,7 @@ income Category.** Two changes, both about the planner reading the taxonomy it w
 |---|---|---|
 | A Category matches on name, breadcrumb **and** its `INCLUDE` keywords | `NamedEntity.keywords`, filled from the same `CategoriesService.list` call (no second read) | The tree's vocabulary already exists and the **capture path classifies with it**: `benzin` is a seeded strong keyword of `Gorivo`, so a typed `benzin 5000` was categorised correctly while *"koliko sam potrošio na benzin"* could not resolve the Category the Household obviously meant. This was the single mechanism behind three of the battery's remaining refusals (`benzin`, `kiriju`, the English `food`), and it is why the fix is one change rather than three. |
 | **`EXCLUDE` keywords are never passed** | The filter lives in `assistant.service.plannerContext`, and a spec asserts both directions | An `EXCLUDE` keyword means *this word does not belong here* — docs/04 §5.4 uses one to keep `ulje` out of fuel. Using one to **attract** a question would invert the rule the classifier applies. The filter is at the service because that is where the rows are read; the planner cannot misuse what it is not given. |
-| A **name** outranks a **keyword** | A four-tier score: name-exact > name-stem > keyword-exact > keyword-stem | A name is what the user typed; a keyword is the tree's inference. Without the tiers, a keyword that also appears under a broader Category could steal a question that named a narrower one. |
+| A **name** outranks a **keyword** | A four-tier score: name-exact > name-stem > keyword-exact > **no keyword-stem tier at all** (A-9's rung, made whole-word in A-12) | A name is what the user typed; a keyword is the tree's inference. Without the tiers, a keyword that also appears under a broader Category could steal a question that named a narrower one. A keyword resolves only as a **whole word or contiguous phrase**, which is what stops the seeded `maxi` from matching inside `maksiju` — see §8.13. |
 | A spend question scoped to an **INCOME** Category **refuses** | `NamedEntity.kind`, and `hasIncomeCategory` in the cue set | `SPEND_BY_CATEGORY` declares `kind: 'EXPENSE'`, so resolving `Plata` for *"koliko sam potrošio na platu"* produced a confident **`0,00 RSD`** — a plausible figure answering a different question, which is what ADR-017 exists to prevent. The capture path reconciles category against direction in the pipeline's `finish()` (§2.2.7's finding); the planner had **no equivalent**, and now refuses. |
 | Refusals about an income entity offer no chip for it | `refusalSuggestions` already filters by routability | The direction gate makes every scoped suggestion about an income Category unroutable, so the filter drops it — and the user is not offered a chip that refuses in turn. Asserted in both the gate spec and live. |
 
@@ -3869,24 +3869,72 @@ battery's `koliko sam potrošio u Maksiju` **flips from refused to answerable** 
 fixture, taking it to **54 of 58 answerable**. The fold also does what docs/06 §8.8 promised for the
 classifier: a typed `Maksi 2000` now resolves the `Maxi` Merchant with zero AI calls (live-verified).
 
-⚠️ **What the fold exposed, and it is not the fold.** Measured live (2026-09-17), the demo answers
-*"koliko sam potrošio u Maksiju"* as **`SPEND_BY_CATEGORY`** — not `SPEND_BY_MERCHANT` as the battery
-declares. The cause is pre-existing and independent of A-10: the planner's *exact* tier is
-`folded.includes(foldedName)` — a **substring** test, not word equality — so the seeded `Supermarket`
-keyword `maxi` (folded `maksi`) matches *inside* `maksiju`, the Category resolves alongside the Merchant,
-and the router's `hasCategory` branch wins. `scopePhrase` then prefers the **Merchant**, so the answer
-renders the **Category subtree's** total under the label *"at Maxi"* — a figure wearing another scope's
-name, which is the ADR-017 risk. The same is already true of *"u Lidlu"* (keyword `lidl` inside `lidlu`).
-The battery cannot see it because its **frozen context does not carry the seed's merchant-name
-keywords** — the shipped tree lists `maxi`, `lidl`, `idea`, `dis` on `Supermarket` (docs/04 §8.1.3), and
-the fixture's `Supermarket` lists `supermarket`, `kupovina`. **Named and scheduled as A-12 (the keyword
-tier) and A-13 (which scope wins, and the label) in [docs/16](16-assistant-context-and-actions.md)**;
-`query-planner.spec.ts` pins the current behaviour so a fix cannot land silently.
+⚠️ **What the fold exposed, and it is not the fold — FIXED in A-12 (§8.14).** Measured live
+(2026-09-17), the demo answered *"koliko sam potrošio u Maksiju"* as **`SPEND_BY_CATEGORY`** — not
+`SPEND_BY_MERCHANT` as the battery declared. The cause was pre-existing and independent of A-10: the
+planner's *exact* tier was `folded.includes(foldedName)` — a **substring** test, not word equality — so
+the seeded `Supermarket` keyword `maxi` (folded `maksi`) matched *inside* `maksiju`, the Category
+resolved alongside the Merchant, and the router's `hasCategory` branch won. `scopePhrase` preferred the
+**Merchant**, so the answer rendered the **Category subtree's** total under the label *"at Maxi"* — a
+figure wearing another scope's name, the ADR-017 risk. The same was already true of *"u Lidlu"* (keyword
+`lidl` inside `lidlu`). The battery could not see it because its **frozen context did not carry the
+seed's merchant-name keywords** — the shipped tree lists `maxi`, `lidl`, `idea`, `dis` on `Supermarket`
+(docs/04 §8.1.3) and the fixture listed only `supermarket`, `kupovina`; **the fixture now carries them**,
+so the gate covers the collision rather than a convenient version of it. The remaining design question —
+which scope wins when a question genuinely names both, and what the label says — is **A-13**
+([docs/16](16-assistant-context-and-actions.md)).
 
 > **Named, not fixed:** the idempotency lookup above can leave a Household holding both `maxi` and `maksi`
 > as keywords for one Category — the same meaning twice. It is untidy rather than wrong (both re-fold to
 > `maksi` and both match), no release step repairs it, and a migration that "re-folded" rows would have
 > been a no-op with a false history. Recorded in docs/04 §8.1.7.
+
+### 8.14 The keyword rung was a substring test (task A-12, 2026-09-17)
+
+A-10's live probe found that the planner's **exact** tier was `folded.includes(foldedName)` — a
+substring test — while the module's own comment from A-9 claimed "a keyword matches as a **whole word
+only**". The implementation and its documentation disagreed, and the difference was a wrong **figure**
+rather than a missing one: the seeded `Supermarket` keyword `maxi` matched *inside* `maksiju`, so the
+Category resolved alongside the `Maxi` Merchant, `hasCategory` won the route, and `scopePhrase` named the
+Merchant — the Supermarket subtree's total under the label *"at Maxi"* (ADR-017). It was already true of
+*"u Lidlu"*.
+
+| Decision | Built | Why |
+|---|---|---|
+| A keyword matches **whole words**, or a **contiguous phrase** | `containsSequence(allWords, keywordWords)` on the keyword path; the name path keeps `folded.includes` and the stem rung | A keyword is a single token the tree lists, and a keyword takes no case ending. A name is different in kind: Serbian endings attach to it in a question (`na hranu` → `Hrana`, `od plate` → `Plata`), so names keep both rungs. The phrase form exists because the seed has multi-word keywords (`elektricna energija`), and a phrase has to match **in order**. |
+| Two tokenizations | `allWords` (every token) feeds the keyword rung; `words` (≥3 characters) feeds the stem rung | The keyword rung must see one- and two-character tokens; the stem rung never should. |
+| A keyword that folds to nothing never matches | `containsSequence` returns `false` for an empty needle | Otherwise an empty sequence is vacuously "contiguous" and that keyword would resolve every question in the Household. |
+
+**The trade-off, asserted rather than discovered.** `benzina` no longer reaches `Gorivo`: the keyword is
+`benzin`, a keyword takes no case-ending rung, and the Category's *name* is `Gorivo` — so *"na goriva"*
+still resolves while *"na benzina"* refuses. That is the rule A-9 chose, now actually implemented, and a
+question that resolves nothing **refuses**, which ADR-017 prefers to answering a different question.
+`query-planner.spec.ts` asserts all three directions: the collision is gone (`Maksiju` and `Lidlu` both
+answer `SPEND_BY_MERCHANT` with no Category slot), a multi-word keyword matches in order but not out of
+order, and the inflected keyword form refuses.
+
+**The battery's blind spot is closed with it.** The fixture's frozen context now carries the seed's
+merchant-name keywords (`lidl`, `maxi`, `idea`, `dis`, `univerexport`, `shopgo` on `Supermarket`), so the
+gate tests the collision instead of a context that happens to avoid it — `koliko sam potrošio u Maksiju`
+passes because the **Merchant** wins, not because the Category was absent.
+
+**Verified**: `query-planner.spec.ts` 71 tests, the battery 58/58 declarations, and **live 5/5**
+(`/tmp/verify-a12.mjs`): `u Maksiju` and `u Lidlu` both answer `SPEND_BY_MERCHANT` with
+`spend.byMerchant.v1` and `scope: at Maxi` / `at Lidl`; `na benzin` still resolves `Automobil / Gorivo`;
+`na benzina` refuses (the trade-off); and the classifier still resolves `Maksi 2000` to a `Maxi` Merchant
+with no AI call. ⚠️ The demo's `Maksiju` figure is `0,00 RSD` where the Category answer was
+`102.200,00` — **not** a scoping error. The demo holds **two** `Maxi` merchant rows (a pre-existing data
+duplicate, like the leftover `Test Hrana P1` category): the classifier resolved `01a0a539…`, whose row its
+spend is attributed to, while the planner's deterministic id tiebreak picks `01a09f3e…`, which has none.
+`spend-read-model.ts` filters by `merchant_id`, so a merchant with no rows is correctly zero — and the
+pre-A-12 answer was the *Category's* total wearing the Merchant's name, which is the defect this fixed.
+
+> **Still open, and it is a product decision (A-13):** A-12 removes the collision when the Category
+> matched only by a *shared keyword*. A question that names a Category **and** a Merchant outright
+> (*"na hranu u Lidlu"*) still resolves both, still routes by `hasCategory`, and still labels by the
+> Merchant. Which scope such a question means — the Merchant, the Category, or an intersection no
+> template can express — is not the matcher's to decide; [docs/16](16-assistant-context-and-actions.md)
+> A-13 carries it for the owner.
 
 ---
 

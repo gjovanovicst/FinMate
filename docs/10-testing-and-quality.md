@@ -825,12 +825,15 @@ declared refusals left, three are gaps — seed content for `kirija` and English
 asks *when* income arrives (`dueSoon` filters `kind: 'EXPENSE'`) — and the fourth is that deliberate
 direction-gate refusal.
 
-⚠️ **The frozen context is a limitation, not only a convenience.** It does not carry the shipped seed's
-merchant-name keywords (`maxi`, `lidl`, `idea`, `dis` on `Supermarket`, docs/04 §8.1.3), so
-`koliko sam potrošio u Maksiju` passes here as `SPEND_BY_MERCHANT` while the demo answers it as
-`SPEND_BY_CATEGORY` — the Category keyword matches *inside* the inflected word and outranks the Merchant.
-The gate is structurally blind to that collision, which is why it was found live rather than here; see
-docs/06 §8.13 and docs/16 A-12/A-13.
+⚠️ **A frozen context can hide a collision, and this one did — until A-12 closed it.** The battery once
+omitted the shipped seed's merchant-name keywords (`maxi`, `lidl`, `idea`, `dis` on `Supermarket`,
+docs/04 §8.1.3), so `koliko sam potrošio u Maksiju` passed here as `SPEND_BY_MERCHANT` while the demo
+answered it as `SPEND_BY_CATEGORY` — the Category keyword matched *inside* the inflected word and
+outranked the Merchant (a figure under another scope's label, ADR-017). The gate could not see it, which
+is why it was found live. **The context now carries those keywords**, and the keyword rung is whole-word
+(docs/06 §8.14), so the question passes for the right reason: the Merchant wins. The lesson generalizes —
+**a fixture context that is materially simpler than the shipped seed is a hole in the gate**, not just a
+convenience.
 
 ---
 

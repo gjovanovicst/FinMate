@@ -874,18 +874,41 @@ function matchEntityScored(
   namesOf: (entity: NamedEntity) => readonly string[],
   keywordsOf?: (entity: NamedEntity) => readonly string[],
 ): { readonly entity: NamedEntity; readonly exact: boolean } | null {
-  const words = folded.split(/[^a-z0-9]+/).filter((word) => word.length >= 3);
+  // Two tokenizations on purpose. `allWords` is every token, used by the **keyword** rung, which
+  // matches whole words (A-12); `words` drops one- and two-character tokens and feeds the case-ending
+  // rung, where a fragment that short cannot be evidence of a name.
+  const allWords = folded.split(/[^a-z0-9]+/).filter((word) => word.length > 0);
+  const words = allWords.filter((word) => word.length >= 3);
   const candidates: { entity: NamedEntity; score: number; exact: boolean }[] = [];
 
   const consider = (
     entity: NamedEntity,
     text: string,
     exactScore: number,
-    /** `null` disables the case-ending rung — see the keyword loop below for why that matters. */
+    /** `null` marks a **keyword**, which matches whole words only — see the keyword loop below. */
     stemScore: number | null,
   ): void => {
     const foldedName = normaliseForMatching(text);
     if (foldedName.length < 2) return;
+
+    if (stemScore === null) {
+      // ⚠️ A **keyword** matches as a whole word — or a whole contiguous phrase — and never as a
+      // substring of one, and it takes no case-ending rung either.
+      //
+      // Both halves matter. The substring test (`folded.includes`) let the seeded keyword `maxi`
+      // (folded `maksi`) match *inside* `maksiju`, so a question about the `Maxi` **Merchant** resolved
+      // the `Supermarket` **Category** too — and the router prefers a Category while `scopePhrase`
+      // prefers a Merchant, so the answer was one scope's total under the other's label (ADR-017).
+      // The stem rung let the keyword `zarada` match the verb `zaradio`, answering the unscoped income
+      // question with the salary. A keyword is a single token the tree lists; neither an inflection nor
+      // a neighbour is that token. Names keep both rungs — Serbian endings attach to names in a
+      // question (`na hranu` → `Hrana`, `od plate` → `Plata`). Found by A-10, fixed by A-12.
+      const keywordWords = foldedName.split(/[^a-z0-9]+/).filter((word) => word.length > 0);
+      if (containsSequence(allWords, keywordWords)) {
+        candidates.push({ entity, score: exactScore + foldedName.length, exact: true });
+      }
+      return;
+    }
 
     if (folded.includes(foldedName)) {
       // An exact occurrence: the strongest evidence at its tier, scored by how much of the question it
@@ -893,7 +916,6 @@ function matchEntityScored(
       candidates.push({ entity, score: exactScore + foldedName.length, exact: true });
       return;
     }
-    if (stemScore === null) return;
 
     const stem = longestSharedStem(foldedName, words);
     if (stem !== null) candidates.push({ entity, score: stemScore + stem, exact: false });
@@ -902,12 +924,6 @@ function matchEntityScored(
   for (const entity of entities) {
     for (const name of namesOf(entity)) consider(entity, name, SCORE.nameExact, SCORE.nameStem);
     for (const keyword of keywordsOf?.(entity) ?? []) {
-      // ⚠️ A keyword matches as a **whole word only** — the case-ending rung is *disabled*, not merely
-      // scored lower. A name takes Serbian case endings in a question ("na hranu", "od plate"); a
-      // keyword is a single token the tree lists, and letting it take the stem rung made a **verb**
-      // resolve a Category: `zarada` is a keyword of `Plata`, so the stem `zarad` matched `zaradio`,
-      // and *"koliko sam zaradio ovog meseca"* — the unscoped income question — answered the salary
-      // instead of the month's income. Exact matching keeps `benzin` working and leaves the verb alone.
       consider(entity, keyword, SCORE.keywordExact, null);
     }
   }
@@ -938,6 +954,28 @@ function longestSharedStem(name: string, words: readonly string[]): number | nul
     }
   }
   return best;
+}
+
+/**
+ * Whether `needle` occurs as a **contiguous token sequence** in `haystack`.
+ *
+ * This is what "a keyword matches as a whole word" means once a keyword may itself be a phrase
+ * (`elektricna energija`). An empty needle is never a match: a keyword that folds to nothing must not
+ * resolve every question in the Household.
+ */
+function containsSequence(haystack: readonly string[], needle: readonly string[]): boolean {
+  if (needle.length === 0 || needle.length > haystack.length) return false;
+  for (let start = 0; start + needle.length <= haystack.length; start += 1) {
+    let matched = true;
+    for (let offset = 0; offset < needle.length; offset += 1) {
+      if (haystack[start + offset] !== needle[offset]) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) return true;
+  }
+  return false;
 }
 
 /**

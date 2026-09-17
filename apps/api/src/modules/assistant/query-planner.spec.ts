@@ -433,20 +433,13 @@ describe('the x ↔ ks fold (A-10)', () => {
     expect(plan('koliko sam potrošio u Maxiju').intent).toBe('SPEND_BY_MERCHANT');
   });
 
-  it('pins the Category/Merchant collision the shipped seed creates (A-12/A-13 — a defect, not a spec)', () => {
-    // ⚠️ This test records **current, wrong** behaviour so that fixing it cannot be silent.
-    //
-    // The shipped tree lists the merchant names `maxi`/`lidl`/`idea`/`dis` as keywords of `Supermarket`
-    // (docs/04 §8.1.3), and this spec's `CONTEXT` deliberately does not. The matcher's *exact* tier is
-    // `folded.includes(foldedName)` — a substring test — so the keyword `maxi` (folded `maksi`) also
-    // matches *inside* `maksiju`. Both entities resolve, `hasCategory` wins the route, and
-    // `scopePhrase` then names the **Merchant**: the answer is the Category's total under the label
-    // "at Maxi", which is the ADR-017 risk. Measured live on the demo Household 2026-09-17.
-    //
-    // A-12 (make the keyword tier a whole word, which is what A-9's own comment already claims) and
-    // A-13 (which scope wins when both resolve) are scheduled in docs/16; docs/06 §8.13 has the
-    // measurement. When A-12 lands, the first expectation below flips to `SPEND_BY_MERCHANT` and this
-    // test should be rewritten to assert the fix.
+  it('is not hijacked by a Category keyword that shares the merchant name (A-12)', () => {
+    // The shipped tree lists the merchant names `maxi`/`lidl` as strong keywords of `Supermarket`
+    // (docs/04 §8.1.3), and this spec's `CONTEXT` omits them. Before A-12 the matcher's exact tier was
+    // `folded.includes(...)` — a substring test — so `maxi` (folded `maksi`) matched *inside* `maksiju`,
+    // both entities resolved, `hasCategory` won the route and `scopePhrase` named the Merchant: the
+    // answer was the Category subtree's total under the label "at Maxi". A keyword now matches whole
+    // words only, so the Merchant wins and the figure and its label agree.
     const seeded: PlannerContext = {
       ...CONTEXT,
       categories: CONTEXT.categories.map((category) =>
@@ -456,10 +449,52 @@ describe('the x ↔ ks fold (A-10)', () => {
       ),
     };
 
-    const hijacked = planQuestion('koliko sam potrošio u Maksiju', seeded);
-    expect(hijacked.intent).toBe('SPEND_BY_CATEGORY');
-    expect(hijacked.slots.categoryId).toBe('cat-market');
-    expect(hijacked.slots.merchantId).toBe('mer-maxi');
+    const outcome = planQuestion('koliko sam potrošio u Maksiju', seeded);
+    expect(outcome.intent).toBe('SPEND_BY_MERCHANT');
+    expect(outcome.slots.merchantId).toBe('mer-maxi');
+    expect(outcome.slots.categoryId).toBeUndefined();
+
+    // …and the same for `Lidlu`, which was already wrong before A-10.
+    const lidl = planQuestion('koliko sam potrošio u Lidlu', seeded);
+    expect(lidl.intent).toBe('SPEND_BY_MERCHANT');
+    expect(lidl.slots.merchantId).toBe('mer-lidl');
+    expect(lidl.slots.categoryId).toBeUndefined();
+  });
+});
+
+describe('a keyword matches whole words only (A-12)', () => {
+  it('still resolves a Category from its keyword typed as written', () => {
+    expect(plan('koliko sam potrošio na benzin').intent).toBe('SPEND_BY_CATEGORY');
+    expect(plan('koliko sam potrošio na benzin').slots.categoryId).toBe('cat-fuel');
+  });
+
+  it('resolves a multi-word keyword as a contiguous phrase', () => {
+    // The seeded `Struja` keyword is `elektricna energija`; the phrase has to match as a sequence, not
+    // as a substring of the whole question.
+    const context: PlannerContext = {
+      ...CONTEXT,
+      categories: [
+        ...CONTEXT.categories,
+        { id: 'cat-power', name: 'Struja', kind: 'EXPENSE', keywords: ['struja', 'elektricna energija'] },
+      ],
+    };
+    expect(planQuestion('koliko sam potrošio na elektricna energija', context).slots.categoryId).toBe(
+      'cat-power',
+    );
+    // Out of order is not the keyword.
+    expect(planQuestion('koliko sam potrošio na energija elektricna', context).intent).not.toBe(
+      'SPEND_BY_CATEGORY',
+    );
+  });
+
+  it('does not let an inflected keyword form resolve the Category — the documented trade-off', () => {
+    // `benzina` is a real Serbian form, and it no longer reaches `Gorivo`: the keyword `benzin` is not
+    // the word `benzina`, and a keyword takes no case-ending rung (A-9). The Category is named
+    // `Gorivo`, so *"na goriva"* still resolves through the **name** rung. This is the price of the
+    // rule, and it is asserted rather than left to be discovered: a question that resolves nothing
+    // refuses, which ADR-017 prefers to answering a different question.
+    expect(plan('koliko sam potrošio na benzina').intent).toBe('NO_TEMPLATE_MATCH');
+    expect(plan('koliko sam potrošio na goriva').intent).toBe('SPEND_BY_CATEGORY');
   });
 });
 
