@@ -469,8 +469,11 @@ import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-inline-size: 2.25rem;
-        min-block-size: 2.25rem;
+        /* var(--control-size), not a literal: this rule is scoped and therefore outranks the global
+           control floor in styles.css, so a second number here is how the bell stayed 36 px in the
+           4.3.1e measurement while everything around it grew (task 4.3.1e). */
+        min-inline-size: var(--control-size);
+        min-block-size: var(--control-size);
         border-radius: var(--radius-sm);
         color: var(--color-text-muted);
         text-decoration: none;
@@ -501,6 +504,7 @@ import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
         border-radius: var(--radius-lg);
       }
       .topbar__signout {
+        min-block-size: var(--control-size);
         background: none;
         border: 1px solid var(--color-border);
         border-radius: var(--radius-sm);

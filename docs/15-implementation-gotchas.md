@@ -1199,7 +1199,7 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   Both are JS template literals, so a backtick *terminates the string* and the remainder is parsed as
   code. The error names neither the file nor the real problem: `Failed to resolve styles at position
   N to a string` / `Failed to resolve template at position N`, usually surfacing as
-  `Angular compilation initialization failed`. **It has cost real time sixteen times**, and the shape of
+  `Angular compilation initialization failed`. **It has cost real time nineteen times**, and the shape of
   the cause never changes: a comment that names a property, a class or a CSS value reaches for backticks
   by reflex. Twice from a CSS comment documenting a property; three times in 2.3.2b from *two* HTML
   comments and a CSS comment written in the same sitting; again in 2.3.3b from a comment quoting
@@ -1207,9 +1207,17 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   comment naming the `NAV_ITEMS` constant; again in 4.2.1b from an HTML comment inside the shell
   template; again in 4.2.6b naming the new settings route; again in 4.2.7b quoting the tray's own *Zašto*
   line; again in 4.2.8b quoting the word `null` in the cached-list branch; again in 5.2a quoting a
-  computed's name in a comment *about* this trap; and then **five times in 4.3.1 alone** — five comment
-  blocks in one task, three of them in `styles:` blocks quoting a CSS value (`minmax(0, 1fr)`, `100vh`,
-  `flex-end`).
+  computed's name in a comment *about* this trap; **five times in 4.3.1 alone** — five comment blocks in
+  one task, three of them in `styles:` blocks quoting a CSS value (`minmax(0, 1fr)`, `100vh`,
+  `flex-end`); and **three times in 4.3.1e**, twice in a `styles:` comment naming a CSS property and once
+  in an HTML comment naming a class — each of the three found by the *build*, because that task ran
+  `web:build` between edits and did not run `eslint`.
+  **The cheapest detector is `eslint`, and it names the file.** Every one of those three is a *parse*
+  error to the TypeScript parser — `Parsing error: ',' expected` against the comment's own line — because
+  the stray backtick closes the literal and leaves the comment's prose as code. `nx run web:lint` reports
+  it in a second and points at the file; `web:build` reports `Failed to resolve styles at position N to a
+  string` and names **nothing at all**. So after editing a `template:`/`styles:` comment, run the linter
+  on that one file rather than rebuilding to find out.
   Two failure shapes, and they look different. When the stray backtick pairs with a *later* delimiter
   into something syntactically invalid, `tsc` reports `TS1005: ',' expected` or oxc reports
   `PARSE_ERROR` **at the first markup line after the comment** — naming neither the file's template nor
@@ -1409,6 +1417,24 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   funnel). The same class of mistake is a synthetic `beforeinstallprompt` dispatched with `page.goto`
   between two captures: a full page load tears the service down, and the deferred event lives in memory,
   so navigate through the router instead and re-fire the event after any reload you do need.
+
+- **A tap-target audit that compares boxes reports failures WCAG does not have — and a floor gated on the
+  pointer is invisible to an audit sized by viewport.** Both halves bit task 4.3.1e, and the first is what
+  made a scheduled task look bigger than it was. **SC 2.5.8** *Target Size (Minimum)* is 24×24 CSS px, but
+  it has exceptions that a `width < 24 || height < 24` sweep does not implement: **inline** targets (a link
+  in a sentence, or one whose size is set by the line-height of non-target text) and **spacing**
+  (undersized targets pass when a 24 px circle centred on each does not intersect another target — so
+  `pointToRect(centre, other) >= 12`, and `>= 24` centre-to-centre against another undersized target).
+  Re-measured that way, the reported "17 controls under 24 px" was **0 failures**: most were visually
+  hidden native inputs — a 13×13 checkbox, a `<select>`, a file input under `opacity: 0` — whose **label**
+  is the target the finger lands on, so the audit must judge the label's box, not the input's. **The
+  second half is the one to remember:** `styles.css` had carried a 44 px floor since task 0.8, but inside
+  `@media (pointer: coarse)` — so a real phone passed and a 320 px *desktop* window, which is `compact`
+  by docs/02 §9's own definition, never did. Every audit in this repo had measured a fine pointer, so the
+  gap was invisible to all of them. Playwright makes that mistake easy: **`hasTouch: true` does not make
+  `(pointer: coarse)` match** — without `isMobile: true` (or a device descriptor) the emulated pointer is
+  still fine, and the harness silently measures an empty case. Assert
+  `matchMedia('(pointer: coarse)').matches` in the probe and print it, so a context says what it is.
 
 ## 10. Cross-cutting rules of the codebase
 

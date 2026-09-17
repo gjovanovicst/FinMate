@@ -758,6 +758,20 @@ and any parallax. Motion is never required to understand a state change — the 
 | 9 | Charts have a table equivalent and a meaningful `aria-label` | Manual, per new chart |
 | 10 | Reduced-motion and forced-colors modes render correctly | DevTools emulation, both themes |
 
+> **Build state (4.3.1e).** The three automated items here have all run, with two caveats worth having
+> in writing. **Item 6** was built for 4.3.1e as a scripted sweep over all 20 routes that implements
+> SC 2.5.8's own exceptions rather than comparing boxes: the earlier "undersized" list was mostly hidden
+> native inputs whose **label** is the target, plus inline links, and the rest satisfied the **spacing**
+> exception — a 24 px circle centred on each target that touches nothing else. It measured fine and coarse pointers at 320 and 1280 px in two households and
+> found **0 controls below the floor** after the token landed. The trap it also recorded: Playwright's
+> `hasTouch: true` does **not** make `(pointer: coarse)` match — a harness without `isMobile` measures a
+> desktop pointer at 320 px, which is a real case but not the phone the rule was written for.
+> **Item 8** (`axe-core` on every route) is **run by hand, not automated in CI** — [09](09-implementation-plan.md)'s
+> 4.3.4 row records why the CI job is deferred, and this row's "Automated in CI" is the target rather than
+> the state. **Item 5** (contrast of the semantic tokens in both themes) is the instrument 4.3.1d and
+> 4.3.4b both built on, and it is what found the two contrast defects. Items 3 and 4 — screen readers on
+> six flows, and 200 % text scaling — still need a device.
+
 Automation catches roughly a third of real issues; items 1–4 and 9 need a human, and they are the ones
 historically skipped.
 

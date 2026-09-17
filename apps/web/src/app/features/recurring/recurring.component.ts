@@ -454,6 +454,7 @@ import {
         cursor: pointer;
       }
       .raw summary {
+        padding-block: var(--space-3);
         cursor: pointer;
         font-size: var(--text-xs);
         color: var(--color-text-muted);

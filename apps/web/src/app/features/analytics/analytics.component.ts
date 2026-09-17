@@ -339,7 +339,7 @@ import {
         gap: var(--space-1);
       }
       .pager__button {
-        min-inline-size: 2.5rem;
+        min-inline-size: var(--control-size);
         font-size: var(--text-lg);
         line-height: 1;
       }
@@ -444,6 +444,8 @@ import {
         cursor: pointer;
         font-size: var(--text-sm);
         color: var(--color-text-muted);
+        /* Padding, not min-block-size: the disclosure marker needs display: list-item (4.3.1e). */
+        padding-block: var(--space-3);
       }
       .table {
         inline-size: 100%;

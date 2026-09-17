@@ -729,6 +729,8 @@ const SEARCH_DEBOUNCE_MS = 300;
         align-items: center;
         gap: var(--space-2);
         font-size: var(--text-sm);
+        /* Same reason as the notification switch: the radio it wraps is 13 px (4.3.1e). */
+        min-block-size: var(--control-size);
       }
       .splits {
         display: grid;

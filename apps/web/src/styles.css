@@ -53,6 +53,16 @@
   --motion-fast: 120ms;
   --motion-base: 200ms;
 
+  /* ---- control size (task 4.3.1e) ----
+     The one metric behind every touch target. docs/02 §9 asks ≥44×44 px on `compact` and ≥32 px in
+     dense mode; docs/07 §3 asks 44 px on any **coarse pointer**. Those are two different triggers and
+     both are real — a 1280 px tablet is still a finger, and a 320 px desktop window is still a compact
+     layout — so the floor below is their **union**, which is why it is a token and not a declaration
+     per component. WCAG 2.2 SC 2.5.8's own floor is 24 px, and 4.3.1e measured that nothing in this app
+     fails it in either pointer context. */
+  --control-size: 2rem;
+  --control-size-compact: 2.75rem;
+
   /* ---- dark theme (default) ---- */
   --color-bg: #101014;
   --color-surface: #17171d;
@@ -162,14 +172,67 @@ body {
   }
 }
 
-/* Touch targets: 44px minimum on any pointer-coarse device (docs/07 §3). */
-@media (pointer: coarse) {
-  button,
-  a[role='button'],
-  [data-touch-target] {
-    min-block-size: 44px;
-    min-inline-size: 44px;
+/* The control floor (task 4.3.1e). Element-level **classes**, never bare `a`: an inline link inside a
+   sentence is exempt from SC 2.5.8 and growing it would reflow the sentence. Every component rolls its
+   own `.btn`/`.link`/`.chip`/`.field__input` with the same name, so one rule here reaches all of them;
+   a component that genuinely needs a different box overrides it, because a scoped selector outranks
+   this one. `summary` is deliberately absent — it keeps its UA disclosure marker only while it stays
+   `display: list-item`, so the two disclosures pad themselves instead (analytics, recurring). */
+@media (max-width: 599.98px), (pointer: coarse) {
+  :root {
+    --control-size: var(--control-size-compact);
   }
+}
+
+.btn,
+.chip,
+.link,
+.controls__csv,
+.hero__cta,
+.bar__label,
+.pager__button,
+.topbar__button,
+.skip-link,
+select,
+input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='file']) {
+  min-block-size: var(--control-size);
+}
+
+/* An anchor or button whose text is its whole content: the box grows, the text stays centred in it. */
+.btn,
+.chip,
+.link,
+.controls__csv,
+.hero__cta,
+.bar__label,
+.pager__button,
+.topbar__button,
+.skip-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Icon-only controls need the width too, or a 36×44 bell still misses the floor. */
+.pager__button,
+.topbar__button {
+  min-inline-size: var(--control-size);
+}
+
+/* Touch targets, by **element**: everything the platform calls a button, plus anything that says it
+   is one. The floor itself is `--control-size` (32 px dense, 44 px on a compact layout or a coarse
+   pointer), so the token above is the only number in this file.
+   This rule has been here since task 0.8, but gated on `(pointer: coarse)` alone, which is why a real
+   phone passed the house rule while a 320 px desktop window did not; 4.3.1e made it unconditional
+   rather than duplicating a floor per component. It does grow small **in-row** controls — the capture
+   row's remove button, the pager arrows, the category tree's twisty — which is what the plan row for
+   4.3.1e warned a blanket rule would do, and the visual pass is what judges whether the result is too
+   airy. */
+button,
+a[role='button'],
+[data-touch-target] {
+  min-block-size: var(--control-size);
+  min-inline-size: var(--control-size);
 }
 
 /* Screen-reader-only utility, used for labels and live regions. */

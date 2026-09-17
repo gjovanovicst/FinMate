@@ -217,7 +217,9 @@ const DELETE_BUDGET = /* GraphQL */ `
     }
 
     <p class="foot">
-      <a routerLink="/">{{ i18n.t('nav.dashboard') }}</a>
+      <!-- The link class is what gives this anchor the shared control floor (task 4.3.1e): it was the
+           last control in the app under the house rule's 44 px, and one class is the whole fix. -->
+      <a class="link" routerLink="/">{{ i18n.t('nav.dashboard') }}</a>
     </p>
   `,
   styles: [

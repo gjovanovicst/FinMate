@@ -337,6 +337,8 @@ import {
       display: flex;
       gap: 0.4rem;
       align-items: center;
+      /* The label is the target: the native checkbox inside is 13 px (task 4.3.1e). */
+      min-block-size: var(--control-size);
     }
     .toggle--small {
       font-size: 0.9rem;

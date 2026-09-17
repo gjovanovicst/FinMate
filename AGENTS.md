@@ -81,8 +81,8 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   (`.artifacts/visual-audit/contact-sheet.md`); it found a systemic contrast defect (`--color-text-subtle` at
   **3.31:1** over **153 element-route pairs**, plus three uncoloured anchors at **2.02:1**), fixed at the
   class level. **0 contrast failures and 0 overflow** remain (two inactive controls are **exempt**, WCAG
-  1.4.3), and it **measured** the tap-target gap: **17 controls under WCAG's 24 px floor** and 37 more under
-  this repo's 44 px rule — open as **4.3.1e**.
+  1.4.3), and it measured the tap-target gap — **corrected and closed by 4.3.1e below**, which found 0
+  failures of SC 2.5.8 and a floor mistakenly gated on the pointer (docs/15).
 - **4.3.6's offline pass found F-26's exit criterion failing; R-27 is now closed in full.** Against the
   **production build** with the network cut, **(a1)** the store backing could not follow the lock
   (`OfflineStoreHolder` had no `invalidate()`, so a record that did reach IndexedDB was not read back) —
@@ -92,8 +92,8 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   cache. **Verified live 8/8.** **(b, [ADR-033](docs/14-decisions-and-risks.md))** an unlocked install whose
   session could not be restored because *nothing answered* renders a **read-only offline shell** — one
   sentence, two links (`/pending`, `/transactions`' cached ledger), no navigation, and **nothing sent
-  without a session** — **verified live 13/13**. The pass also **refuted its own first reading** (*dropped
-  as sent*): the flush *is* refused by the server, and the tray says so.
+  without a session** — **verified live 13/13**. It also **refuted its own first reading** (*dropped as
+  sent*): the flush *is* refused.
 - **And 4.3.7 closed the AI-disclosure audit** ([ADR-034](docs/14-decisions-and-risks.md)): the consent
   sheet names what a *caller* can reach and prints one sentence per destination; `/assistant` says how each
   answer was worded, in the provenance panel, with a `/settings` link only when withheld consent caused the
@@ -104,7 +104,7 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   documented 320 KB). **4.3.4b**: axe over all 20 routes found **20 serious contrast violations — the active
   nav item on every route, 3.85:1**, which 4.3.1d's instrument missed; fixed with `--color-primary-text`
   (**0 critical / 0 serious** now), with 21 moderate nested-`<main>` findings named as their own task.
-  **Lighthouse could not run** (its launcher's temp dir is outside the file sandbox) → deferred CI job.
+  **Lighthouse could not run** (a sandboxed launcher temp dir) → deferred CI job.
 - **4.3.2 made the app installable and built the funnel that offers it.** **(a)** A manifest, four generated
   icons (`pnpm icons:generate`, a dependency-free PNG encoder; maskable inside Android's safe zone,
   `apple-touch-icon` for iOS) and both in the worker's asset group — verified by **asking Chrome**: CDP
@@ -114,11 +114,18 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   days), Chromium gets a real button that calls `beforeinstallprompt`, iOS gets the Share steps and **no**
   button it could not honour, and the two events §4.7 asks for are recorded on-device — **their sink does
   not exist** (docs/05 §10's web hooks are unwired), recorded as this task's residual. It reuses
-  `core/push`'s `isIos`/`isStandalone` rather than a second copy. **Verified live 25/25**, axe 0 violations
+  `core/push`'s `isIos`/`isStandalone`. **Verified live 25/25**, axe 0 violations
   on the sheet. ⚠️ The brand now lives in static assets too, so a rename is a search over five places.
-- **Next**: the **human visual pass** (4.3.1e's 17 controls under 24 px, 4.3.1c's pinned capture bar, the
-  nested-`<main>` landmarks, and whether the install sheet should be a bottom sheet rather than a panel),
-  then 4.3.3 and 4.3.4b's Lighthouse job.
+- **4.3.1e met the house touch-target rule, and corrected the finding it came from.** With SC 2.5.8's own
+  exceptions implemented (inline, spacing), "17 controls under 24 px" is **0 failures** — most were hidden
+  native inputs whose **label** is the target. The real gap was the floor: `styles.css` carried 44 px since
+  0.8 but gated on `(pointer: coarse)`, so a phone passed and a 320 px desktop window did not, and every
+  audit had measured a *fine* pointer (docs/15). One token (`--control-size`: 44 compact/coarse, 32 dense)
+  plus an element rule, a class rule and four scoped overrides. **After: 0 controls below the floor** in 4
+  contexts × 2 households (3,880 pairs), 0 overflow, axe 0/0. The rhythm call goes to the human pass.
+- **Next**: the **human visual pass** (the new control rhythm, 4.3.1c's pinned capture bar, the nested-`<main>`
+  landmarks, and whether the install sheet should be a bottom sheet rather than a panel), then 4.3.3, the
+  password screens and 4.3.4b's Lighthouse job.
 
 **The long form is in the docs.** Each task's decisions, deviations and live defects are recorded where
 they belong: docs/09 §6 (sequencing), docs/02's per-screen notes, docs/06 §5, docs/14 (ADRs and risks) and
@@ -216,7 +223,7 @@ Read the document that owns your task before starting:
 | If you are… | Read first |
 |---|---|
 | starting any task | `docs/05-architecture.md` §2 — monorepo layout + the dependency rule |
-| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 160 entries, each saying what the failure looks like |
+| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 161 entries, each saying what the failure looks like |
 | touching money, Transactions, balances | `docs/03-domain-model.md` — **canonical glossary, DDL, invariants** |
 | adding or changing a feature | `docs/01-product-requirements.md` — the `F-xx` catalogue |
 | touching categorization, rules, prompts, AI | `docs/04-categorization-and-ai-engine.md` |
@@ -311,7 +318,7 @@ A change is not done until (doc 09 §8):
 
 ## Gotchas
 
-**The full list — 160 entries in 10 groups, each written to say what it looks like when it goes wrong —
+**The full list — 161 entries in 10 groups, each written to say what it looks like when it goes wrong —
 is [`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md). Read it before debugging
 anything that "should work".** It was split out because this file had grown past the instruction budget
 and was being truncated on load. The ones below stay here because they are the ones that bite hardest,
