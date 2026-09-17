@@ -32,10 +32,13 @@ const CONTEXT: PlannerContext = {
   today: '2026-09-17',
   currency: 'RSD',
   categories: [
-    { id: 'cat-food', name: 'Hrana', path: 'Hrana' },
-    { id: 'cat-market', name: 'Supermarket', path: 'Hrana / Supermarket' },
-    { id: 'cat-fuel', name: 'Gorivo', path: 'Automobil / Gorivo' },
-    { id: 'cat-fun', name: 'Zabava', path: 'Zabava' },
+    // The keywords are the tree's own vocabulary, which the capture path classifies with — and the
+    // directions, because a spend question may not be scoped to an INCOME Category.
+    { id: 'cat-food', name: 'Hrana', path: 'Hrana', kind: 'EXPENSE', keywords: ['namirnice', 'market'] },
+    { id: 'cat-market', name: 'Supermarket', path: 'Hrana / Supermarket', kind: 'EXPENSE' },
+    { id: 'cat-fuel', name: 'Gorivo', path: 'Automobil / Gorivo', kind: 'EXPENSE', keywords: ['benzin', 'dizel'] },
+    { id: 'cat-fun', name: 'Zabava', path: 'Zabava', kind: 'EXPENSE' },
+    { id: 'cat-salary', name: 'Plata', path: 'Plata', kind: 'INCOME', keywords: ['zarada'] },
   ],
   merchants: [
     { id: 'mer-lidl', name: 'Lidl' },
@@ -373,6 +376,39 @@ describe('English questions route the same way (A-3b)', () => {
   });
 });
 
+describe('Category keywords and direction (A-5)', () => {
+  it('resolves a Category by its keyword when no name matches', () => {
+    // `benzin` is a seeded strong keyword of `Gorivo`. The capture path categorises a typed
+    // `benzin 5000` correctly; the planner could not resolve the Category at all until A-5.
+    expect(plan('koliko sam potrošio na benzin').intent).toBe('SPEND_BY_CATEGORY');
+    expect(plan('koliko sam potrošio na benzin').slots.categoryId).toBe('cat-fuel');
+    // The provenance names the entity it resolved, so a wrong resolution is visible rather than silent.
+    expect(plan('koliko sam potrošio na benzin').matchedOn).toContain('category:Gorivo');
+  });
+
+  it('lets a NAME outrank a keyword, because a name is what the user typed', () => {
+    // `market` is a keyword of `Hrana`; `Supermarket` is a Category's name. A question that says
+    // `supermarket` must resolve the Category that is *called* that, not the one that lists it.
+    expect(plan('koliko sam potrošio u supermarketu').slots.categoryId).toBe('cat-market');
+    expect(plan('koliko sam potrošio na namirnice').slots.categoryId).toBe('cat-food');
+  });
+
+  it('still refuses a scope with neither a name nor a keyword', () => {
+    expect(plan('koliko sam potrošio na egzotično voće').intent).toBe('NO_TEMPLATE_MATCH');
+  });
+
+  it('refuses a spend question scoped to an INCOME Category instead of answering 0,00', () => {
+    // `SPEND_BY_CATEGORY` declares `kind: 'EXPENSE'`, so resolving `Plata` for a spend question produced
+    // a confident `0,00 RSD` — a plausible figure answering a different question. The capture path
+    // reconciles direction in the pipeline's `finish()`; the planner now refuses too.
+    const result = plan('koliko sam potrošio na platu');
+    expect(result.intent).toBe('NO_TEMPLATE_MATCH');
+    expect(result.matchedOn).toContain('category:Plata');
+    // …and the same Category resolves through its own keyword, with the same outcome.
+    expect(plan('koliko sam potrošio na zaradu').intent).toBe('NO_TEMPLATE_MATCH');
+  });
+});
+
 describe('entity matching, and the two misroutes the A-4 fixture found', () => {
   it('does not match a name on a three-character prefix (`Apoteka Benu` vs `benzin`)', () => {
     // The stem rung bounded the difference by the *shorter* word, so a four-character name could
@@ -386,9 +422,15 @@ describe('entity matching, and the two misroutes the A-4 fixture found', () => {
     const result = planQuestion('koliko sam potrošio na benzin', withPharmacy);
     expect(result.slots.merchantId).toBeUndefined();
     expect(result.matchedOn.some((entry) => entry.includes('Benu'))).toBe(false);
-    // No Category or Merchant in this context is named `benzin`, so the scope is unresolved and the
-    // planner refuses rather than answering the month's whole spend.
-    expect(result.intent).toBe('NO_TEMPLATE_MATCH');
+    // The scope resolves through the **Category keyword** (`benzin` belongs to `Gorivo`) — the right
+    // answer, one letter away from the pharmacy that used to win. A context with neither the keyword nor
+    // the name refuses rather than answering the month's whole spend.
+    expect(result.slots.categoryId).toBe('cat-fuel');
+    const withoutFuel: PlannerContext = {
+      ...CONTEXT,
+      categories: CONTEXT.categories.filter((category) => category.id !== 'cat-fuel'),
+    };
+    expect(planQuestion('koliko sam potrošio na benzin', withoutFuel).intent).toBe('NO_TEMPLATE_MATCH');
   });
 
   it('still matches a real Serbian case ending', () => {
@@ -477,7 +519,10 @@ describe('refusal', () => {
     expect(result.suggestions?.length).toBeGreaterThan(0);
     // Nothing in a refusal can be rendered as a number, because there is nothing to render.
     expect(result.slots.limit).toBeUndefined();
-    expect(result.slots.categoryId).toBeUndefined();
+    // ⚠️ `slots.categoryId` is deliberately **not** asserted empty. Resolving an entity and refusing the
+    // question are independent: this one resolves `Plata` (through the stem rung — `platim` shares
+    // `pla`), and that resolution is what lets the refusal offer a question about it. What must stay
+    // empty is the *figure*, and that is the assembler's guarantee (see the fact-assembly spec).
   });
 
   it('refuses an empty question rather than defaulting to a total', () => {

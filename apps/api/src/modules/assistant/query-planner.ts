@@ -62,6 +62,27 @@ export interface NamedEntity {
    * not reference is exactly the kind of confidently-empty answer ADR-017 exists to prevent.
    */
   readonly owned?: boolean;
+  /**
+   * A Category's **INCLUDE** keywords — the same vocabulary the capture path classifies with.
+   *
+   * A question resolves scope through names **and** keywords, because the Household's tree already
+   * carries both: `benzin` is a seeded keyword of `Gorivo`, so a typed `benzin 5000` is categorised
+   * correctly while *"koliko sam potrošio na benzin"* could not resolve the Category before this. Only
+   * `INCLUDE` keywords are passed — an `EXCLUDE` keyword means *this word does not belong here*
+   * (docs/04 §5.4 blocks `ulje` from fuel), so using one to attract a question would invert the rule
+   * the classifier applies. A keyword scores **below** a name, so a Category the user actually named
+   * always wins over one merely inferred.
+   */
+  readonly keywords?: readonly string[];
+  /**
+   * A Category's direction, so a **spend** question cannot be scoped to an income Category.
+   *
+   * `SPEND_BY_CATEGORY` declares `kind: 'EXPENSE'`, so resolving `Plata` for *"koliko sam potrošio na
+   * platu"* produced a confident `0,00 RSD` — a plausible figure answering a different question. The
+   * pipeline reconciles category against direction on the capture path (§2.2.7's `finish()`); the
+   * planner had no equivalent, and now refuses instead.
+   */
+  readonly kind?: 'EXPENSE' | 'INCOME';
 }
 
 export interface PlannerContext {
@@ -187,7 +208,13 @@ function planQuestionCore(
   const period = resolvePeriod(folded, context.today);
   const matchedOn: string[] = [period.matchedOn];
 
-  const category = matchEntity(folded, context.categories, (entity) => [entity.name, ...(entity.path === undefined ? [] : [entity.path])]);
+  // Categories match on name, breadcrumb **and** INCLUDE keywords — the vocabulary the classifier uses.
+  const category = matchEntity(
+    folded,
+    context.categories,
+    (entity) => [entity.name, ...(entity.path === undefined ? [] : [entity.path])],
+    (entity) => entity.keywords ?? [],
+  );
   const merchant = matchEntity(folded, context.merchants, (entity) => [entity.name]);
   const account = matchEntity(folded, context.accounts, (entity) => [entity.name]);
   const tag = matchEntity(folded, context.tags, (entity) => [entity.name]);
@@ -221,7 +248,11 @@ function planQuestionCore(
   if (limit !== null) matchedOn.push(`limit:${limit}`);
 
   const intent = resolveIntent(folded, {
-    hasCategory: category !== null,
+    // A **spend** question may only be scoped to an EXPENSE Category. `SPEND_BY_CATEGORY` declares
+    // `kind: 'EXPENSE'`, so resolving an income Category (`Plata`, `Penzija`) used to answer `0,00 RSD`
+    // — confidently, and to a different question. The direction is now evidence the router reads.
+    hasCategory: category !== null && category.kind !== 'INCOME',
+    hasIncomeCategory: category !== null && category.kind === 'INCOME',
     hasMerchant: merchant !== null,
     hasAccount: account !== null,
     hasTag: tag !== null,
@@ -490,6 +521,8 @@ const ENGLISH_MONTHS: readonly string[] = [
 
 interface IntentCues {
   readonly hasCategory: boolean;
+  /** A Category resolved and it is an INCOME one, so no EXPENSE template may be scoped to it. */
+  readonly hasIncomeCategory: boolean;
   readonly hasMerchant: boolean;
   readonly hasAccount: boolean;
   readonly hasTag: boolean;
@@ -732,6 +765,10 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
     if (cues.hasMerchant) return note('SPEND_BY_MERCHANT', 'potrošio + prodavac');
     if (cues.hasAccount) return note('SPEND_BY_ACCOUNT', 'potrošio + račun');
     if (cues.hasTag) return note('SPEND_BY_TAG', 'potrošio + oznaka');
+    // The Category resolved and points the other way. Answering the expense total for an income
+    // Category is `0,00 RSD` — a plausible figure that belongs to a different question — so the
+    // question refuses, exactly as the capture path refuses a direction mismatch (§2.2.7).
+    if (cues.hasIncomeCategory) return note('NO_TEMPLATE_MATCH', 'kategorija je prihod');
     // "na hranu", "za gorivo", "u lidlu" — the question is **scoped** to something, and if that
     // something is not a name this Household has, answering the unscoped total would answer a
     // different question under the one that was asked. Refusing is the honest outcome (ADR-017).
@@ -768,9 +805,22 @@ function matchEntity(
   folded: string,
   entities: readonly NamedEntity[],
   namesOf: (entity: NamedEntity) => readonly string[],
+  keywordsOf?: (entity: NamedEntity) => readonly string[],
 ): NamedEntity | null {
-  return matchEntityScored(folded, entities, namesOf)?.entity ?? null;
+  return matchEntityScored(folded, entities, namesOf, keywordsOf)?.entity ?? null;
 }
+
+/**
+ * How strong each kind of evidence is. A **name** always beats a **keyword**: the user typed the name of
+ * the thing they mean, while a keyword is the tree's inference, and a Category whose keyword happens to
+ * appear in a question must not outrank one the question actually names.
+ */
+const SCORE = {
+  nameExact: 400,
+  nameStem: 300,
+  keywordExact: 200,
+  keywordStem: 100,
+} as const;
 
 /**
  * A match, and **whether the name occurred as written** or was reached on the stem rung.
@@ -789,23 +839,35 @@ function matchEntityScored(
   folded: string,
   entities: readonly NamedEntity[],
   namesOf: (entity: NamedEntity) => readonly string[],
+  keywordsOf?: (entity: NamedEntity) => readonly string[],
 ): { readonly entity: NamedEntity; readonly exact: boolean } | null {
   const words = folded.split(/[^a-z0-9]+/).filter((word) => word.length >= 3);
   const candidates: { entity: NamedEntity; score: number; exact: boolean }[] = [];
 
+  const consider = (
+    entity: NamedEntity,
+    text: string,
+    exactScore: number,
+    stemScore: number,
+  ): void => {
+    const foldedName = normaliseForMatching(text);
+    if (foldedName.length < 2) return;
+
+    if (folded.includes(foldedName)) {
+      // An exact occurrence: the strongest evidence at its tier, scored by how much of the question it
+      // covers, so `Hrana / Supermarket` beats `Hrana` when both appear.
+      candidates.push({ entity, score: exactScore + foldedName.length, exact: true });
+      return;
+    }
+
+    const stem = longestSharedStem(foldedName, words);
+    if (stem !== null) candidates.push({ entity, score: stemScore + stem, exact: false });
+  };
+
   for (const entity of entities) {
-    for (const name of namesOf(entity)) {
-      const foldedName = normaliseForMatching(name);
-      if (foldedName.length < 2) continue;
-
-      if (folded.includes(foldedName)) {
-        // An exact occurrence: the strongest evidence, scored by how much of the question it covers.
-        candidates.push({ entity, score: foldedName.length + 100, exact: true });
-        continue;
-      }
-
-      const stem = longestSharedStem(foldedName, words);
-      if (stem !== null) candidates.push({ entity, score: stem, exact: false });
+    for (const name of namesOf(entity)) consider(entity, name, SCORE.nameExact, SCORE.nameStem);
+    for (const keyword of keywordsOf?.(entity) ?? []) {
+      consider(entity, keyword, SCORE.keywordExact, SCORE.keywordStem);
     }
   }
 

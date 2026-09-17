@@ -50,6 +50,7 @@ import { isRunnable, planQuestion } from '../modules/assistant/query-planner';
 import {
   buildDataset,
   findWorkspaceRoot,
+  declaredRunnable,
   loadAssistantBattery,
   loadCategoryExpectations,
   loadGoldenFixtures,
@@ -408,11 +409,10 @@ async function main(): Promise<number> {
   const battery = loadAssistantBattery(root);
   const plannerOutcomes: readonly PlannerOutcome[] = battery.questions.map((declared) => {
     const plan = planQuestion(declared.question, battery.context);
-    const declaredRunnable = declared.runnable ?? true;
     return {
       question: declared.question,
       declaredIntent: declared.intent,
-      declaredRunnable,
+      declaredRunnable: declaredRunnable(declared),
       observedIntent: plan.intent,
       runnable: isRunnable(plan),
       ...(declared.why === undefined ? {} : { why: declared.why }),

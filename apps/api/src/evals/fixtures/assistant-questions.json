@@ -7,52 +7,105 @@
       {
         "id": "cat-hrana",
         "name": "Hrana",
-        "path": "Hrana"
+        "path": "Hrana",
+        "keywords": [
+          "hrana",
+          "namirnice",
+          "market"
+        ],
+        "kind": "EXPENSE"
       },
       {
         "id": "cat-market",
         "name": "Supermarket",
-        "path": "Hrana / Supermarket"
+        "path": "Hrana / Supermarket",
+        "keywords": [
+          "supermarket",
+          "kupovina"
+        ],
+        "kind": "EXPENSE"
       },
       {
         "id": "cat-kafa",
         "name": "Kafa i kolači",
-        "path": "Hrana / Kafa i kolači"
+        "path": "Hrana / Kafa i kolači",
+        "keywords": [
+          "kafa",
+          "kafic",
+          "poslasticarnica"
+        ],
+        "kind": "EXPENSE"
       },
       {
         "id": "cat-gorivo",
         "name": "Gorivo",
-        "path": "Automobil / Gorivo"
+        "path": "Automobil / Gorivo",
+        "keywords": [
+          "gorivo",
+          "benzin",
+          "dizel",
+          "nafta"
+        ],
+        "kind": "EXPENSE"
       },
       {
         "id": "cat-auto",
         "name": "Automobil",
-        "path": "Automobil"
+        "path": "Automobil",
+        "keywords": [
+          "auto",
+          "automobil"
+        ],
+        "kind": "EXPENSE"
       },
       {
         "id": "cat-deca",
         "name": "Deca",
-        "path": "Porodica / Deca"
+        "path": "Porodica / Deca",
+        "keywords": [
+          "deca",
+          "dete"
+        ],
+        "kind": "EXPENSE"
       },
       {
         "id": "cat-odeca",
         "name": "Odeća i obuća",
-        "path": "Odeća i obuća"
+        "path": "Odeća i obuća",
+        "keywords": [
+          "odeca",
+          "obuca"
+        ],
+        "kind": "EXPENSE"
       },
       {
         "id": "cat-struja",
         "name": "Struja",
-        "path": "Kuća / Struja"
+        "path": "Kuća / Struja",
+        "keywords": [
+          "struja",
+          "elektricna energija"
+        ],
+        "kind": "EXPENSE"
       },
       {
         "id": "cat-penzija",
         "name": "Penzija",
-        "path": "Penzija"
+        "path": "Penzija",
+        "keywords": [
+          "penzija"
+        ],
+        "kind": "INCOME"
       },
       {
         "id": "cat-plata",
         "name": "Plata",
-        "path": "Plata"
+        "path": "Plata",
+        "keywords": [
+          "plata",
+          "zarada"
+        ],
+        "kind": "INCOME"
       }
     ],
     "merchants": [
@@ -202,25 +255,20 @@
     {
       "question": "koliko sam potrošio u Maksiju",
       "intent": "NO_TEMPLATE_MATCH",
-      "runnable": false,
       "why": "the fold does not know the x/ks pair: `Maxi` folds to `maxi`, `Maksiju` to `maksiju`, so neither rung matches (packages/nlp)"
     },
     {
       "question": "koliko sam potrošio na benzin",
-      "intent": "NO_TEMPLATE_MATCH",
-      "runnable": false,
-      "why": "the planner matches entity NAMES, not the CategoryKeywords the classifier uses — `benzin` is a seeded strong keyword of `Gorivo`"
+      "intent": "SPEND_BY_CATEGORY"
     },
     {
       "question": "kada mi sledeća plata dolazi",
       "intent": "NO_TEMPLATE_MATCH",
-      "runnable": false,
       "why": "no template aggregates income by Category, and it is really a schedule question (`dueSoon` lists EXPENSE rules only)"
     },
     {
       "question": "kolika mi je penzija",
       "intent": "NO_TEMPLATE_MATCH",
-      "runnable": false,
       "why": "no template aggregates income by Category: `SPEND_BY_CATEGORY` declares EXPENSE and `INCOME_TOTAL` accepts no categoryId"
     },
     {
@@ -230,8 +278,7 @@
     {
       "question": "koliko sam dao za kiriju",
       "intent": "NO_TEMPLATE_MATCH",
-      "runnable": false,
-      "why": "same mechanism: `dao` is a cue now, and no Category or Merchant here is named `kirija`"
+      "why": "`dao` is a cue and no Category or Merchant here is named `kirija`, and no Category carries it as a keyword"
     },
     {
       "question": "koliko sam potrošio",
@@ -328,8 +375,7 @@
     {
       "question": "how much did I spend on food",
       "intent": "NO_TEMPLATE_MATCH",
-      "runnable": false,
-      "why": "the same name-vs-keyword gap, in English: nothing in the tree is named `food`"
+      "why": "nothing in this tree is named `food` or carries it as a keyword"
     },
     {
       "question": "koliko sam uštedeo za letovanje",
@@ -346,6 +392,11 @@
     {
       "question": "how much did I spend on netflix",
       "intent": "SPEND_BY_MERCHANT"
+    },
+    {
+      "question": "koliko sam potrošio na platu",
+      "intent": "NO_TEMPLATE_MATCH",
+      "why": "the direction gate: `Plata` is an INCOME Category, so no EXPENSE template may be scoped to it — answering would be a confident 0,00 RSD (docs/06 §8.11)"
     }
   ]
 }

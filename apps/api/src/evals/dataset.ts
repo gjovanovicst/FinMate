@@ -225,6 +225,19 @@ export interface AssistantBattery {
   readonly questions: readonly AssistantQuestion[];
 }
 
+/**
+ * Whether a fixture entry declares the question **unrunnable**.
+ *
+ * A `NO_TEMPLATE_MATCH` entry always is: nothing matched, so there is nothing to run. The flag matters
+ * only for a question that *did* match a template and whose required slot did not resolve — the
+ * near-miss case. Deriving it in one place keeps the runner and the spec from disagreeing about what a
+ * declaration means, which is the same rule the rest of this codebase applies to duplicated decisions.
+ */
+export function declaredRunnable(entry: AssistantQuestion): boolean {
+  if (entry.intent === 'NO_TEMPLATE_MATCH') return false;
+  return entry.runnable ?? true;
+}
+
 export function loadAssistantBattery(
   root: string = findWorkspaceRoot(),
 ): AssistantBattery {
@@ -240,7 +253,7 @@ export function loadAssistantBattery(
     if (typeof entry.question !== 'string' || typeof entry.intent !== 'string') {
       throw new Error(`${path} has an entry without a question or an intent`);
     }
-    const refuses = entry.intent === 'NO_TEMPLATE_MATCH' || entry.runnable === false;
+    const refuses = !declaredRunnable(entry);
     if (refuses && (entry.why === undefined || entry.why.length === 0)) {
       throw new Error(
         `${path}: "${entry.question}" declares a refusal with no \`why\`. Every gap the battery ` +

@@ -366,6 +366,13 @@ export class AssistantService {
         name: category.name,
         path: category.path.join(' / '),
         owned: true,
+        // The tree's own vocabulary, which the capture path classifies with. `INCLUDE` only: an
+        // `EXCLUDE` keyword means *this word does not belong here* (docs/04 §5.4), so it must not
+        // attract a question. Both facts come from the same `list()` call — no second read.
+        keywords: category.keywords
+          .filter((keyword) => keyword.polarity === 'INCLUDE')
+          .map((keyword) => keyword.keyword),
+        kind: category.kind,
       })),
       // `merchants` is the one list with shared rows in it (docs/08's global allow-list), and the
       // Household's own copy of a seeded name is the row its Transactions point at.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { isRunnable, planQuestion } from '../modules/assistant/query-planner';
-import { findWorkspaceRoot, loadAssistantBattery } from './dataset';
+import { declaredRunnable, findWorkspaceRoot, loadAssistantBattery } from './dataset';
 import { evaluatePlannerGates, plannerGaps, plannerMismatches, type PlannerOutcome } from './scoring';
 
 /**
@@ -25,7 +25,7 @@ const run = (): readonly PlannerOutcome[] =>
     return {
       question: declared.question,
       declaredIntent: declared.intent,
-      declaredRunnable: declared.runnable ?? true,
+      declaredRunnable: declaredRunnable(declared),
       observedIntent: plan.intent,
       runnable: isRunnable(plan),
       ...(declared.why === undefined ? {} : { why: declared.why }),
@@ -84,11 +84,20 @@ describe('what a refusal offers', () => {
     }
   });
 
-  it('offers what the ledger can say about the entity the question named', () => {
-    // `kolika mi je penzija` resolves the Penzija Category and no template matches, so the first chip
-    // is about that Category — the question the assistant *can* answer.
+  it('offers what the ledger can say about an entity the question named', () => {
+    // `koliko je bilo za hranu` resolves the `Hrana` Category (through name or keyword) and no template
+    // matches, so the first chip is about that Category — a question the assistant *can* answer.
+    const { suggestions = [] } = planQuestion('koliko je bilo za hranu', battery.context);
+    expect(suggestions[0]).toContain('Hrana');
+  });
+
+  it('offers nothing scoped when the entity points the other way', () => {
+    // `kolika mi je penzija` resolves the INCOME Category `Penzija`, and the direction gate refuses
+    // every spend template scoped to it — so the chips must not include one, or the refusal would offer
+    // a chip that refuses in turn. The canonical questions remain, because those *are* answerable.
     const { suggestions = [] } = planQuestion('kolika mi je penzija', battery.context);
-    expect(suggestions[0]).toContain('Penzija');
+    expect(suggestions.some((suggestion) => suggestion.includes('Penzija'))).toBe(false);
+    expect(suggestions.length).toBeGreaterThan(0);
   });
 
   it('drops a canonical question this Household cannot have answered', () => {

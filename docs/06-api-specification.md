@@ -3505,14 +3505,13 @@ them would have published a contract the API could not keep. The module was regi
 >    is the trade ADR-017 asks for — and the reason A-4 gates on *"every question behaves as declared"*
 >    rather than on maximising the answered count.
 >
-> - **The planner matches entity NAMES, not the CategoryKeywords the classifier uses.** `benzin` is a
->   seeded strong keyword of `Gorivo` (the classifier categorises a typed `benzin 5000` correctly), but
->   `PlannerContext` carries names and paths only, so *"koliko sam potrošio na benzin"* cannot resolve
->   the Category the Household obviously means. This is the **single mechanism** behind three of the six
->   remaining refusals — `benzin`, `kiriju`, and the English `food` (which needs English keywords on the
->   seed tree to have anything to match). Carrying each Category's keywords into the planner's context
->   is the fix, and it is one change rather than three: the vocabulary already exists, in the table the
->   capture path uses. **Recorded, unscheduled.**
+> - **The planner matches entity NAMES, not the CategoryKeywords the classifier uses — FIXED in A-5**
+>   (§8.11). `benzin` is a seeded strong keyword of `Gorivo`, so the classifier categorised a typed
+>   `benzin 5000` correctly while the assistant could not resolve the Category; the planner now matches
+>   `INCLUDE` keywords below names. This was the single mechanism behind three of the six refusals, and
+>   it took the battery to **52 of 58**. `kiriju` and the English `food` still refuse, honestly: nothing
+>   in a Serbian-named tree carries either word, so what remains for them is English/`kirija` **seed
+>   content**, which is docs/04's, not the planner's.
 >
 > - **`koliko sam dao za kiriju` is correct as it stands** — `dao` is a cue now, and this Household has no
 >   Category or Merchant named `Kirija`, so the question refuses instead of totalling everything. A
@@ -3728,6 +3727,30 @@ cash-flow question, and `in may` is May while `may I ask` is not. **The battery 
 answered** (it was 25/12 before A-1). The five left are all named above: `Maksiju` (a fold gap),
 `kolika mi je penzija` and `kada mi sledeća plata dolazi` (the registry gap), `koliko sam dao za kiriju`
 (correct — this Household has no such Category), and `how much did I spend on food`.
+
+**A-5 (2026-09-17): a Category resolves through its keywords, and a spend question cannot be scoped to an
+income Category.** Two changes, both about the planner reading the taxonomy it was already being handed.
+
+| Decision | Built | Why |
+|---|---|---|
+| A Category matches on name, breadcrumb **and** its `INCLUDE` keywords | `NamedEntity.keywords`, filled from the same `CategoriesService.list` call (no second read) | The tree's vocabulary already exists and the **capture path classifies with it**: `benzin` is a seeded strong keyword of `Gorivo`, so a typed `benzin 5000` was categorised correctly while *"koliko sam potrošio na benzin"* could not resolve the Category the Household obviously meant. This was the single mechanism behind three of the battery's remaining refusals (`benzin`, `kiriju`, the English `food`), and it is why the fix is one change rather than three. |
+| **`EXCLUDE` keywords are never passed** | The filter lives in `assistant.service.plannerContext`, and a spec asserts both directions | An `EXCLUDE` keyword means *this word does not belong here* — docs/04 §5.4 uses one to keep `ulje` out of fuel. Using one to **attract** a question would invert the rule the classifier applies. The filter is at the service because that is where the rows are read; the planner cannot misuse what it is not given. |
+| A **name** outranks a **keyword** | A four-tier score: name-exact > name-stem > keyword-exact > keyword-stem | A name is what the user typed; a keyword is the tree's inference. Without the tiers, a keyword that also appears under a broader Category could steal a question that named a narrower one. |
+| A spend question scoped to an **INCOME** Category **refuses** | `NamedEntity.kind`, and `hasIncomeCategory` in the cue set | `SPEND_BY_CATEGORY` declares `kind: 'EXPENSE'`, so resolving `Plata` for *"koliko sam potrošio na platu"* produced a confident **`0,00 RSD`** — a plausible figure answering a different question, which is what ADR-017 exists to prevent. The capture path reconciles category against direction in the pipeline's `finish()` (§2.2.7's finding); the planner had **no equivalent**, and now refuses. |
+| Refusals about an income entity offer no chip for it | `refusalSuggestions` already filters by routability | The direction gate makes every scoped suggestion about an income Category unroutable, so the filter drops it — and the user is not offered a chip that refuses in turn. Asserted in both the gate spec and live. |
+
+**Verified live 4/4** (`/tmp/verify-a5.mjs`): `na benzin` and `na gorivo` answer with the same Category,
+and `na platu` refuses without offering a chip about `Plata`. **The battery is 52 of 58 answerable**
+(89.66 %), still gated, and the `benzin` declaration was flipped from *refused* to *answered* as a
+reviewed edit — which is what the gate asks for.
+
+> **Named, not fixed (residual of the stem rung):** a five-letter name can still match a **verb** sharing
+> its first three letters — `Plata` matches `platim` ("I pay") in *"koliko ću da platim porez"*. The cost
+> is bounded and benign: the entity resolves, the question refuses for want of a spend verb or a template,
+> and no figure is produced (the spec that asserted an empty `categoryId` on a refusal was corrected —
+> resolving an entity and refusing a question are independent, and that resolution is what lets the
+> refusal suggest something useful). Tightening the rung to four shared characters would break the
+> legitimate matches it exists for (`kafa`/`kafu`, `plata`/`platu`), so it stays as it is, recorded.
 
 **A-4 made the battery part of the build (2026-09-17).** `/tmp/ask-battery*.mjs` was a probe; it is now
 `apps/api/src/evals/fixtures/assistant-questions.json` — 57 questions with a **frozen** planner context,

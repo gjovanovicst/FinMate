@@ -354,6 +354,37 @@ describe('the assistant (integration)', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('resolves scope through the tree’s INCLUDE keywords but never through an EXCLUDE one (A-5)', async () => {
+    // The keyword rows are the capture path's vocabulary. `EXCLUDE` means *this word does not belong
+    // here* (docs/04 §5.4 blocks `ulje` from fuel), so it must not attract a question — the filter lives
+    // in `plannerContext`, which this spec is the only place to exercise.
+    const food = await asTenant(() =>
+      prisma.client.categories.findFirst({
+        where: { household_id: householdId, name: 'Hrana', deleted_at: null },
+        select: { id: true },
+      }),
+    );
+    await asTenant(() =>
+      prisma.client.category_keywords.createMany({
+        data: [
+          { id: uuidv7(), household_id: householdId, category_id: food?.id as string, keyword: 'namirnice', polarity: 'INCLUDE', match_mode: 'WORD', weight: 2 },
+          { id: uuidv7(), household_id: householdId, category_id: food?.id as string, keyword: 'hemija', polarity: 'EXCLUDE', match_mode: 'WORD', weight: 1 },
+        ],
+      }),
+    );
+    scriptNarrations(['You spent 12.000,00 RSD on Hrana.', 'You spent 12.000,00 RSD.']);
+
+    // The INCLUDE keyword resolves the Category the question never named.
+    const included = await ask('koliko sam potrošio na namirnice');
+    expect(included.intent).toBe('SPEND_BY_CATEGORY');
+
+    // The EXCLUDE keyword does not: this Household has no Category or name for `hemija`, so the scope is
+    // unresolved and the question refuses rather than answering the month's whole spend.
+    const excluded = await ask('koliko sam potrošio na hemiju');
+    expect(excluded.intent).toBe('NO_TEMPLATE_MATCH');
+    expect(excluded.suggestions.some((suggestion) => suggestion.includes('Hrana'))).toBe(false);
+  });
+
   it('offers a question about the entity the question named, and can answer it (A-4c)', async () => {
     // `koliko je bilo za hranu` resolves the `Hrana` Category and no template matches, so the first
     // chip is about that Category — and the assertion that matters is the second half: asking it works.
