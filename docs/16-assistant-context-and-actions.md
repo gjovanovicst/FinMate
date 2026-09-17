@@ -329,18 +329,19 @@ One commit per row, per the working agreement. Part A rows are independent of Pa
 | A-10 | the `x`↔`ks` fold (`Maxi`/`Maksiju`) in `packages/nlp` | nothing decision-wise, and the re-fold this row expected turned out to be **unnecessary** (docs/04 §8.1.7) | the battery's last *vocabulary* gap, and the classifier's too — *"koliko sam potrošio u Maksiju"* answers — **done** |
 | A-11 | income *schedule* questions — `RecurringService.dueSoon` filters `kind: 'EXPENSE'` | a `RecurringService` read and `/recurring`'s own reading | *"kada mi sledeća plata dolazi"* answers instead of refusing |
 | A-12 | the keyword **exact** tier is `folded.includes(keyword)`, not a whole word — A-9's docs call it "whole word only" | the measurement in [06 §8.13](06-api-specification.md) | a keyword stops matching *inside* an inflected word, so `maxi` no longer hijacks `Maksiju` — **done** |
-| A-13 | when a Category **and** a Merchant are both named outright, the router prefers the Category while `scopePhrase` names the Merchant | **a product decision** — A-12 removed the *keyword*-driven case; this is the *explicit* one (*"na hranu u Lidlu"*) | a figure stops wearing another scope's label (ADR-017), and *"na hranu u Lidlu"* gets an agreed meaning |
+| A-13a | `scopePhrase` preferred the Merchant while the router preferred the Category, so a figure could wear another scope's label | A-12 (removes the keyword-driven case) | the label names the scope `spend()` aggregated by, so the claim matches the figure — **done** |
+| A-13b | which scope a question that names **both** a Category and a Merchant *means* (*"na hranu u Lidlu"*) | **a product decision** — the label is honest since A-13a, so this is now only about the answer | the intersection, the Merchant, or an ambiguity refusal — the owner's call |
 | **B-1** | **ADR-035: propose writes, never execute them** | **Q-11** | the architectural gate |
 | B-2 | action registry + `ADD_CATEGORY` end to end | B-1 | the first action, no money, trivially undoable |
 | B-3 | `ADD_TRANSACTION` through the existing capture preview | B-2 | highest-value action, ~90 % already built |
 | B-4 | `SET_BUDGET`, `ADD_GOAL`, `ADD_TAG` | B-2 | "configure", as asked |
 | B-5 | `CREATE_RULE_FROM_CORRECTION` | B-2 | ADR-010's confirmation, reached by question |
 
-**The A-series is nearly done: A-1, A-2, A-3, A-4a, A-4c, A-5, A-9, A-10 and A-12 have shipped** (A-4b was
-measured and rejected). What remains of Part A is A-6, A-7 and A-8 — the last needs **Q-12** — plus A-11
-and A-13. **A-13 is the one that needs you**: A-12 removed the collision when a Category matched only by a
-*shared keyword*, but a question that names a Category **and** a Merchant outright (*"na hranu u Lidlu"*)
-still routes by `hasCategory` and labels by the Merchant — the answer must be *something*, and which is a
+**The A-series is nearly done: A-1, A-2, A-3, A-4a, A-4c, A-5, A-9, A-10, A-12 and A-13a have shipped**
+(A-4b was measured and rejected). What remains of Part A is A-6, A-7 and A-8 — the last needs **Q-12** —
+plus A-11 and **A-13b**. **A-13b is the one that needs you**: A-13a made the label honest, so a question
+naming both a Category and a Merchant no longer prints one scope's figure under the other's name — but
+what such a question should *answer* (the intersection, the Merchant, or an ambiguity refusal) is a
 product decision, not a matcher fix. The other open rows need no decision: **A-6/A-7** are a contract
 extension and catalogue entries, **A-11** a `RecurringService` read. The remaining battery gaps that are
 **not** A-rows are seed content for `kirija`/English (docs/04). Part B stays gated on **Q-11**.

@@ -988,6 +988,15 @@ The tables hold platform content beside the Household’s own rows, which is whe
   in the gate** — the battery missed this for a whole task because it omitted the seed's merchant-name
   keywords. See docs/06 §8.13–§8.14.
 
+- **The planner fills every slot a question resolved, whether or not the routed template uses it — so a
+  label must be chosen by the *template*, not by which slots happen to be filled.** *"na hranu u Lidlu"*
+  arrives with a `categoryId` **and** a `merchantId`; the router picks one, and `scopePhrase` used to
+  prefer the Merchant regardless — printing the **Category's** total as *"at Lidl"*. It now branches on
+  `plan.template.requiredSlots`, the same declaration `spend()` aggregates by, so phrase and figure
+  cannot disagree (A-13a, docs/06 §8.15). The general rule: **a label is a claim about a figure**, and a
+  merely plausible claim is the ADR-017 failure mode. When two pieces of code describe the same scope,
+  derive both from one declaration rather than from the objects in hand.
+
 ---
 
 - **An element with `role="img"` hides everything inside it, including the links a chart needs.** A

@@ -500,6 +500,27 @@ describe('fact assembly (integration)', () => {
     expect(tag.facts.formatted['scope']).toBe('tagged Putovanje');
   });
 
+  it('labels the scope the routed template used, not every slot the question resolved (A-13a)', async () => {
+    // `planQuestionCore` fills `slots` from **every** entity the question resolved, whether or not the
+    // routed template uses it — so *"na hranu u Lidlu"* arrives with both a `categoryId` and a
+    // `merchantId`. This method used to prefer the Merchant, printing the **Category's** total under
+    // the Merchant's name (the last way a figure could wear another scope's label, ADR-017). The
+    // phrase now follows the template's own required slot — the same one `spend()` aggregates by — so
+    // the label cannot disagree with the figure.
+    const both = { categoryId: foodId, merchantId: lidlId };
+
+    const byMerchant = await assemble(planFor('SPEND_BY_MERCHANT', both));
+    expect(byMerchant.facts.formatted['scope']).toBe('at Lidl');
+    expect(byMerchant.facts.totals[0]?.label).toBe('Spending at Lidl');
+
+    const byCategory = await assemble(planFor('SPEND_BY_CATEGORY', both));
+    expect(byCategory.facts.formatted['scope']).toBe('on Hrana');
+    expect(byCategory.facts.totals[0]?.label).toBe('Spending on Hrana');
+    // The two scopes are genuinely different figures, which is what made the mislabel a wrong answer
+    // rather than a cosmetic one.
+    expect(totalMinor(byMerchant)).not.toBe(totalMinor(byCategory));
+  });
+
   it('leaves an unscoped total without a scope, rather than inventing one', async () => {
     const result = await assemble(planFor('SPEND_TOTAL'));
 

@@ -3929,12 +3929,34 @@ spend is attributed to, while the planner's deterministic id tiebreak picks `01a
 `spend-read-model.ts` filters by `merchant_id`, so a merchant with no rows is correctly zero — and the
 pre-A-12 answer was the *Category's* total wearing the Merchant's name, which is the defect this fixed.
 
-> **Still open, and it is a product decision (A-13):** A-12 removes the collision when the Category
-> matched only by a *shared keyword*. A question that names a Category **and** a Merchant outright
-> (*"na hranu u Lidlu"*) still resolves both, still routes by `hasCategory`, and still labels by the
-> Merchant. Which scope such a question means — the Merchant, the Category, or an intersection no
-> template can express — is not the matcher's to decide; [docs/16](16-assistant-context-and-actions.md)
-> A-13 carries it for the owner.
+### 8.15 The label now follows the routed scope (task A-13a, 2026-09-17)
+
+A-12 removed the collision when a Category matched only by a *shared keyword*. One way a figure could
+still wear another scope's label remained, and it is structural rather than a matcher bug:
+`planQuestionCore` fills `slots` from **every** entity the question resolved, whether or not the routed
+template uses it (query-planner.ts, the `slots` literal). So *"na hranu u Lidlu"* arrives with a
+`categoryId` **and** a `merchantId`, the router picks `SPEND_BY_CATEGORY`, `spend()` aggregates the
+Category subtree — and `scopePhrase` preferred the Merchant, printing the Category's total as *"at
+Lidl"*.
+
+| Decision | Built | Why |
+|---|---|---|
+| The phrase is chosen by the **template's required slot**, not by which slots are filled | `context.plan.template.requiredSlots` gates each branch of `scopePhrase` | The phrase must name the scope `spend()` **aggregated by**; both read the declaration, so they cannot disagree. A label is a claim about a figure, and a claim that is merely *plausible* is the ADR-017 failure mode. |
+| `SPEND_TOTAL` keeps no scope | Its `requiredSlots` is `[]`, so the phrase is `null` and the label is `Spending` | It resolves no scope by construction — the router only reaches it when no Category, Merchant, Account or Tag resolved. The optional `accountId`/`tagId` on its template belong to other templates that share the aggregate. |
+| Trend builders are unaffected | `trendVsLastMonth` / `trendVsAverage` discard `spend()`'s label and build their own `formatted` | Their figures are unnamed by design (*This period* / *Previous period* / *Change*), so the phrase was never rendered. |
+
+**Verified** in `fact-assembly.integration.spec.ts`: a plan carrying **both** a `categoryId` and a
+`merchantId` labels `at Lidl` under `SPEND_BY_MERCHANT` and `on Hrana` under `SPEND_BY_CATEGORY`, and the
+test asserts the two totals **differ** — which is what made the mislabel a wrong answer rather than a
+cosmetic one. **Live 4/4** (`/tmp/verify-a13a.mjs`): *"koliko sam potrošio na hranu u Lidlu"* routes
+`SPEND_BY_CATEGORY` and says **`on Test Hrana P1`** — the Category whose total it printed, and the demo's
+leftover test Category that `na hranu` resolves to — where it used to say *"at Lidl"*; the Category-only
+and Merchant-only controls still say `on` and `at` respectively.
+
+> **Still open, and it is a product decision (A-13b):** the label is now honest. Which scope a question
+> that names **both** actually *means* — `na hranu u Lidlu` could be the intersection, the Merchant, or a
+> refusal for being ambiguous — is a product question no matcher fix answers.
+> [docs/16](16-assistant-context-and-actions.md) A-13 carries it for the owner.
 
 ---
 

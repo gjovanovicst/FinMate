@@ -566,19 +566,27 @@ export class FactAssemblyService {
    */
   private async scopePhrase(context: Context): Promise<string | null> {
     const slots = context.plan.slots;
-    if (slots.merchantId !== undefined) {
+    // ⚠️ The phrase names the scope the **figure was computed from** — the routed template's own
+    // required slot — not the first slot that happens to be filled.
+    //
+    // A question can resolve more than one scope: *"na hranu u Lidlu"* names a Category **and** a
+    // Merchant, both resolve, and the router picks one. Preferring the Merchant here printed a
+    // category total under a merchant's name — the last way a figure could wear another scope's label
+    // (ADR-017). `spend()` reads the same slot the phrase does, so the two cannot disagree.
+    const required = context.plan.template.requiredSlots;
+    if (required.includes('merchantId') && slots.merchantId !== undefined) {
       const name = await this.merchantName(slots.merchantId);
       return name === null ? null : `at ${name}`;
     }
-    if (slots.accountId !== undefined) {
+    if (required.includes('accountId') && slots.accountId !== undefined) {
       const name = await this.accountName(context.householdId, slots.accountId);
       return name === null ? null : `from ${name}`;
     }
-    if (slots.tagId !== undefined) {
+    if (required.includes('tagId') && slots.tagId !== undefined) {
       const name = await this.tagName(slots.tagId);
       return name === null ? null : `tagged ${name}`;
     }
-    if (slots.categoryId !== undefined) {
+    if (required.includes('categoryId') && slots.categoryId !== undefined) {
       const path = await this.categoryPath(context.householdId, slots.categoryId);
       return path === null ? null : `on ${path}`;
     }
