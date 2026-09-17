@@ -344,7 +344,9 @@ import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
         line-height: 1.15;
       }
       .nav__link--active {
-        color: var(--color-primary);
+        /* 4.3.4b: the active item also carries the 14 %-tinted background below, so the brand colour
+           as text is 3.85:1 there. --color-primary-text is 6.43:1 on it (axe, every route). */
+        color: var(--color-primary-text);
       }
       .nav__icon {
         position: relative;

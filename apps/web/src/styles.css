@@ -70,6 +70,12 @@
   /* Brand: indigo-violet, chosen to stay clear of the reserved status hues. */
   --color-primary: #7c6cf5;
   --color-primary-hover: #8f81f7;
+  /* 4.3.4b: the brand colour as **text**. `#7c6cf5` is 3.85:1 on the 14 %-tinted active surface it
+     is used on (`#25233b`) and 4.19:1 on `--color-surface-raised`, both below 4.5:1 for body text;
+     axe found it on every route's active nav item after 4.3.1d's instrument reported no contrast
+     failures. This is 6.43:1 on that worst case and 7.55:1 on `--color-bg`. Backgrounds keep
+     `--color-primary`, where the near-black `--color-primary-contrast` sits on it. */
+  --color-primary-text: #a99cff;
   --color-primary-contrast: #0d0d12;
 
   /* ---- reserved semantic status ---- */
@@ -94,6 +100,8 @@
   --color-text-subtle: #6a6a78;
   --color-primary: #5b48e0;
   --color-primary-hover: #4b39cf;
+  /* 4.3.4b: 6.09:1 on white, and legible on the light theme's tinted active surface too. */
+  --color-primary-text: #5b48e0;
   --color-primary-contrast: #ffffff;
   --shadow-1: 0 1px 2px rgb(16 16 20 / 8%);
   --shadow-2: 0 4px 12px rgb(16 16 20 / 12%);
@@ -121,7 +129,7 @@ body {
    inherits the user agent's `#0000EE`, which is **2.02:1** on `--color-bg` — invisible. Three
    anchors shipped that way and the audit found them (4.3.1d); the rule is what stops the fourth. */
 a {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 body {

@@ -968,6 +968,21 @@ Measured at 4.3.4a (production, gzipped — the numbers this table's budgets are
 | The 17 routes §11 does not name | 138–178 KB | held to the 320 KB total |
 | `packages/nlp` | **2.5 KB** (one chunk, fetched with the first route that needs it — not eagerly) | ≤ 40 KB |
 
+**4.3.4b measured the accessibility half with axe** (injected from a fetched copy, so the client takes
+no dependency) across all 20 routes of the served production build: it found **20 serious
+`color-contrast` violations — the active nav item on every route**, where the 14 %-tinted surface made
+the brand colour-as-text **3.85:1**. 4.3.1d's instrument had reported "0 contrast failures" because it
+measured the pairs it knew about. Fixed at the token level (`--color-primary-text`: 6.43:1 on the worst
+case, 7.55:1 on `--color-bg`), after which axe reports **zero critical and zero serious** on every route.
+**21 moderates remain and are named**: `landmark-main-is-top-level`, `landmark-no-duplicate-main` and
+`landmark-unique` on the seven screens that render their own `<main>` inside the shell's — left as their
+own task because collapsing one landmark is a shell decision. ⚠️ **Lighthouse itself could not run in
+the 4.3.4b session**: `chrome-launcher` insists on creating its temp directory under
+`/mnt/c/Users/Goran/AppData/Local/`, which the agent's file sandbox denies (`EACCES`), and pointing it at
+a self-launched Chrome did not take. That is an environment limitation, not a product result — the
+numbers belong with the CI job (a Linux runner has a writable temp dir), which is why that job is the
+deferred half of 4.3.4b rather than a locally-recorded number.
+
 ⚠️ **Residual, recorded rather than hidden:** §11 names eight routes and the router has twenty-four, so
 the rest are held to the single documented *total* (320 KB) through an explicit `UNLISTED` list in the
 tool. That list is what gives rule 7 teeth — a route in neither list fails the build — but naming a

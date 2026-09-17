@@ -147,6 +147,25 @@ Everything here has cost time at least once, and most of it fails in a way that 
   with `pkill -f "ng serve ..."`, because the pattern matches your own shell's command line and kills the
   command that is doing the killing (use `pkill -f "ng ser[v]e"`).
 
+- **A colour that passes on the surface you measured can fail on the *state* you did not.** 4.3.1d's
+  instrument reported "0 contrast failures" over 153 element-route pairs and two themes, and it was right
+  about every pair it sampled. axe, run in 4.3.4b over the same 20 routes, found **20 serious
+  `color-contrast` violations** — the active nav item on every one, where `.nav__link--active` paints a
+  14 %-tinted background *and* the brand colour as text, so `#7c6cf5` sat on `#25233b` at **3.85:1**. The
+  lesson is not "axe is better"; it is that a hand-written instrument knows only the states it was told
+  about, so a component's **interactive states** (active, hover, focus, disabled) each need a sampled
+  background. The fix is a token, not a rule: `--color-primary-text` (`#a99cff` dark / `#5b48e0` light) is
+  6.43:1 on that worst case and 7.55:1 on `--color-bg`, backgrounds keep `--color-primary`, and the global
+  `a` rule and onboarding's textual uses move with it.
+
+- **An nx target that writes files must declare `outputs`, or a cache hit reports success and restores
+  nothing.** `targetDefaults.build` had `cache: true` and no `outputs`, so `nx run web:build` on a warm
+  cache printed "read the output from the cache instead of running the command" while `apps/web/dist` did
+  not exist — which surfaced as the bundle-budget gate failing with "no stats.json: run nx run web:build
+  first", immediately after a successful build. It was invisible until something *read* the build's
+  output: every other consumer in CI runs on a cold cache. `"outputs": ["{projectRoot}/dist"]` is the fix,
+  and it is worth re-checking the same way whenever a target's output moves.
+
 - **`ng build` builds the *development* configuration, and a chunk's `imports` mix static and dynamic
   edges.** Two traps found while building the bundle-budget gate (4.3.4a), both of which make a
   measurement confidently wrong rather than obviously broken. **(a)** `angular.json` sets

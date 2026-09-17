@@ -17,7 +17,9 @@
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["production", "^production"],
-      "cache": true
+      "cache": true,
+      "_comment": "outputs is not optional: without it nx caches the *result* and restores no files, so a cache hit leaves `dist` absent while reporting success — which is how the bundle-budget gate (which reads apps/web/dist/stats.json) failed on a warm cache at 4.3.4a. A target that writes files must say where they are.",
+      "outputs": ["{projectRoot}/dist"]
     },
     "typecheck": {
       "dependsOn": ["^build"],

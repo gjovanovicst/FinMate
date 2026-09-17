@@ -75,8 +75,6 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   screens; the sheet adds only the reason and three verbs (Allow, a first-class Decline, and *Not now*,
   which defers without writing because `NOT_ASKED` is the *absence* of a row). Verified live at
   320/768/1280 px, 22 checks; it also found **R-26** and the 48 px shell overflow, both **fixed in 4.3.1a**.
-- **4.3.1a/b/d are done** — layout, the consent sheet's dismissal contract and the all-screens audit; the
-  measurements and the `minmax(0, 1fr)` cause are in docs/09 and docs/02 §9.
 - **And 4.3.5 closed R-26.** A cookie path is an attribute the *browser* checks, so it must describe the
   URL the browser requests — and the server never sees the `/api` its proxy strips. The refresh cookie was
   scoped to `/auth` while the browser asks for `/api/auth/refresh`, so **every hard reload signed the user
@@ -102,25 +100,26 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   composer now reads ADR-025 decision 5's taxonomy cache. **Verified live 8/8.** **(b) is fixed in 4.3.6c** ([ADR-033](docs/14-decisions-and-risks.md)): an
   unlocked install whose session could not be restored because *nothing answered* renders a **read-only
   offline shell** — one sentence, two links (`/pending`, `/transactions`' cached ledger), no navigation —
-  and **nothing is sent without a session** (the flush is skipped without a token, a `401` is retryable
-  rather than the entry's fault, and the tray hides controls that cannot work). **Verified live 13/13**;
+  and **nothing is sent without a session**. **Verified live 13/13**;
   **R-27 is closed in full.**
-- **And 4.3.7 closed the AI-disclosure audit** ([ADR-034](docs/14-decisions-and-risks.md)). **4.3.7a**: the
-  consent sheet names what a *caller* can reach — `PARSE` stays routed but a task no seam invokes is
-  logged, not disclosed — and prints one sentence per destination, not the same one twice. **4.3.7b**:
-  `/assistant` says how each answer was worded, in the provenance panel, with a `/settings` link only when
-  withheld consent caused the fallback; docs/06 §8.5's *"make the fallback invisible"* is amended, not
-  ignored. Both verified live.
-- **4.3.4a put the bundle budgets in CI.** `pnpm bundle:budget` measures each route's **cold cost**
-  against docs/07 §11 — warn 90 %, fail 100 %, and a route with no entry fails (which showed §11 names 8
-  routes and the router has 24; the rest are held to the documented 320 KB). Measured: shell **137.9 of
-  150 KB** (92 %), capture 159.9, transactions 174.9, the rest 138–178, `packages/nlp` 2.5 of 40. Two
-  traps in docs/15: `ng build` defaults to **development**, and a chunk's imports mix static and dynamic
-  edges (following both made every route cost 0.0 KB). Lazy routes were done already; no images ship.
-- **Next**: **4.3.4b** — Lighthouse and `axe-core` measured locally against the served production dist
-  (CI job scheduled separately). Then the **human visual pass** (the 4.3.1d contact sheet → **4.3.1e**'s
-  17 controls under 24 px, **4.3.1c**'s pinned capture bar); then 4.3.3 (mobile keyboard); 4.3.2 stays
-  blocked on the product name.
+- **And 4.3.7 closed the AI-disclosure audit** ([ADR-034](docs/14-decisions-and-risks.md)): the consent
+  sheet names what a *caller* can reach and prints one sentence per destination; `/assistant` says how each
+  answer was worded, in the provenance panel, with a `/settings` link only when withheld consent caused the
+  fallback — and docs/06 §8.5's *"make the fallback invisible"* is amended, not ignored. Both verified live.
+- **4.3.4 put the bundle budgets in CI and measured accessibility with axe.** **4.3.4a**: `pnpm
+  bundle:budget` measures each route's **cold cost** against docs/07 §11 — warn 90 %, fail 100 %, and a
+  route with no entry fails (which showed §11 names 8 routes and the router has 24; the rest are held to
+  the documented 320 KB). Measured: shell **137.9 of 150 KB** (92 %), capture 159.9, transactions 174.9,
+  the rest 138–178, `packages/nlp` 2.5 of 40. **4.3.4b**: axe over all 20 routes found **20 serious
+  contrast violations — the active nav item on every route, 3.85:1** — which 4.3.1d's instrument missed;
+  fixed with `--color-primary-text` (**0 critical / 0 serious** now), with 21 moderate nested-`<main>`
+  findings named as their own task. **Lighthouse could not run** (its launcher's temp dir is outside the
+  file sandbox) → deferred CI job. Four traps in docs/15: `ng build` defaults to development, imports mix
+  static and dynamic edges, an unmeasured UI *state* fails contrast, and an nx target without `outputs`
+  restores nothing on a cache hit.
+- **Next**: the **human visual pass** (the 4.3.1d contact sheet → **4.3.1e**'s 17 controls under 24 px,
+  **4.3.1c**'s pinned capture bar, and the nested-`<main>` landmark findings); then 4.3.3 (mobile
+  keyboard), 4.3.4b's Lighthouse CI job, and 4.3.2 (blocked on the product name).
 
 **The long form is in the docs.** Each task's decisions, deviations and live defects are recorded where
 they belong: docs/09 §6 (sequencing), docs/02's per-screen notes, docs/06 §5, docs/14 (ADRs and risks) and
@@ -218,7 +217,7 @@ Read the document that owns your task before starting:
 | If you are… | Read first |
 |---|---|
 | starting any task | `docs/05-architecture.md` §2 — monorepo layout + the dependency rule |
-| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 155 entries, each saying what the failure looks like |
+| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 157 entries, each saying what the failure looks like |
 | touching money, Transactions, balances | `docs/03-domain-model.md` — **canonical glossary, DDL, invariants** |
 | adding or changing a feature | `docs/01-product-requirements.md` — the `F-xx` catalogue |
 | touching categorization, rules, prompts, AI | `docs/04-categorization-and-ai-engine.md` |
@@ -313,7 +312,7 @@ A change is not done until (doc 09 §8):
 
 ## Gotchas
 
-**The full list — 155 entries in 10 groups, each written to say what it looks like when it goes wrong —
+**The full list — 157 entries in 10 groups, each written to say what it looks like when it goes wrong —
 is [`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md). Read it before debugging
 anything that "should work".** It was split out because this file had grown past the instruction budget
 and was being truncated on load. The ones below stay here because they are the ones that bite hardest,

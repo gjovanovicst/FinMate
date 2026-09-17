@@ -351,7 +351,7 @@ import {
       }
       .tab--on {
         border-color: var(--color-primary);
-        color: var(--color-primary);
+        color: var(--color-primary-text);
       }
       .tree {
         display: grid;
@@ -422,7 +422,7 @@ import {
       }
       .card__done {
         font-size: var(--text-xs);
-        color: var(--color-primary);
+        color: var(--color-primary-text);
       }
       .group {
         display: grid;
@@ -451,7 +451,7 @@ import {
       }
       .chip--on {
         border-color: var(--color-primary);
-        color: var(--color-primary);
+        color: var(--color-primary-text);
       }
       .foot {
         display: flex;
@@ -484,7 +484,7 @@ import {
         padding: 0;
         font: inherit;
         font-size: var(--text-sm);
-        color: var(--color-primary);
+        color: var(--color-primary-text);
         background: none;
         border: none;
         cursor: pointer;
