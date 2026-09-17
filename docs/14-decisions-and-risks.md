@@ -2200,6 +2200,8 @@ recommendation, an owner and a deadline; leaving them open past the deadline is 
 | Q-8 | **Is the free tier generous enough to seed word of mouth while protecting margin?** | Validate the quotas in [12](12-monetization-and-pricing.md) against beta usage before launch, not after | Product owner | Phase 5.6 |
 | Q-9 | **How much of the app must work if the user declines AI entirely?** | Everything except AI parse/classify/narrate/OCR — rules, manual entry, budgets, analytics, alerts all remain fully functional. This is a product commitment, not a fallback | Product owner | Phase 1 |
 | Q-10 | **Is a designer available for the correction and onboarding UX?** | Strongly recommended. These two surfaces determine retention more than any other part of the product, and they are the least tolerant of engineering-led design | Product owner | Phase 0 |
+| Q-11 | **May the assistant propose writes to the ledger, and is every write confirmed?** ([16](16-assistant-context-and-actions.md) Part B) | Yes to proposing, through a **closed action registry** that names existing service methods — and **every** write confirmed by a click in v1, with no confidence-based fast path (ADR-009's gates classify a categorisation; a write is not a classification). Gated by **ADR-035**, which must be written before any code | Product owner | Before B-1 |
+| Q-12 | **May the API record anything about a question it could not answer?** | Yes, minimally: the **unmatched folded token set**, with numerals and entity ids stripped — not the raw question. Raw-question logging needs its own purpose, retention and settings toggle, and is only justified if beta shows the token set is insufficient | Product owner + legal | Before A-7 |
 
 ---
 

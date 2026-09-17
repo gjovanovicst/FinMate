@@ -3520,6 +3520,17 @@ wire). 163 tests in the module, of which 20 are the integration spec that script
 - **The planner matches against at most 200 Merchants and Accounts** per question (`MAX_PAGE_SIZE`).
   Beyond that an entity can be in the Household's ledger and still not resolve. A single unbounded read
   for planning is a taxonomy-module decision.
+- **Four declared intents have no fact builder, and two of them cannot even resolve their slot.**
+  `GOAL_PROGRESS`, `GOAL_REQUIRED_MONTHLY`, `RECURRING_UPCOMING` and `RECURRING_LIST` answer
+  `NOT_BUILT`, although `GoalsService.list()` and `RecurringService.list/occurrencesBetween/dueSoon`
+  already exist and `GoalView` already carries every derived figure they need. They are also
+  `UNRUNNABLE:goalId`/`UNRUNNABLE:recurringRuleId` first, because `PlannerContext` carries no goal or
+  recurring-rule name list to match against. Both halves are one slice.
+- **The planner's cue vocabulary is Serbian-only** while the catalogue is English-primary (ADR-019), so
+  an English question is refused by an English-primary product — the largest single refusal bucket
+  measured (9 of the 12 refusals in a 37-question battery).
+- **The read-coverage and write-action design is [16](16-assistant-context-and-actions.md)** — including
+  the closed **action registry** and why write actions need an ADR (Q-11) before any code.
 - **Narration is never evaluated.** `pnpm test:evals` still reports the two narration gates as
   `skipped`, because no provider is configured and the dataset holds classification cases, not
   questions. The validator's guarantee *is* asserted — over the fallback for every intent, and over
