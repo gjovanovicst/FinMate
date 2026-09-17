@@ -47,6 +47,21 @@ enum AccountKind {
   OTHER
 }
 
+"""One field of a proposal, as the confirmation card renders it."""
+type ActionDiffEntryModel {
+  """The value after, or null (e.g. "top level")."""
+  after: String
+
+  """The value before, or null when there is none."""
+  before: String
+
+  """
+  True when the proposal filled this rather than the question stating it, so the card can offer to change it. Guessing silently is not an option; guessing visibly is (ADR-035 decision 5).
+  """
+  defaulted: Boolean!
+  field: String!
+}
+
 type AiEgressModel {
   """
   The configured endpoint, e.g. `LOCAL`, `DEEPSEEK_EU` or `DEEPSEEK_GLOBAL`.
@@ -168,6 +183,59 @@ type AlternativeModel {
 
   """Raw model confidence — not gated, not calibrated."""
   confidence: Float!
+}
+
+"""
+A registered assistant action. Closed: the registry has no unregistered member (ADR-035).
+"""
+enum AssistantAction {
+  ADD_CATEGORY
+}
+
+"""
+The backend-rendered proposal. Never narrated: a write confirmation is a numeral-bearing statement, so ADR-017 applies to it exactly as to an answer (ADR-035 decision 8).
+"""
+type AssistantActionPreviewModel {
+  diff: [ActionDiffEntryModel!]!
+  sentence: String!
+}
+
+"""
+A proposed write awaiting a human click. `proposed: false` is a refusal, not an error: the question asked for nothing this registry does, or asked without saying what.
+"""
+type AssistantActionProposalModel {
+  action: AssistantAction
+  expiresAt: DateTime
+  preview: AssistantActionPreviewModel
+
+  """
+  Opaque, single-use, and the **only** argument `assistantExecuteAction` accepts.
+  """
+  proposalId: UUID
+  proposed: Boolean!
+
+  """Why not, when `proposed` is false."""
+  reason: String
+}
+
+"""The written row, and how to undo it."""
+type AssistantActionResultModel {
+  action: AssistantAction!
+  createdId: UUID!
+  createdLabel: String!
+
+  """
+  True when the caller's idempotency key had already produced this result.
+  """
+  replayed: Boolean!
+
+  """The confirmation, quoting the returned row."""
+  sentence: String!
+
+  """
+  How the action can be undone (`SOFT_DELETE`, `UNDO_CAPTURE`, `NONE`). An action with `NONE` is not offered at all, so this is never the reason a write is irreversible.
+  """
+  undo: String!
 }
 
 """docs/06 §4.4 and §8.5."""
@@ -1358,6 +1426,11 @@ type Mutation {
   applyMerchantSelection(names: [String!]!): MerchantSelectionResultModel!
 
   """
+  Execute a proposal by id. The action performed is the one the proposal stored — never one supplied with this call (ADR-035 decision 2).
+  """
+  assistantExecuteAction(idempotencyKey: String!, proposalId: UUID!): AssistantActionResultModel!
+
+  """
   The write half of the capture path (docs/06 §5.2). Validates, classifies and writes the whole `rows` array in ONE database transaction: if any row is structurally invalid nothing is written and every offending row is named. A row the confidence gate puts in the blocking lane is NOT a validation failure — it is written PENDING and enters the review queue, so one ambiguous row never blocks a batch (F-06). Idempotent per row via `idempotencyKey` (I-10).
   """
   captureCommit(input: CaptureCommitInput!): CaptureCommitResult!
@@ -2089,6 +2162,11 @@ type Query {
   Answer a question about this Household's own ledger. The backend computes the facts; the model only narrates them, and every numeral it writes must exist in `facts` (ADR-017).
   """
   assistantAnswer(locale: String, question: String!): AssistantAnswerModel!
+
+  """
+  Propose a write from a question (e.g. "dodaj kategoriju Putovanja"). Writes nothing; the returned `proposalId` is the only argument the execute mutation accepts (ADR-035).
+  """
+  assistantProposeAction(kind: CategoryKind, locale: String, question: String!): AssistantActionProposalModel!
 
   """
   The answerable starter questions (docs/06 §8.1), for the assistant screen.

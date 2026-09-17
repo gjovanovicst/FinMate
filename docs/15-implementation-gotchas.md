@@ -1708,6 +1708,15 @@ Short, and load-bearing.
   and keep it under ~55 KB**, so the next task has room; a file that has to be truncated cannot be
   obeyed, and the truncated part is always the rules at the end.
 
+  **It was truncated again on 2026-09-17, in the A-series**: the assistant row alone reached **4 326
+  bytes** and the file **65 460**, over the 65 536-byte loader budget, so the tail (the Skills section)
+  was being cut. B-1 replaced that row with a summary pointing at docs/06 §8.9–§8.15 and docs/10 §5.9,
+  taking the file to **62 857** — loadable, with ~2.7 KB to spare, but **still above the guidance**, so a
+  fuller compression is **owed and unscheduled**. The next two candidates and where their detail already
+  lives: the `Web screens` row (docs/02 owns every screen) and the `Known gap → Phase 3 alerts` row
+  (docs/06 §5.14 and docs/09). ⚠️ Do not solve it by dropping a ⚠️ or a named gap — the file's value is
+  that the uncomfortable half survives compression.
+
 - **`deleteDB` hangs in a `fake-indexeddb` spec, so the test times out with no error worth reading.**
   `idb`'s `deleteDB` waits for every open connection to close, and a connection only closes on a
   `versionchange` event — which `idb` reports through the `blocking` callback the store has to opt into.
@@ -1749,6 +1758,24 @@ Short, and load-bearing.
   matching, the string is the attack surface; and a residency guarantee that no code path exercises is
   a guarantee nobody has tested (wiring the first real provider immediately found two prompt defects —
   see group 6).
+
+---
+
+- **A proposal store has three traps, and two of them look like bugs only under load.** ADR-035 keeps a
+  pending write in Redis until a human confirms it, and the properties that make that safe are easy to
+  lose in a refactor. (1) **The read must be atomic.** `take` uses `GETDEL`, not `GET` then `DEL`,
+  because two confirms racing on one proposal would otherwise both see it and write twice — a
+  double-click on a confirm button is the ordinary case, not an exotic one. (2) **The failure mode must
+  be *closed*.** `RedisService`'s policy leaves the choice to the caller, and rate limiting deliberately
+  fails **open**; a proposal must do the opposite in both directions — a proposal that cannot be stored
+  is never offered, and one that cannot be read back is never executed. A write must not happen on a
+  guess about what the human approved. (3) **In-process state would work perfectly in dev.** An in-memory
+  map passes every single-instance test and silently fails to find a proposal confirmed against another
+  API instance, so the multi-instance constraint is recorded with the decision rather than discovered in
+  production. Two smaller ones: the outcome is remembered against the caller's **idempotency key**
+  *before* the proposal is consumed, or a retry after a timeout reports failure for a write that
+  happened; and the stored blob is **shape-checked on read**, because a value written by an older build
+  is not a value this build can honour.
 
 ---
 

@@ -4,6 +4,8 @@ import { JsonScalar } from '../../graphql/scalars/json.scalar';
 import { BalanceScalar } from '../../graphql/scalars/balance.scalar';
 import { LocalDateScalar, UuidScalar } from '../../graphql/scalars/uuid.scalar';
 import { AssistantIntentEnum, type AssistantIntent } from './assistant-intents';
+import type { AssistantAction } from './assistant-actions';
+import type { ActionDiffEntry } from './pending-action.store';
 import type { AssistantAnswerView, DrillThroughView, NarrationMode } from './assistant.service';
 import type { AssistantFactsView, FactRowView, FactTotalView, ProvenanceView } from './fact-assembly.service';
 
@@ -214,4 +216,142 @@ export function toAssistantAnswerModel(view: AssistantAnswerView): AssistantAnsw
     costMicros: view.costMicros,
     reason: view.reason,
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The write side — propose → confirm → execute (docs/06 §8.16, ADR-035)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The closed set of writes the assistant may propose. Mirrors `ASSISTANT_ACTIONS`, and registered so
+ * the schema names the same vocabulary the registry declares — a client cannot ask for an action by
+ * string.
+ */
+export enum AssistantActionEnum {
+  ADD_CATEGORY = 'ADD_CATEGORY',
+}
+
+registerEnumType(AssistantActionEnum, {
+  name: 'AssistantAction',
+  description: 'A registered assistant action. Closed: the registry has no unregistered member (ADR-035).',
+});
+
+@ObjectType({ description: 'One field of a proposal, as the confirmation card renders it.' })
+export class ActionDiffEntryModel {
+  @Field(() => String)
+  field!: string;
+
+  @Field(() => String, { nullable: true, description: 'The value before, or null when there is none.' })
+  before?: string | null;
+
+  @Field(() => String, { nullable: true, description: 'The value after, or null (e.g. "top level").' })
+  after?: string | null;
+
+  @Field(() => Boolean, {
+    description:
+      'True when the proposal filled this rather than the question stating it, so the card can offer ' +
+      'to change it. Guessing silently is not an option; guessing visibly is (ADR-035 decision 5).',
+  })
+  defaulted!: boolean;
+}
+
+@ObjectType({
+  description:
+    'The backend-rendered proposal. Never narrated: a write confirmation is a numeral-bearing ' +
+    'statement, so ADR-017 applies to it exactly as to an answer (ADR-035 decision 8).',
+})
+export class AssistantActionPreviewModel {
+  @Field(() => String)
+  sentence!: string;
+
+  @Field(() => [ActionDiffEntryModel])
+  diff!: ActionDiffEntryModel[];
+}
+
+@ObjectType({
+  description:
+    'A proposed write awaiting a human click. `proposed: false` is a refusal, not an error: the ' +
+    'question asked for nothing this registry does, or asked without saying what.',
+})
+export class AssistantActionProposalModel {
+  @Field(() => Boolean)
+  proposed!: boolean;
+
+  @Field(() => String, { nullable: true, description: 'Why not, when `proposed` is false.' })
+  reason?: string | null;
+
+  @Field(() => UuidScalar, {
+    nullable: true,
+    description: 'Opaque, single-use, and the **only** argument `assistantExecuteAction` accepts.',
+  })
+  proposalId?: string | null;
+
+  @Field(() => AssistantActionEnum, { nullable: true })
+  action?: AssistantAction | null;
+
+  @Field(() => AssistantActionPreviewModel, { nullable: true })
+  preview?: AssistantActionPreviewModel | null;
+
+  @Field(() => Date, { nullable: true })
+  expiresAt?: Date | null;
+}
+
+@ObjectType({ description: 'The written row, and how to undo it.' })
+export class AssistantActionResultModel {
+  @Field(() => AssistantActionEnum)
+  action!: AssistantAction;
+
+  @Field(() => UuidScalar)
+  createdId!: string;
+
+  @Field(() => String)
+  createdLabel!: string;
+
+  @Field(() => String, {
+    description:
+      'How the action can be undone (`SOFT_DELETE`, `UNDO_CAPTURE`, `NONE`). An action with `NONE` is ' +
+      'not offered at all, so this is never the reason a write is irreversible.',
+  })
+  undo!: string;
+
+  @Field(() => String, { description: 'The confirmation, quoting the returned row.' })
+  sentence!: string;
+
+  @Field(() => Boolean, {
+    description: 'True when the caller\'s idempotency key had already produced this result.',
+  })
+  replayed!: boolean;
+}
+
+/** The service's view onto the wire type — no computation here, for the same reason as the answer. */
+export function toActionProposalModel(view: {
+  readonly proposed: boolean;
+  readonly reason?: string | null;
+  readonly proposalId?: string;
+  readonly action?: AssistantAction;
+  readonly preview?: { readonly sentence: string; readonly diff: readonly ActionDiffEntry[] };
+  readonly expiresAt?: Date;
+}): AssistantActionProposalModel {
+  return {
+    proposed: view.proposed,
+    reason: view.reason ?? null,
+    proposalId: view.proposalId ?? null,
+    action: view.action ?? null,
+    preview:
+      view.preview === undefined
+        ? null
+        : { sentence: view.preview.sentence, diff: [...view.preview.diff] },
+    expiresAt: view.expiresAt ?? null,
+  };
+}
+
+export function toActionResultModel(view: {
+  readonly action: AssistantAction;
+  readonly createdId: string;
+  readonly createdLabel: string;
+  readonly undo: string;
+  readonly sentence: string;
+  readonly replayed: boolean;
+}): AssistantActionResultModel {
+  return { ...view };
 }

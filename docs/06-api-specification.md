@@ -1380,6 +1380,7 @@ type Query {
   # ---- assistant
   assistantAnswer(question: String!, locale: String): AssistantAnswerModel!      # 3.2.3
   assistantSuggestions: [String!]!                                    # 3.2.4, the starter chips
+  assistantProposeAction(question: String!, kind: CategoryKind, locale: String): AssistantActionProposalModel!   # B-2a, ADR-035
 
   # ---- search
   search(query: String!, entities: [SearchEntity!], limit: Int = 20): SearchResults!
@@ -1817,6 +1818,12 @@ type Mutation {
   materialiseRecurring(input: MaterialiseRecurringInput!): MaterialiseRecurringResult!
   confirmDetectedSubscription(ruleId: UUID!): RecurringRulePayload!
   dismissDetectedSubscription(ruleId: UUID!): SimplePayload!
+
+  # ---------- assistant writes (ADR-035, B-2a)
+  # The assistant's ONE write path. It takes the proposal id and nothing else, so the action performed
+  # is byte-for-byte the action the confirmation card showed. `idempotencyKey` makes a retry answer the
+  # same result instead of writing a second time.
+  assistantExecuteAction(proposalId: UUID!, idempotencyKey: String!): AssistantActionResultModel!
 
   # ---------- intelligence (F-22)
   dismissInsight(id: UUID!): InsightPayload!
@@ -3957,6 +3964,50 @@ and Merchant-only controls still say `on` and `at` respectively.
 > that names **both** actually *means* — `na hranu u Lidlu` could be the intersection, the Merchant, or a
 > refusal for being ambiguous — is a product question no matcher fix answers.
 > [docs/16](16-assistant-context-and-actions.md) A-13 carries it for the owner.
+
+### 8.16 The assistant may propose a write; only a click executes it (task B-2a, 2026-09-17)
+
+The owner's request had two halves, and this is the second one: *"and even do actions in app — let's say
+to configure or add records, let's say add category name something and it does it"*. ADR-017 governs what
+a narrator may **say**; it says nothing about what the assistant may **change**, so Part B needed its own
+decision — **ADR-035**, which Q-11 answered on 2026-09-17. This section is that decision implemented.
+
+| Decision | Built | Why |
+|---|---|---|
+| **Propose** is a `Query`; **execute** is the only `Mutation` | `assistantProposeAction(question, kind, locale)` and `assistantExecuteAction(proposalId, idempotencyKey)` | Proposing writes nothing to the ledger — it stores a proposal — so it is a read at the edge, exactly as `captureParse` is. Making it a `Mutation` would tell a client that asking changes state. |
+| The confirmation carries **only** the proposal id | The execute mutation takes no arguments for the action | This is the load-bearing line. The server re-reads **its own** stored proposal, so the executed action is byte-for-byte the action the human saw, and the "the arguments changed between preview and execute" class of bug cannot exist. |
+| A **closed registry**, `Record<AssistantAction, ActionTemplate>` | `assistant-actions.ts`; one member, `ADD_CATEGORY` | Adding an action is three compile-time edits (the union, the template, the executor `Record`). There is no `default:` arm, so "the model called something nobody wrote" fails `tsc` — ADR-017's argument, applied to writes. |
+| The action names a method the **UI already calls** | `ADD_CATEGORY` → `CategoriesService.create`, the same call `createCategory` makes | The assistant gets no privilege the screen lacks: same service, same `TenantContext`, same validation, same audit. `registeredMutations()` is asserted in the registry spec. |
+| **No auto-apply, at any confidence** | There is no code path from a question to a write | ADR-009's gates classify a *categorisation*; a write is not a classification. Recorded as a constraint so it is not quietly relaxed. |
+| The duplicate check runs at **propose** time | `assertNameFree`, against the same rule the index enforces | A confirm button for a write that will fail is a lie the card does not need to tell. The check is `lower(name)`, **not** the fold: refusing a write the index would permit is a different bug from offering one that fails. |
+| A **`text` slot** the planner extracts from the question | `action-planner.ts`, taking the name from the **raw** tokens | A name is display text the user invented; folding it would store `rodendan` because somebody typed `Rođendan`. Cues are matched on folded tokens, the name is sliced from raw ones — which is also what keeps a Cyrillic name Cyrillic. |
+| A proposal lives in **Redis**, short TTL, **consumed atomically** | `pending-action.store.ts`; `GETDEL`, 600 s | Redis is already running (ADR-004), so this adds no datastore under rule 9. `GETDEL` is the whole concurrency story: two confirms racing on one proposal cannot both see it, so a double-click cannot create two Categories. |
+| Execution is **idempotent per `idempotencyKey`** | The outcome is remembered against the key before the proposal is consumed | A retry after a timeout must not create a second row *or* report failure for a write that happened. The worst case is then "expired" for a write that did not happen. |
+| The card is **backend-rendered**, per language | `renderPreview`; one sentence and a field diff, `sr`/`en` | A write confirmation is a numeral-bearing statement, so ADR-017 applies to it as to an answer — the model never describes a write. The two phrasings sit beside the action rather than in a catalogue, because the API has none yet (§5.14) and a confirmation is the one sentence worth not shipping English-only. |
+| `VIEWER` is refused | The resolver's rank check against the template's declared role | `ADD_CATEGORY` declares `MEMBER`, which is what the UI allows. **This is the first write path that refuses a `VIEWER` at all** — see the gap below. |
+
+**`proposed: false` is a refusal, not an error** — the shape `assistantAnswer`'s `answered: false`
+established. `NOT_AN_ACTION` means the question asked for nothing this registry does (most questions
+are reads, and the action planner runs first); `UNRUNNABLE:name` means the request was unmistakable but
+did not say what to create, which asks the user rather than writing something nobody specified. A name
+that is empty, over 80 characters, or already taken **does** throw (`VALIDATION_FAILED` / `CONFLICT`),
+because those are failures of a request the user made, not refusals to answer a question.
+
+**Verified**: `action-planner.spec.ts` 7, `pending-action.store.spec.ts` 6, `assistant-actions.spec.ts`
+4, `assistant-action.resolver.spec.ts` 5, `assistant-action.integration.spec.ts` 8 (a real Postgres: the
+approved action writes the Category through the same service the screen uses, a repeated idempotency key
+replays one row, a consumed proposal cannot be executed again, another Household's proposal is
+unreachable, and the duplicate rule the preview checks is the one the index enforces). **Live 8/8**
+(`/tmp/verify-b2a.mjs`): propose → confirm → the Category is in the tree → a retry replays the same id →
+a different key is refused → a read question proposes nothing → a nameless request is refused with the
+slot → the probe row was removed again.
+
+> **Named, not fixed — and it is an authorisation gap, not an assistant one.** `MemberRole` declares
+> `VIEWER`, and **nothing enforces it**: `createCategory` — like every other taxonomy write — carries no
+> role guard, so a `VIEWER` can write through the UI today. The assistant refuses one because the
+> registry declares a role; the two surfaces therefore disagree, in the safe direction. Closing it means
+> a guard on the write mutations and a decision about what a `VIEWER` may do at all, which is its own
+> task rather than something to slip into a registry.
 
 ---
 

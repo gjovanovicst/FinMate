@@ -7,7 +7,8 @@
 > **[ADR-035](14-decisions-and-risks.md#adr-035--the-assistant-may-propose-a-write-only-a-humans-click-executes-it)
 > records it** — the assistant may *propose* a write, only a human's click executes it, no
 > confidence-based fast path, and pending proposals live in Redis with a short TTL. B-1 is that ADR;
-> **B-2 is the first action to build.**
+> **B-2a built the server half** (registry, `text` slot, proposal store, propose/execute, `ADD_CATEGORY`
+> — docs/06 §8.16), and **B-2b is the proposal card** that makes it reachable by a person.
 >
 > [14 §Part 3](14-decisions-and-risks.md) also carries **Q-12** (refusal telemetry), which A-8 needs.
 
@@ -335,7 +336,8 @@ One commit per row, per the working agreement. Part A rows are independent of Pa
 | A-13a | `scopePhrase` preferred the Merchant while the router preferred the Category, so a figure could wear another scope's label | A-12 (removes the keyword-driven case) | the label names the scope `spend()` aggregated by, so the claim matches the figure — **done** |
 | A-13b | which scope a question that names **both** a Category and a Merchant *means* (*"na hranu u Lidlu"*) | **a product decision** — the label is honest since A-13a, so this is now only about the answer | the intersection, the Merchant, or an ambiguity refusal — the owner's call |
 | **B-1** | **ADR-035: propose writes, never execute them** | **Q-11** — answered 2026-09-17 | the architectural gate — **done** ([ADR-035](14-decisions-and-risks.md#adr-035--the-assistant-may-propose-a-write-only-a-humans-click-executes-it)) |
-| B-2 | action registry + `ADD_CATEGORY` end to end | B-1 | the first action, no money, trivially undoable |
+| B-2a | action registry + `text` slot + Redis proposals + `assistantProposeAction`/`assistantExecuteAction` + `ADD_CATEGORY` | B-1 | the first action, server-side and live-verifiable — **done** ([06 §8.16](06-api-specification.md)) |
+| B-2b | the proposal card on `/assistant` (preview, diff, **confirm**, the `kind` toggle, the undo affordance) | B-2a | the same action, reachable by a person — the half B-2a deliberately leaves |
 | B-3 | `ADD_TRANSACTION` through the existing capture preview | B-2 | highest-value action, ~90 % already built |
 | B-4 | `SET_BUDGET`, `ADD_GOAL`, `ADD_TAG` | B-2 | "configure", as asked |
 | B-5 | `CREATE_RULE_FROM_CORRECTION` | B-2 | ADR-010's confirmation, reached by question |

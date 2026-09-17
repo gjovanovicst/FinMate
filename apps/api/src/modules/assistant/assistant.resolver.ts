@@ -1,9 +1,23 @@
-import { Args, Query, Resolver } from '@nestjs/graphql';
+import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 
-import { CurrentHouseholdId } from '../../common/auth/current-tenant.decorator';
+import { CurrentHouseholdId, CurrentTenant } from '../../common/auth/current-tenant.decorator';
+import { ApiError } from '../../common/filters/all-exceptions.filter';
+import type { MemberRole, TenantContext } from '../../common/tenancy/tenant-context';
+import { CategoryKind } from '../taxonomy/category.model';
+import { ACTION_TEMPLATES, type ActionTemplate } from './assistant-actions';
+import { planAction, missingActionSlots } from './action-planner';
+import { AssistantActionService } from './assistant-action.service';
 import { SUGGESTED_QUESTIONS } from './assistant-intents';
 import { AssistantService } from './assistant.service';
-import { AssistantAnswerModel, toAssistantAnswerModel } from './assistant.model';
+import { UuidScalar } from '../../graphql/scalars/uuid.scalar';
+import {
+  AssistantActionProposalModel,
+  AssistantActionResultModel,
+  AssistantAnswerModel,
+  toActionProposalModel,
+  toActionResultModel,
+  toAssistantAnswerModel,
+} from './assistant.model';
 
 /**
  * The assistant query — docs/06 §4.4, §8.
@@ -26,7 +40,10 @@ import { AssistantAnswerModel, toAssistantAnswerModel } from './assistant.model'
  */
 @Resolver(() => AssistantAnswerModel)
 export class AssistantResolver {
-  constructor(private readonly assistant: AssistantService) {}
+  constructor(
+    private readonly assistant: AssistantService,
+    private readonly actions: AssistantActionService,
+  ) {}
 
   @Query(() => AssistantAnswerModel, {
     description:
@@ -61,5 +78,101 @@ export class AssistantResolver {
   })
   assistantSuggestions(): readonly string[] {
     return SUGGESTED_QUESTIONS.map((suggestion) => suggestion.question);
+  }
+
+  /**
+   * Turn a question into a **proposal** — a `Query`, because proposing writes nothing to the ledger.
+   *
+   * The proposal itself is stored server-side (Redis, short TTL) so that the confirmation can carry
+   * only its id: the executed action is then byte-for-byte the action the card showed (ADR-035
+   * decision 2). `proposed: false` is a **refusal**, not an error — the question asked for nothing
+   * this registry does, or did not say what — which mirrors `assistantAnswer`'s `answered: false`.
+   *
+   * Real failures do throw: a name that is invalid, one that already exists, or a store that could not
+   * hold the proposal.
+   */
+  @Query(() => AssistantActionProposalModel, {
+    description:
+      'Propose a write from a question (e.g. "dodaj kategoriju Putovanja"). Writes nothing; the ' +
+      'returned `proposalId` is the only argument the execute mutation accepts (ADR-035).',
+  })
+  async assistantProposeAction(
+    @CurrentTenant() tenant: TenantContext,
+    @Args('question', { type: () => String }) question: string,
+    @Args('kind', { type: () => CategoryKind, nullable: true }) kind?: CategoryKind,
+    @Args('locale', { type: () => String, nullable: true }) locale?: string,
+  ): Promise<AssistantActionProposalModel> {
+    const plan = planAction(question);
+    if (plan === null) {
+      return toActionProposalModel({ proposed: false, reason: 'NOT_AN_ACTION' });
+    }
+
+    const missing = missingActionSlots(plan.action, plan.slots);
+    if (missing.length > 0) {
+      // The question is unmistakably a request for this action but does not say what to write. A
+      // silent fall-through to the read planner would answer a question nobody asked.
+      return toActionProposalModel({
+        proposed: false,
+        reason: `UNRUNNABLE:${missing.join(',')}`,
+      });
+    }
+
+    assertCanPerform(tenant.role, ACTION_TEMPLATES[plan.action]);
+
+    const proposed = await this.actions.propose({
+      householdId: tenant.householdId,
+      userId: tenant.userId,
+      action: plan.action,
+      // `kind` is the card's one editable default; supplying it re-proposes rather than changing an
+      // existing proposal, which is what keeps the confirmation honest.
+      slots: { ...plan.slots, ...(kind === undefined || kind === null ? {} : { kind }) },
+      ...(locale === undefined || locale === null ? {} : { locale }),
+    });
+
+    return toActionProposalModel({
+      proposed: true,
+      ...proposed,
+      // The service speaks ISO strings (it stores them); the wire type speaks `Date`, which
+      // `@Field(() => Date)` renders as the `DateTime` scalar.
+      expiresAt: new Date(proposed.expiresAt),
+    });
+  }
+
+  /**
+   * Perform the action the human approved.
+   *
+   * A `Mutation`, and the only place the assistant can change the ledger. It reads a proposal and
+   * performs **that**; the arguments the human approved are never sent back by the client, so a
+   * changed-args race cannot exist. `idempotencyKey` makes a retry safe: the outcome is remembered
+   * against it, so a repeated call answers the same result instead of writing twice.
+   */
+  @Mutation(() => AssistantActionResultModel, {
+    description:
+      'Execute a proposal by id. The action performed is the one the proposal stored — never one ' +
+      'supplied with this call (ADR-035 decision 2).',
+  })
+  async assistantExecuteAction(
+    @CurrentTenant() tenant: TenantContext,
+    @Args('proposalId', { type: () => UuidScalar }) proposalId: string,
+    @Args('idempotencyKey', { type: () => String }) idempotencyKey: string,
+  ): Promise<AssistantActionResultModel> {
+    const executed = await this.actions.execute({
+      householdId: tenant.householdId,
+      proposalId,
+      idempotencyKey,
+    });
+    return toActionResultModel(executed);
+  }
+}
+
+/**
+ * A rank, so a requirement can be "at least this". `VIEWER` is the one that matters: it exists as a
+ * role and **nothing enforces it today**, so this is the first write path that refuses one.
+ */
+const RANK: Readonly<Record<MemberRole, number>> = { VIEWER: 0, MEMBER: 1, ADMIN: 2, OWNER: 3 };
+
+function assertCanPerform(role: MemberRole, template: ActionTemplate): void {
+  if (RANK[role] < RANK[template.role]) {
+    throw new ApiError('FORBIDDEN', 'Your role cannot perform that action.');
   }
 }

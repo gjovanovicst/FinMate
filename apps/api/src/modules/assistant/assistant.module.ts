@@ -10,8 +10,10 @@ import { RecurringModule } from '../recurring/recurring.module';
 import { TaxonomyModule } from '../taxonomy/taxonomy.module';
 import { AiModule } from '../ai/ai.module';
 import { AssistantResolver } from './assistant.resolver';
+import { AssistantActionService } from './assistant-action.service';
 import { AssistantService } from './assistant.service';
 import { FactAssemblyService } from './fact-assembly.service';
+import { PendingActionStore } from './pending-action.store';
 
 /**
  * The assistant — docs/06 §8, ADR-017, docs/09 tasks 3.2.1–3.2.5.
@@ -69,8 +71,13 @@ import { FactAssemblyService } from './fact-assembly.service';
   providers: [
     FactAssemblyService,
     AssistantService,
+    // The write side (ADR-035): the registry's only executor and where a proposal lives between
+    // propose and confirm. `RedisService` is injected without an import — `AuthModule` is `@Global()`
+    // and exports it for exactly this kind of consumer.
+    AssistantActionService,
+    PendingActionStore,
     AssistantResolver,
   ],
-  exports: [FactAssemblyService, AssistantService],
+  exports: [FactAssemblyService, AssistantService, AssistantActionService],
 })
 export class AssistantModule {}
