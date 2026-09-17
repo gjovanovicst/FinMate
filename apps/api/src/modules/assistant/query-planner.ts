@@ -167,6 +167,22 @@ const MAX_LIMIT = 50;
  * an expense aggregate.
  */
 export function planQuestion(question: string, context: PlannerContext): Plan {
+  const { plan, resolved } = planQuestionCore(question, context);
+  if (plan.intent !== 'NO_TEMPLATE_MATCH') return plan;
+  return { ...plan, suggestions: refusalSuggestions(context, resolved) };
+}
+
+/**
+ * The routing core, without the refusal's suggestions.
+ *
+ * Split out for one reason: {@link refusalSuggestions} has to ask *"could this Household have this
+ * question answered?"*, which means planning the candidate — and a planner that planned its own
+ * suggestions through the public entry point would recurse until the stack ended.
+ */
+function planQuestionCore(
+  question: string,
+  context: PlannerContext,
+): { readonly plan: Plan; readonly resolved: ResolvedEntities } {
   const folded = normaliseForMatching(question);
   const period = resolvePeriod(folded, context.today);
   const matchedOn: string[] = [period.matchedOn];
@@ -256,14 +272,73 @@ export function planQuestion(question: string, context: PlannerContext): Plan {
   };
 
   return {
-    intent,
-    template: INTENT_TEMPLATES[intent],
-    slots,
-    matchedOn,
-    ...(intent === 'NO_TEMPLATE_MATCH'
-      ? { suggestions: SUGGESTED_QUESTIONS.map((entry) => entry.question) }
-      : {}),
+    plan: { intent, template: INTENT_TEMPLATES[intent], slots, matchedOn },
+    resolved: { category, merchant, account, tag },
   };
+}
+
+/** What the question's own words resolved to, whether or not a template used them. */
+interface ResolvedEntities {
+  readonly category: NamedEntity | null;
+  readonly merchant: NamedEntity | null;
+  readonly account: NamedEntity | null;
+  readonly tag: NamedEntity | null;
+}
+
+/** How many questions a refusal offers. Six, which is what `/assistant` renders as chips. */
+const MAX_SUGGESTIONS = 6;
+
+/**
+ * What a refusal offers instead — docs/06 §8.4's *"I cannot answer that yet, but I can tell you…"*
+ * (ADR-017's own consequence, which used to be six static strings).
+ *
+ * **Structural, not lexical.** The obvious implementation — score the question against the canonical
+ * ones and offer the nearest — was measured and rejected (docs/06 §8.11): over twelve held-out
+ * colloquial questions it routed **nine wrong**, because a lexical score is dominated by the words two
+ * questions *share*, and those are the least informative ones. `koliko mi je ostalo para na kartici`
+ * scores 0.594 against `Koliko mi je ostalo od budžeta?` on `koliko mi je ostalo` alone, while the two
+ * words that decide it — `kartici` versus `budžeta` — are exactly what the two do not share.
+ *
+ * So a suggestion is built from what the planner **did** resolve, phrased so that no Serbian case
+ * ending has to be invented:
+ *
+ *   1. what the ledger can say about the entity the question named, then
+ *   2. the canonical questions — **filtered to the ones this Household can actually have answered**,
+ *      because a chip that leads to a second refusal is worse than no chip.
+ *
+ * That second half is a contract rather than a comment: `planner-gate.spec.ts` asserts that every
+ * suggestion a refusal offers routes to a runnable plan in the context that produced it.
+ */
+function refusalSuggestions(
+  context: PlannerContext,
+  resolved: ResolvedEntities,
+): readonly string[] {
+  const offered: string[] = [];
+  const add = (question: string): void => {
+    if (offered.length >= MAX_SUGGESTIONS || offered.includes(question)) return;
+    const { plan } = planQuestionCore(question, context);
+    if (plan.intent === 'NO_TEMPLATE_MATCH' || !isRunnable(plan)) return;
+    offered.push(question);
+  };
+
+  // The name is quoted and introduced by a noun (`na kategoriji „X"`) rather than inflected into the
+  // sentence: generating the accusative of an arbitrary Household name is how a suggestion ends up
+  // reading like `na odeća i obuću`.
+  if (resolved.category !== null) {
+    add(`Koliko sam potrošio na kategoriji „${resolved.category.path ?? resolved.category.name}" ovog meseca?`);
+  }
+  if (resolved.merchant !== null) {
+    add(`Koliko sam potrošio kod prodavca „${resolved.merchant.name}" ovog meseca?`);
+  }
+  if (resolved.account !== null) {
+    add(`Koliko iznosi stanje na računu „${resolved.account.name}"?`);
+  }
+  if (resolved.tag !== null) {
+    add(`Koliko sam potrošio sa oznakom „${resolved.tag.name}" ovog meseca?`);
+  }
+  for (const entry of SUGGESTED_QUESTIONS) add(entry.question);
+
+  return offered;
 }
 
 /**

@@ -3740,6 +3740,28 @@ and the **answerable share** at ≥ 0.85 as a floor. Measured today: **51 of 57 
 gaps printed by the runner beside the reason recorded against each — *a fixture that cannot record a
 refusal without saying what it is*.
 
+**A-4b: the fuzzy second rung was built, measured, and rejected (2026-09-17).** docs/16 A-4 proposed
+scoring an unmatched question against the registry's own corpus and routing to the best match when it
+clears a threshold *and* a margin. It was implemented as a nearest-exemplar scorer over the battery
+(token trigrams, cosine) and measured against twelve **held-out** colloquial Serbian questions:
+**3 correct, 9 wrong answers**, with winner-runner-up margins of 0.006–0.083 — noise. `koliko mi je
+ostalo para na kartici` scored 0.594 against `Koliko mi je ostalo od budžeta?` on `koliko mi je ostalo`
+alone and was routed to `BUDGET_STATUS`, while the two words that decide it (`kartici` vs `budžeta`) are
+exactly what the two do not share. **A lexical score is dominated by the words two questions share, and
+in a money question those are the least informative ones** (`koliko`, `mi`, `je`, `ostalo`, `ovog
+meseca`); the cue router already keys on the discriminating noun *and* the entity it resolved to. A rung
+that threw that away would answer a *plausible* question instead of the one asked, which is worse than
+the refusal it replaces. Recorded in docs/16 A-4 rather than left as an open idea to be re-proposed.
+
+**And the refusal's suggestions were fixed structurally instead (A-4c).** A refusal now offers (1) what
+the ledger *can* say about the entity the question named — `kolika mi je penzija` resolves the `Penzija`
+Category, so the first chip is *"Koliko sam potrošio na kategoriji „Penzija" ovog meseca?"* — then (2) the
+canonical questions **filtered to the ones this Household can actually have answered**. That second half
+is a checked contract: `planner-gate.spec.ts` asserts every suggestion routes to a runnable plan in the
+context that produced it, so a chip can never lead to a second refusal. Names are quoted and introduced
+by a noun rather than inflected, because generating the accusative of an arbitrary Household name is how
+a suggestion ends up reading like `na odeća i obuću`.
+
 > **Why the gate is not "answer more questions".** Writing the fixture meant checking what each question
 > actually did, and two were answering the wrong one. Both are fixed in the commit before the gate
 > (§8.8 item 6), and the fixes took the answered count **down** — 52 → 51 — because a wrong answer

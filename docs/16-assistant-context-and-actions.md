@@ -81,11 +81,30 @@ product whose planner only reads Serbian is a defect, not a missing feature.
 
 **A-3 · Fix the `MONTH_PROJECTION` 500.** A one-line sign bug on a declared, routed intent.
 
-**A-4 · A fuzzy second planner rung — closed set, no AI.** When no cue fires, score the folded question
-against the registry's own corpus (each intent's cues + its suggested question) with the fold and trigram
-machinery that already exists in `packages/nlp`, and route only when the winner clears a threshold *and*
-is clearly ahead of the runner-up. This stays inside ADR-017 because the rung's output is still a
-**template name**, never a query.
+**A-4 · A fuzzy second planner rung — closed set, no AI. BUILT, MEASURED, REJECTED (2026-09-17).**
+
+~~When no cue fires, score the folded question against the registry's own corpus … and route only when the
+winner clears a threshold *and* is clearly ahead of the runner-up.~~ The idea was implemented as a
+nearest-exemplar scorer over the 57-question battery (token trigrams, cosine) and measured against twelve
+**held-out** colloquial Serbian questions — deliberately held out, because tuning against the examples you
+invented proves nothing:
+
+> **3 of 12 correct. The other 9 were wrong answers**, with margins between the winner and the runner-up
+> of 0.006–0.083 — i.e. the ranking is noise at those similarities.
+
+| Question | The rung said | The truth | Why |
+|---|---|---|---|
+| `koliko mi je ostalo para na kartici` | `BUDGET_STATUS` (0.594) | `ACCOUNT_BALANCE_ALL` | it shares `koliko mi je ostalo` with the budget question — and that is roughly all it shares |
+| `koliko sam u minusu` | `SPEND_TOTAL` (0.564) | `NET_CASHFLOW` | `koliko sam` is boilerplate; `minusu` is the question |
+| `kolika je šteta ovog meseca` | `INCOME_TOTAL` (0.573) | `SPEND_TOTAL` | `ovog meseca` is boilerplate; `šteta` is the question |
+
+**The failure generalises, and that is the finding:** a lexical score is dominated by the words two
+questions *share*, and in a question about money those are the least informative ones — `koliko`, `mi`,
+`je`, `ostalo`, `ovog meseca`. The words that decide the intent are precisely the words the exemplar does
+**not** share (`kartici` versus `budžeta`; `minusu`; `šteta`). The cue router already works the other way
+round: it keys on the discriminating noun **and** on which entity that noun resolved to. A second rung
+would throw that away and answer a *plausible* question instead of the one that was asked — the single
+outcome ADR-017 exists to prevent, and worse than the refusal it replaces.
 
 What this rung deliberately is **not**: an LLM choosing the intent. That is a classification with an
 unbounded answer space, it needs egress and therefore ADR-032 consent, it is non-deterministic across
@@ -106,10 +125,23 @@ never a previously resolved entity id.** An entity the user has since deleted or
 answer about a row that no longer exists; if the follow-up needs an entity and does not name one, the
 honest outcome is a refusal that says which entity is missing.
 
-**A-6 · A refusal that is useful.** ADR-017 already says the limitation *"must be messaged well ('I can't
-answer that yet, but I can tell you…')"* — and today the refusal carries six static suggestions rather
-than the closest ones. Build them from the registry: the nearest answerable templates, ranked by the
-same scorer A-4 introduces. And when the intent *matched* but a required slot did not, say exactly that
+**A-6 · A refusal that is useful. DONE for the suggestions (A-4c, 2026-09-17); the copy is still A-6's.**
+
+ADR-017 already says the limitation *"must be messaged well ('I can't answer that yet, but I can tell
+you…')"*. The suggestions are no longer six static strings, and — given A-4's measurement — **not**
+ranked by a similarity scorer. They are built structurally instead:
+
+1. **what the ledger can say about the entity the question named** — `kolika mi je penzija` resolves the
+   `Penzija` Category, so the first chip is *"Koliko sam potrošio na kategoriji „Penzija" ovog meseca?"*;
+2. **the canonical questions, filtered to the ones this Household can actually have answered** — a chip
+   that leads to a second refusal is worse than no chip.
+
+The second half is a checked contract rather than a comment: `planner-gate.spec.ts` asserts that **every**
+suggestion a refusal offers routes to a runnable plan in the context that produced it. Names are quoted
+and introduced by a noun rather than inflected into the sentence, because generating the accusative of an
+arbitrary Household name is how a suggestion ends up reading like `na odeća i obuću`.
+
+Still A-6's: the refusal **copy** is English-only while the suggestions are Serbian (§5.14's breach). And when the intent *matched* but a required slot did not, say exactly that
 in the Household's own vocabulary (*"Nisam našao kategoriju „X"…"*), not the generic sentence. Also
 translate the refusal and template fallback copy — the money is already formatted in the Household's
 locale and the connectives around it are not.
@@ -274,7 +306,9 @@ One commit per row, per the working agreement. Part A rows are independent of Pa
 | A-1 | `MONTH_PROJECTION` sign fix | nothing | a routed question stops 500-ing |
 | A-2 | four fact builders + `goals`/`recurringRules` in `PlannerContext` + slot resolution | nothing | four intents answer from services that already exist |
 | A-3 | cue widening, incl. English; locale-aware ordered rules | nothing decision-wise | the largest single refusal bucket |
-| A-4 | fuzzy second rung + the battery as an eval gate | A-1..A-3 to have something to measure | coverage becomes a number with a bar |
+| A-4a | the battery as an eval gate (`test:evals` + the fast suite) | A-1..A-3 to have something to measure | coverage becomes a number with a bar — **done** |
+| A-4b | the fuzzy second rung | the measurement above | **rejected**: 3/12 right on held-out questions, 9 wrong answers |
+| A-4c | refusal suggestions built structurally | A-4a | a refusal names what the ledger *can* say about the entity asked about — **done** |
 | A-5 | follow-up context (`previousIntent` + `previousPeriod`) | a [06 §8](06-api-specification.md) contract extension | *"a prošli mesec?"* works |
 | A-6 | useful refusal + i18n of refusal/fallback copy | catalogue entries | ADR-017's "message it well" |
 | A-7 | refusal telemetry | **Q-12** | the gap list becomes data |

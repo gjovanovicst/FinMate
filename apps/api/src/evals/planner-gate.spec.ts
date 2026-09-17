@@ -65,6 +65,50 @@ describe('the assistant battery fixture', () => {
   });
 });
 
+describe('what a refusal offers', () => {
+  it('only ever suggests a question this Household can actually have answered', () => {
+    // The contract that makes a suggestion more than decoration: a chip that leads to a second refusal
+    // is worse than no chip. Asserted over the battery's own context, for every declared refusal.
+    const refusals = run().filter(
+      (outcome) => outcome.observedIntent === 'NO_TEMPLATE_MATCH' || !outcome.runnable,
+    );
+    expect(refusals.length).toBeGreaterThan(0);
+    for (const refusal of refusals) {
+      const { suggestions = [] } = planQuestion(refusal.question, battery.context);
+      expect(suggestions.length, refusal.question).toBeGreaterThan(0);
+      for (const suggestion of suggestions) {
+        const plan = planQuestion(suggestion, battery.context);
+        expect(plan.intent, `${refusal.question} → ${suggestion}`).not.toBe('NO_TEMPLATE_MATCH');
+        expect(isRunnable(plan), `${refusal.question} → ${suggestion}`).toBe(true);
+      }
+    }
+  });
+
+  it('offers what the ledger can say about the entity the question named', () => {
+    // `kolika mi je penzija` resolves the Penzija Category and no template matches, so the first chip
+    // is about that Category — the question the assistant *can* answer.
+    const { suggestions = [] } = planQuestion('kolika mi je penzija', battery.context);
+    expect(suggestions[0]).toContain('Penzija');
+  });
+
+  it('drops a canonical question this Household cannot have answered', () => {
+    // A Household whose tree has nothing named `hrana` (and no path mentioning it either — deleting the
+    // parent is not enough, because its child's path still reads `Hrana / Supermarket`) gets no chip
+    // about hranu, because that chip would refuse too.
+    const withoutFood = {
+      ...battery.context,
+      categories: [{ id: 'cat-gorivo', name: 'Gorivo', path: 'Gorivo' }],
+    };
+    const { suggestions = [] } = planQuestion('kakvo je vreme sutra', withoutFood);
+    expect(suggestions.some((suggestion) => suggestion.includes('hranu'))).toBe(false);
+    // …and the ones it can answer are still offered.
+    expect(suggestions.length).toBeGreaterThan(0);
+    for (const suggestion of suggestions) {
+      expect(isRunnable(planQuestion(suggestion, withoutFood))).toBe(true);
+    }
+  });
+});
+
 describe('the planner gates, in the failure direction', () => {
   const good: PlannerOutcome = {
     question: 'Koliko sam potrošio ovog meseca?',
