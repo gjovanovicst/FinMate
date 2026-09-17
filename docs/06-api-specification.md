@@ -3614,6 +3614,13 @@ created and asserts the Household is back to empty. It also asserts the two regr
 introduced and fixed: the spending question stays a spending question, and naming a rule routes to the
 **due** template rather than the list.
 
+**A-1 + A-2 re-measured the §8.8 battery: 28 of 37 answered, 9 refused** (it was 25/12). Every remaining
+refusal is `NO_TEMPLATE_MATCH` — the cue-coverage bucket A-3 exists for, both English questions included —
+and there is **no `NOT_BUILT` and no error left**. One measurement note worth keeping: the battery has to
+be **paced**, because §11.2's `AI_NARRATE` budget is 30 a minute per Household and an unpaced 37-question
+burst reports ~30 refusals that are really one `RATE_LIMITED` (2.2 s between questions is enough, and an
+unpaced run is how the first attempt "found" 35 refusals).
+
 > **Named, not fixed:** `GOAL_PROGRESS` requires a goal to be **named**. A Household with exactly one
 > goal, asked *"koliko sam uštedeo za cilj"*, is refused rather than answered, because resolving the only
 > goal would be the planner inferring a scope the question did not state. That is a product call rather
