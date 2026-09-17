@@ -207,10 +207,10 @@ const AMOUNT_SPECIALS = [
 /** Merchant display names and their **hand-folded** content tokens (docs/04 §3.1). */
 const MERCHANTS = [
   { name: 'Lidl', tokens: ['lidl'] },
-  { name: 'Maxi', tokens: ['maxi'] },
+  { name: 'Maxi', tokens: ['maksi'] },
   { name: 'Idea', tokens: ['idea'] },
   { name: 'DIS', tokens: ['dis'] },
-  { name: 'Univerexport', tokens: ['univerexport'] },
+  { name: 'Univerexport', tokens: ['univereksport'] },
   { name: 'Shop&Go', tokens: ['shop', 'go'] },
   { name: 'Aman', tokens: ['aman'] },
   { name: 'Roda', tokens: ['roda'] },
@@ -232,9 +232,9 @@ const MERCHANTS = [
   { name: 'Yettel', tokens: ['yettel'] },
   { name: 'A1', tokens: ['a1'] },
   { name: 'Orion Telekom', tokens: ['orion', 'telekom'] },
-  { name: 'Netflix', tokens: ['netflix'] },
+  { name: 'Netflix', tokens: ['netfliks'] },
   { name: 'Spotify', tokens: ['spotify'] },
-  { name: 'HBO Max', tokens: ['hbo', 'max'] },
+  { name: 'HBO Max', tokens: ['hbo', 'maks'] },
   { name: 'YouTube Premium', tokens: ['youtube', 'premium'] },
   { name: 'Apoteka Benu', tokens: ['apoteka', 'benu'] },
   { name: 'Apoteka Lilly', tokens: ['apoteka', 'lilly'] },
@@ -297,9 +297,9 @@ const MERCHANT_REFUNDS = [
   { input: 'Lidl vraćeno 2000', minor: '200000', description: 'Lidl vraćeno', tokens: ['lidl', 'vraceno'] },
   { input: 'storno Lidl 2000', minor: '200000', description: 'storno Lidl', tokens: ['storno', 'lidl'] },
   { input: 'refund Lidl 2000', minor: '200000', description: 'refund Lidl', tokens: ['refund', 'lidl'] },
-  { input: 'Maxi 3.500 vraćeno', minor: '350000', description: 'Maxi vraćeno', tokens: ['maxi', 'vraceno'] },
+  { input: 'Maxi 3.500 vraćeno', minor: '350000', description: 'Maxi vraćeno', tokens: ['maksi', 'vraceno'] },
   { input: 'Idea 1.200 storno', minor: '120000', description: 'Idea storno', tokens: ['idea', 'storno'] },
-  { input: 'vraćeno Maxi 2.000 juče', minor: '200000', description: 'vraćeno Maxi', tokens: ['vraceno', 'maxi'], occurredOn: '2026-09-13' },
+  { input: 'vraćeno Maxi 2.000 juče', minor: '200000', description: 'vraćeno Maxi', tokens: ['vraceno', 'maksi'], occurredOn: '2026-09-13' },
 ];
 
 /** Currency-suffix rows on real merchants. */
@@ -307,11 +307,11 @@ const MERCHANT_CURRENCIES = [
   { input: 'Lidl 2.000 rsd', minor: '200000', currency: 'RSD', description: 'Lidl', tokens: ['lidl'] },
   { input: 'Shell 20€', minor: '2000', currency: 'EUR', description: 'Shell', tokens: ['shell'] },
   { input: 'Spotify 10€', minor: '1000', currency: 'EUR', description: 'Spotify', tokens: ['spotify'] },
-  { input: 'Netflix 15$', minor: '1500', currency: 'USD', description: 'Netflix', tokens: ['netflix'] },
+  { input: 'Netflix 15$', minor: '1500', currency: 'USD', description: 'Netflix', tokens: ['netfliks'] },
   { input: 'NIS Petrol 5.000 din', minor: '500000', currency: 'RSD', description: 'NIS Petrol', tokens: ['nis', 'petrol'] },
-  { input: 'Univerexport 1.250,50 rsd', minor: '125050', currency: 'RSD', description: 'Univerexport', tokens: ['univerexport'] },
+  { input: 'Univerexport 1.250,50 rsd', minor: '125050', currency: 'RSD', description: 'Univerexport', tokens: ['univereksport'] },
   { input: 'Apoteka Benu 20 eur', minor: '2000', currency: 'EUR', description: 'Apoteka Benu', tokens: ['apoteka', 'benu'] },
-  { input: 'HBO Max 20 dolara', minor: '2000', currency: 'USD', description: 'HBO Max', tokens: ['hbo', 'max'] },
+  { input: 'HBO Max 20 dolara', minor: '2000', currency: 'USD', description: 'HBO Max', tokens: ['hbo', 'maks'] },
 ];
 
 // ---------------------------------------------------------------------------------------------
@@ -530,7 +530,7 @@ const BULK = [
     input: 'Lidl 2000 iMax',
     note: '`i` without whitespace on both sides is not a separator, so this stays one fragment',
     expected: [
-      { description: 'Lidl iMax', amountMinor: '200000', kind: 'EXPENSE', tokens: ['lidl', 'imax'] },
+      { description: 'Lidl iMax', amountMinor: '200000', kind: 'EXPENSE', tokens: ['lidl', 'imaks'] },
     ],
   },
   {

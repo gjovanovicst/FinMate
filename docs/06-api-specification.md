@@ -3472,12 +3472,16 @@ them would have published a contract the API could not keep. The module was regi
 >   amendment because "one ordered rule list, each rule's phrases per language" is an i18n decision and
 >   not a phrase list. `how much did I spend on food` still refuses, for the taxonomy reason recorded
 >   below rather than a cue one.
-> - **`Maxi` vs `Maksiju` is a FOLD gap, not a cue one** — `normaliseForMatching('Maxi')` is `maxi` and
->   `'Maksiju'` is `maksiju`, so neither the exact rung nor the three-character stem rung matches the
->   Serbian spelling of a foreign name. It is not the assistant's to fix: the same fold decides whether a
->   **typed** `Maksi 2000` resolves the `Maxi` Merchant in the classifier, so the fix belongs in
->   `packages/nlp` (an `x`↔`ks` pair, or a seeded alias on the copy-on-write Merchant) and it changes
->   stored keywords, which is why it is not a one-line change. **Recorded, unscheduled.**
+> - **`Maxi` vs `Maksiju` was a FOLD gap — FIXED in A-10 (§8.13).** `normaliseForMatching('Maxi')` was
+>   `maxi` and `'Maksiju'` was `maksiju`, so neither the exact rung nor the case-ending rung matched the
+>   Serbian spelling of a foreign name. `packages/nlp` now folds a run of `x` to `ks` (docs/04 §3.1), which
+>   makes `maksi` occur inside `maksiju` — so the Merchant resolves — and the same
+>   fold makes a **typed** `Maksi 2000` resolve the `Maxi` Merchant in the classifier. The re-fold of stored
+>   keywords/aliases this was expected to need turned out to be **unnecessary**: every reader re-folds
+>   stored folded text through the current folder, so the change is retroactive (docs/04 §8.1.7, which also
+>   records the one lookup that does *not* self-heal). ⚠️ **Live it answers the Category, not the Merchant**
+>   — a pre-existing keyword-substring collision A-10 exposed, named as **A-12/A-13**; §8.13 has the
+>   measurement.
 > - **`kolika mi je penzija` / `kada mi sledeća plata dolazi` were a REGISTRY gap — FIXED in A-9 (§8.12).**
 >   `Penzija` and `Plata` are INCOME Categories and both resolved, but no template aggregated income by
 >   Category: `SPEND_BY_CATEGORY` declares `kind: 'EXPENSE'` and `INCOME_TOTAL` accepts no `categoryId`.
@@ -3699,8 +3703,9 @@ widening answers a different question, so each addition below is paired with wha
 | `dao`, `dala`, `dali`, `kupovao`, `kupovala`, `placao`/`plaćao` as spend verbs | `koliko sam dao za kiriju` | Adding a verb cannot make an unanswerable question answerable: that branch answers only when a Category, Merchant, Account or Tag resolved and refuses otherwise — so a question about a name the Household does not have still refuses rather than totalling everything. Asserted in both directions. |
 
 **Verified live 8/8** (`/tmp/verify-a3.mjs`), and **the battery went 28 → 31 answered, 9 → 6 refused**.
-The six are the re-classified ones above: two English (A-3b), `Maxi`/`Maksiju` (a fold gap),
-`kolika mi je penzija` and `kada mi sledeća plata dolazi` (a registry gap), and `koliko sam dao za
+The six are the re-classified ones above: two English (A-3b), `Maxi`/`Maksiju` (a fold gap — **fixed in
+A-10**, §8.13), `kolika mi je penzija` and `kada mi sledeća plata dolazi` (a registry gap — the first
+**fixed in A-9**, §8.12), and `koliko sam dao za
 kiriju` (correct as it stands — this Household has no such Category). All four additions are also
 asserted in `query-planner.spec.ts`, including the cases they must **not** catch.
 
@@ -3720,13 +3725,14 @@ drifting silently in one language only).
 | `hasUnresolvedScope` takes English prepositions | `on`, `for`, `at`, `in`, `to` joined `na`, `za`, `u`, `kod` | **The safety-critical half.** Without it *"how much did I spend on food"* fell through to `SPEND_TOTAL` and answered the month's whole spend — a true figure to a different question, which is exactly what ADR-017 forbids. Provenance is unaffected: a period introduced by the same preposition (`in august`, `this month`) is a **resolved** scope and still answers. |
 | The cash-flow cue is multi-word | `cash flow`, `left over`, `what is left`, `have left` — never a bare `net` | `netflix` contains `net`, so a bare cue would turn *"how much did I spend on netflix"* into a cash-flow question. Asserted in the spec. |
 | The **monthly** goal phrases stay inside the goal branch | `per month`, `a month`, `monthly` | As an entry cue, *"how much do I spend per month"* would become a goal question and then refuse for want of a `goalId`. It is a spend question. |
-| `salary` and `pension` are **not** income cues | Deliberately absent | `INCOME_TOTAL` is unscoped, so *"how much is my pension"* would be answered with the month's whole income. The missing piece is an income-scoped template (below), not a phrase. |
+| `salary` and `pension` are **not** income cues | Deliberately absent | `INCOME_TOTAL` is unscoped, so *"how much is my pension"* would be answered with the month's whole income. The missing piece is an income-scoped template (built as `INCOME_BY_CATEGORY` in A-9, §8.12), not a phrase. |
 
 **Verified live 11/11** (`/tmp/verify-a3b.mjs`), including the three things that must not happen: an
 unresolvable English scope **refuses** rather than totalling, `on netflix` is a Merchant scope and not a
 cash-flow question, and `in may` is May while `may I ask` is not. **The battery is now 32 of 37
-answered** (it was 25/12 before A-1). The five left are all named above: `Maksiju` (a fold gap),
-`kolika mi je penzija` and `kada mi sledeća plata dolazi` (the registry gap), `koliko sam dao za kiriju`
+answered** (it was 25/12 before A-1). The five left are all named above: `Maksiju` (a fold gap — **fixed
+in A-10**, §8.13), `kolika mi je penzija` and `kada mi sledeća plata dolazi` (the registry gap — the
+first **fixed in A-9**, §8.12), `koliko sam dao za kiriju`
 (correct — this Household has no such Category), and `how much did I spend on food`.
 
 **A-5 (2026-09-17): a Category resolves through its keywords, and a spend question cannot be scoped to an
@@ -3842,6 +3848,45 @@ Category, so no scoped spend figure exists to give.
 > the correct behaviour in the meantime: answering the month's total would be a wrong answer to the
 > question asked. Also still Serbian-only: the six `SUGGESTED_QUESTIONS` a refusal offers, and the
 > refusal copy itself (English-only — §5.14's breach, A-7's work).
+
+### 8.13 The `x`/`ks` fold, and why it needed no data migration (task A-10, 2026-09-17)
+
+The last vocabulary gap the battery recorded — *"koliko sam potrošio u Maksiju"* — was a **fold**, not a
+cue: `normaliseForMatching('Maxi')` was `maxi` and `'Maksiju'` was `maksiju`, so the two shared only `ma`,
+which is not a Serbian case ending, and neither the exact nor the case-ending rung matched. The fix is
+docs/04 §3.1's new **Orthography** row: a run of `x` folds to one `ks` (`Maxi` ≡ `Maksi`, `Cineplexx` ≡
+`Cinepleks`).
+
+| Decision | Built | Why |
+|---|---|---|
+| One fold rule, in the shared folder | `.replace(/x+/g, 'ks')` in `foldForMatching` | `x` is not a Serbian letter; it is a typographic variant of `ks`. Both sides of every comparison already pass through this one function, so the substitution is symmetric by construction — no second copy to drift. |
+| A **run** of `x`, not each character | `x+` → `ks` | `Cineplexx`'s doubled `xx` is brand styling, not a longer sound. Folding each character gives `cinepleksks`, which matches neither `Cineplexx` nor `Cinepleks`. |
+| **No data migration** | Nothing written to the database | Every reader re-folds stored folded text through the current folder — `scoreKeywords`, `resolveEntity`, `evaluateText` — so a row written under the old fold re-folds correctly under the new one. This was expected to need a re-fold and the expectation was **wrong**; docs/04 §8.1.7 is the measurement and names the one lookup (`addKeyword`'s by-value find) that does *not* self-heal. |
+
+**Verified**: `packages/nlp` 152 tests (fold, idempotence, the alias re-fold), `classification.integration.spec.ts`
+47 (a stored `maxi` keyword and a stored `univerexport` rule each match under the new fold), and the
+battery's `koliko sam potrošio u Maksiju` **flips from refused to answerable** — a reviewed line in the
+fixture, taking it to **54 of 58 answerable**. The fold also does what docs/06 §8.8 promised for the
+classifier: a typed `Maksi 2000` now resolves the `Maxi` Merchant with zero AI calls (live-verified).
+
+⚠️ **What the fold exposed, and it is not the fold.** Measured live (2026-09-17), the demo answers
+*"koliko sam potrošio u Maksiju"* as **`SPEND_BY_CATEGORY`** — not `SPEND_BY_MERCHANT` as the battery
+declares. The cause is pre-existing and independent of A-10: the planner's *exact* tier is
+`folded.includes(foldedName)` — a **substring** test, not word equality — so the seeded `Supermarket`
+keyword `maxi` (folded `maksi`) matches *inside* `maksiju`, the Category resolves alongside the Merchant,
+and the router's `hasCategory` branch wins. `scopePhrase` then prefers the **Merchant**, so the answer
+renders the **Category subtree's** total under the label *"at Maxi"* — a figure wearing another scope's
+name, which is the ADR-017 risk. The same is already true of *"u Lidlu"* (keyword `lidl` inside `lidlu`).
+The battery cannot see it because its **frozen context does not carry the seed's merchant-name
+keywords** — the shipped tree lists `maxi`, `lidl`, `idea`, `dis` on `Supermarket` (docs/04 §8.1.3), and
+the fixture's `Supermarket` lists `supermarket`, `kupovina`. **Named and scheduled as A-12 (the keyword
+tier) and A-13 (which scope wins, and the label) in [docs/16](16-assistant-context-and-actions.md)**;
+`query-planner.spec.ts` pins the current behaviour so a fix cannot land silently.
+
+> **Named, not fixed:** the idempotency lookup above can leave a Household holding both `maxi` and `maksi`
+> as keywords for one Category — the same meaning twice. It is untidy rather than wrong (both re-fold to
+> `maksi` and both match), no release step repairs it, and a migration that "re-folded" rows would have
+> been a no-op with a false history. Recorded in docs/04 §8.1.7.
 
 ---
 

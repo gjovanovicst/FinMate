@@ -961,6 +961,32 @@ The tables hold platform content beside the Household’s own rows, which is whe
   plausibly someone else's, check both: is the matched token a keyword or a name, and is the question's
   verb in the direction list?
 
+- **Stored folded text is re-folded at match time, but *identity* is the stored string — the two are not
+  interchangeable, and one of them makes a fold change retroactive.** `category_keywords.keyword`,
+  `merchant_aliases.alias`, `counterparty_aliases.alias` and the `text`/`contains` `value` inside
+  `rules.conditions` are all persisted **already folded**, and every reader folds them *again* through
+  the injected folder (`scoreKeywords`→`matchKeyword`, `resolveEntity`→`matchKeysFor`,
+  `evaluateText`→`options.folder.fold`). So A-10's `x`→`ks` fold needed **no data migration**: a row
+  written as `maxi` re-folds to `maksi` and matches, and a test asserting that is what proves it. What
+  re-folding does **not** fix is a **lookup** by folded value: `CategoriesService.addKeyword` finds by
+  `where: { keyword: normalized }`, so a pre-change `maxi` row is invisible to a fresh `maksi` lookup and
+  the next onboarding visit writes a duplicate (untidy, not wrong — both still match). Before you write a
+  "re-fold the data" migration, check which of the two you actually have: **matching self-heals; identity
+  does not** (docs/04 §8.1.7).
+
+- **The planner's *exact* tier is `folded.includes(name)` — a substring test, not word equality — so a
+  `CategoryKeyword` can match *inside* an inflected word.** The shipped tree lists the merchant names
+  `maxi`, `lidl`, `idea`, `dis` as strong keywords of `Supermarket` (docs/04 §8.1.3), so
+  *"koliko sam potrošio u Maksiju"* resolves **both** that Category (keyword `maksi` sitting inside
+  `maksiju`) and the `Maxi` Merchant — and the router's `hasCategory` branch wins while `scopePhrase`
+  prefers the Merchant, so the answer is the **Category subtree's** total wearing the label *"at Maxi"*.
+  This is pre-existing (`u Lidlu` already did it) and A-9's comment claims a keyword matches "as a whole
+  word only", which the code does not do; A-10's fold only made it reachable for `Maksiju` too. The
+  battery cannot see it because its frozen context omits the seed's merchant-name keywords. When a scope
+  resolves to something surprising, **print `matchedOn` before blaming a rung**: the substring tier fires
+  before the case-ending rung ever runs, so "the stem matched" is usually the wrong explanation
+  (docs/06 §8.13, docs/16 A-12/A-13).
+
 ---
 
 - **An element with `role="img"` hides everything inside it, including the links a chart needs.** A

@@ -63,6 +63,26 @@ describe('foldForMatching', () => {
     expect(foldTokens('Лиди 2000')).toEqual(['lidi', '2000']);
   });
 
+  it('folds the domestic `ks` and the foreign `x` to one form', () => {
+    // A-10. Serbian has no `x`, so the brand spelling and the domestic one must meet: the whole point
+    // is that a Household's stored `maxi` keyword and a typed `Maksi 2000` resolve together.
+    expect(foldForMatching('Maxi')).toBe('maksi');
+    expect(foldForMatching('Maksi')).toBe('maksi');
+    expect(foldForMatching('taxi')).toBe('taksi');
+    expect(foldForMatching('Univerexport')).toBe(foldForMatching('Univereksport'));
+    // `Maksiju` is an inflected form and stays distinct — the fold only canonicalises the pair, so the
+    // planner's case-ending rung is what then recognises it (query-planner.spec.ts).
+    expect(foldForMatching('Maksiju')).toBe('maksiju');
+  });
+
+  it('collapses a run of `x` to one `ks`, because a doubled `xx` is styling', () => {
+    // `Cineplexx` is the brand's own spelling; `Cinepleks` is how the market writes it. Folding each
+    // character would give `cinepleksks` and match neither.
+    expect(foldForMatching('Cineplexx')).toBe('cinepleks');
+    expect(foldForMatching('Cineplexx')).toBe(foldForMatching('Cinepleks'));
+    expect(foldForMatching('X')).toBe('ks');
+  });
+
   it('lower-cases, collapses whitespace and trims', () => {
     expect(foldForMatching('LIDL')).toBe('lidl');
     expect(foldForMatching('  Lidl   Dorćol  ')).toBe('lidl dorcol');
@@ -72,7 +92,7 @@ describe('foldForMatching', () => {
   });
 
   it('is idempotent, so re-normalising on every write cannot drift', () => {
-    const cases = ['Đorđe', 'Šećer  Lidl', 'Лиди 2000', '  a\tb ', 'Љубав'];
+    const cases = ['Đorđe', 'Šećer  Lidl', 'Лиди 2000', '  a\tb ', 'Љубав', 'Maxi', 'Cineplexx', 'Maksi 2000'];
     for (const value of cases) {
       const once = foldForMatching(value);
       expect(foldForMatching(once)).toBe(once);
@@ -88,6 +108,10 @@ describe('foldForMatching', () => {
       ...Object.keys(CYRILLIC_TO_LATIN).map((character) =>
         character.toLocaleUpperCase('sr-Cyrl-RS'),
       ),
+      // A-10's substitution is not in the transliteration table, so it is named explicitly: if the
+      // `x` rule ever produced a form containing another `x`, this is what would catch it.
+      'x',
+      'X',
     ];
     for (const character of characters) {
       const once = foldForMatching(character);

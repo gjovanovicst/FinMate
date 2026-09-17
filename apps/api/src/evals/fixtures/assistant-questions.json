@@ -254,8 +254,7 @@
     },
     {
       "question": "koliko sam potrošio u Maksiju",
-      "intent": "NO_TEMPLATE_MATCH",
-      "why": "the fold does not know the x/ks pair: `Maxi` folds to `maxi`, `Maksiju` to `maksiju`, so neither rung matches (packages/nlp)"
+      "intent": "SPEND_BY_MERCHANT"
     },
     {
       "question": "koliko sam potrošio na benzin",

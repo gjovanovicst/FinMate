@@ -304,6 +304,22 @@ describe('ClassificationService (integration)', () => {
       expect(keywordMatches(row.candidates)).toContain('lidl');
     });
 
+    it('lets a typed `Maksi` meet the stored `maxi` keyword — the fold change is retroactive (A-10)', async () => {
+      // The keyword row created in `beforeAll` is stored in the **old** fold: `Maxi` → `maxi`. A-10
+      // folds `x` to `ks`, so both the stored row and the input re-fold to `maksi`. That is why
+      // changing the fold needs no data migration for keywords — §5.4's matcher re-folds the stored
+      // keyword through the same injected folder it folds the input with. If a future change ever
+      // reads `category_keywords.keyword` raw, this is the test that fails.
+      const stub = stubClassifier();
+      const result = await parseInput(stub, 'Maksi 2000');
+
+      expect(stub.calls).toHaveLength(0);
+      const fragment = result.fragments[0]!;
+      expect(fragment.decidedBy).toBe('KEYWORD');
+      expect(fragment.categoryId).toBe(foodId);
+      expect(keywordMatches((await latestDecision('Maksi 2000')).candidates)).toContain('maxi');
+    });
+
     it('records RULE for a rule decision and calls the AI ZERO times', async () => {
       const ruleId = uuidv7();
       await asTenant(() =>
@@ -337,6 +353,38 @@ describe('ClassificationService (integration)', () => {
       expect(row.rule_id).toBe(ruleId);
 
       await asTenant(() => prisma.client.rules.deleteMany({ where: { id: ruleId } }));
+    });
+
+    it('re-folds a stored rule condition, so an old-folded `univerexport` still matches (A-10)', async () => {
+      // `rules.conditions` is the third place folded text is persisted. `evaluateText` folds the stored
+      // `value` through the injected folder on **every** evaluation, so a value written before A-10
+      // (`univerexport`) still meets the new fold (`univereksport`). A future change that compared the
+      // stored value raw would fail here.
+      const ruleId = uuidv7();
+      await asTenant(() =>
+        prisma.client.rules.create({
+          data: {
+            id: ruleId,
+            name: 'Univerexport rule',
+            priority: 10,
+            conditions: { all: [{ field: 'text', op: 'contains', value: 'univerexport' }] },
+            actions: { setCategoryId: foodId },
+            origin: 'USER',
+          },
+        }),
+      );
+
+      try {
+        const stub = stubClassifier();
+        const result = await parseInput(stub, 'Univerexport 150000');
+
+        expect(stub.calls).toHaveLength(0);
+        expect(result.fragments[0]!.decidedBy).toBe('RULE');
+        expect(result.fragments[0]!.ruleId).toBe(ruleId);
+        expect(result.fragments[0]!.categoryId).toBe(foodId);
+      } finally {
+        await asTenant(() => prisma.client.rules.deleteMany({ where: { id: ruleId } }));
+      }
     });
 
     it('records MERCHANT_DEFAULT from an owned Merchant without calling the AI', async () => {

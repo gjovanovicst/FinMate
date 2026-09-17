@@ -417,6 +417,52 @@ describe('income scoped by Category (A-9)', () => {
   });
 });
 
+describe('the x ↔ ks fold (A-10)', () => {
+  it('resolves a Merchant from the domestic spelling of a foreign name', () => {
+    // `Maxi` folds to `maksi` (A-10) and `Maksiju` to `maksiju`, so the Merchant's folded name occurs
+    // inside the inflected word. Before A-10 the two shared only `ma`, which is not a case ending, so
+    // the question refused — the last vocabulary gap the battery recorded.
+    const outcome = planQuestion('koliko sam potrošio u Maksiju', CONTEXT);
+    expect(outcome.intent).toBe('SPEND_BY_MERCHANT');
+    expect(outcome.slots.merchantId).toBe('mer-maxi');
+    expect(outcome.matchedOn).toContain('merchant:Maxi');
+  });
+
+  it('answers the same question typed with the brand spelling', () => {
+    expect(plan('koliko sam potrošio u Maxiju').slots.merchantId).toBe('mer-maxi');
+    expect(plan('koliko sam potrošio u Maxiju').intent).toBe('SPEND_BY_MERCHANT');
+  });
+
+  it('pins the Category/Merchant collision the shipped seed creates (A-12/A-13 — a defect, not a spec)', () => {
+    // ⚠️ This test records **current, wrong** behaviour so that fixing it cannot be silent.
+    //
+    // The shipped tree lists the merchant names `maxi`/`lidl`/`idea`/`dis` as keywords of `Supermarket`
+    // (docs/04 §8.1.3), and this spec's `CONTEXT` deliberately does not. The matcher's *exact* tier is
+    // `folded.includes(foldedName)` — a substring test — so the keyword `maxi` (folded `maksi`) also
+    // matches *inside* `maksiju`. Both entities resolve, `hasCategory` wins the route, and
+    // `scopePhrase` then names the **Merchant**: the answer is the Category's total under the label
+    // "at Maxi", which is the ADR-017 risk. Measured live on the demo Household 2026-09-17.
+    //
+    // A-12 (make the keyword tier a whole word, which is what A-9's own comment already claims) and
+    // A-13 (which scope wins when both resolve) are scheduled in docs/16; docs/06 §8.13 has the
+    // measurement. When A-12 lands, the first expectation below flips to `SPEND_BY_MERCHANT` and this
+    // test should be rewritten to assert the fix.
+    const seeded: PlannerContext = {
+      ...CONTEXT,
+      categories: CONTEXT.categories.map((category) =>
+        category.id === 'cat-market'
+          ? { ...category, keywords: ['supermarket', 'kupovina', 'maxi', 'lidl'] }
+          : category,
+      ),
+    };
+
+    const hijacked = planQuestion('koliko sam potrošio u Maksiju', seeded);
+    expect(hijacked.intent).toBe('SPEND_BY_CATEGORY');
+    expect(hijacked.slots.categoryId).toBe('cat-market');
+    expect(hijacked.slots.merchantId).toBe('mer-maxi');
+  });
+});
+
 describe('Category keywords and direction (A-5)', () => {
   it('resolves a Category by its keyword when no name matches', () => {
     // `benzin` is a seeded strong keyword of `Gorivo`. The capture path categorises a typed

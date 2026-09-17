@@ -128,6 +128,23 @@ describe('rung 3 — prefix / token match (0.90)', () => {
     expect(result.confidence).toBe(0.9);
   });
 
+  it('re-folds a stored alias, so an old-folded `maxi` still meets a typed `Maksi` (A-10)', () => {
+    // The alias is stored in the **old** fold (`Maxi` → `maxi`) and A-10 folds `x` to `ks`.
+    // `matchKeysFor` re-folds every stored alias through the current fold, so the row self-heals —
+    // which is why changing the fold needs no data migration for aliases. The name is deliberately
+    // unrelated, so only the re-folded alias can produce this match. Note `Maksiju` does *not* reach
+    // this rung (it requires token equality); the planner's case-ending rung is what answers the
+    // assistant's `u Maksiju` question — see `apps/api/.../query-planner.spec.ts`.
+    const shop = merchant('m-shop', 'Prodavnica', ['maxi']);
+    const result = resolveEntity('Maksi 2000', [shop]);
+
+    expect(result.resolved).toBe(true);
+    expect(result.rung).toBe('PREFIX');
+    expect(result.confidence).toBe(0.9);
+    expect(result.matchedOn).toBe('maxi');
+    expect(result.candidates[0]!.matchedField).toBe('ALIAS');
+  });
+
   it('requires every token of a multi-token alias, not just one', () => {
     // `lidl` alone is a token of neither the name (`lidl srbija`) nor the alias (`lidl prodavnica`),
     // and the trigram similarities stay below 0.55 — so this correctly does not resolve.

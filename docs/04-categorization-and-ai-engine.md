@@ -82,6 +82,7 @@ const CYRILLIC_TO_LATIN: Record<string, string> = {
 |---|---|
 | **Script** | Cyrillic → latin transliteration, so `Лидл 2000` and `Lidl 2000` hit the same keyword set. |
 | **Diacritics** | Fold to ASCII for **matching only** (`septička` ≡ `septicka` ≡ `septichka`); never mutate stored display text. |
+| **Orthography** | Serbian has no letter `x`: it is a typographic variant of `ks`, so a **run** folds to one `ks` for matching only (`Maxi` ≡ `Maksi`, `taxi` ≡ `taksi`, `Univerexport` ≡ `Univereksport`, and `Cineplexx` ≡ `Cinepleks` — a doubled `xx` is brand styling, not a longer sound). The fold is symmetric, so a foreign brand spelling and the domestic one meet; the inflected `Maksiju` is *not* the same string and is the planner's case-ending rung, not this fold (task A-10, §8.1.7). |
 | **Thousands separator** | `.` and space are thousands: `2.000` → `2000`, `1 200` → `1200`. |
 | **Decimals** | `,` is decimal: `2,50` → `2.50`; `1250,50` → `1250.50`. |
 | **Currency-suffix forms** | `2000din`, `2.000 rsd`, `1500 dindži`, `20€` → amount + currency hint. |
@@ -735,6 +736,39 @@ rule or keyword that already resolved correctly still calls no model. The cost i
 word ("salary") now produces a **blocking** row rather than a wrong-category row — which is the trade
 8.1.5 already made for reversals, and the reason `salary 150000` now reads *"Nothing matched; recorded
 uncategorised"* with `Plata` offered as the alternative.
+
+---
+
+#### 8.1.7 A fold change is retroactive, so it needs no data migration (task A-10)
+
+Found on 2026-09-17 while closing the last vocabulary gap the assistant battery recorded: *"koliko sam
+potrošio u Maksiju"* refused because `Maxi` folded to `maxi` and `Maksiju` to `maksiju` — the two shared
+only `ma`, which is not a Serbian case ending, so neither the exact nor the case-ending rung matched.
+
+§3.1 now folds a run of `x` to `ks` (§3.1's **Orthography** row). The question was expected to need a
+**re-fold of every stored keyword and alias** — this document said so, and it is the reason the fix was
+recorded as "not a one-line change" rather than done. **That expectation was wrong, and measuring it
+refuted it.** Folded text is persisted in three places, and every reader re-folds it through the current
+folder before comparing:
+
+| Stored folded value | Written by | Re-folded by | Proven by |
+|---|---|---|---|
+| `category_keywords.keyword` | `CategoriesService.addKeyword`, onboarding's seed writer | `scoreKeywords` → `matchKeyword` (`folder.tokens` / `folder.fold`) | `classification.integration.spec.ts` — a stored `maxi` decides a typed `Maksi 2000` |
+| `merchant_aliases.alias`, `counterparty_aliases.alias` | `setMerchantAliases` / `setCounterpartyAliases` | `resolveEntity`'s `matchKeysFor` (`foldForMatching` on every name and alias) | `resolve.spec.ts` — a stored `maxi` alias resolves a typed `Maksi` |
+| `rules.conditions` (`text` `contains` `value`) | `rule-synthesis`, `createRule` | `evaluateText` (`options.folder.fold(value)`) | `classification.integration.spec.ts` — a stored `univerexport` rule matches a typed `Univerexport` |
+
+So a value written under the old fold re-folds correctly under the new one — the fold is *idempotent over
+its own output*, which is what makes the whole change retroactive. **No migration was written, because
+none is needed**, and a migration that "re-folded" rows would have been a no-op with a false history.
+
+**The one thing that does *not* self-heal, and it is not matching.** A **lookup** by folded value
+compares against the stored string directly, so a stale row is invisible to it:
+`CategoriesService.addKeyword` looks a keyword up by its freshly folded form (`where: { keyword: normalized }`)
+to stay idempotent and to refuse an include/exclude contradiction. A Household seeded before A-10 still
+holds `maxi`, so the next onboarding visit writes `maksi` beside it — the same meaning twice, and a
+contradiction the opposite-polarity check cannot see. It is untidy, not a wrong answer (both rows fold to
+`maksi` and both match), it needs no release step, and the honest place to record it is here. This is the
+distinction to carry forward: **re-folding happens at match time; identity is the stored string.**
 
 ---
 

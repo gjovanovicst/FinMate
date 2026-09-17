@@ -54,7 +54,7 @@
       "occurredOn": null,
       "description": "Maxi",
       "tokens": [
-        "maxi"
+        "maksi"
       ],
       "candidates": 1
     },
@@ -75,7 +75,7 @@
       "occurredOn": "2026-09-13",
       "description": "Maxi",
       "tokens": [
-        "maxi"
+        "maksi"
       ],
       "candidates": 2
     },
@@ -180,7 +180,7 @@
       "occurredOn": null,
       "description": "Univerexport",
       "tokens": [
-        "univerexport"
+        "univereksport"
       ],
       "candidates": 1
     },
@@ -201,7 +201,7 @@
       "occurredOn": "2026-09-13",
       "description": "Univerexport",
       "tokens": [
-        "univerexport"
+        "univereksport"
       ],
       "candidates": 1
     },
@@ -1116,7 +1116,7 @@
       "occurredOn": null,
       "description": "Netflix",
       "tokens": [
-        "netflix"
+        "netfliks"
       ],
       "candidates": 2
     },
@@ -1137,7 +1137,7 @@
       "occurredOn": "2026-09-13",
       "description": "Netflix",
       "tokens": [
-        "netflix"
+        "netfliks"
       ],
       "candidates": 2
     },
@@ -1201,7 +1201,7 @@
       "description": "HBO Max",
       "tokens": [
         "hbo",
-        "max"
+        "maks"
       ],
       "candidates": 1
     },
@@ -1223,7 +1223,7 @@
       "description": "HBO Max",
       "tokens": [
         "hbo",
-        "max"
+        "maks"
       ],
       "candidates": 1
     },
@@ -1739,7 +1739,7 @@
       "occurredOn": "2026-09-12",
       "description": "Maxi",
       "tokens": [
-        "maxi"
+        "maksi"
       ],
       "candidates": 2
     },
@@ -1802,7 +1802,7 @@
       "occurredOn": "2026-09-01",
       "description": "Univerexport",
       "tokens": [
-        "univerexport"
+        "univereksport"
       ],
       "candidates": 2
     },
@@ -2106,7 +2106,7 @@
       "occurredOn": null,
       "description": "Maxi vraćeno",
       "tokens": [
-        "maxi",
+        "maksi",
         "vraceno"
       ],
       "needsDirectionConfirmation": true
@@ -2147,7 +2147,7 @@
       "description": "vraćeno Maxi",
       "tokens": [
         "vraceno",
-        "maxi"
+        "maksi"
       ],
       "needsDirectionConfirmation": true
     },
@@ -2228,7 +2228,7 @@
       "occurredOn": null,
       "description": "Netflix",
       "tokens": [
-        "netflix"
+        "netfliks"
       ]
     },
     "note": "docs/04 §3.1 currency-suffix forms",
@@ -2269,7 +2269,7 @@
       "occurredOn": null,
       "description": "Univerexport",
       "tokens": [
-        "univerexport"
+        "univereksport"
       ]
     },
     "note": "docs/04 §3.1 currency-suffix forms",
@@ -2311,7 +2311,7 @@
       "description": "HBO Max",
       "tokens": [
         "hbo",
-        "max"
+        "maks"
       ]
     },
     "note": "docs/04 §3.1 currency-suffix forms",

@@ -326,19 +326,24 @@ One commit per row, per the working agreement. Part A rows are independent of Pa
 | A-6 | follow-up context (`previousIntent` + `previousPeriod`) | a [06 §8](06-api-specification.md) contract extension | *"a prošli mesec?"* works |
 | A-7 | useful refusal + i18n of refusal/fallback copy | catalogue entries | ADR-017's "message it well" |
 | A-8 | refusal telemetry | **Q-12** | the gap list becomes data |
-| A-10 | the `x`↔`ks` fold pair (`Maxi`/`Maksiju`) in `packages/nlp` | nothing decision-wise, but a **re-fold** of stored keywords/aliases | the battery's last *vocabulary* gap, and the classifier's too — *"koliko sam potrošio u Maksiju"* answers |
+| A-10 | the `x`↔`ks` fold (`Maxi`/`Maksiju`) in `packages/nlp` | nothing decision-wise, and the re-fold this row expected turned out to be **unnecessary** (docs/04 §8.1.7) | the battery's last *vocabulary* gap, and the classifier's too — *"koliko sam potrošio u Maksiju"* answers — **done** |
 | A-11 | income *schedule* questions — `RecurringService.dueSoon` filters `kind: 'EXPENSE'` | a `RecurringService` read and `/recurring`'s own reading | *"kada mi sledeća plata dolazi"* answers instead of refusing |
+| A-12 | the keyword **exact** tier is `folded.includes(keyword)`, not a whole word — A-9's docs call it "whole word only" | the measurement in [06 §8.13](06-api-specification.md) | a keyword stops matching *inside* an inflected word, so `maxi` no longer hijacks `Maksiju` |
+| A-13 | when a Category **and** a Merchant both resolve, the router prefers the Category while `scopePhrase` names the Merchant | **a product decision** — A-12 may remove the common case first | a figure stops wearing another scope's label (ADR-017), and *"na hranu u Lidlu"* gets an agreed meaning |
 | **B-1** | **ADR-035: propose writes, never execute them** | **Q-11** | the architectural gate |
 | B-2 | action registry + `ADD_CATEGORY` end to end | B-1 | the first action, no money, trivially undoable |
 | B-3 | `ADD_TRANSACTION` through the existing capture preview | B-2 | highest-value action, ~90 % already built |
 | B-4 | `SET_BUDGET`, `ADD_GOAL`, `ADD_TAG` | B-2 | "configure", as asked |
 | B-5 | `CREATE_RULE_FROM_CORRECTION` | B-2 | ADR-010's confirmation, reached by question |
 
-**The A-series is nearly done: A-1, A-2, A-3, A-4a, A-4c, A-5 and A-9 have shipped** (A-4b was
-measured and rejected). What remains of Part A is A-6, A-7 and A-8 — the last needs **Q-12** — plus the
-two measured vocabulary/schedule gaps scheduled as A-10 and A-11 above. The next candidate without a
-decision attached is **A-10** (the fold pair), which also repairs the classifier; **A-6/A-7** need a
-contract extension and catalogue entries respectively. Part B stays gated on **Q-11**.
+**The A-series is nearly done: A-1, A-2, A-3, A-4a, A-4c, A-5, A-9 and A-10 have shipped** (A-4b was
+measured and rejected). What remains of Part A is A-6, A-7 and A-8 — the last needs **Q-12** — plus
+A-11, A-12 and A-13. **The next candidate is A-12**: it is a bug fix against A-9's own documented rule
+("a keyword matches as a whole word only"), it makes A-10's promise true live rather than only in the
+fixture, and it removes an ADR-017-class risk (a Category total rendered under a Merchant's name). A-13
+is the design question underneath it and needs the owner once A-12's effect is measured. The remaining
+battery gaps that are **not** A-rows are seed content for `kirija`/English (docs/04). Part B stays gated
+on **Q-11**.
 
 ### B.8 What this deliberately does not build
 

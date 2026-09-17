@@ -82,9 +82,9 @@ export function transliterateToLatin(value: string): string {
 /**
  * Fold text to the form matching compares against.
  *
- * Order matters and is fixed by docs/04 §3.1: **transliterate, then case, then diacritics, then
- * whitespace**. Doing case first would leave uppercase Cyrillic unmapped; doing diacritics first
- * would leave Cyrillic alone entirely.
+ * Order matters and is fixed by docs/04 §3.1: **transliterate, then case, then diacritics, then the
+ * orthographic `x` fold, then whitespace**. Doing case first would leave uppercase Cyrillic unmapped;
+ * doing diacritics first would leave Cyrillic alone entirely.
  *
  * This is for comparison **only** — it must never be used to rewrite displayed text, or a user who
  * typed `Septička` would be shown `septicka`.
@@ -99,5 +99,12 @@ export function foldForMatching(value: string): string {
     // `Djordje`; the explicit replacement below closes it.
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd')
+    // Serbian has no letter `x`: it is a typographic variant of `ks` (`Maxi` ≡ `Maksi`, `taxi` ≡
+    // `taksi`, `Univerexport` ≡ `Univereksport`), so a foreign or brand spelling must meet the
+    // domestic one. A **run** folds to a single `ks`, because a doubled `xx` is brand styling and not
+    // a longer sound (`Cineplexx` ≡ `Cinepleks`). Both sides of every comparison pass through here,
+    // which is what makes a typed `Maksi 2000` meet a stored `maxi` keyword. Found by the A-4 battery
+    // (`koliko sam potrošio u Maksiju`) — see docs/04 §3.1 and docs/06 §8.8.
+    .replace(/x+/g, 'ks')
     .replace(/\s+/g, ' ');
 }
