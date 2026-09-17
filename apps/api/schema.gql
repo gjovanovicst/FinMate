@@ -217,7 +217,11 @@ type AssistantFactRowModel {
 type AssistantFactTotalModel {
   formatted: String!
   label: String!
-  money: Money!
+
+  """
+  A derived, SIGNED figure — `amountMinor` may be negative (a loss, an overspend, an overdraft). Read-only: a Balance is computed by the backend and can never be supplied as input.
+  """
+  money: Balance!
 }
 
 """

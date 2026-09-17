@@ -566,6 +566,30 @@ The rules the domain exists to keep (ADR-003, ADR-016, I-1, I-2).
   deficit month is an INTERNAL rather than a number. They are `Balance` (write-only on the wire, since a
   client must never supply one).
 
+- **…and the assistant repeated it in *eight* places, because the defect was in the helper, not the
+  call site (2026-09-17).** The entry above was fixed in analytics and in every budget `remaining`, and
+  the *same* mistake then shipped in `fact-assembly.service.ts`: its private `format` called
+  `formatMoney(money(…))` and its totals were typed `MoneyScalar`. So `Income − spending`, both trend
+  changes, a budget's remaining, an account's balance, safe-to-spend and the projection's overrun each
+  answered `MoneyError: amountMinor must be non-negative` — a 500 on **ordinary** data (a month that
+  spent less than the last one, an overspent budget, an overdrawn account), which is why the fixture
+  that found it is the first one whose ledger does nothing but overspend. Look for the *shape* of the
+  bug rather than the reported instance: grep `formatMoney(` and every `MoneyScalar` on a field whose
+  value is **computed** rather than typed, and change the helper inside the module so the ninth call
+  site cannot be written. Both are `Balance` now, and `apps/api` has no `formatMoney` call at all.
+
+- **Making a negative renderable exposes a sign-blind validator, and that is worse than the 500 was.**
+  `numeric-validator.ts` compared numerals by *value*, and `5.000,00` and `-5.000,00` canonicalise to
+  the same token — so the moment a signed total could reach the narrator, a model dropping the minus
+  passed the check while stating the **opposite direction** (*"you spent 5.000 more than last month"*
+  for a month that spent 5.000 less). A refusal is safe; a confidently wrong answer is not. The
+  validator now carries the sign, and `extractNumerals` decides it narrowly: only `-` and `−` count,
+  and never when a digit precedes the hyphen. Reading the hyphen naively would have turned `2026-09-01`
+  into `2026`, `-9`, `-1` and `1-31` into a pair of negatives, dropping the payload's own date
+  components out of the allowed set and sending **every** trend answer to the template fallback — a
+  silent quality regression with no failing test, because the fallback is legal. When a value's
+  possible *range* changes, re-check every predicate that consumes it, not only the ones that threw.
+
 - **A docs SDL sketch omits the `Model` suffix that code-first NestJS adds.** The documents write
   `type CategorySpend`, `type Budget`, `type Insight`; `apps/api/schema.gql` has `CategorySpendModel`,
   `BudgetModel`, `InsightModel`, because Nest names an `@ObjectType()` after its **class**. Renaming the

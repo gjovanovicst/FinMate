@@ -3275,6 +3275,14 @@ floats to reformat"*), and is instructed to reproduce them verbatim.
 `rows[].value` carries the machine value alongside the formatted string so the client can build charts
 without parsing `"27.450 RSD"`.
 
+> **`totals[].money` is a `Balance`, not a `Money` — and it may be negative.** Every total is derived
+> from movements rather than typed by a person, so `Income − spending`, a period-over-period change, a
+> budget's `remaining`, an account's `balance` and a projection's overrun can all legitimately be
+> negative. `Money` is non-negative by ADR-003 and **throws** on a negative amount, in the domain and
+> at the scalar, which made all five of those an INTERNAL error until A-1 (see §8.9). The same rule
+> already governs the analytics `delta`/`net` and every `remaining` in the budgeting module; the
+> assistant's own totals are the last place it was wrong.
+
 > **`formatted.scope` — the one key that is not a figure, and why it exists (2026-09-17).** A **scoped**
 > total also carries the scope as a **phrase**: `at Lidl`, `on Hrana / Supermarket`, `from Tekući`,
 > `tagged Putovanje` — the same string that appears in the total's own label (`Spending at Lidl`). It is
@@ -3421,11 +3429,15 @@ them would have published a contract the API could not keep. The module was regi
 > 1. **Scope-blind facts — fixed above (§8.2).** Any by-merchant/category/account/tag question was
 >    answered with *"the data does not contain …"* while the figure sat in the payload. This was the
 >    user-visible "very often" and the largest single cause; it is fixed and verified.
-> 2. **`MONTH_PROJECTION` returned a 500, not an answer.** `koliko ću potrošiti do kraja meseca` →
->    `MoneyError: amountMinor must be non-negative` at `fact-assembly.service.ts`'s projection builder,
->    because `dashboard.projectedOverrun` is a **signed** Balance (negative = *under* budget, which is
->    the ordinary case) and the builder guarded only `null`. The web already gates on the sign
->    (`overrunText`), so the assistant is the outlier. **Open**, ~1 line plus a spec.
+> 2. **A signed derived figure could not be rendered at all — `MONTH_PROJECTION` 500'd, and it was one
+>    of eight call sites. FIXED (§8.9).** `koliko ću potrošiti do kraja meseca` →
+>    `MoneyError: amountMinor must be non-negative`, because `dashboard.projectedOverrun` is a **signed**
+>    Balance (negative = *under* budget, which is the ordinary case) and the builder guarded only `null`.
+>    The reported instance was one line; the **call** was in eight places — `NET_CASHFLOW`'s
+>    `income − spending`, both trend templates' change, a budget's `remaining`, an account's `balance`,
+>    `SAFE_TO_SPEND`, and the projection's overrun — every one of them an ordinary state (a month that
+>    spent less than the last one, an overspent budget, an overdrawn account) that answered an INTERNAL
+>    error. See §8.9 for the fix and why the `Money`/`Balance` distinction is now enforced on the wire.
 > 3. **Planner cue coverage, 7 of the 12 refusals.** The planner is a closed registry of Serbian cue
 >    phrases, and these natural phrasings miss it although the template exists: `koliko imam na računu`
 >    (the cue needs *stanje na računu* or *na računu imam*), `koliko mi novca ostaje` (the cue is
@@ -3449,7 +3461,7 @@ them would have published a contract the API could not keep. The module was regi
 `apps/api/src/modules/assistant/` — `assistant.service.ts` (the pipeline), `numeric-validator.ts`
 (**pure**), `narration-template.ts` (**pure**), `narrate-prompt.ts` (**pure**),
 `assistant-narrator.ts` (the `NARRATE` seam), `assistant.model.ts` + `assistant.resolver.ts` (the
-wire). 163 tests in the module, of which 20 are the integration spec that scripts a model.
+wire). 192 tests in the module, of which 23 script a model and 43 assemble facts against Postgres.
 
 | Decision | Built | Why |
 |---|---|---|
@@ -3536,6 +3548,35 @@ wire). 163 tests in the module, of which 20 are the integration spec that script
   questions. The validator's guarantee *is* asserted — over the fallback for every intent, and over
   scripted model output in the integration spec — but §04 §11.2's "fabricated-numeral rate" gate has no
   measured number until a provider and a narration slice exist.
+
+### 8.9 A derived figure is a `Balance`, never a `Money` (task A-1, 2026-09-17)
+
+Every total in the facts payload is **derived** from movements, so any of them can legitimately be
+negative — and `Money` is non-negative by ADR-003, in the domain (`money()` throws) *and* on the wire
+(`MoneyScalar` refuses to serialise one). The assistant's totals were typed `Money`, which made
+`Income − spending` a **500** on any month that spent more than it earned; the same defect sat in the
+projection's overrun, both trend templates' change, a budget's `remaining` and an account's `balance`
+— **eight call sites**, each an ordinary state rather than an edge case.
+
+| Decision | Built | Why |
+|---|---|---|
+| The facts total is a **`Balance`** | `AssistantFactTotalModel.money: Balance!` (`BalanceScalar`); the wire shape is unchanged | This is the distinction the analytics `delta`/`net` (§5.1) and every budget `remaining` (§6.3) already make, so the assistant stops being the one module that conflates them. The client already renders through `formatBalance` and `money-text.overrunText` gates on the sign, so **no query, no component and no type on the web changed** — only the schema's type name. |
+| One formatter, and it is the **signed** one | the private `format` in `fact-assembly.service.ts` renders via `formatBalance(balance(…))` | For a non-negative value the output is byte-identical (`Intl.NumberFormat`, same options), so the change is invisible except that a negative renders with a minus instead of throwing. Patching the *call sites* would have left the ninth one to be written later — which is how this arrived. |
+| The narration must keep the **sign** | `numeric-validator.ts` compares each numeral **with the sign it was written with** | Digits alone stopped being sufficient the moment a negative became renderable: `5.000,00` and `-5.000,00` tokenise identically, so a sign-blind check would accept *"you spent 5.000 more than last month"* for a month that spent 5.000 **less** — trading a 500 for a confidently wrong direction. Only `-` and `−` (U+2212) count as a sign: an en dash is this document's period-range separator and a hyphen with a digit before it is a date (`2026-09-01`) or a range (`1-31`), either of which would otherwise have dropped the payload's own date components out of the allowed set. |
+| A negative overrun is **not** a fact | `monthProjection` emits the overrun total only when it is `> 0` | The label says *Projected overrun*, and the `PROJECTION` frame reads this total **by that label** — so a negative one would render *"over by -25.000,00 RSD"* and assert an overspend that is not there. This is the rule the client's `overrunText` already applies; the under-budget case is not lost, because the headline is the projected total and the frame then reads *"You are on track for … this month."* |
+
+**Verified live 9/9** (`/tmp/verify-a1.mjs`), including the state the report came from: with a
+Household budget above the projection, `projectedOverrun` is **−92.871.644** and MONTH_PROJECTION
+answers *"Do kraja meseca predviđena potrošnja iznosi 207.179,11 RSD."* — no overrun fact, no 500. The
+probe created and deleted that budget itself and asserted the dashboard was back to `null`. The
+`formatMoney` sweep across `apps/api` now returns **no** call site at all, and the analytics,
+budgeting, accounts, goals, receipts, recurring and ledger models were already using `BalanceScalar`
+for their signed figures — the assistant was the outlier.
+
+> **Named, not fixed:** two template frames read awkwardly for a negative — `SAFE` (*"You can spend
+> −1.000,00 RSD safely today"*) and `BUDGET` (*"You have −2.000,00 RSD left"*). The facts and the sign
+> are right and the sentence is not a lie, but it is clumsy; that is A-6's copy work and it is recorded
+> here rather than papered over with a special case per frame.
 
 ---
 

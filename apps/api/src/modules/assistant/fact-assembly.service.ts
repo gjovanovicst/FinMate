@@ -1,8 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import {
-  formatMoney,
-  money,
+  balance,
+  formatBalance,
   monthPeriod,
   addMonths,
   proposeSavings,
@@ -58,6 +58,16 @@ export interface FactRowView {
 
 export interface FactTotalView {
   readonly label: string;
+  /**
+   * The machine value, as strings for the wire.
+   *
+   * **A derived total is a `Balance`, not a `Money`** — `amountMinor` may be negative (ADR-003's
+   * Money/Balance split). The totals here are `Income − spending`, a period-over-period *change*, a
+   * budget's `remaining`, an account's `balance` and a projection's overrun: every one of them is a
+   * sum of movements, and any of them can legitimately be negative. The GraphQL field is
+   * `BalanceScalar` for exactly this reason (see {@link AssistantFactTotalModel} in
+   * `assistant.model.ts`), because `Money` refuses a negative amount at serialisation.
+   */
   readonly money: { readonly amountMinor: string; readonly currency: string };
   readonly formatted: string;
 }
@@ -132,7 +142,7 @@ export class FactAssemblyService {
     @Inject(CONFIG) config: AppConfig,
   ) {
     // The catalogue's primary language is English; money is rendered in the Serbian locale by
-    // `formatMoney`'s default, which is what every other surface in the product already shows.
+    // `formatBalance`'s default, which is what every other surface in the product already shows.
     this.locale = config.APP_DEFAULT_LOCALE;
   }
 
@@ -844,7 +854,14 @@ export class FactAssemblyService {
           money: { amountMinor: projected.amountMinor.toString(), currency: projected.currency },
           formatted: this.format(projected.amountMinor, projected.currency),
         },
-        ...(overrun === null
+        // ⚠️ Only when the month is genuinely **over**: `projectedOverrun` is a signed Balance, so a
+        // negative one means the projection is *under* budget. Emitting it under the label "Projected
+        // overrun" would assert an overspend that is not there — and the template frame reads this
+        // total by that label, so a negative would render "over by -5.000,00 RSD". ≤ 0 therefore emits
+        // **no** overrun fact at all, which is the same rule the client's `overrunText` applies. The
+        // under-budget case is not lost: `headline` is the projected total, and the PROJECTION frame
+        // reads "You are on track for X this month."
+        ...(overrun === null || overrun.amountMinor <= 0n
           ? []
           : [
               {
@@ -1010,8 +1027,25 @@ export class FactAssemblyService {
     return (household?.ledger_currency ?? 'RSD') as CurrencyCode;
   }
 
+  /**
+   * Render a derived amount.
+   *
+   * ⚠️ **`formatBalance`, not `formatMoney`, and the difference is a 500.** Every figure this service
+   * renders is derived from movements, so it is a `Balance` and may be negative — a month that spent
+   * less than the last one, a budget past its limit, an overdrawn account, a projection *under* budget.
+   * `formatMoney` calls `money()`, which **throws** on a negative `amountMinor` (ADR-003 forbids a sign
+   * on a Transaction amount, and the constructor enforces it), so every one of those ordinary states
+   * took the whole answer down with an INTERNAL error before this was fixed. The reported instance was
+   * `MONTH_PROJECTION`; the same call sat in eight places, which is why the helper itself changed rather
+   * than the one call site (docs/15).
+   *
+   * For a non-negative value the output is **byte-identical** — `formatBalance` uses the same
+   * `Intl.NumberFormat` call — so this changes nothing except that a negative renders with a leading
+   * minus instead of throwing. The client already handles both (`fm-money` formats through
+   * `formatBalance`, docs/07 §4.5), and `money-text.overrunText` gates on the sign.
+   */
   private format(minor: bigint, currency: string): string {
-    return formatMoney(money(minor, currency as CurrencyCode), this.locale);
+    return formatBalance(balance(minor, currency as CurrencyCode), this.locale);
   }
 
   private filtersOf(context: Context, scope: SpendScope, kind: string): Readonly<Record<string, string>> {

@@ -746,4 +746,180 @@ describe('fact assembly (integration)', () => {
     expect(totalMinor(result)).toBe('500000');
     expect(result.provenance.transactionCount).toBe(1);
   });
+
+  // ---------------------------------------------------------------------------------------------
+  // A derived figure may be NEGATIVE, and every one of these used to be an INTERNAL error
+  // ---------------------------------------------------------------------------------------------
+
+  /**
+   * The class of defect behind `MONTH_PROJECTION`'s 500, asserted rather than fixed once.
+   *
+   * Every total is derived from movements, so any of them can be negative in ordinary use: a month
+   * that spent less than the last one, a **budget past its limit**, an **overdrawn account**, a
+   * projection *under* budget. `formatMoney` throws on a negative amount (ADR-003 keeps a Transaction
+   * amount non-negative) and `MoneyScalar` refuses one on the wire, so each of these answered an
+   * INTERNAL error. The fixture below is a Household with nothing but overspending and a deficit,
+   * which is the only way to reach those states at all — the main fixture is comfortably in surplus,
+   * which is why the defect survived every earlier test.
+   */
+  describe('a Household whose derived figures are negative', () => {
+    const negHouseholdId = uuidv7();
+    const negUserId = uuidv7();
+    const negContext: TenantContext = {
+      householdId: negHouseholdId,
+      userId: negUserId,
+      role: 'OWNER',
+      requestId: 'facts-it-negative',
+    };
+    const asNegTenant = <T>(fn: () => Promise<T>): Promise<T> => runWithTenant(negContext, fn);
+    const assembleNeg = (plan: Plan) =>
+      asNegTenant(() => facts.assemble(negHouseholdId, plan, { today: TODAY }));
+
+    beforeAll(async () => {
+      const stamp = Date.now();
+      await prisma.client.users.create({
+        data: { id: negUserId, email: `facts-neg-${stamp}@example.com`, display_name: 'Negative' },
+      });
+      await asNegTenant(() =>
+        prisma.client.households.create({
+          data: {
+            id: negHouseholdId,
+            name: 'Negative',
+            owner_user_id: negUserId,
+            ledger_currency: 'RSD',
+            iana_timezone: 'Europe/Belgrade',
+          },
+        }),
+      );
+
+      await asNegTenant(async () => {
+        const account = await prisma.client.accounts.create({
+          data: {
+            id: uuidv7(),
+            household_id: negHouseholdId,
+            name: 'Neg Tekući',
+            kind: 'BANK',
+            currency: 'RSD',
+          },
+        });
+        const category = await prisma.client.categories.create({
+          data: { id: uuidv7(), name: 'Troškovi', kind: 'EXPENSE' },
+        });
+
+        // A 10.000 Category budget against 50.000 of spending: `remaining` is negative.
+        await prisma.client.budgets.create({
+          data: {
+            id: uuidv7(),
+            household_id: negHouseholdId,
+            category_id: category.id,
+            period: 'MONTHLY',
+            period_start: new Date('2026-09-01T00:00:00.000Z'),
+            amount_minor: 1_000_000n,
+            currency: 'RSD',
+            include_subcategories: false,
+            rollover: false,
+          },
+        });
+        // A 100.000 **Household** budget, which is what makes `projectedOverrun` non-null at all.
+        await prisma.client.budgets.create({
+          data: {
+            id: uuidv7(),
+            household_id: negHouseholdId,
+            category_id: null,
+            period: 'MONTHLY',
+            period_start: new Date('2026-09-01T00:00:00.000Z'),
+            amount_minor: 10_000_000n,
+            currency: 'RSD',
+            include_subcategories: false,
+            rollover: false,
+          },
+        });
+
+        for (const [amountMinor, day, description] of [
+          [20_000_000n, '2026-08-10', 'Avgust veliki'], // last month: 200.000
+          [5_000_000n, '2026-09-06', 'Septembar mali'], // this month: 50.000, no income at all
+        ] as const) {
+          await prisma.client.transactions.create({
+            data: {
+              id: uuidv7(),
+              household_id: negHouseholdId,
+              account_id: account.id,
+              kind: 'EXPENSE',
+              amount_minor: amountMinor,
+              currency: 'RSD',
+              category_id: category.id,
+              description,
+              source: 'MANUAL',
+              status: 'CONFIRMED',
+              occurred_at: new Date(`${day}T10:00:00.000Z`),
+              occurred_local_date: new Date(`${day}T00:00:00.000Z`),
+            },
+          });
+        }
+      });
+    });
+
+    afterAll(async () => {
+      await asNegTenant(() => prisma.client.households.deleteMany({ where: { id: negHouseholdId } }));
+      await prisma.client.users.deleteMany({ where: { id: negUserId } });
+    });
+
+    const totalValue = (
+      result: { facts: { totals: readonly { label: string; money: { amountMinor: string } }[] } },
+      label: string,
+    ): string | undefined => result.facts.totals.find((total) => total.label === label)?.money.amountMinor;
+
+    it('renders a negative net cashflow instead of throwing', async () => {
+      const result = await assembleNeg(planFor('NET_CASHFLOW'));
+
+      expect(result.available).toBe(true);
+      expect(totalValue(result, 'Income')).toBe('0');
+      expect(totalValue(result, 'Spending')).toBe('5000000');
+      expect(totalValue(result, 'Net')).toBe('-5000000');
+      // The rendered sentence carries the sign: a figure the narrator may quote verbatim.
+      expect(result.facts.formatted['headline']).toContain('-');
+      expect(result.facts.totals[2]?.formatted).toContain('-');
+    });
+
+    it('renders a negative period-over-period change in both trend templates', async () => {
+      const previous = await assembleNeg(planFor('TREND_VS_LAST_MONTH'));
+      expect(totalValue(previous, 'Change')).toBe('-15000000');
+      expect(previous.facts.formatted['headline']).toContain('-');
+
+      const average = await assembleNeg(planFor('TREND_VS_AVERAGE'));
+      // 50.000 against the 66.666,66 mean of the three months before it (200.000, 0, 0), floored to
+      // whole para: 200.000 / 3 = 66.666,66, so the difference is −16.666,66.
+      expect(totalValue(average, 'Difference')).toBe('-1666666');
+      expect(average.facts.formatted['headline']).toContain('-');
+    });
+
+    it('renders an overdrawn account balance as a negative, not as an error (I-4)', async () => {
+      const result = await assembleNeg(planFor('ACCOUNT_BALANCE_ALL'));
+
+      expect(result.available).toBe(true);
+      expect(result.facts.rows[0]?.value).toBe('-25000000');
+      expect(result.facts.rows[0]?.formatted).toContain('-');
+      expect(result.facts.formatted['headline']).toContain('-');
+    });
+
+    it('renders a budget past its limit as negative remaining', async () => {
+      const result = await assembleNeg(planFor('BUDGET_STATUS'));
+
+      expect(result.available).toBe(true);
+      expect(totalMinor(result)).toBe('-4000000');
+      expect(result.facts.formatted['headline']).toContain('-');
+    });
+
+    it('emits NO overrun fact when the projection is under budget', async () => {
+      const result = await assembleNeg(planFor('MONTH_PROJECTION'));
+
+      expect(result.available).toBe(true);
+      // The projection is 50.000 extrapolated over 20 of 30 days ≈ 75.000, under a 100.000 budget —
+      // so there is no overspend to report. Emitting the signed value under the label "Projected
+      // overrun" would assert one, and the template frame reads this total by exactly that label:
+      // it would have said "over by -25.000,00 RSD".
+      expect(result.facts.totals.map((total) => total.label)).toEqual(['Projected total']);
+      expect(result.facts.formatted['headline']).not.toContain('-');
+    });
+  });
 });

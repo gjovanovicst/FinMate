@@ -192,3 +192,71 @@ describe('validating a narration', () => {
     expect(validateNarration('You spent 2,00 RSD in that period.', zero, RS).ok).toBe(false);
   });
 });
+
+/**
+ * A derived total is a signed `Balance`, so digits alone are no longer enough: `5.000,00` and
+ * `-5.000,00` tokenise identically, and a sign-blind check would accept an answer that states the
+ * **opposite direction** — "you spent 5.000 more than last month" for a month that spent 5.000 less.
+ * These are the tests that keep that from being possible; the failure direction is the one that
+ * matters, so most of them assert a **refusal**.
+ */
+describe('a numeral is compared with its sign', () => {
+  const signed: NumericPayload = {
+    formatted: {
+      period: '2026-09-01 – 2026-09-30',
+      headline: '-5.000,00 RSD',
+      previousPeriod: '2026-08-01 – 2026-08-31',
+    },
+    rows: [],
+    totals: [
+      { label: 'This period', money: { amountMinor: '500000', currency: 'RSD' }, formatted: '5.000,00 RSD' },
+      { label: 'Previous period', money: { amountMinor: '1000000', currency: 'RSD' }, formatted: '10.000,00 RSD' },
+      { label: 'Change', money: { amountMinor: '-500000', currency: 'RSD' }, formatted: '-5.000,00 RSD' },
+    ],
+    transactionCount: 2,
+    periodStart: '2026-09-01',
+    periodEnd: '2026-09-30',
+    ledgerCurrency: 'RSD',
+  };
+
+  it('reads a leading minus as part of the value, and a hyphen inside a number as a separator', () => {
+    expect(extractNumerals('-5.000,00 RSD', RS).map((n) => n.value)).toEqual(['-5000']);
+    expect(extractNumerals('net -5.000,00 RSD', RS).map((n) => n.value)).toEqual(['-5000']);
+    expect(extractNumerals('- 5.000,00 RSD', RS).map((n) => n.value)).toEqual(['-5000']);
+    // U+2212 is the typographic minus `Intl` may emit for a negative currency amount.
+    expect(extractNumerals('\u22125.000,00 RSD', RS).map((n) => n.value)).toEqual(['-5000']);
+  });
+
+  it('does NOT read a range separator or an ISO date as a sign', () => {
+    // The payload's own period is written with an en dash and its dates with hyphens. Reading either
+    // as a sign would drop `09`, `01` and `30` out of the allowed set and send every trend answer to
+    // the template fallback for no gain in safety.
+    expect(extractNumerals('1–30 September', RS).map((n) => n.value)).toEqual(['1', '30']);
+    expect(extractNumerals('1-30 September', RS).map((n) => n.value)).toEqual(['1', '30']);
+    expect(extractNumerals('2026-09-01', RS).map((n) => n.value)).toEqual(['2026', '09', '01']);
+  });
+
+  it('authorises the signed machine value of a negative total, not only its formatted string', () => {
+    const allowed = allowedNumerals(signed, RS);
+    expect(allowed.has('-5000')).toBe(true);
+    expect(allowed.has('5000')).toBe(true); // "This period" is a positive 5.000 in the same payload
+    expect(allowed.has('10000')).toBe(true);
+  });
+
+  it('accepts the signed narration, and refuses the same figure with the sign dropped', () => {
+    expect(validateNarration('You spent 5.000,00 RSD less than last month: -5.000,00 RSD.', signed, RS).ok).toBe(true);
+
+    // The defect this exists for: the sign is gone, so the sentence asserts an increase.
+    const dropped = validateNarration(
+      'You spent 5.000,00 RSD more than the previous period of 10.000,00 RSD.',
+      { ...signed, totals: signed.totals.filter((total) => total.label !== 'This period') },
+      RS,
+    );
+    expect(dropped.ok).toBe(false);
+    expect(dropped.unaccounted).toEqual(['5.000,00']);
+  });
+
+  it('folds a written `-0` to `0`, which is the value the payload holds', () => {
+    expect(extractNumerals('-0,00 RSD', RS).map((n) => n.value)).toEqual(['0']);
+  });
+});

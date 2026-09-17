@@ -4,6 +4,15 @@
  * > **Guarantee:** an `AssistantAnswer` returned with `narrationMode = "LLM"` contains **no numeral
  * > that is not present in its own `facts` payload.**
  *
+ * ## A numeral is compared with its **sign**
+ *
+ * Since the totals became signed Balances (a month that spent less than the last one, a budget past
+ * its limit, an overdrawn account), comparing digits alone was no longer enough: `5.000,00` and
+ * `-5.000,00` tokenise identically, so a sign-blind check would accept an answer that states the
+ * **opposite direction**. Each numeral therefore carries the sign it was written with and must match
+ * a fact that was written the same way — see {@link isNegated} for what counts as a sign, and why an
+ * en dash and an ISO date's hyphens do not.
+ *
  * ## What this file is, and what it is not
  *
  * It is the *check*, not the enforcement. The enforcement — regenerate once with a stricter
@@ -33,7 +42,7 @@
  * @module apps/api/src/modules/assistant
  */
 
-import { formatMoney, money, type CurrencyCode } from '@finmate/domain';
+import { balance, formatBalance, type CurrencyCode } from '@finmate/domain';
 
 /**
  * The part of an assembled answer the validator may cite.
@@ -59,7 +68,7 @@ export interface NumericPayload {
 export interface Numeral {
   /** Exactly as written, e.g. `27.450,00`. */
   readonly raw: string;
-  /** The canonical decimal value, e.g. `27450`. */
+  /** The canonical decimal value, e.g. `27450` — or `-27450` when the text wrote it as a negative. */
   readonly value: string;
 }
 
@@ -142,18 +151,55 @@ export function findNumeralTokens(text: string): readonly { readonly raw: string
   return [...text.matchAll(NUMERAL)].map((match) => ({ raw: match[0], index: match.index ?? 0 }));
 }
 
-/** Every numeral in a piece of text, in order, with its canonical value (`null` when unreadable). */
-export function extractNumerals(text: string, locale: string): readonly { raw: string; value: string | null }[] {
-  return findNumeralTokens(text).map((token) => ({
-    raw: token.raw,
-    value: canonicaliseNumeral(token.raw, locale),
-  }));
+/**
+ * Whether the numeral starting at `index` is written as a **negative**.
+ *
+ * This is the half of the guarantee that a sign-blind comparison cannot give: a total may be negative
+ * (`Income − spending`, a period-over-period change, an overspend, an overdraft), and without this the
+ * model could answer "you spent 5.000,00 RSD more than last month" while the fact said
+ * `-5.000,00 RSD`. Both tokenise to the same digits, so the old check passed and **the answer was
+ * wrong by direction** — the failure class ADR-017 exists to prevent, and one that gets *worse* the
+ * moment a negative figure becomes renderable at all.
+ *
+ * Two deliberate restrictions:
+ *
+ *   - **Only `-` and `−` (U+2212) count.** The en dash `–` is this codebase's *range* separator
+ *     (`1–31`, `2026-09-01 – 2026-09-30`), and reading it as a sign would make every period range a
+ *     pair of negative numbers.
+ *   - **A hyphen with a digit before it is a separator, not a sign.** That is what keeps an ISO date
+ *     (`2026-09-01`, tokenised as `2026`, `09`, `01`) and a bare range (`1-31`) from becoming
+ *     `2026`, `-9`, `-1` — which would have dropped the payload's own date components out of the
+ *     allowed set and sent every trend answer to the template fallback.
+ */
+function isNegated(text: string, index: number): boolean {
+  let cursor = index - 1;
+  while (cursor >= 0 && /\s/.test(text[cursor] as string)) cursor -= 1;
+  if (cursor < 0) return false;
+  const character = text[cursor] as string;
+  if (character !== '-' && character !== '\u2212') return false;
+  const before = cursor > 0 ? (text[cursor - 1] as string) : '';
+  return !/\p{Nd}/u.test(before);
 }
 
-/** `formatMoney` for a machine value that arrived as minor units, or `null` when it cannot be one. */
+/** Every numeral in a piece of text, in order, with its canonical value (`null` when unreadable). */
+export function extractNumerals(text: string, locale: string): readonly { raw: string; value: string | null }[] {
+  return findNumeralTokens(text).map((token) => {
+    const unsigned = canonicaliseNumeral(token.raw, locale);
+    if (unsigned === null) return { raw: token.raw, value: null };
+    // `-0` is `0`: a facts payload never writes one, and an answer that does is not a different value.
+    const negative = unsigned !== '0' && isNegated(text, token.index);
+    return { raw: token.raw, value: negative ? `-${unsigned}` : unsigned };
+  });
+}
+
+/** `formatBalance` for a machine value that arrived as minor units, or `null` when it cannot be one. */
 function formattedMinor(minor: string, currency: string, locale: string): string | null {
   try {
-    return formatMoney(money(BigInt(minor), currency as CurrencyCode), locale);
+    // The **signed** formatter: a total is a derived Balance and may be negative (see
+    // `fact-assembly.service.ts`). `formatMoney` would throw on one, so the machine value of a signed
+    // total would have been silently dropped from the allowed set — leaving only its formatted string,
+    // which is how a correctly signed answer could have been rejected and an unsigned one accepted.
+    return formatBalance(balance(BigInt(minor), currency as CurrencyCode), locale);
   } catch {
     return null;
   }

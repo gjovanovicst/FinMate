@@ -1,7 +1,7 @@
 import { Field, Int, ObjectType, registerEnumType } from '@nestjs/graphql';
 
 import { JsonScalar } from '../../graphql/scalars/json.scalar';
-import { MoneyScalar } from '../../graphql/scalars/money.scalar';
+import { BalanceScalar } from '../../graphql/scalars/balance.scalar';
 import { LocalDateScalar, UuidScalar } from '../../graphql/scalars/uuid.scalar';
 import { AssistantIntentEnum, type AssistantIntent } from './assistant-intents';
 import type { AssistantAnswerView, DrillThroughView, NarrationMode } from './assistant.service';
@@ -56,7 +56,25 @@ export class AssistantFactTotalModel {
   @Field(() => String)
   label!: string;
 
-  @Field(() => MoneyScalar)
+  /**
+   * ⚠️ **`BalanceScalar`, not `MoneyScalar`, and this was a 500.**
+   *
+   * Every total the assembler produces is derived — `Income − spending`, a period-over-period change,
+   * a budget's `remaining`, an account's `balance`, a projection's overrun — so any of them can be
+   * negative, and `MoneyScalar` refuses a negative `amountMinor` at serialisation (ADR-003 keeps a
+   * *Transaction amount* non-negative; a *derived* figure is a Balance). The dashboard and the
+   * Accounts screen already expose their derived figures as Balances for the same reason, so this
+   * aligns the assistant with them rather than inventing a third representation.
+   *
+   * The **wire shape is unchanged** (`{ amountMinor, currency }`, `amountMinor` a signed integer
+   * string) and the client's `fm-money` already formats through `formatBalance`, so no query, no
+   * component and no type on the web changed.
+   */
+  @Field(() => BalanceScalar, {
+    description:
+      'A derived, SIGNED figure — `amountMinor` may be negative (a loss, an overspend, an overdraft). ' +
+      'Read-only: a Balance is computed by the backend and can never be supplied as input.',
+  })
   money!: { amountMinor: string; currency: string };
 
   @Field(() => String)
