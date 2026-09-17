@@ -42,7 +42,28 @@ export const GATE_THRESHOLDS = {
   costPerTransactionUsd: 0.002,
   /** docs/09 §4: "Rule-hit ratio >= 50 % on the golden dataset". */
   ruleHitRatio: 0.5,
+  /**
+   * The share of the assistant battery that must be **answerable**.
+   *
+   * A **regression floor, not a target** (docs/16 Q-13): the strict gate is that every question behaves
+   * as its fixture declares, and this one exists so that coverage cannot quietly fall while every
+   * declaration is dutifully updated to match. It is set below the measured value on purpose — the six
+   * open gaps are recorded in docs/06 §8.8, and closing them should show up as headroom here rather
+   * than as a threshold somebody raises by hand.
+   */
+  assistantAnswerableShare: 0.85,
 } as const;
+
+/** Where the battery's declarations and the planner's behaviour are compared. */
+export interface PlannerOutcome {
+  readonly question: string;
+  readonly declaredIntent: string;
+  readonly declaredRunnable: boolean;
+  readonly observedIntent: string;
+  readonly runnable: boolean;
+  /** The recorded reason, for a question the fixture declares unanswerable. */
+  readonly why?: string;
+}
 
 /** The decisions that mean "no model was needed" (docs/04 §2's stages 4–5). */
 const CHEAP_PATH = new Set(['RULE', 'KEYWORD', 'MERCHANT_DEFAULT', 'COUNTERPARTY_DEFAULT']);
@@ -402,4 +423,87 @@ export function failingCases(
         failure: score.failure,
       };
     });
+}
+
+/**
+ * The two gates over the assistant battery (docs/06 §8.11, docs/10 §5.6).
+ *
+ * ## Why "behaves as declared" and not "answers the most questions"
+ *
+ * The battery's first run proved the difference: two fixes turned a **wrong answer** into a refusal,
+ * and the answered count went *down*. An answered count rewards answering the wrong question, which is
+ * the one outcome ADR-017 forbids — so the hard gate is that each question does exactly what the
+ * fixture says, in both directions:
+ *
+ *   - a question declared answerable must route to its declared intent **and** be runnable, and
+ *   - a question declared unanswerable must refuse, for the recorded reason.
+ *
+ * The coverage floor alongside it only stops the share sliding while the declarations are kept tidy.
+ */
+export function evaluatePlannerGates(
+  outcomes: readonly PlannerOutcome[],
+): readonly GateResult[] {
+  const gate = (
+    metric: string,
+    threshold: string,
+    value: number | null,
+    passed: boolean | null,
+    source: string,
+    skipped?: string,
+    unit?: 'count',
+  ): GateResult => ({
+    metric,
+    threshold,
+    value,
+    passed,
+    source,
+    ...(skipped === undefined ? {} : { skipped }),
+    ...(unit === undefined ? {} : { unit }),
+  });
+
+  const mismatches = plannerMismatches(outcomes);
+  const answerable = outcomes.filter((outcome) => isAnswerable(outcome)).length;
+  const share = ratio(answerable, outcomes.length);
+
+  return [
+    gate(
+      'Assistant battery (every question behaves as declared)',
+      `= ${outcomes.length} of ${outcomes.length}`,
+      outcomes.length - mismatches.length,
+      mismatches.length === 0,
+      'docs/06 §8.11, docs/16 A-4',
+      outcomes.length === 0 ? 'the battery fixture has no questions' : undefined,
+      'count',
+    ),
+    gate(
+      'Assistant answerable share (regression floor)',
+      `>= ${GATE_THRESHOLDS.assistantAnswerableShare}`,
+      share,
+      share === null ? null : share >= GATE_THRESHOLDS.assistantAnswerableShare,
+      'docs/16 Q-13',
+      share === null ? 'the battery fixture has no questions' : undefined,
+    ),
+  ];
+}
+
+/** Whether a declared question is one the registry answers today. */
+function isAnswerable(outcome: PlannerOutcome): boolean {
+  return outcome.observedIntent !== 'NO_TEMPLATE_MATCH' && outcome.runnable;
+}
+
+/** Every question whose behaviour differs from its declaration, in fixture order. */
+export function plannerMismatches(
+  outcomes: readonly PlannerOutcome[],
+): readonly PlannerOutcome[] {
+  return outcomes.filter(
+    (outcome) =>
+      outcome.observedIntent !== outcome.declaredIntent || outcome.runnable !== outcome.declaredRunnable,
+  );
+}
+
+/** The questions the battery declares unanswerable — the gap list, with each one's recorded reason. */
+export function plannerGaps(
+  outcomes: readonly PlannerOutcome[],
+): readonly PlannerOutcome[] {
+  return outcomes.filter((outcome) => outcome.declaredIntent === 'NO_TEMPLATE_MATCH' || !outcome.declaredRunnable);
 }

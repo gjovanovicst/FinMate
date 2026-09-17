@@ -3729,6 +3729,23 @@ answered** (it was 25/12 before A-1). The five left are all named above: `Maksij
 `kolika mi je penzija` and `kada mi sledeća plata dolazi` (the registry gap), `koliko sam dao za kiriju`
 (correct — this Household has no such Category), and `how much did I spend on food`.
 
+**A-4 made the battery part of the build (2026-09-17).** `/tmp/ask-battery*.mjs` was a probe; it is now
+`apps/api/src/evals/fixtures/assistant-questions.json` — 57 questions with a **frozen** planner context,
+each declaring the intent it must route to and whether it is answerable — and it is gated by
+`pnpm test:evals` (`evaluatePlannerGates`, docs/10 §5.9) *and* by `planner-gate.spec.ts` in the fast
+suite, which it can be because the planner is pure and needs no database. Two gates: **every question
+behaves as declared, in both directions** (a declared-answerable question that refuses fails, and so
+does a recorded gap that quietly starts answering — closing a gap is a reviewed edit to the fixture),
+and the **answerable share** at ≥ 0.85 as a floor. Measured today: **51 of 57 (89.5 %)**, with the six
+gaps printed by the runner beside the reason recorded against each — *a fixture that cannot record a
+refusal without saying what it is*.
+
+> **Why the gate is not "answer more questions".** Writing the fixture meant checking what each question
+> actually did, and two were answering the wrong one. Both are fixed in the commit before the gate
+> (§8.8 item 6), and the fixes took the answered count **down** — 52 → 51 — because a wrong answer
+> became a refusal. An answered count rewards exactly the outcome ADR-017 forbids, so the gate is
+> *behaves as declared* and the share is only a floor.
+
 > **Named, not fixed (A-3b's own residual):** an English question **about a Category** still refuses,
 > because the seeded tree is Serbian-named with Serbian keywords — *"how much did I spend on food"* is
 > understood as a scoped spend question and the scope resolves nothing. That is a taxonomy-vocabulary

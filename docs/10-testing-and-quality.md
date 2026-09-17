@@ -777,6 +777,7 @@ The section above is the design. This is the delivered v1: `pnpm test:evals`, ru
 | A synthetic category tree per fixture | The **shipped** tree, written by `OnboardingService` | The seed's `strong`/`include` weights *are* the knowledge under test (§8.1.3 of doc 04 was invisible for weeks because a fixture tree hid it). One Household per `ledgerCurrency` in the dataset, because the amount scale is derived from the Household's currency (ADR-011). |
 | `evals.run` / `slice_metric` / `failing_case` tables | `apps/api/.evals/report.{json,md}` + stdout | The tables are for trending 60 runs against a pinned triple; that is the nightly runner's job. A gate needs a number and a list, and the artefacts carry both. Recorded as not-built rather than implied. |
 | Every §5.5 gate enforced | The four the build can measure, plus the Phase 2 rule-hit ratio | Narration (2 gates) is `skipped`: NARRATE is Phase 3. Top-3 and cost are `requiresProvider`: with no model the candidate list is empty for every fragment the deterministic ladder did not resolve, so top-3 degenerates into a second copy of the rule-hit ratio. **Measured values are always printed** — a gate is withheld, never a number. |
+| The assistant's own coverage, measured rather than assumed (A-4) | **The battery**: `apps/api/src/evals/fixtures/assistant-questions.json` — 57 questions with a **frozen** planner context, each declaring the intent it must route to and whether it is answerable, gated by `evaluatePlannerGates`. The planner is pure, so this half of the run needs no database and no model | docs/16 A-4 and Q-13: *"a hard bar on the battery (no regressions, zero 500s), a trend on real questions."* The **strict** gate is that every question behaves as declared, **in both directions** — a question declared answerable that refuses fails, and so does a recorded gap that quietly starts answering, because closing a gap has to be a reviewed line in the fixture. The answered **share** (89.5 % today) is a floor, not a target: the battery's first run proved that maximising it is the wrong objective (below). |
 
 **The first run paid for the harness immediately.** It found two defects — a reversal word being
 auto-categorised at 0.923, and a keyword in the seed contradicting the merchant catalogue — both
@@ -799,6 +800,26 @@ fragments cannot be categorised from the text — the 66 bare `kupovina` cases p
 the deliberately corroborating `kafa`/`voda`. That is a statement about the v1 dataset's composition,
 not about the pipeline: the parsing slices were authored for amount handling, and a category-label
 slice with more retail vocabulary is the obvious next dataset investment.
+
+**The assistant battery paid for itself before it was written (A-4, 2026-09-17).** Declaring what each
+of the 57 questions *should* do meant checking what it actually did, and two were answering the wrong
+question: `koliko sam potrošio na benzin` returned a pharmacy's total (`Apoteka Benu` matched `benzin`
+on a three-letter prefix, because the stem rung bounded the difference by the *shorter* word), and
+`how much did I spend on netflix` returned the subscription list (a recurring-rule **name** outranked an
+explicit spend question). Both are fixed in the commit before the gate, with regression tests.
+
+**And it changed what the gate measures.** Those two fixes turned a wrong answer into a refusal, so the
+answered count went **down** — 52 → 51 of 57. An answered count rewards answering the wrong question,
+which is the one outcome ADR-017 forbids, so the gate is *"every question behaves as declared"* and the
+share is only a floor. The six declared gaps are printed by the runner with the reason recorded against
+each one, which is how the same file doubles as the gap list: **the fixture cannot record a refusal
+without saying what it is**, and the loader throws if one tries.
+
+**The remaining six are one mechanism plus one fold.** Four of them — `benzin`, `kiriju`, and the
+English `food`, plus `Maksiju` — come down to two vocabulary gaps in shared places: the planner matches
+entity **names** and not the `CategoryKeyword`s the classifier already uses (three of them), and the
+fold does not know the Serbian `x`↔`ks` pair (`Maxi`/`Maksiju`, which also affects the classifier).
+The other two need a template that does not exist: income scoped by Category.
 
 ---
 

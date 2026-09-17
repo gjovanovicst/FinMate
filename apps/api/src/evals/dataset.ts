@@ -11,6 +11,8 @@ import { readFileSync } from 'node:fs';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
+import type { AssistantIntent } from '../modules/assistant/assistant-intents';
+import type { PlannerContext } from '../modules/assistant/query-planner';
 import type { EvalCase, EvalFragmentExpectation, GoldenSliceName, EvalSlice } from './types';
 
 /**
@@ -194,4 +196,57 @@ export function buildDataset(
 
 function asArray(expectation: GoldenExpectation | readonly GoldenExpectation[]): readonly GoldenExpectation[] {
   return Array.isArray(expectation) ? expectation : [expectation as GoldenExpectation];
+}
+
+/**
+ * The assistant battery — docs/06 §8.11, docs/10 §5.6.
+ *
+ * Each entry declares what the planner **must** do with a question: the intent it routes to, and
+ * whether the plan is runnable (i.e. answerable). A question that refuses must also carry a `why`, and
+ * this loader **throws** when one does not — a refusal is a product gap, and an unrecorded gap is the
+ * thing this file exists to make impossible.
+ *
+ * The context is frozen in the fixture rather than read from a seeded Household, because the planner is
+ * pure: a gate that depended on the demo tree would fail for reasons that have nothing to do with the
+ * planner. It is deliberately small — ten Categories and five Merchants — so a failure names a
+ * vocabulary the reader can hold in their head.
+ */
+export interface AssistantQuestion {
+  readonly question: string;
+  readonly intent: AssistantIntent;
+  /** Default `true`. `false` declares a question the registry **cannot** answer yet. */
+  readonly runnable?: boolean;
+  /** Required whenever the entry declares a refusal. */
+  readonly why?: string;
+}
+
+export interface AssistantBattery {
+  readonly context: PlannerContext;
+  readonly questions: readonly AssistantQuestion[];
+}
+
+export function loadAssistantBattery(
+  root: string = findWorkspaceRoot(),
+): AssistantBattery {
+  const path = join(root, 'apps/api/src/evals/fixtures/assistant-questions.json');
+  const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<AssistantBattery>;
+  if (typeof parsed.context !== 'object' || parsed.context === null) {
+    throw new Error(`${path} has no \`context\``);
+  }
+  if (!Array.isArray(parsed.questions)) {
+    throw new Error(`${path} has no \`questions\` array`);
+  }
+  for (const entry of parsed.questions) {
+    if (typeof entry.question !== 'string' || typeof entry.intent !== 'string') {
+      throw new Error(`${path} has an entry without a question or an intent`);
+    }
+    const refuses = entry.intent === 'NO_TEMPLATE_MATCH' || entry.runnable === false;
+    if (refuses && (entry.why === undefined || entry.why.length === 0)) {
+      throw new Error(
+        `${path}: "${entry.question}" declares a refusal with no \`why\`. Every gap the battery ` +
+          `records has to say what it is — that is the point of the file.`,
+      );
+    }
+  }
+  return { context: parsed.context as PlannerContext, questions: parsed.questions };
 }

@@ -46,13 +46,24 @@ import { OnboardingModule } from '../modules/onboarding/onboarding.module';
 import { OnboardingService } from '../modules/onboarding/onboarding.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PrismaService } from '../prisma/prisma.service';
+import { isRunnable, planQuestion } from '../modules/assistant/query-planner';
 import {
   buildDataset,
   findWorkspaceRoot,
+  loadAssistantBattery,
   loadCategoryExpectations,
   loadGoldenFixtures,
 } from './dataset';
-import { evaluateGates, failingCases, scoreCase, summarise } from './scoring';
+import {
+  evaluateGates,
+  evaluatePlannerGates,
+  failingCases,
+  plannerGaps,
+  plannerMismatches,
+  scoreCase,
+  summarise,
+  type PlannerOutcome,
+} from './scoring';
 import type { CaseScore, EvalReport, GateResult, ObservedCase, ObservedFragment } from './types';
 
 /**
@@ -142,9 +153,46 @@ function percent(value: number | null): string {
 function formatGate(gate: GateResult): string {
   if (gate.skipped !== undefined) return '—';
   if (gate.value === null) return 'n/a';
+  if (gate.unit === 'count') return String(gate.value);
   if (gate.metric.includes('latency')) return `${gate.value} ms`;
   if (gate.metric.includes('Cost')) return `$${gate.value.toFixed(5)}`;
   return percent(gate.value);
+}
+
+/**
+ * The battery's own section of the report.
+ *
+ * It prints the **declared gaps**, not just a count: docs/16 A-4 asks for a gap list that is data, and
+ * an eval report is the cheapest place to keep one honest — the fixture cannot record a refusal without
+ * saying what it is, and this prints what it said.
+ */
+function renderPlanner(outcomes: readonly PlannerOutcome[]): string {
+  const answered = outcomes.filter(
+    (outcome) => outcome.observedIntent !== 'NO_TEMPLATE_MATCH' && outcome.runnable,
+  ).length;
+  const lines: string[] = [
+    `assistant battery — ${answered} of ${outcomes.length} questions are answerable`,
+  ];
+
+  const mismatches = plannerMismatches(outcomes);
+  if (mismatches.length > 0) {
+    lines.push('', 'MISMATCHES (each one FAILED a gate):');
+    for (const mismatch of mismatches) {
+      lines.push(
+        `  "${mismatch.question}"`,
+        `    declared ${mismatch.declaredIntent}${mismatch.declaredRunnable ? '' : ' (unanswerable)'}` +
+          ` · observed ${mismatch.observedIntent}${mismatch.runnable ? '' : ' (unrunnable)'}`,
+      );
+    }
+  }
+
+  const gaps = plannerGaps(outcomes);
+  if (gaps.length > 0) {
+    lines.push('', 'DECLARED GAPS (recorded in the fixture, docs/06 §8.8):');
+    for (const gap of gaps) lines.push(`  "${gap.question}" — ${gap.why ?? 'no reason recorded'}`);
+  }
+
+  return lines.join('\n');
 }
 
 function renderReport(report: EvalReport): string {
@@ -355,7 +403,23 @@ async function main(): Promise<number> {
     aiModel: 'unconfigured',
   } as const;
 
-  const gates = evaluateGates(scores, pinned.aiProvider !== 'none');
+  // The assistant battery — docs/06 §8.11. It needs no database and no model: the planner is pure, so
+  // this half of the run is deterministic and cannot fail because the seed or a provider is missing.
+  const battery = loadAssistantBattery(root);
+  const plannerOutcomes: readonly PlannerOutcome[] = battery.questions.map((declared) => {
+    const plan = planQuestion(declared.question, battery.context);
+    const declaredRunnable = declared.runnable ?? true;
+    return {
+      question: declared.question,
+      declaredIntent: declared.intent,
+      declaredRunnable,
+      observedIntent: plan.intent,
+      runnable: isRunnable(plan),
+      ...(declared.why === undefined ? {} : { why: declared.why }),
+    };
+  });
+
+  const gates = [...evaluateGates(scores, pinned.aiProvider !== 'none'), ...evaluatePlannerGates(plannerOutcomes)];
   const passed = gates.every((gate) => gate.passed !== false);
   const report: EvalReport = {
     runId: `eval-${startedAt.toISOString()}`,
@@ -363,7 +427,7 @@ async function main(): Promise<number> {
     durationMs: Date.now() - startedAt.getTime(),
     commitSha: process.env['GIT_SHA'] ?? process.env['GITHUB_SHA'] ?? 'unknown',
     pinned,
-    cases: dataset.length,
+    cases: dataset.length + plannerOutcomes.length,
     slices: summarise(scores),
     gates,
     passed,
@@ -381,7 +445,8 @@ async function main(): Promise<number> {
         `${seedSummary.merchants} merchants into a synthetic Household`,
     );
     // Deliberately stdout, not the Nest logger: this report is the artefact, and CI should show it.
-    process.stdout.write(`\n${renderReport(report)}\n\n`);
+    process.stdout.write(`\n${renderReport(report)}\n`);
+    process.stdout.write(`\n${renderPlanner(plannerOutcomes)}\n`);
     process.stdout.write(`report: apps/api/.evals/report.md\n`);
   }
 

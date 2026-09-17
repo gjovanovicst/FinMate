@@ -186,6 +186,11 @@ export interface GateResult {
   readonly threshold: string;
   readonly value: number | null;
   readonly passed: boolean | null;
+  /**
+   * How to render {@link value}. Defaults to a percentage, which is what most gates measure — a count
+   * rendered as `5700.00%` is the kind of report error that makes a reader distrust the whole table.
+   */
+  readonly unit?: 'percent' | 'count';
   /** Why a gate is `null`: a feature it depends on does not exist in this build. */
   readonly skipped?: string;
   /**
