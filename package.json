@@ -15,6 +15,7 @@
     "dev:infra:logs": "docker compose --env-file .env -f infra/docker/compose.dev.yml logs -f",
     "dev:infra:ps": "docker compose --env-file .env -f infra/docker/compose.dev.yml ps",
     "build": "nx run-many -t build",
+    "bundle:budget": "nx run web:build && node apps/web/tools/bundle-budget.mjs",
     "lint": "nx run-many -t lint",
     "typecheck": "nx run-many -t typecheck",
     "test": "nx run-many -t test",

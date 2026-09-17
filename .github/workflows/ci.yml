@@ -1,7 +1,7 @@
 # Continuous integration (docs/11-devops-and-observability.md §5).
 #
 # Gates, in the order a failure is cheapest to fix:
-#   install → generate → migrate → seed → lint → typecheck → test → evals
+#   install → generate → migrate → seed → lint → typecheck → test → bundle budgets → evals
 #
 # Deliberately absent for now:
 #   * production build — apps/api has no build target yet; bundling source-consumed workspace
@@ -131,6 +131,14 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      # The per-route bundle budgets (docs/07 §11): warning at 90 %, failure at 100 %, and a route
+      # with no budget entry fails too. It builds the production bundle and then reads the stats the
+      # application builder wrote, so it measures the artefact a CDN would serve rather than a
+      # development build — `ng build` defaults to the `development` configuration, and the tool
+      # refuses an unoptimised one rather than reporting a fictional overrun.
+      - name: Web bundle budgets
+        run: pnpm bundle:budget
 
       # The Phase 2 evaluation gates (docs/04 §11.2, docs/10 §5). It boots a real Nest context, seeds
       # a synthetic Household with the shipped content through the production writers, and pushes all

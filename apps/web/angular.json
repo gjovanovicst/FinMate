@@ -18,7 +18,8 @@
             "assets": [{ "glob": "**/*", "input": "public" }],
             "styles": ["src/styles.css"],
             "outputPath": "dist",
-            "polyfills": []
+            "polyfills": [],
+            "statsJson": true
           },
           "configurations": {
             "production": {

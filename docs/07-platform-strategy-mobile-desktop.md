@@ -944,6 +944,38 @@ These align with [01 §7](01-product-requirements.md) (p95 API ≤ 300 ms, rule-
 ≤ 2 s p95) and the measurements already defined in
 [05 §10](05-architecture.md#10-observability-hooks-built-in-from-day-one).
 
+**What is enforced today — task 4.3.4a.** `apps/web/tools/bundle-budget.mjs` (`pnpm bundle:budget`,
+run in CI right after the suite) reads the `stats.json` the application builder writes and measures each
+route's **cold cost**: the eager shell plus every chunk the route pulls that the shell has not already
+delivered. Two reading decisions are load-bearing, both learned by measuring — see
+[15](15-implementation-gotchas.md):
+
+- `ng build` defaults to the **`development`** configuration (`defaultConfiguration` in `angular.json`).
+  The tool refuses a build that emits source maps or whose shell chunk is over 500 KB raw, because an
+  unoptimised measurement reports numbers 2–3× too large and names the wrong problem.
+- A chunk's `imports` mix **static and dynamic** edges. The entry lists every lazy route as a
+  `dynamic-import`, so following all edges makes the whole application "the shell" and every route's
+  marginal cost zero. Only `import-statement` edges are followed.
+
+Measured at 4.3.4a (production, gzipped — the numbers this table's budgets are read against):
+
+| Route | Cold cost | Budget |
+|---|---|---|
+| App shell + boot | **137.9 KB** (92 % — the warning threshold fires) | ≤ 150 KB |
+| Capture | 159.9 KB | ≤ 180 KB |
+| Transaction list | 174.9 KB | ≤ 260 KB |
+| Dashboard / Review / Receipts / Analytics / Assistant | 147.8 / 150.7 / 150.6 / 154.2 / 151.7 KB | 220 / 220 / 240 / 300 / 280 KB |
+| The 17 routes §11 does not name | 138–178 KB | held to the 320 KB total |
+| `packages/nlp` | **2.5 KB** (one chunk, fetched with the first route that needs it — not eagerly) | ≤ 40 KB |
+
+⚠️ **Residual, recorded rather than hidden:** §11 names eight routes and the router has twenty-four, so
+the rest are held to the single documented *total* (320 KB) through an explicit `UNLISTED` list in the
+tool. That list is what gives rule 7 teeth — a route in neither list fails the build — but naming a
+ceiling per route is a performance decision this task did not take. Also not built: the per-PR **delta
+versus `main`** (rule 1's second half) needs a baseline artefact the pipeline does not produce, and
+`axe-core` (rule 4) and Lighthouse CI (rule 3) run locally for now (4.3.4b) because a shared-runner
+performance gate flakes for reasons unrelated to the change.
+
 **How the budgets are enforced.** (1) **Per-route bundle budget check** on the production build, in CI on
 every PR: warning at 90 %, **failure at 100 %**, with the delta versus `main` posted on the PR.
 (2) **`packages/nlp` size limit** (40 KB), isolated — it is on the pre-network path for every user.

@@ -74,11 +74,9 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   (`ui-consent-purpose`), so the provider/region/never-sent/trade disclosure cannot drift between the two
   screens; the sheet adds only the reason and three verbs (Allow, a first-class Decline, and *Not now*,
   which defers without writing because `NOT_ASKED` is the *absence* of a row). Verified live at
-  320/768/1280 px, 22 checks. That pass also found **R-26** (a full page load signed the user out) and
-  measured the shell overflowing by 48 px at 320 px — **fixed in 4.3.1a**.
-- **4.3.1's halves are done** (4.3.1a layout, 4.3.1b the sheet's dismissal contract, 4.3.1d the all-screens
-  audit) — the measurements, the `minmax(0, 1fr)` cause and the swipe/dirty-guard contract are in docs/09's
-  rows and docs/02 §9, not repeated here.
+  320/768/1280 px, 22 checks; it also found **R-26** and the 48 px shell overflow, both **fixed in 4.3.1a**.
+- **4.3.1a/b/d are done** — layout, the consent sheet's dismissal contract and the all-screens audit; the
+  measurements and the `minmax(0, 1fr)` cause are in docs/09 and docs/02 §9.
 - **And 4.3.5 closed R-26.** A cookie path is an attribute the *browser* checks, so it must describe the
   URL the browser requests — and the server never sees the `/api` its proxy strips. The refresh cookie was
   scoped to `/auth` while the browser asks for `/api/auth/refresh`, so **every hard reload signed the user
@@ -90,9 +88,8 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   at **3.31:1** over **153 element-route pairs**, plus three uncoloured anchors rendering the UA `#0000EE`
   at **2.02:1**), fixed at the class level (`styles.css`): **0 contrast failures and 0 overflow** remain
   (the two inactive controls are correctly **exempt**, WCAG 1.4.3). It also
-  **measured** the tap-target gap: **17 controls sit under WCAG 2.2 AA's 24 px floor** (11 real buttons at
-  21 px, incl. the consent sheet's *Allow*/*Decline*) and 37 more miss this repo's 44 px rule — open as
-  **4.3.1e**. docs/09's row and docs/02 §9 carry the measurements.
+  **measured** the tap-target gap: **17 controls sit under WCAG 2.2 AA's 24 px floor** and 37 more miss
+  this repo's 44 px rule — open as **4.3.1e**. docs/09's row and docs/02 §9 carry the measurements.
 - **4.3.6's offline pass found F-26's exit criterion failing; both R-27(a) halves are now fixed.** The harness
   serves the **production build** (the worker is production-only) and drives a real browser with the network
   cut. Three defects were measured, and the pass's own first reading (*dropped as sent*) was **refuted** — the
@@ -102,26 +99,28 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   back after a reload. Fixed with a `durability` signal the holder watches, a `generation` signal `SyncService`
   reacts to, and only a *change* invalidating — ADR-025's amendment. **(a2, 4.3.6b)** offline the composer's
   `accounts` query fails, so it sent `defaultAccountId: null` and the server refused the whole batch; the
-  composer now writes and reads ADR-025 decision 5's taxonomy cache — the categories and accounts it names,
-  and the `taxonomy` store's first writer since 4.2.2. **Verified live 8/8**: an airplane-mode `Lidl 2000`
-  queues, drains on reconnect, and **writes one transaction carrying the cached account**, with nothing
-  waiting or refused and no duplicate. **(b) is fixed in 4.3.6c** ([ADR-033](docs/14-decisions-and-risks.md)): an
+  composer now reads ADR-025 decision 5's taxonomy cache. **Verified live 8/8.** **(b) is fixed in 4.3.6c** ([ADR-033](docs/14-decisions-and-risks.md)): an
   unlocked install whose session could not be restored because *nothing answered* renders a **read-only
   offline shell** — one sentence, two links (`/pending`, `/transactions`' cached ledger), no navigation —
   and **nothing is sent without a session** (the flush is skipped without a token, a `401` is retryable
   rather than the entry's fault, and the tray hides controls that cannot work). **Verified live 13/13**;
   **R-27 is closed in full.**
-- **And 4.3.7 closed the AI-disclosure audit.** **4.3.7a**: the consent sheet names what a *caller* can
-  reach ([ADR-034](docs/14-decisions-and-risks.md)) — `PARSE` stays routed so `AI_PARSE_PRIMARY` is not dead
-  config, but a routed task no seam invokes is logged, not disclosed, and the card prints one sentence per
-  destination instead of the same one twice. **4.3.7b**: `/assistant` says how each answer was worded,
-  inside the provenance panel, with a visible sentence and a `/settings` link only when withheld consent
-  caused the fallback — and docs/06 §8.5's *"make the fallback invisible"* is amended with the reason, not
+- **And 4.3.7 closed the AI-disclosure audit** ([ADR-034](docs/14-decisions-and-risks.md)). **4.3.7a**: the
+  consent sheet names what a *caller* can reach — `PARSE` stays routed but a task no seam invokes is
+  logged, not disclosed — and prints one sentence per destination, not the same one twice. **4.3.7b**:
+  `/assistant` says how each answer was worded, in the provenance panel, with a `/settings` link only when
+  withheld consent caused the fallback; docs/06 §8.5's *"make the fallback invisible"* is amended, not
   ignored. Both verified live.
-- **Next**: **the human visual pass** — the contact sheet 4.3.1d produced (all 20 screens at three widths
-  plus the light theme), which feeds **4.3.1e** (17 controls under WCAG's 24 px floor) and **4.3.1c** (the
-  pinned capture bar). Then 4.3.3 (mobile keyboard) / 4.3.4 (bundle + Lighthouse); 4.3.2 (install prompt)
-  stays blocked on the product name.
+- **4.3.4a put the bundle budgets in CI.** `pnpm bundle:budget` measures each route's **cold cost**
+  against docs/07 §11 — warn 90 %, fail 100 %, and a route with no entry fails (which showed §11 names 8
+  routes and the router has 24; the rest are held to the documented 320 KB). Measured: shell **137.9 of
+  150 KB** (92 %), capture 159.9, transactions 174.9, the rest 138–178, `packages/nlp` 2.5 of 40. Two
+  traps in docs/15: `ng build` defaults to **development**, and a chunk's imports mix static and dynamic
+  edges (following both made every route cost 0.0 KB). Lazy routes were done already; no images ship.
+- **Next**: **4.3.4b** — Lighthouse and `axe-core` measured locally against the served production dist
+  (CI job scheduled separately). Then the **human visual pass** (the 4.3.1d contact sheet → **4.3.1e**'s
+  17 controls under 24 px, **4.3.1c**'s pinned capture bar); then 4.3.3 (mobile keyboard); 4.3.2 stays
+  blocked on the product name.
 
 **The long form is in the docs.** Each task's decisions, deviations and live defects are recorded where
 they belong: docs/09 §6 (sequencing), docs/02's per-screen notes, docs/06 §5, docs/14 (ADRs and risks) and
@@ -154,7 +153,7 @@ docs/15 (gotchas).
 | Auth (0.6) | REST `/auth/*`: signup, login, refresh **with rotation + theft detection**, logout, verify, reset; argon2id; login throttling; `TenantContext` now resolved from a real session |
 | Seed | `pnpm db:seed` — **39** categories, **131** distinct keywords (after folding), **62** merchants; two idempotent layers (globals always, the demo Household with `SEED_HOUSEHOLD_ID`), content shared with onboarding from `packages/domain/src/seed/` |
 | GraphQL (0.7) | Code-first; `Money` / `UUID` / `LocalDate` scalars; keyset pagination on the UUIDv7 key; `apps/api/schema.gql` generated as a reviewable artifact. First vertical slice: Accounts, with a backend-computed balance |
-| CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → **seed** → lint → typecheck → test → **evals** → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
+| CI (0.9) | `.github/workflows/ci.yml`: install → extensions → generate → migrate → **seed** → lint → typecheck → test → **bundle budgets** → **evals** → schema-drift check. Deploy to staging is NOT wired (needs the hosting decision, docs/14 Q-7) |
 | Web (0.8) | Angular 22, **zoneless** + signals, ADR-006. Responsive shell (bottom nav → sidebar at 1024px), design tokens (`apps/web/src/styles.css`), `fm-money` as the only Money renderer, auth pages, Accounts consuming GraphQL |
 | i18n | `core/i18n/`: **English primary**, Serbian latin + cyrillic. Runtime catalogue (no rebuild), `TranslationKey` derived from `en`, `sr-Cyrl` generated at runtime. Language switcher in the shell |
 | Tests | **2579 pass** — 955 API + 275 ai + 272 domain + 814 web + 149 nlp + 108 rules-engine + 6 worker (plus `contracts`, which ships no specs and passes with none) |
@@ -219,7 +218,7 @@ Read the document that owns your task before starting:
 | If you are… | Read first |
 |---|---|
 | starting any task | `docs/05-architecture.md` §2 — monorepo layout + the dependency rule |
-| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 154 entries, each saying what the failure looks like |
+| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 155 entries, each saying what the failure looks like |
 | touching money, Transactions, balances | `docs/03-domain-model.md` — **canonical glossary, DDL, invariants** |
 | adding or changing a feature | `docs/01-product-requirements.md` — the `F-xx` catalogue |
 | touching categorization, rules, prompts, AI | `docs/04-categorization-and-ai-engine.md` |
@@ -314,7 +313,7 @@ A change is not done until (doc 09 §8):
 
 ## Gotchas
 
-**The full list — 154 entries in 10 groups, each written to say what it looks like when it goes wrong —
+**The full list — 155 entries in 10 groups, each written to say what it looks like when it goes wrong —
 is [`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md). Read it before debugging
 anything that "should work".** It was split out because this file had grown past the instruction budget
 and was being truncated on load. The ones below stay here because they are the ones that bite hardest,

@@ -147,6 +147,24 @@ Everything here has cost time at least once, and most of it fails in a way that 
   with `pkill -f "ng serve ..."`, because the pattern matches your own shell's command line and kills the
   command that is doing the killing (use `pkill -f "ng ser[v]e"`).
 
+- **`ng build` builds the *development* configuration, and a chunk's `imports` mix static and dynamic
+  edges.** Two traps found while building the bundle-budget gate (4.3.4a), both of which make a
+  measurement confidently wrong rather than obviously broken. **(a)** `angular.json` sets
+  `"defaultConfiguration": "development"`, so `ng build` with no `--configuration` produces an
+  unminified bundle with source maps: the shell measured **382 KB** instead of 137.9 KB, and the report
+  said "255 % over budget" instead of naming the real problem. Only `nx run web:build` (which passes
+  `--configuration production`) is the shipped artefact; the budget tool now refuses a `stats.json` whose
+  outputs include `.map` files or whose shell chunk is over 500 KB raw. **(b)** in `stats.json`, a
+  chunk's `imports` carry a `kind`, and the application entry lists **every lazy route** as a
+  `dynamic-import`. Following all edges therefore puts the whole application inside "the initial
+  request" and reports each route's marginal cost as **0.0 KB** — a green gate that measures nothing.
+  Follow `import-statement` only; a dynamic edge is the route, fetched when the route is visited, which
+  is exactly the cost a per-route budget is about. The same shape bit the completeness check: a lazy
+  route's chunk **is** an entry point (`entryPoint: 'src/app/features/x/x.component.ts'`), so filtering
+  chunks on `entryPoint === undefined` skipped every route and made "a new route without a budget entry
+  fails the build" silently vacuous — the check must read `app.routes.ts`'s lazy imports, and a
+  component inside a route (`transaction-detail`, `receipt-attachment`) is not a route.
+
 ## 2. Prisma and the database
 
 Prisma 7 plus a tenancy extension plus hand-written SQL means the driver is not the only thing deciding what a query does.
