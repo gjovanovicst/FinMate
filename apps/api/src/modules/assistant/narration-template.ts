@@ -114,10 +114,16 @@ export function renderTemplateAnswer(input: TemplateAnswerInput): string {
   const at = facts.totals.find((total) => total.label === 'This period')?.formatted ?? headline;
 
   switch (frame) {
-    case 'TOTAL_AMOUNT':
+    case 'TOTAL_AMOUNT': {
+      // The scope the question named, when the builder could phrase it (docs/06 §8.2). Without it a
+      // scoped answer reads "You spent 4.000,00 RSD." — a true figure answering a question nobody can
+      // check against the one that was asked (docs/15).
+      const scope = facts.formatted['scope'];
+      const of = scope === undefined || scope === '' ? '' : ` ${scope}`;
       return template.kind === 'INCOME'
-        ? `You received ${headline}.`
-        : `You spent ${headline}.`;
+        ? `You received ${headline}${of}.`
+        : `You spent ${headline}${of}.`;
+    }
 
     case 'AVERAGE': {
       const days = facts.formatted['days'];

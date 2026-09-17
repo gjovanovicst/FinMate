@@ -1477,6 +1477,19 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   `expect(event.defaultPrevented).toBe(true)`; a click in jsdom submits nothing, so it would pass on the
   broken code.
 
+- **An aggregate whose scope is carried only as an id cannot be narrated — and the narrator refuses
+  rather than guessing, so the answer looks like a missing feature.** The assistant's scoped spend facts
+  labelled the total `Spending` and put the scope in `provenance.filters` as a `merchantId` UUID. The
+  narration prompt says *"if the facts do not contain the number the question asks for, say that you
+  cannot answer it from the ledger. Do not guess."* — so for `koliko sam potrošio u lidlu` the model
+  answered *"podaci ne sadrže iznos potrošnje za Lidl"* while the payload held `4.000,00 RSD` for exactly
+  that merchant, and the deterministic fallback had the same blind spot (*"You spent 4.000,00 RSD."*).
+  Nothing was broken in the ledger, the aggregate or the model: **the label was missing**, and the fix is
+  to carry the scope as a phrase (`formatted.scope: 'at Lidl'`, label `Spending at Lidl`) built from the
+  **resolved slot** — the node the question named, not the subtree the query widened to. Two general
+  lessons: a fact set is only as good as its labels, and *"the model refuses"* is a symptom to chase into
+  the payload before touching the prompt.
+
 ## 10. Cross-cutting rules of the codebase
 
 - **A live check that measures the wrong element lies in both directions.** Three times in 4.3.1 a

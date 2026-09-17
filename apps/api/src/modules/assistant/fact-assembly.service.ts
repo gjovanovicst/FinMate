@@ -264,13 +264,25 @@ export class FactAssemblyService {
    * Categories is one transaction, which is what docs/06 §8.3 requires provenance to report. The read
    * model returns exactly that, so nothing about I-7 or I-1 is re-decided here.
    */
+  /**
+   * A scoped total, with its **scope named**.
+   *
+   * ⚠️ The scope phrase is not decoration: without it the facts carry a figure labelled only
+   * "Spending" and the scope as an id inside `filters`, and a narrator told never to guess sees no
+   * evidence that the number *is* the merchant's or the category's — so it refuses. Measured before
+   * this: `koliko sam potrošio u lidlu` answered *"Ne mogu da odgovorim … podaci ne sadrže iznos
+   * potrošnje za Lidl"* while the facts held `4.000,00 RSD` for exactly that. The deterministic
+   * fallback was scope-blind in the same way ("You spent 4.000,00 RSD."), so the missing name is a
+   * **payload** defect, not a narration one (docs/06 §8.2, docs/15).
+   */
   private async spend(context: Context, scope: SpendScope, kind: 'EXPENSE' | 'INCOME'): Promise<Built> {
-    const totals = await this.spendModel.total(context.householdId, this.window(context), {
-      ...scope,
-      kind,
-    });
+    const [totals, scopePhrase] = await Promise.all([
+      this.spendModel.total(context.householdId, this.window(context), { ...scope, kind }),
+      this.scopePhrase(context),
+    ]);
     const formatted = this.format(totals.minor, context.currency);
-    const label = kind === 'INCOME' ? 'Income' : 'Spending';
+    const base = kind === 'INCOME' ? 'Income' : 'Spending';
+    const label = scopePhrase === null ? base : `${base} ${scopePhrase}`;
 
     return {
       rows: [],
@@ -285,10 +297,83 @@ export class FactAssemblyService {
         period: `${context.period.start} – ${context.period.end}`,
         headline: formatted,
         currency: context.currency,
+        // The machine-readable scope, beside the labelled total: the narrator may quote it and the
+        // template sentence uses it, and neither has to infer the scope from a UUID.
+        ...(scopePhrase === null ? {} : { scope: scopePhrase }),
       },
       transactionCount: totals.transactionCount,
       filters: this.filtersOf(context, scope, kind),
     };
+  }
+
+  /**
+   * How the scope the question named reads in a sentence — `at Lidl`, `on Hrana / Supermarket`,
+   * `from Kartica`, `tagged Dejan` — or `null` for an unscoped total.
+   *
+   * Built from the **plan's resolved slot** rather than from the widened `SpendScope`: a category
+   * question resolves to the named node and its subtree, and naming the subtree's first id would print
+   * a child where the person said the parent.
+   *
+   * A name that cannot be read returns `null` rather than an id: "Spending at <uuid>" is worse than no
+   * scope at all, which is also why every lookup is `findFirst` on a live row (a deleted one is not a
+   * name to print).
+   */
+  private async scopePhrase(context: Context): Promise<string | null> {
+    const slots = context.plan.slots;
+    if (slots.merchantId !== undefined) {
+      const name = await this.merchantName(slots.merchantId);
+      return name === null ? null : `at ${name}`;
+    }
+    if (slots.accountId !== undefined) {
+      const name = await this.accountName(context.householdId, slots.accountId);
+      return name === null ? null : `from ${name}`;
+    }
+    if (slots.tagId !== undefined) {
+      const name = await this.tagName(slots.tagId);
+      return name === null ? null : `tagged ${name}`;
+    }
+    if (slots.categoryId !== undefined) {
+      const path = await this.categoryPath(context.householdId, slots.categoryId);
+      return path === null ? null : `on ${path}`;
+    }
+    return null;
+  }
+
+  private async merchantName(id: string): Promise<string | null> {
+    // Globally readable with a nullable `household_id`, so a name read is not a tenancy question; the
+    // guard still applies its global OR (docs/08's allow-list).
+    const row = await this.prisma.client.merchants.findFirst({
+      where: { id, deleted_at: null },
+      select: { name: true },
+    });
+    return row?.name ?? null;
+  }
+
+  private async accountName(householdId: string, id: string): Promise<string | null> {
+    const row = await this.prisma.client.accounts.findFirst({
+      where: { id, household_id: householdId, deleted_at: null },
+      select: { name: true },
+    });
+    return row?.name ?? null;
+  }
+
+  private async tagName(id: string): Promise<string | null> {
+    const row = await this.prisma.client.tags.findFirst({
+      where: { id, deleted_at: null },
+      select: { name: true },
+    });
+    return row?.name ?? null;
+  }
+
+  /** A category's breadcrumb, or `null` when the row is gone. The full path, unlike a total's label. */
+  private async categoryPath(householdId: string, categoryId: string): Promise<string | null> {
+    const rows = await this.prisma.client.categories.findMany({
+      where: { household_id: householdId, deleted_at: null },
+      select: { id: true, name: true, parent_id: true },
+    });
+    const byId = new Map(rows.map((row) => [row.id, { name: row.name, parent_id: row.parent_id }]));
+    if (!byId.has(categoryId)) return null;
+    return this.pathOf(categoryId, byId);
   }
 
   /** The N categories with the most spend, splits included. */

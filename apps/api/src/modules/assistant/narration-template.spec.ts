@@ -98,6 +98,25 @@ describe('how each frame reads', () => {
     expect(render('SPEND_TOTAL', factsFor('SPEND_TOTAL'))).toBe('You spent 46.650,00 RSD.');
   });
 
+  it('a scoped spend total names the scope the question asked about', () => {
+    // The regression this exists for: the assembler used to carry the scope only as an id, so a
+    // merchant question rendered "You spent 46.650,00 RSD." — and the narrator, seeing no evidence that
+    // the figure was Lidl's, refused the question outright (docs/15).
+    const facts = factsFor('SPEND_BY_MERCHANT');
+    expect(
+      render('SPEND_BY_MERCHANT', { ...facts, formatted: { ...facts.formatted, scope: 'at Lidl' } }),
+    ).toBe('You spent 46.650,00 RSD at Lidl.');
+  });
+
+  it('names the scope for an income question with the verb that belongs to it', () => {
+    const facts = factsOf({
+      template: 'INCOME_TOTAL',
+      totals: [{ label: 'Income on Plata', money: { amountMinor: '15000000', currency: 'RSD' }, formatted: '150.000,00 RSD' }],
+      formatted: { headline: '150.000,00 RSD', scope: 'on Plata' },
+    });
+    expect(render('INCOME_TOTAL', facts)).toBe('You received 150.000,00 RSD on Plata.');
+  });
+
   it('an income total, with the verb that belongs to it', () => {
     const facts = factsOf({
       totals: [{ label: 'Income', money: { amountMinor: '15000000', currency: 'RSD' }, formatted: '150.000,00 RSD' }],

@@ -374,6 +374,33 @@ describe('fact assembly (integration)', () => {
     expect(tag.facts.formatted['headline']).toContain('4.200');
   });
 
+  it('names the scope it aggregated, so the answer can say what the figure is *of*', async () => {
+    // Before this, a scoped total carried the scope only as an id inside `filters`: the facts said
+    // "Spending 4.000,00 RSD" with nothing tying it to Lidl, and the narrator — told never to guess —
+    // refused the question while the answer sat in the payload. Measured live before the fix:
+    // `koliko sam potrošio u lidlu` answered "the data does not contain the spend for Lidl".
+    const merchant = await assemble(planFor('SPEND_BY_MERCHANT', { merchantId: lidlId }));
+    expect(merchant.facts.formatted['scope']).toBe('at Lidl');
+    expect(merchant.facts.totals[0]?.label).toBe('Spending at Lidl');
+
+    const category = await assemble(planFor('SPEND_BY_CATEGORY', { categoryId: foodId }));
+    // The *named* node, not the subtree's first id: "on Hrana", never "on Hrana / Supermarket".
+    expect(category.facts.formatted['scope']).toBe('on Hrana');
+
+    const account = await assemble(planFor('SPEND_BY_ACCOUNT', { accountId }));
+    expect(account.facts.formatted['scope']).toBe('from Tekući');
+
+    const tag = await assemble(planFor('SPEND_BY_TAG', { tagId }));
+    expect(tag.facts.formatted['scope']).toBe('tagged Putovanje');
+  });
+
+  it('leaves an unscoped total without a scope, rather than inventing one', async () => {
+    const result = await assemble(planFor('SPEND_TOTAL'));
+
+    expect(result.facts.formatted['scope']).toBeUndefined();
+    expect(result.facts.totals[0]?.label).toBe('Spending');
+  });
+
   it('names the top Categories with their full path and their machine value', async () => {
     const result = await assemble(planFor('TOP_CATEGORIES'));
 

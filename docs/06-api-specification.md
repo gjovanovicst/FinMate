@@ -3275,6 +3275,24 @@ floats to reformat"*), and is instructed to reproduce them verbatim.
 `rows[].value` carries the machine value alongside the formatted string so the client can build charts
 without parsing `"27.450 RSD"`.
 
+> **`formatted.scope` — the one key that is not a figure, and why it exists (2026-09-17).** A **scoped**
+> total also carries the scope as a **phrase**: `at Lidl`, `on Hrana / Supermarket`, `from Tekući`,
+> `tagged Putovanje` — the same string that appears in the total's own label (`Spending at Lidl`). It is
+> there because of a measured failure: the scope used to live only in `provenance.filters` as a
+> `merchantId` UUID, so a merchant question produced facts reading `Spending: 4.000,00 RSD` with nothing
+> tying the figure to Lidl. The narrator is told *"if the facts do not contain the number the question
+> asks for, say that you cannot answer it — do not guess"*, and it followed that rule: `koliko sam
+> potrošio u lidlu` answered *"the data does not contain the spend for Lidl"* **while the correct figure
+> was in the payload**. The deterministic fallback was scope-blind in exactly the same way
+> (*"You spent 4.000,00 RSD."*), so this was a **payload** defect rather than a narration one, and it
+> affected every `SPEND_BY_MERCHANT` / `SPEND_BY_CATEGORY` / `SPEND_BY_ACCOUNT` / `SPEND_BY_TAG`
+> question. The phrase is built from the plan's **resolved slot** (the node the question named, not the
+> subtree the query widened to) and is `null` — absent, never invented — for an unscoped total or a name
+> that cannot be read. **Verified live 11/11**, in both narration modes (`LLM` and `TEMPLATE_FALLBACK`).
+> **Not yet scoped the same way** (recorded, not hidden): `TRANSACTION_COUNT`, `TRANSACTION_LIST`,
+> `LARGEST_TRANSACTIONS`, `TREND_VS_LAST_MONTH`, `TREND_VS_AVERAGE` and `BUDGET_STATUS` accept a scope and
+> still do not name it in their sentences.
+
 ### 8.3 Provenance
 
 Every answer carries the four required provenance fields plus the filter that produced them, and a
@@ -3396,6 +3414,37 @@ them would have published a contract the API could not keep. The module was regi
 (task 2.3.4's lesson) — so 3.2.2 changed nothing in `schema.gql`.
 
 ### 8.7 What narration is (task 3.2.3)
+
+> **Four more findings from a measured bad-answer report (2026-09-17).** A batch of **37 natural
+> questions** through the live API answered 25 and refused 12. The refusals, with what each one is:
+>
+> 1. **Scope-blind facts — fixed above (§8.2).** Any by-merchant/category/account/tag question was
+>    answered with *"the data does not contain …"* while the figure sat in the payload. This was the
+>    user-visible "very often" and the largest single cause; it is fixed and verified.
+> 2. **`MONTH_PROJECTION` returned a 500, not an answer.** `koliko ću potrošiti do kraja meseca` →
+>    `MoneyError: amountMinor must be non-negative` at `fact-assembly.service.ts`'s projection builder,
+>    because `dashboard.projectedOverrun` is a **signed** Balance (negative = *under* budget, which is
+>    the ordinary case) and the builder guarded only `null`. The web already gates on the sign
+>    (`overrunText`), so the assistant is the outlier. **Open**, ~1 line plus a spec.
+> 3. **Planner cue coverage, 7 of the 12 refusals.** The planner is a closed registry of Serbian cue
+>    phrases, and these natural phrasings miss it although the template exists: `koliko imam na računu`
+>    (the cue needs *stanje na računu* or *na računu imam*), `koliko mi novca ostaje` (the cue is
+>    `koliko mi ostaje`), `da li sam preko plana` (pace routes only when *budžet* is also present),
+>    `kolika mi je penzija` / `kada mi sledeća plata dolazi` (no income cue for *penzija*/*plata*),
+>    `koliko sam dao za kiriju` (*dao* is not in the spend-verb list), and **both English questions**
+>    (`what did I spend this month`) — there are **no English cues at all** although the catalogue's
+>    primary language is English. **Open**, and it is the largest single reduction available.
+> 4. **`NOT_BUILT:recurring` × 2.** `šta mi se plaća uskoro` and `koje pretplate imam` route correctly
+>    to `RECURRING_UPCOMING`/`RECURRING_LIST` and then refuse because those two templates have no
+>    repository method — a *planned* refusal rather than a gap in the planner. **Open.**
+> 5. **The refusal copy is English** (*"I cannot answer that from your ledger. Try one of the questions
+>    below."*) even for a Serbian question with `locale=sr-Latn` — the §5.14 no-catalogue breach, and the
+>    sentence a user actually quotes back. **Open.**
+>
+> One honest exception in the same batch: `koliko sam potrošio u Maksiju` refuses because the Merchant
+> is not in the Household's context, and answering the *unscoped* total instead would answer a
+> different question under the one that was asked (ADR-017). That one is the design working, not a gap —
+> the fix is merchant/alias coverage, not a weaker rule.
 
 `apps/api/src/modules/assistant/` — `assistant.service.ts` (the pipeline), `numeric-validator.ts`
 (**pure**), `narration-template.ts` (**pure**), `narrate-prompt.ts` (**pure**),
