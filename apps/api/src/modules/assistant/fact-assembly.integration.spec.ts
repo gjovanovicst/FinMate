@@ -9,7 +9,9 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountsModule } from '../accounts/accounts.module';
 import { BudgetingModule } from '../budgeting/budgeting.module';
+import { GoalsModule } from '../goals/goals.module';
 import { LedgerModule } from '../ledger/ledger.module';
+import { RecurringModule } from '../recurring/recurring.module';
 import { TaxonomyModule } from '../taxonomy/taxonomy.module';
 import { ASSISTANT_INTENTS, INTENT_TEMPLATES, type AssistantIntent } from './assistant-intents';
 import { FactAssemblyService } from './fact-assembly.service';
@@ -60,6 +62,10 @@ describe('fact assembly (integration)', () => {
   let marketId: string;
   let fuelId: string;
   let lidlId: string;
+  let holidayGoalId: string;
+  let phoneGoalId: string;
+  let netflixRuleId: string;
+  let gymRuleId: string;
   let planner: PlannerContext;
 
   /**
@@ -113,7 +119,9 @@ describe('fact assembly (integration)', () => {
         PrismaModule,
         AccountsModule,
         BudgetingModule,
+        GoalsModule,
         LedgerModule,
+        RecurringModule,
         TaxonomyModule,
       ],
       providers: [FactAssemblyService],
@@ -188,6 +196,86 @@ describe('fact assembly (integration)', () => {
           rollover: false,
         },
       });
+
+      // Two goals (F-18): one with a date, so a monthly amount can be derived, and one without — which
+      // is the state `GOAL_REQUIRED_MONTHLY` must refuse rather than invent a horizon for.
+      const holiday = await prisma.client.saving_goals.create({
+        data: {
+          id: uuidv7(),
+          household_id: householdId,
+          name: 'Letovanje',
+          target_minor: 10_000_000n,
+          currency: 'RSD',
+          target_date: new Date('2027-06-01T00:00:00.000Z'),
+          status: 'ACTIVE',
+        },
+      });
+      holidayGoalId = holiday.id;
+      await prisma.client.goal_contributions.createMany({
+        data: [
+          {
+            id: uuidv7(),
+            goal_id: holiday.id,
+            household_id: householdId,
+            amount_minor: 1_500_000n,
+            contributed_on: new Date('2026-08-05T00:00:00.000Z'),
+          },
+          {
+            id: uuidv7(),
+            goal_id: holiday.id,
+            household_id: householdId,
+            amount_minor: 1_000_000n,
+            contributed_on: new Date('2026-09-05T00:00:00.000Z'),
+          },
+        ],
+      });
+
+      const phone = await prisma.client.saving_goals.create({
+        data: {
+          id: uuidv7(),
+          household_id: householdId,
+          name: 'Novi telefon',
+          target_minor: 5_000_000n,
+          currency: 'RSD',
+          target_date: null,
+          status: 'ACTIVE',
+        },
+      });
+      phoneGoalId = phone.id;
+
+      // Two recurring rules (F-16): one active and due inside the window, one paused — which the list
+      // must still show, because a paused rule is something the Household has.
+      const netflix = await prisma.client.recurring_rules.create({
+        data: {
+          id: uuidv7(),
+          household_id: householdId,
+          account_id: accountId,
+          kind: 'EXPENSE',
+          amount_minor: 120_000n,
+          currency: 'RSD',
+          description: 'Netflix',
+          rrule: 'FREQ=MONTHLY;BYMONTHDAY=25',
+          next_occurrence_on: new Date('2026-09-25T00:00:00.000Z'),
+          is_active: true,
+        },
+      });
+      netflixRuleId = netflix.id;
+
+      const gym = await prisma.client.recurring_rules.create({
+        data: {
+          id: uuidv7(),
+          household_id: householdId,
+          account_id: accountId,
+          kind: 'EXPENSE',
+          amount_minor: 300_000n,
+          currency: 'RSD',
+          description: 'Teretana',
+          rrule: 'FREQ=MONTHLY;BYMONTHDAY=22',
+          next_occurrence_on: new Date('2026-09-22T00:00:00.000Z'),
+          is_active: false,
+        },
+      });
+      gymRuleId = gym.id;
     });
 
     // ---- The September ledger ----------------------------------------------------------------
@@ -284,6 +372,14 @@ describe('fact assembly (integration)', () => {
       merchants: [{ id: lidlId, name: 'Lidl' }],
       accounts: [{ id: accountId, name: 'Tekući' }],
       tags: [{ id: tagId, name: 'Putovanje' }],
+      goals: [
+        { id: holidayGoalId, name: 'Letovanje' },
+        { id: phoneGoalId, name: 'Novi telefon' },
+      ],
+      recurringRules: [
+        { id: netflixRuleId, name: 'Netflix' },
+        { id: gymRuleId, name: 'Teretana' },
+      ],
     };
   });
 
@@ -598,16 +694,20 @@ describe('fact assembly (integration)', () => {
     expect(goal.reason).toBe('UNRUNNABLE:goalId');
   });
 
-  it('refuses an intent whose data does not exist in this build, with a reason and no figures', async () => {
-    const goals = await assemble(planFor('GOAL_REQUIRED_MONTHLY'));
+  it('refuses an intent whose data does not exist, with a reason and no figures', async () => {
+    // A-2 built the four templates that used to refuse here, so the remaining reasons are genuine
+    // states rather than unimplemented ones: two periods, no goal named, and a goal with no date.
+    const goals = await assemble(planFor('GOAL_PROGRESS'));
     expect(goals.available).toBe(false);
     expect(goals.reason).toBe('UNRUNNABLE:goalId');
     expect(goals.facts.totals).toEqual([]);
     expect(goals.facts.rows).toEqual([]);
     expect(goals.facts.formatted).toEqual({});
 
-    const recurring = await assemble(planFor('RECURRING_LIST'));
-    expect(recurring.reason).toBe('NOT_BUILT:recurring');
+    const dateless = await assemble(planFor('GOAL_REQUIRED_MONTHLY', { goalId: phoneGoalId }));
+    expect(dateless.available).toBe(false);
+    expect(dateless.reason).toBe('NO_TARGET_DATE');
+    expect(dateless.facts.totals).toEqual([]);
 
     const comparison = await assemble(planFor('COMPARE_PERIODS'));
     expect(comparison.reason).toBe('NEEDS_TWO_PERIODS');
@@ -625,6 +725,13 @@ describe('fact assembly (integration)', () => {
       ['SPEND_BY_ACCOUNT', { accountId }],
       ['SPEND_BY_TAG', { tagId }],
       ['ACCOUNT_BALANCE', { accountId }],
+      // A-2: the four that used to answer `NOT_BUILT`, each now reachable with the slot its own
+      // registry entry requires. `GOAL_REQUIRED_MONTHLY` gets the goal **with** a date, so this test
+      // measures "a builder exists" rather than the dateless refusal asserted above.
+      ['GOAL_PROGRESS', { goalId: holidayGoalId }],
+      ['GOAL_REQUIRED_MONTHLY', { goalId: holidayGoalId }],
+      ['RECURRING_LIST', {}],
+      ['RECURRING_UPCOMING', {}],
       // F-30 needs a target amount, which the planner resolves from the question ("kako da uštedim
       // 20.000"); without one it refuses, which is the point of the test below.
       ['SAVINGS_PROPOSAL', { targetMinor: '500000' }],
@@ -637,18 +744,97 @@ describe('fact assembly (integration)', () => {
       if (!result.available) reasons.set(intent, result.reason);
     }
 
-    expect([...reasons.keys()].sort()).toEqual(
-      [
-        'COMPARE_PERIODS',
-        'GOAL_PROGRESS',
-        'GOAL_REQUIRED_MONTHLY',
-        'NO_TEMPLATE_MATCH',
-        'RECURRING_LIST',
-        'RECURRING_UPCOMING',
-      ].sort(),
-    );
-    expect(reasons.get('RECURRING_UPCOMING')).toBe('NOT_BUILT:recurring');
-    expect(reasons.get('GOAL_REQUIRED_MONTHLY')).toBe('UNRUNNABLE:goalId');
+    expect([...reasons.keys()].sort()).toEqual(['COMPARE_PERIODS', 'NO_TEMPLATE_MATCH'].sort());
+  });
+
+  // ---------------------------------------------------------------------------------------------
+  // Goals and recurring rules (A-2) — the four templates that used to answer NOT_BUILT
+  // ---------------------------------------------------------------------------------------------
+
+  it('reports progress toward a goal from the calculator the screen uses (F-18)', async () => {
+    const result = await assemble(planFor('GOAL_PROGRESS', { goalId: holidayGoalId }));
+
+    expect(result.available).toBe(true);
+    // 25.000 contributed (15.000 + 10.000) of a 100.000 target, from `goalProgress` in the domain.
+    const totals = new Map(result.facts.totals.map((total) => [total.label, total.money.amountMinor]));
+    expect(totals.get('Saved')).toBe('2500000');
+    expect(totals.get('Target')).toBe('10000000');
+    expect(totals.get('Remaining')).toBe('7500000');
+    expect(result.facts.formatted['progressPercent']).toBe('25');
+    expect(result.facts.formatted['goal']).toBe('Letovanje');
+    expect(result.facts.formatted['targetDate']).toBe('2027-06-01');
+    expect(result.facts.rows.map((row) => [row.label, row.value])).toEqual([['Letovanje', '2500000']]);
+    // A contribution is **not** a Transaction (docs/03), so provenance reports none aggregated while
+    // the period is the state's own day rather than the question's month.
+    expect(result.provenance.transactionCount).toBe(0);
+    expect(result.provenance.periodStart).toBe(result.provenance.periodEnd);
+  });
+
+  it('derives the monthly amount from the goal’s own date, and refuses when it has none', async () => {
+    const result = await assemble(planFor('GOAL_REQUIRED_MONTHLY', { goalId: holidayGoalId }));
+
+    expect(result.available).toBe(true);
+    // 75.000 remaining over the 9 months from 2026-09-20 to 2027-06-01, rounded **up** by the domain's
+    // `ceilDiv` — so the household arrives, rather than arriving one para short.
+    expect(totalMinor(result)).toBe('833334');
+    expect(result.facts.formatted['monthsRemaining']).toBe('9');
+    expect(result.facts.formatted['targetDate']).toBe('2027-06-01');
+
+    // The dateless goal is a **state**, not a missing builder: `NO_TARGET_DATE`, with no figure.
+    const phone = await assemble(planFor('GOAL_REQUIRED_MONTHLY', { goalId: phoneGoalId }));
+    expect(phone.available).toBe(false);
+    expect(phone.reason).toBe('NO_TARGET_DATE');
+    expect(phone.facts.formatted).toEqual({});
+  });
+
+  it('lists the recurring rules, paused ones included and labelled (F-16)', async () => {
+    const result = await assemble(planFor('RECURRING_LIST'));
+
+    expect(result.available).toBe(true);
+    expect(result.facts.rows.map((row) => [row.label, row.value])).toEqual([
+      ['Teretana (paused)', '300000'],
+      ['Netflix (next 2026-09-25)', '120000'],
+    ]);
+    expect(result.facts.formatted['count']).toBe('2');
+    expect(result.facts.formatted['pausedCount']).toBe('1');
+    // Rules are not Transactions, so nothing is claimed to have been aggregated.
+    expect(result.provenance.transactionCount).toBe(0);
+
+    // Naming one narrows the answer to it rather than listing everything.
+    const named = await assemble(planFor('RECURRING_LIST', { recurringRuleId: netflixRuleId }));
+    expect(named.facts.rows.map((row) => row.label)).toEqual(['Netflix (next 2026-09-25)']);
+  });
+
+  it('lists only what is still to be charged in the next 30 days (F-16)', async () => {
+    const result = await assemble(planFor('RECURRING_UPCOMING'));
+
+    expect(result.available).toBe(true);
+    // The **active** rule's own occurrence, and nothing for the paused one: `dueSoon` reads the same
+    // pending-occurrence predicate the budget projection and the RECURRING_DUE alert use.
+    expect(result.facts.rows.map((row) => [row.label, row.formatted.startsWith('1.200')])).toEqual([
+      ['Netflix (2026-09-25)', true],
+    ]);
+    expect(result.facts.formatted['days']).toBe('30');
+    expect(result.provenance.transactionCount).toBe(0);
+
+    const named = await assemble(planFor('RECURRING_UPCOMING', { recurringRuleId: gymRuleId }));
+    expect(named.facts.rows).toEqual([]);
+  });
+
+  it('resolves a goal and a subscription by name, which is the only way a question names one', async () => {
+    const goal = await ask('Koliko sam uštedeo za letovanje?');
+    expect(goal.plan.intent).toBe('GOAL_PROGRESS');
+    expect(goal.plan.slots.goalId).toBe(holidayGoalId);
+    expect(goal.result.available).toBe(true);
+
+    const monthly = await ask('Koliko mesečno treba da odvajam za letovanje?');
+    expect(monthly.plan.intent).toBe('GOAL_REQUIRED_MONTHLY');
+    expect(monthly.plan.slots.goalId).toBe(holidayGoalId);
+
+    const subscriptions = await ask('Koje pretplate imam?');
+    expect(subscriptions.plan.intent).toBe('RECURRING_LIST');
+    expect(subscriptions.result.available).toBe(true);
+    expect(subscriptions.result.facts.formatted['count']).toBe('2');
   });
 
   it('proposes reductions that add up to the target, biggest Category first (F-30)', async () => {

@@ -77,6 +77,18 @@ export interface PlannerContext {
   readonly merchants: readonly NamedEntity[];
   readonly accounts: readonly NamedEntity[];
   readonly tags: readonly NamedEntity[];
+  /**
+   * Saving goals and recurring rules, by name.
+   *
+   * These two lists exist for the same reason the four above do: `GOAL_PROGRESS` and the recurring
+   * templates are declared in the registry with a `goalId`/`recurringRuleId` slot, and a slot the
+   * planner has no vocabulary to resolve is `UNRUNNABLE` before the builder is ever reached — which is
+   * exactly how those four intents answered a refusal while the services behind them existed. A goal
+   * named `Letovanje` in the question resolves here; nothing else about a goal is carried, because the
+   * figure comes from `GoalsService` at assembly time.
+   */
+  readonly goals?: readonly NamedEntity[];
+  readonly recurringRules?: readonly NamedEntity[];
 }
 
 export interface ResolvedPeriod {
@@ -163,11 +175,28 @@ export function planQuestion(question: string, context: PlannerContext): Plan {
   const merchant = matchEntity(folded, context.merchants, (entity) => [entity.name]);
   const account = matchEntity(folded, context.accounts, (entity) => [entity.name]);
   const tag = matchEntity(folded, context.tags, (entity) => [entity.name]);
+  // Both lists are optional so a caller that never asks about goals need not read them, and an absent
+  // list resolves to nothing rather than to everything.
+  // These two resolve on the **exact** rung only, unlike a Category or a Merchant.
+  //
+  // Two reasons, and both are about consequences. A goal or a rule match *decides the template*, so a
+  // shared stem is enough to answer a different question — a goal named `Novi telefon` shares a
+  // four-character stem with `novca`, which routed "Na šta mi odlazi najviše novca ovog meseca?" to
+  // GOAL_PROGRESS. And a wrong match here cannot be corrected by a scope phrase the way a spend scope
+  // can (the answer names the goal it used), so the honest failure is the vocabulary cue plus an
+  // `UNRUNNABLE:goalId` refusal that asks which goal was meant — which is what an inflected name
+  // (`u letovanju`) gets.
+  const goalMatch = matchEntityScored(folded, context.goals ?? [], (entity) => [entity.name]);
+  const ruleMatch = matchEntityScored(folded, context.recurringRules ?? [], (entity) => [entity.name]);
+  const goal = goalMatch?.exact === true ? goalMatch.entity : null;
+  const recurringRule = ruleMatch?.exact === true ? ruleMatch.entity : null;
   for (const [label, entity] of [
     ['category', category],
     ['merchant', merchant],
     ['account', account],
     ['tag', tag],
+    ['goal', goal],
+    ['recurring rule', recurringRule],
   ] as const) {
     if (entity !== null) matchedOn.push(`${label}:${entity.name}`);
   }
@@ -180,6 +209,8 @@ export function planQuestion(question: string, context: PlannerContext): Plan {
     hasMerchant: merchant !== null,
     hasAccount: account !== null,
     hasTag: tag !== null,
+    hasGoal: goal !== null,
+    hasRecurringRule: recurringRule !== null,
     period,
     matchedOn,
   });
@@ -219,6 +250,8 @@ export function planQuestion(question: string, context: PlannerContext): Plan {
     ...(merchant !== null ? { merchantId: merchant.id } : {}),
     ...(account !== null ? { accountId: account.id } : {}),
     ...(tag !== null ? { tagId: tag.id } : {}),
+    ...(goal !== null ? { goalId: goal.id } : {}),
+    ...(recurringRule !== null ? { recurringRuleId: recurringRule.id } : {}),
     ...(limit !== null ? { limit } : {}),
   };
 
@@ -338,6 +371,16 @@ interface IntentCues {
   readonly hasMerchant: boolean;
   readonly hasAccount: boolean;
   readonly hasTag: boolean;
+  /**
+   * Whether the question **named** a goal or a recurring rule.
+   *
+   * The vocabulary cue (`cilj`, `pretplata`) is the fallback for a question that names none — it then
+   * refuses with `UNRUNNABLE:goalId` and says which entity to name. Matching a name is the stronger
+   * evidence, exactly as it is for a Merchant, and without it `Koliko sam uštedeo za letovanje?` fell
+   * through to `NO_TEMPLATE_MATCH` while the template and the goal both existed.
+   */
+  readonly hasGoal: boolean;
+  readonly hasRecurringRule: boolean;
   readonly period: ResolvedPeriod;
   readonly matchedOn: string[];
 }
@@ -393,7 +436,10 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
   if (has(...SAVINGS_CUES)) {
     return note('SAVINGS_PROPOSAL', 'kako da uštedim');
   }
-  if (has('cilj', 'cilju', 'stednja', 'štednja', 'stek', 'štek')) {
+  // A goal question is either one that **names** a goal or one that uses the vocabulary. The verbs
+  // matter: `uštedeo`/`ustedim` are how a person asks how a goal is doing, and they were not cues at
+  // all — so the two goal templates could only be reached through the noun.
+  if (cues.hasGoal || has('cilj', 'cilju', 'stednja', 'štednja', 'usted', 'ušted', 'stek', 'štek')) {
     if (has('mesecno', 'mesečno', 'koliko mesecno', 'koliko mesečno')) {
       return note('GOAL_REQUIRED_MONTHLY', 'cilj + mesečno');
     }
@@ -401,12 +447,15 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
   }
   // "what gets charged soon" is a recurring question even without the word *pretplata*: the cue is the
   // charge plus imminence, and requiring the noun would refuse a question the ledger can answer.
-  const imminent = has('uskoro', 'dolazec', 'dolazeć', 'sledece', 'sledeće', 'ovog meseca', 'ovih dana');
+  // `sledec` rather than `sledece`: the word inflects (`sledeći`, `sledeća`, `sledeće`), and the
+  // `A-2` recurring templates are unreachable without it — "Kada mi sledeći Netflix dolazi?" routed to
+  // the *list* because the cue only knew the neuter form.
+  const imminent = has('uskoro', 'dolazec', 'dolazeć', 'sledec', 'sledeć', 'ovog meseca', 'ovih dana');
   // `placa`/`plaća` rather than the phrase "placa se": people write "šta mi se plaća uskoro" and the
   // verb and its clitic are in the other order. The word also means *salary*, but the income templates
   // cue on `zaradio`/`prihod`/`plata`, so the two do not collide.
   const charge = has('placa', 'plaća', 'naplat', 'racun', 'račun', 'trosak', 'trošak');
-  if (has('pretplat', 'ponavljajuc', 'ponavljajuć', 'rekurentn') || (imminent && charge)) {
+  if (cues.hasRecurringRule || has('pretplat', 'ponavljajuc', 'ponavljajuć', 'rekurentn') || (imminent && charge)) {
     if (imminent) {
       return note('RECURRING_UPCOMING', 'pretplate + uskoro');
     }
@@ -502,8 +551,29 @@ function matchEntity(
   entities: readonly NamedEntity[],
   namesOf: (entity: NamedEntity) => readonly string[],
 ): NamedEntity | null {
+  return matchEntityScored(folded, entities, namesOf)?.entity ?? null;
+}
+
+/**
+ * A match, and **whether the name occurred as written** or was reached on the stem rung.
+ *
+ * The distinction matters for the two entity kinds that *pick an intent* rather than scope one. A
+ * Category or a Merchant match only narrows a question whose verb already decided the template, so the
+ * stem rung is a pure win there. A goal or a recurring rule decides the template itself, and the rung
+ * is loose enough to collide with ordinary words: a goal named `Novi telefon` shares a four-character
+ * stem with `novca`, so *"Na šta mi odlazi najviše novca ovog meseca?"* routed to `GOAL_PROGRESS`.
+ * Requiring the name to appear as written keeps `Koliko sam uštedeo za letovanje?` working while
+ * refusing to found an answer on a shared prefix — and an inflected name that is not matched exactly
+ * still reaches the template through its vocabulary cue and then refuses with `UNRUNNABLE:goalId`,
+ * which is a refusal rather than a wrong answer.
+ */
+function matchEntityScored(
+  folded: string,
+  entities: readonly NamedEntity[],
+  namesOf: (entity: NamedEntity) => readonly string[],
+): { readonly entity: NamedEntity; readonly exact: boolean } | null {
   const words = folded.split(/[^a-z0-9]+/).filter((word) => word.length >= 3);
-  const candidates: { entity: NamedEntity; score: number }[] = [];
+  const candidates: { entity: NamedEntity; score: number; exact: boolean }[] = [];
 
   for (const entity of entities) {
     for (const name of namesOf(entity)) {
@@ -512,24 +582,28 @@ function matchEntity(
 
       if (folded.includes(foldedName)) {
         // An exact occurrence: the strongest evidence, scored by how much of the question it covers.
-        candidates.push({ entity, score: foldedName.length + 100 });
+        candidates.push({ entity, score: foldedName.length + 100, exact: true });
         continue;
       }
 
       const stem = longestSharedStem(foldedName, words);
-      if (stem !== null) candidates.push({ entity, score: stem });
+      if (stem !== null) candidates.push({ entity, score: stem, exact: false });
     }
   }
 
   // Highest score wins; then the Household's **own** row over a shared one (see {@link NamedEntity.owned});
   // then the id, so two identically named entities resolve deterministically rather than by row order.
+  // `score` already puts an exact occurrence (length + 100) above any stem (at most that same length),
+  // so the `exact` term only breaks a tie between two candidates of equal score.
   candidates.sort(
     (left, right) =>
       right.score - left.score ||
+      Number(right.exact) - Number(left.exact) ||
       Number(right.entity.owned ?? false) - Number(left.entity.owned ?? false) ||
       (left.entity.id < right.entity.id ? -1 : 1),
   );
-  return candidates[0]?.entity ?? null;
+  const winner = candidates[0];
+  return winner === undefined ? null : { entity: winner.entity, exact: winner.exact };
 }
 
 /** The longest word of `name` whose stem appears among `words`, or `null`. */

@@ -7,6 +7,8 @@ import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import { CONFIG, type AppConfig } from '../../config/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountsService } from '../accounts/accounts.service';
+import { GoalsService } from '../goals/goals.service';
+import { RecurringService } from '../recurring/recurring.service';
 import { CategoriesService } from '../taxonomy/categories.service';
 import { MerchantsService } from '../taxonomy/merchants.service';
 import { TagsService } from '../taxonomy/tags.service';
@@ -128,11 +130,13 @@ const DRILL_ROUTES: Readonly<Record<AssistantIntent, DrillRoute | null>> = {
   TREND_VS_LAST_MONTH: { route: '/transactions', kind: 'EXPENSE', period: 'plan' },
   COMPARE_PERIODS: null,
   TREND_VS_AVERAGE: { route: '/transactions', kind: 'EXPENSE', period: 'plan' },
-  GOAL_PROGRESS: null,
-  GOAL_REQUIRED_MONTHLY: null,
+  GOAL_PROGRESS: { route: '/goals', period: 'none' },
+  GOAL_REQUIRED_MONTHLY: { route: '/goals', period: 'none' },
   SAVINGS_PROPOSAL: null,
-  RECURRING_UPCOMING: null,
-  RECURRING_LIST: null,
+  // The `/recurring` screen shows these rules and its own next-30-days line, which is the same window
+  // the assembly uses — so the figure is checkable there.
+  RECURRING_UPCOMING: { route: '/recurring', period: 'none' },
+  RECURRING_LIST: { route: '/recurring', period: 'none' },
   NO_TEMPLATE_MATCH: null,
 };
 
@@ -147,6 +151,10 @@ export class AssistantService {
     private readonly merchants: MerchantsService,
     private readonly accounts: AccountsService,
     private readonly tags: TagsService,
+    // A goal and a recurring rule are matched by **name**, which is the only way a question can refer to
+    // one; the figures come from the same services the `/goals` and `/recurring` screens read.
+    private readonly goals: GoalsService,
+    private readonly recurring: RecurringService,
     // `AuthModule` is `@Global()` and exports this for exactly this reason ("AI quota in Phase 2"), so
     // the assistant needs no import edge to reach it.
     private readonly rateLimit: RateLimitService,
@@ -331,11 +339,17 @@ export class AssistantService {
     today: LocalDate,
     currency: CurrencyCode,
   ): Promise<PlannerContext> {
-    const [categories, merchants, accounts, tags] = await Promise.all([
+    const [categories, merchants, accounts, tags, goals, recurringRules] = await Promise.all([
       this.categories.list(householdId),
       this.merchants.list(householdId, {}, { first: PLANNER_PAGE_SIZE }),
       this.accounts.list({ householdId, first: PLANNER_PAGE_SIZE }),
       this.tags.list(householdId),
+      // Both are unbounded by nature — a Household has a handful of goals and subscriptions — and a
+      // goal or rule is matched by **name**, which is the only way a question can refer to one.
+      this.goals.list(householdId),
+      // `activeOnly: false`: a paused rule is still something the Household has, and hiding it would
+      // make "koje pretplate imam" answer a shorter list than the `/recurring` screen shows.
+      this.recurring.list(householdId, false),
     ]);
 
     return {
@@ -356,6 +370,12 @@ export class AssistantService {
       })),
       accounts: accounts.items.map((account) => ({ id: account.id, name: account.name, owned: true })),
       tags: tags.map((tag) => ({ id: tag.id, name: tag.name, owned: true })),
+      goals: goals.map((goal) => ({ id: goal.id, name: goal.name, owned: true })),
+      recurringRules: recurringRules.map((rule) => ({
+        id: rule.id,
+        name: rule.description,
+        owned: true,
+      })),
     };
   }
 

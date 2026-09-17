@@ -14,6 +14,8 @@ import { CONFIG, type AppConfig } from '../../config/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { BudgetsService } from '../budgeting/budgets.service';
+import { GoalsService, type GoalView } from '../goals/goals.service';
+import { RecurringService } from '../recurring/recurring.service';
 import { MerchantsService } from '../taxonomy/merchants.service';
 import { SpendReadModel, type SpendScope } from '../ledger/spend-read-model';
 import type { AssistantIntent } from './assistant-intents';
@@ -139,6 +141,8 @@ export class FactAssemblyService {
     private readonly accounts: AccountsService,
     private readonly spendModel: SpendReadModel,
     private readonly merchants: MerchantsService,
+    private readonly goals: GoalsService,
+    private readonly recurring: RecurringService,
     @Inject(CONFIG) config: AppConfig,
   ) {
     // The catalogue's primary language is English; money is rendered in the Serbian locale by
@@ -251,16 +255,240 @@ export class FactAssemblyService {
     TREND_VS_LAST_MONTH: (context) => this.trendVsLastMonth(context),
     COMPARE_PERIODS: (context) => this.unavailableBuilt(context, 'NEEDS_TWO_PERIODS'),
     TREND_VS_AVERAGE: (context) => this.trendVsAverage(context),
-    GOAL_PROGRESS: (context) => this.unavailableBuilt(context, 'NOT_BUILT:goals'),
-    GOAL_REQUIRED_MONTHLY: (context) => this.unavailableBuilt(context, 'NOT_BUILT:goals'),
+    GOAL_PROGRESS: (context) => this.goalProgress(context),
+    GOAL_REQUIRED_MONTHLY: (context) => this.goalRequiredMonthly(context),
     SAVINGS_PROPOSAL: (context) => this.savingsProposal(context),
-    RECURRING_UPCOMING: (context) => this.unavailableBuilt(context, 'NOT_BUILT:recurring'),
-    RECURRING_LIST: (context) => this.unavailableBuilt(context, 'NOT_BUILT:recurring'),
+    RECURRING_UPCOMING: (context) => this.recurringUpcoming(context),
+    RECURRING_LIST: (context) => this.recurringList(context),
     NO_TEMPLATE_MATCH: (context) => this.unavailableBuilt(context, 'NO_TEMPLATE_MATCH'),
   };
 
   private async unavailableBuilt(context: Context, reason: string): Promise<Built> {
     return this.unavailable(context, reason);
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Goals and recurring rules — docs/01 F-18, F-16, docs/06 §5.7/§5.8
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * How far the "due soon" window reaches.
+   *
+   * Thirty days, because that is the window the `/recurring` screen already shows in its own
+   * next-30-days line — and the drill-through sends the reader to exactly that screen, so a different
+   * window here would make the answer uncheckable against the figure it links to.
+   */
+  private static readonly RECURRING_WINDOW_DAYS = 30;
+
+  /**
+   * One goal, by the id the planner resolved from its **name**.
+   *
+   * `list` rather than `getById`: a goal deleted between planning and assembly must produce a refusal,
+   * and `getById` throws `NOT_FOUND`, which the resolver would surface as an error rather than as "I
+   * could not tell which goal you meant". One read either way, and `list` also carries the
+   * contributions `GOAL_PROGRESS` reports.
+   */
+  private async goal(context: Context): Promise<GoalView | null> {
+    const goalId = context.plan.slots.goalId;
+    if (goalId === undefined) return null;
+    const goals = await this.goals.list(context.householdId);
+    return goals.find((goal) => goal.id === goalId) ?? null;
+  }
+
+  /**
+   * Progress toward one goal — docs/02 §4.13.
+   *
+   * Every figure is `GoalView`'s, i.e. `@finmate/domain`'s `goalProgress`, so the answer, the goal card
+   * and the `/goals` screen cannot disagree about how far along a goal is.
+   *
+   * `transactionCount` is **0 on purpose.** `provenance.transactionCount` means "CONFIRMED, non-deleted
+   * Transactions aggregated", and a contribution is *not* a Transaction (docs/03: goal progress is the
+   * sum of `goal_contributions`, which is why `contributeToGoal` writes no ledger row). Reporting the
+   * contribution count there would put a number in the provenance panel that claims something the
+   * figure never touched — the same small lie the `savings.proposal.v1` rename exists to avoid.
+   */
+  private async goalProgress(context: Context): Promise<Built> {
+    const goal = await this.goal(context);
+    if (goal === null) return this.unavailable(context, 'UNRUNNABLE:goalId');
+
+    const contributed = this.format(goal.contributedMinor, goal.currency);
+    const target = this.format(goal.targetMinor, goal.currency);
+    const remaining = this.format(goal.remainingMinor, goal.currency);
+    // A **rounded** percentage, and the rounding is the only arithmetic this builder does: it is a
+    // display ratio `@finmate/domain` already computed (capped at 1 — a bar cannot be 140 % full).
+    const progressPercent = String(Math.round(goal.progress * 100));
+
+    return {
+      rows: [{ label: goal.name, value: goal.contributedMinor.toString(), formatted: contributed }],
+      totals: [
+        {
+          label: 'Saved',
+          money: { amountMinor: goal.contributedMinor.toString(), currency: goal.currency },
+          formatted: contributed,
+        },
+        {
+          label: 'Target',
+          money: { amountMinor: goal.targetMinor.toString(), currency: goal.currency },
+          formatted: target,
+        },
+        {
+          label: 'Remaining',
+          money: { amountMinor: goal.remainingMinor.toString(), currency: goal.currency },
+          formatted: remaining,
+        },
+      ],
+      formatted: {
+        goal: goal.name,
+        headline: contributed,
+        contributed,
+        target,
+        remaining,
+        progressPercent,
+        ...(goal.targetDate === null ? {} : { targetDate: goal.targetDate }),
+        status: goal.status,
+        currency: goal.currency,
+        asOf: context.today,
+      },
+      transactionCount: 0,
+      filters: { goalId: goal.id, asOf: 'now' },
+      // A goal is a **state as of now**, not a report over the question's period (docs/06 §8.3).
+      period: this.asOf(context),
+    };
+  }
+
+  /**
+   * What to put aside each month to reach one goal by its date — docs/01 F-18.
+   *
+   * `requiredPerMonthMinor` is `null` for a goal with **no target date**, and that is not a missing
+   * figure: there is no monthly amount that reaches an undated goal, and inventing one from a default
+   * horizon would be the answer's most important input made up. The refusal says which state it is
+   * (`NO_TARGET_DATE`) rather than reusing the generic "I cannot answer that".
+   */
+  private async goalRequiredMonthly(context: Context): Promise<Built> {
+    const goal = await this.goal(context);
+    if (goal === null) return this.unavailable(context, 'UNRUNNABLE:goalId');
+    if (goal.requiredPerMonthMinor === null || goal.monthsRemaining === null || goal.targetDate === null) {
+      return this.unavailable(context, 'NO_TARGET_DATE');
+    }
+
+    const monthly = this.format(goal.requiredPerMonthMinor, goal.currency);
+
+    return {
+      rows: [],
+      totals: [
+        {
+          label: 'Per month',
+          money: { amountMinor: goal.requiredPerMonthMinor.toString(), currency: goal.currency },
+          formatted: monthly,
+        },
+      ],
+      formatted: {
+        goal: goal.name,
+        headline: monthly,
+        monthly,
+        remaining: this.format(goal.remainingMinor, goal.currency),
+        target: this.format(goal.targetMinor, goal.currency),
+        monthsRemaining: String(goal.monthsRemaining),
+        targetDate: goal.targetDate,
+        currency: goal.currency,
+        asOf: context.today,
+      },
+      transactionCount: 0,
+      filters: { goalId: goal.id, asOf: 'now' },
+      period: this.asOf(context),
+    };
+  }
+
+  /**
+   * The recurring rules the Household has — docs/01 F-16.
+   *
+   * **Paused rules are listed, and labelled as paused.** They are part of what the Household has, and
+   * hiding them would make "koje pretplate imam" answer a shorter list than the `/recurring` screen
+   * shows — the contradiction a drill-through exists to prevent. `formatted.pausedCount` carries the
+   * number so the sentence can say it rather than implying every row is being charged.
+   */
+  private async recurringList(context: Context): Promise<Built> {
+    const rules = await this.recurring.list(context.householdId, false);
+    const wanted =
+      context.plan.slots.recurringRuleId === undefined
+        ? rules
+        : rules.filter((rule) => rule.id === context.plan.slots.recurringRuleId);
+    const limit = Math.min(context.plan.slots.limit ?? MAX_ROWS, MAX_ROWS);
+    const shown = wanted.slice(0, limit);
+    const paused = shown.filter((rule) => !rule.isActive).length;
+
+    return {
+      rows: shown.map((rule) => ({
+        label: rule.isActive
+          ? `${rule.description} (next ${rule.nextOccurrenceOn})`
+          : `${rule.description} (paused)`,
+        value: rule.amountMinor.toString(),
+        formatted: this.format(rule.amountMinor, rule.currency),
+      })),
+      totals: [],
+      formatted: {
+        headline: String(shown.length),
+        count: String(shown.length),
+        pausedCount: String(paused),
+        currency: context.currency,
+        asOf: context.today,
+      },
+      transactionCount: 0,
+      filters: {
+        asOf: 'now',
+        ...(context.plan.slots.recurringRuleId === undefined
+          ? {}
+          : { recurringRuleId: context.plan.slots.recurringRuleId }),
+      },
+      period: this.asOf(context),
+    };
+  }
+
+  /**
+   * What is still to be charged inside the next {@link RECURRING_WINDOW_DAYS} days — docs/01 F-16.
+   *
+   * The occurrences come from `RecurringService.dueSoon`, the same `pendingOccurrences` read that feeds
+   * a budget's projection (`committed`) and the `RECURRING_DUE` alert, so the assistant, the dashboard
+   * and the notification cannot disagree about what is due. That method is also where the three
+   * exclusion rules live — an occurrence already posted as a Transaction is not due again.
+   */
+  private async recurringUpcoming(context: Context): Promise<Built> {
+    const occurrences = await this.recurring.dueSoon(context.householdId, {
+      asOf: context.today,
+      withinDays: FactAssemblyService.RECURRING_WINDOW_DAYS,
+    });
+    const wanted =
+      context.plan.slots.recurringRuleId === undefined
+        ? occurrences
+        : occurrences.filter((occurrence) => occurrence.ruleId === context.plan.slots.recurringRuleId);
+    const limit = Math.min(context.plan.slots.limit ?? MAX_ROWS, MAX_ROWS);
+    const shown = wanted.slice(0, limit);
+
+    return {
+      rows: shown.map((occurrence) => ({
+        label: `${occurrence.description} (${occurrence.occurredOn})`,
+        value: occurrence.amountMinor.toString(),
+        formatted: this.format(occurrence.amountMinor, context.currency),
+        ...(occurrence.categoryId === null ? {} : { categoryId: occurrence.categoryId }),
+      })),
+      totals: [],
+      formatted: {
+        headline: String(shown.length),
+        count: String(shown.length),
+        days: String(FactAssemblyService.RECURRING_WINDOW_DAYS),
+        currency: context.currency,
+        asOf: context.today,
+      },
+      transactionCount: 0,
+      filters: {
+        asOf: 'now',
+        withinDays: String(FactAssemblyService.RECURRING_WINDOW_DAYS),
+        ...(context.plan.slots.recurringRuleId === undefined
+          ? {}
+          : { recurringRuleId: context.plan.slots.recurringRuleId }),
+      },
+      period: this.asOf(context),
+    };
   }
 
   // -------------------------------------------------------------------------------------------

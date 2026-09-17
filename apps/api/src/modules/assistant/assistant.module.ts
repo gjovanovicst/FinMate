@@ -4,7 +4,9 @@ import { GraphqlScalarsModule } from '../../graphql/scalars/scalars.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { AccountsModule } from '../accounts/accounts.module';
 import { BudgetingModule } from '../budgeting/budgeting.module';
+import { GoalsModule } from '../goals/goals.module';
 import { LedgerModule } from '../ledger/ledger.module';
+import { RecurringModule } from '../recurring/recurring.module';
 import { TaxonomyModule } from '../taxonomy/taxonomy.module';
 import { AiModule } from '../ai/ai.module';
 import { AssistantResolver } from './assistant.resolver';
@@ -28,7 +30,10 @@ import { FactAssemblyService } from './fact-assembly.service';
  * trends since 3.3.1 — a second copy of I-1/I-7 in this module is exactly what that removed.
  * `TaxonomyModule` for the
  * Household's own vocabulary, which the planner matches a question's names against — a second copy of
- * that vocabulary is how `Lidl` stops resolving after somebody renames the Merchant.
+ * that vocabulary is how `Lidl` stops resolving after somebody renames the Merchant. `GoalsModule` and
+ * `RecurringModule` are the same argument one step further: `GOAL_PROGRESS` and the two recurring
+ * templates answer from `GoalsService`/`RecurringService`, the very methods the `/goals` and
+ * `/recurring` screens read, so the assistant cannot disagree with the screen beside it.
  *
  * `RateLimitService` needs no import: `AuthModule` is `@Global()` and exports it for this purpose.
  *
@@ -55,7 +60,9 @@ import { FactAssemblyService } from './fact-assembly.service';
     GraphqlScalarsModule,
     AccountsModule,
     BudgetingModule,
+    GoalsModule,
     LedgerModule,
+    RecurringModule,
     TaxonomyModule,
     AiModule,
   ],

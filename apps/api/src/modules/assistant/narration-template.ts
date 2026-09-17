@@ -63,6 +63,10 @@ type Frame =
   | 'TREND_PREVIOUS'
   | 'TREND_AVERAGE'
   | 'PROPOSAL'
+  | 'GOAL'
+  | 'GOAL_MONTHLY'
+  | 'SCHEDULE'
+  | 'DUE'
   | 'REFUSAL';
 
 const FRAMES: Readonly<Record<AssistantIntent, Frame>> = {
@@ -90,11 +94,11 @@ const FRAMES: Readonly<Record<AssistantIntent, Frame>> = {
   TREND_VS_LAST_MONTH: 'TREND_PREVIOUS',
   COMPARE_PERIODS: 'REFUSAL',
   TREND_VS_AVERAGE: 'TREND_AVERAGE',
-  GOAL_PROGRESS: 'REFUSAL',
-  GOAL_REQUIRED_MONTHLY: 'REFUSAL',
+  GOAL_PROGRESS: 'GOAL',
+  GOAL_REQUIRED_MONTHLY: 'GOAL_MONTHLY',
   SAVINGS_PROPOSAL: 'PROPOSAL',
-  RECURRING_UPCOMING: 'REFUSAL',
-  RECURRING_LIST: 'REFUSAL',
+  RECURRING_UPCOMING: 'DUE',
+  RECURRING_LIST: 'SCHEDULE',
   NO_TEMPLATE_MATCH: 'REFUSAL',
 };
 
@@ -204,6 +208,57 @@ export function renderTemplateAnswer(input: TemplateAnswerInput): string {
         : `This period ${at}, against a usual ${average} — a difference of ${headline}.`;
     }
 
+    case 'GOAL': {
+      // F-18. Contributed / target / the percentage, all from `formatted`, and the percentage comes
+      // from the domain calculator rather than being divided here.
+      const goal = facts.formatted['goal'];
+      const target = facts.formatted['target'] ?? '';
+      const remaining = facts.formatted['remaining'];
+      const percent = facts.formatted['progressPercent'] ?? '';
+      const subject = goal === undefined ? 'That goal' : `“${goal}”`;
+      const bar = percent === '' ? '' : ` (${percent}%)`;
+      return remaining === undefined
+        ? `${subject} stands at ${headline} of ${target}${bar}.`
+        : `${subject} stands at ${headline} of ${target}${bar}, with ${remaining} to go.`;
+    }
+
+    case 'GOAL_MONTHLY': {
+      const months = facts.formatted['monthsRemaining'];
+      const date = facts.formatted['targetDate'];
+      const goal = facts.formatted['goal'];
+      const subject = goal === undefined ? 'that goal' : `“${goal}”`;
+      const by = date === undefined ? '' : ` by ${date}`;
+      return months === undefined
+        ? `Reaching ${subject} needs ${headline} a month${by}.`
+        : `Reaching ${subject}${by} needs ${headline} a month for ${months} months.`;
+    }
+
+    case 'SCHEDULE': {
+      // F-16. The count is `formatted.count`, not `provenance.transactionCount`: these rows are
+      // **rules**, and no Transaction was aggregated (the same reason the builder reports 0 there).
+      const count = facts.formatted['count'] ?? headline;
+      const paused = facts.formatted['pausedCount'];
+      const named = namedRows(facts);
+      if (named.length === 0) return 'There are no recurring charges on this ledger.';
+      const list = named.map((row) => `${row.label} ${row.formatted}`).join(', then ');
+      const rest = paused === undefined || paused === '0' ? '' : ` ${paused} of them are paused.`;
+      return count === '1'
+        ? `You have 1 recurring charge: ${list}.${rest}`
+        : `You have ${count} recurring charges: ${list}.${rest}`;
+    }
+
+    case 'DUE': {
+      const count = facts.formatted['count'] ?? headline;
+      const days = facts.formatted['days'];
+      const window = days === undefined ? 'soon' : `in the next ${days} days`;
+      const named = namedRows(facts);
+      if (named.length === 0) return `Nothing is due ${window}.`;
+      const list = named.map((row) => `${row.label} ${row.formatted}`).join(', then ');
+      return count === '1'
+        ? `1 charge is due ${window}: ${list}.`
+        : `${count} charges are due ${window}: ${list}.`;
+    }
+
     case 'PROPOSAL': {
       // F-30. The sentence names the target, what the plan covers and what it cannot — all three from
       // `formatted`, so the fallback says the same thing the table shows.
@@ -247,11 +302,14 @@ export function renderRefusal(reason: string): string {
   if (reason === 'NEEDS_TWO_PERIODS') {
     return 'Comparing two periods needs both of them, which is not built yet.';
   }
-  if (reason === 'NOT_BUILT:goals') {
-    return 'Saving goals are not part of the ledger yet, so I cannot answer that.';
+  if (reason === 'NO_TARGET_DATE') {
+    return 'That goal has no target date, so there is no monthly amount that reaches it. Give it a date and I can work one out.';
   }
-  if (reason === 'NOT_BUILT:recurring') {
-    return 'Recurring rules are not part of the ledger yet, so I cannot answer that.';
+  if (reason.startsWith('NOT_BUILT:')) {
+    // Generic since A-2 built the last four templates that refused this way: the arm names the missing
+    // piece from the reason rather than carrying prose for a template nobody has written, so a new
+    // declaration fails loudly at the builder and reads sensibly here.
+    return `I cannot answer that yet: ${reason.slice('NOT_BUILT:'.length)} is not part of the ledger.`;
   }
   if (reason.startsWith('UNRUNNABLE:')) {
     const missing = reason.slice('UNRUNNABLE:'.length);

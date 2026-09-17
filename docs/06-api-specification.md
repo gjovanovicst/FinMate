@@ -3392,7 +3392,8 @@ Consequences that are part of the contract:
   `suggestions` lists the canonical answerable questions. **No figure is ever produced**, and the
   narrator is not called at all (§8.7).
 - `reason` carries *why* an answer is a refusal or a fallback — `UNACCOUNTED_NUMERALS:99.000,00`,
-  `AI_UNAVAILABLE:no-provider-configured`, `NOT_BUILT:goals`. It is diagnostic, not an error.
+  `AI_UNAVAILABLE:no-provider-configured`, `NO_TARGET_DATE`, `UNRUNNABLE:goalId`. It is diagnostic, not
+  an error.
 - This is the same guarantee as the CI gate *"fabricated-numeral rate in narration: 0"*
   ([04 §11.2](04-categorization-and-ai-engine.md)) and the test in [09](09-implementation-plan.md)
   §5 — it is asserted over every template fallback and over scripted model output; the CI gate itself
@@ -3401,12 +3402,12 @@ Consequences that are part of the contract:
 ### 8.6 What fact assembly is (task 3.2.2)
 
 `apps/api/src/modules/assistant/fact-assembly.service.ts`, with `fact-assembly.integration.spec.ts`
-(33 tests) against a real database.
+(48 tests) against a real database.
 
 | Decision | Built | Why |
 |---|---|---|
 | The builder registry is a `Record<AssistantIntent, …>` | A builder for every intent, or `tsc` fails | The same reason as the planner's registry: completeness is a compile-time property with no `default:` arm to fall into. |
-| An intent whose data does not exist **refuses with a reason** | `available: false` + `reason: "NOT_BUILT:goals"` / `"NOT_BUILT:recurring"` / `"NEEDS_TWO_PERIODS"` / `"NO_TEMPLATE_MATCH"`, with **empty** facts | "We have no goals yet" and "somebody forgot to write the builder" must not look identical from outside. An unavailable template must not be narratable, so its facts are empty rather than plausible. |
+| An intent whose data does not exist **refuses with a reason** | `available: false` + `reason: "NO_TARGET_DATE"` / `"NEEDS_TWO_PERIODS"` / `"NO_TEMPLATE_MATCH"` / `"UNRUNNABLE:…"`, with **empty** facts | "That goal has no deadline, so there is no monthly amount" and "somebody forgot to write the builder" must not look identical from outside. An unavailable template must not be narratable, so its facts are empty rather than plausible. Since A-2 built the last four builders, no shipped intent refuses with `NOT_BUILT` at all — the arm stays for the next declaration. |
 | The **assembler** enforces `isRunnable`, not only its caller | `reason: "UNRUNNABLE:categoryId"` | `SPEND_BY_CATEGORY` with no resolved category aggregates *everything* and can be labelled with the category that was not found — a true figure answering a question nobody asked. 3.2.4's UI is a caller that can forget; this is the layer that must not. |
 | Splits are included, and a parent Category expands to its children | Two aggregates (Transaction + Split) plus a subtree walk | I-1/I-11 and ADR-015: the question must aggregate what the **budget tile the user is looking at** aggregates. ⚠️ A deliberate divergence: the 3.1.1 insight generators count direct rows only, so the two figures can differ for a split — 3.3.1's analytics work must reconcile them. |
 | Every money figure is a pre-formatted string **and** its minor units | `rows[].value`, `totals[].money.amountMinor`, `formatted.*` | §8.2: the narrator reproduces strings instead of reformatting raw numbers (ADR-003), and the client builds a chart without parsing `"27.450 RSD"`. |
@@ -3446,9 +3447,11 @@ them would have published a contract the API could not keep. The module was regi
 >    `koliko sam dao za kiriju` (*dao* is not in the spend-verb list), and **both English questions**
 >    (`what did I spend this month`) — there are **no English cues at all** although the catalogue's
 >    primary language is English. **Open**, and it is the largest single reduction available.
-> 4. **`NOT_BUILT:recurring` × 2.** `šta mi se plaća uskoro` and `koje pretplate imam` route correctly
->    to `RECURRING_UPCOMING`/`RECURRING_LIST` and then refuse because those two templates have no
->    repository method — a *planned* refusal rather than a gap in the planner. **Open.**
+> 4. **`NOT_BUILT:recurring` × 2 — FIXED in A-2, and it was four intents, not two.** `šta mi se plaća
+>    uskoro` and `koje pretplate imam` routed correctly and refused because the templates had no
+>    repository method; so did `GOAL_PROGRESS` and `GOAL_REQUIRED_MONTHLY`. All four are built (§8.10),
+>    from `GoalsService`/`RecurringService` — the methods the `/goals` and `/recurring` screens already
+>    read — after the planner was given the two name lists it needed to resolve their slots at all.
 > 5. **The refusal copy is English** (*"I cannot answer that from your ledger. Try one of the questions
 >    below."*) even for a Serbian question with `locale=sr-Latn` — the §5.14 no-catalogue breach, and the
 >    sentence a user actually quotes back. **Open.**
@@ -3461,7 +3464,7 @@ them would have published a contract the API could not keep. The module was regi
 `apps/api/src/modules/assistant/` — `assistant.service.ts` (the pipeline), `numeric-validator.ts`
 (**pure**), `narration-template.ts` (**pure**), `narrate-prompt.ts` (**pure**),
 `assistant-narrator.ts` (the `NARRATE` seam), `assistant.model.ts` + `assistant.resolver.ts` (the
-wire). 192 tests in the module, of which 23 script a model and 43 assemble facts against Postgres.
+wire). 207 tests in the module, of which 23 script a model and 48 assemble facts against Postgres.
 
 | Decision | Built | Why |
 |---|---|---|
@@ -3577,6 +3580,45 @@ for their signed figures — the assistant was the outlier.
 > −1.000,00 RSD safely today"*) and `BUDGET` (*"You have −2.000,00 RSD left"*). The facts and the sign
 > are right and the sentence is not a lie, but it is clumsy; that is A-6's copy work and it is recorded
 > here rather than papered over with a special case per frame.
+
+### 8.10 Goals and recurring rules: the four templates that refused (task A-2, 2026-09-17)
+
+Four intents declared in §8.1 answered `NOT_BUILT`. The services behind them already existed and were
+already exported — `GoalsService.list` and `RecurringService.list`/`dueSoon` — which is why this was
+plumbing rather than a feature: `/goals` and `/recurring` had been reading those figures all along.
+
+**Why they refused for two reasons at once, and the second was invisible.** Each had no fact builder —
+the obvious half. Each was *also* unrunnable before the builder was reached, because `GOAL_*` requires a
+`goalId` and `RECURRING_*` accepts a `recurringRuleId`, and `PlannerContext` carried no goals or
+recurring rules to match a question's names against. So the plan died at `UNRUNNABLE:goalId` and never
+arrived at the `NOT_BUILT` branch the earlier battery had recorded.
+
+| Decision | Built | Why |
+|---|---|---|
+| `PlannerContext` gains `goals` **and** `recurringRules`, both optional | A household's goal names and rule descriptions, matched by the shared fold | A slot with no vocabulary to resolve it is unrunnable by construction. Optional so a caller that never asks about goals need not read them, and an absent list resolves to nothing rather than to everything. |
+| A goal or a rule resolves on the **exact** rung only | `matchEntityScored(...).exact` gates both the slot and the intent cue | Every other entity kind scopes a question whose verb already chose the template, so the stem rung is a pure win. These two **pick the template**, and the rung is loose enough to collide with ordinary words: a goal named `Novi telefon` shares a four-character stem with `novca`, which routed *"Na šta mi odlazi najviše novca ovog meseca?"* to `GOAL_PROGRESS`. An inflected name that misses exactly (`u letovanju`) falls back to the vocabulary cue and refuses with `UNRUNNABLE:goalId` — a refusal, not a wrong answer. |
+| The savings **verbs** are cues now | `usted`/`ušted` join `cilj`/`štednja` in the goal branch, and `sledec` replaces the neuter-only `sledece` | `Koliko sam uštedeo za letovanje?` had no cue at all — the goal templates were reachable only through the noun. `Kada mi sledeći Netflix dolazi?` routed to the *list* for the same reason: the imminence cue knew only `sledeće`. Both are A-3's vocabulary gap arriving early, in the one place the fix was a precondition for the feature rather than a follow-up. |
+| Goal figures come from `GoalsService`, and a contribution is **not** a Transaction | `GOAL_PROGRESS`/`GOAL_REQUIRED_MONTHLY` share `goalProgress` with the `/goals` screen; `provenance.transactionCount` is **0** | §8.3's `transactionCount` means "CONFIRMED, non-deleted Transactions aggregated", and docs/03 is explicit that goal progress is the sum of `goal_contributions`, which write no ledger row. Reporting the contribution count there would put a claim in the provenance panel that the figure never touched. |
+| A goal with no target date is refused **by name** | `reason: "NO_TARGET_DATE"` with empty facts | There is no monthly amount that reaches an undated goal, and a default horizon would be the answer's most important input invented. `requiredPerMonthMinor` is null in exactly that case, which is a **state** rather than a missing builder — the distinction `NEEDS_TWO_PERIODS` draws. |
+| Recurring rules are listed **paused ones included**, and labelled | `recurring.list(householdId, false)`; a paused row reads `Teretana (paused)` and `formatted.pausedCount` carries the number | Hiding a paused rule would make *"koje pretplate imam"* answer a shorter list than the `/recurring` screen shows — the contradiction a drill-through exists to prevent. |
+| "Due soon" is `dueSoon(…, withinDays: 30)` | The same `pendingOccurrences` read that feeds a budget's `committed` figure and the `RECURRING_DUE` alert | Three surfaces, one predicate: the assistant, the dashboard's projection and the notification cannot disagree about what is still to be charged — including the rule that an occurrence already posted as a Transaction is not due again. Thirty days because that is the `/recurring` screen's own next-30-days line, which the new drill-through opens. |
+| Two new `shape`s and four new frames | `GOAL`/`GOAL_MONTHLY`/`SCHEDULE`/`DUE`, chosen by the per-intent `FRAMES` record | "You spent X" is wrong for a goal and "3 transactions" is wrong for a bill. `SCHEDULE` and `DUE` read `formatted.count`, **not** `provenance.transactionCount`, for the reason above. |
+| All four drill through | `/goals` and `/recurring` | Both screens show the same figures from the same services, so the link reproduces the answer. |
+
+**Verified live 15/15** (`/tmp/verify-a2.mjs`): the probe creates its own goal (with a date, contributed
+to), a dateless goal and a recurring rule in the demo Household, asks the four questions, and asserts
+each answer's figure **equals what the `/goals` and `/recurring` queries return** — 25.000,00 RSD saved
+at 25 %, a 7.500,00 RSD required month that matches the screen's own `requiredPerMonth`, `NO_TARGET_DATE`
+by name, a schedule and a due list whose counts and dates match the rules — then deletes everything it
+created and asserts the Household is back to empty. It also asserts the two regressions this work
+introduced and fixed: the spending question stays a spending question, and naming a rule routes to the
+**due** template rather than the list.
+
+> **Named, not fixed:** `GOAL_PROGRESS` requires a goal to be **named**. A Household with exactly one
+> goal, asked *"koliko sam uštedeo za cilj"*, is refused rather than answered, because resolving the only
+> goal would be the planner inferring a scope the question did not state. That is a product call rather
+> than a bug, and it belongs with A-6's refusal work — the suggestions a refusal offers are still the six
+> static ones.
 
 ---
 

@@ -11,7 +11,9 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountsModule } from '../accounts/accounts.module';
 import { BudgetingModule } from '../budgeting/budgeting.module';
+import { GoalsModule } from '../goals/goals.module';
 import { LedgerModule } from '../ledger/ledger.module';
+import { RecurringModule } from '../recurring/recurring.module';
 import { TaxonomyModule } from '../taxonomy/taxonomy.module';
 import { NARRATOR, type AssistantNarrator, type NarrateOutcome, type NarrateRequest } from './assistant-narrator';
 import { SUGGESTED_QUESTIONS } from './assistant-intents';
@@ -117,7 +119,9 @@ describe('the assistant (integration)', () => {
         PrismaModule,
         AccountsModule,
         BudgetingModule,
+        GoalsModule,
         LedgerModule,
+        RecurringModule,
         TaxonomyModule,
       ],
       providers: [

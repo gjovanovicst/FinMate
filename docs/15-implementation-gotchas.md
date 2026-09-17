@@ -433,6 +433,16 @@ Code-first GraphQL with custom scalars: most of these are registration problems 
   than a failure: the suite reports **18 skipped** tests, because a spec whose module cannot compile
   skips. When you add a provider, grep for every other module whose providers construct that service.
 
+- **…and the same trap has a second face: the specs that provide the service directly.** `A-2` gave
+  `FactAssemblyService` two dependencies (`GoalsService`, `RecurringService`) and updated its own module
+  — but three specs build their own `Test.createTestingModule` with the service in `providers` (the
+  assistant's two, plus `analytics.integration.spec.ts`, which needs it to prove the assistant and the
+  chart agree), and each needed the modules imported. The first failure is loud and named; the second is
+  the confusing one — `Cannot read properties of undefined (reading 'client')` inside the spec's own
+  `afterAll`, because `prisma` was never assigned when the module failed to compile, so the run reports
+  a *cleanup* error for a *setup* problem. `grep -rl "<ServiceName>" apps/api/src --include=*.spec.ts`
+  is the whole fix, and it belongs in the same change as the constructor.
+
 - **An insight generator whose condition is not month-scoped breaks the writer's dedupe lookup, and the
   symptom is duplicate rows rather than an error.** `InsightsService.generate` loaded the existing
   conditions with `period_start = <this run's month>`, which was safe only while every generator filed

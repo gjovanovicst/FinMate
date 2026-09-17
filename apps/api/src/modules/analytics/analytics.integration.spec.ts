@@ -12,6 +12,8 @@ import { AnalyticsService } from './analytics.service';
 import { BudgetsService } from '../budgeting/budgets.service';
 import { BudgetingModule } from '../budgeting/budgeting.module';
 import { AccountsModule } from '../accounts/accounts.module';
+import { GoalsModule } from '../goals/goals.module';
+import { RecurringModule } from '../recurring/recurring.module';
 import { FactAssemblyService } from '../assistant/fact-assembly.service';
 import { INTENT_TEMPLATES, type AssistantIntent } from '../assistant/assistant-intents';
 import { planQuestion, type Plan, type PlannerContext, type ResolvedSlots } from '../assistant/query-planner';
@@ -132,7 +134,9 @@ describe('analytics (integration)', () => {
         ConfigModule.forRoot(),
         PrismaModule,
         AccountsModule,
+        GoalsModule,
         LedgerModule,
+        RecurringModule,
         TaxonomyModule,
         BudgetingModule,
       ],

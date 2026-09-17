@@ -302,10 +302,11 @@ describe('runnability', () => {
     expect(isRunnable(plan('koliko sam potrošio'))).toBe(true);
   });
 
-  it('reports the missing slot when a template needs one the planner cannot resolve yet', () => {
-    // Goals have no slot resolution in this build — the goal picker belongs with 3.3.2 — so a goal
-    // question is routed correctly and then **refused** by `isRunnable`, which is the difference
-    // between "not implemented" and "answered with something else".
+  it('reports the missing slot when the context carries no name for it', () => {
+    // This context has no goals in it, so a goal question routes correctly and is then **refused** by
+    // `isRunnable` — which is the difference between "I could not tell which goal you meant" and
+    // answering something else. That is a fact about the context, not about the build: the test below
+    // resolves the same question's slot the moment the names are supplied.
     const result = plan('koliko još do cilja');
     expect(result.intent).toBe('GOAL_PROGRESS');
     expect(isRunnable(result)).toBe(false);
@@ -334,6 +335,66 @@ describe('runnability', () => {
 
   it('is never runnable when it refused', () => {
     expect(isRunnable(plan('kakvo je vreme sutra'))).toBe(false);
+  });
+});
+
+describe('goals and recurring rules as slots (A-2)', () => {
+  const withGoals: PlannerContext = {
+    ...CONTEXT,
+    goals: [
+      { id: 'goal-holiday', name: 'Letovanje' },
+      { id: 'goal-phone', name: 'Novi telefon' },
+    ],
+    recurringRules: [
+      { id: 'rule-netflix', name: 'Netflix' },
+      { id: 'rule-gym', name: 'Teretana' },
+    ],
+  };
+
+  it('resolves a goal by name, so the two goal templates are runnable', () => {
+    const progress = planQuestion('Koliko sam uštedeo za letovanje?', withGoals);
+    expect(progress.intent).toBe('GOAL_PROGRESS');
+    expect(progress.slots.goalId).toBe('goal-holiday');
+    expect(isRunnable(progress)).toBe(true);
+
+    const monthly = planQuestion('Koliko mesečno treba da odvajam za letovanje?', withGoals);
+    expect(monthly.intent).toBe('GOAL_REQUIRED_MONTHLY');
+    expect(monthly.slots.goalId).toBe('goal-holiday');
+  });
+
+  it('requires the goal’s name as written before the name alone picks the template', () => {
+    // `Novi telefon` shares a four-character stem with `novca`, so the stem rung found a goal in a
+    // question about spending — and a goal match decides the *intent* here, unlike a Category or a
+    // Merchant match, which only scopes one. Found by this file's own battery: "Na šta mi odlazi
+    // najviše novca ovog meseca?" routed to GOAL_PROGRESS.
+    const spend = planQuestion('Na šta mi odlazi najviše novca ovog meseca?', withGoals);
+    expect(spend.intent).toBe('TOP_CATEGORIES');
+    // The slot is not merely unused: it is **not resolved**, so `matchedOn` cannot tell the reader that
+    // a goal was matched in a question about spending.
+    expect(spend.slots.goalId).toBeUndefined();
+
+    // …while the name as written still selects it, on either rung's evidence.
+    expect(planQuestion('Koliko je ostalo za Novi telefon?', withGoals).slots.goalId).toBe('goal-phone');
+  });
+
+  it('resolves a recurring rule by name and narrows the answer to it', () => {
+    const subscriptions = planQuestion('Koje pretplate imam?', withGoals);
+    expect(subscriptions.intent).toBe('RECURRING_LIST');
+    expect(subscriptions.slots.recurringRuleId).toBeUndefined();
+
+    const named = planQuestion('Kada mi sledeći Netflix dolazi?', withGoals);
+    expect(named.intent).toBe('RECURRING_UPCOMING');
+    expect(named.slots.recurringRuleId).toBe('rule-netflix');
+  });
+
+  it('routes a goal question it cannot resolve, and refuses it rather than answering another goal', () => {
+    const result = planQuestion('Koliko sam uštedeo za zimovanje?', withGoals);
+    // `uštedeo` is a savings cue, so the template is right — but no goal named `zimovanje` exists, and
+    // the planner refuses rather than picking the nearest goal it does have.
+    expect(result.intent).toBe('GOAL_PROGRESS');
+    expect(result.slots.goalId).toBeUndefined();
+    expect(isRunnable(result)).toBe(false);
+    expect(missingSlots(result)).toEqual(['goalId']);
   });
 });
 
@@ -376,9 +437,9 @@ describe('determinism', () => {
 describe('every intent is reachable', () => {
   it('has a question in this spec that selects it', () => {
     // The planner cannot answer what nothing routes to, so a template nobody can reach is dead weight —
-    // and `RECURRING_DUE`-style dead arms are exactly what this asserts against. Goals and recurring
-    // templates are reachable in principle (the phrase table maps to them) and will produce facts once
-    // 3.3.2/3.3.3 land; the intents with **no** phrase at all are listed here so the gap is explicit.
+    // and `RECURRING_DUE`-style dead arms are exactly what this asserts against. Every intent below is
+    // now reachable *and* answerable: A-2 built the last four fact builders, so `GOAL_*` and
+    // `RECURRING_*` are no longer "reachable in principle, refused in practice".
     const reachable = new Set<AssistantIntent>([
       'SPEND_TOTAL',
       'SPEND_BY_CATEGORY',

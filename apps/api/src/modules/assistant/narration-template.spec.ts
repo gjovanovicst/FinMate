@@ -63,6 +63,35 @@ function factsFor(intent: AssistantIntent): AssistantFactsView {
     case 'ROWS':
     case 'LIST':
       return factsOf({ rows, formatted: { headline: '2' } });
+    case 'GOAL':
+      // Shaped the way `GOAL_PROGRESS`/`GOAL_REQUIRED_MONTHLY` assemble it: a name, three money
+      // amounts and the percentage the domain calculator produced.
+      return factsOf({
+        rows: [{ label: 'Letovanje', value: '2500000', formatted: '25.000,00 RSD' }],
+        totals: [
+          { label: 'Saved', money: { amountMinor: '2500000', currency: 'RSD' }, formatted: '25.000,00 RSD' },
+          { label: 'Target', money: { amountMinor: '10000000', currency: 'RSD' }, formatted: '100.000,00 RSD' },
+          { label: 'Remaining', money: { amountMinor: '7500000', currency: 'RSD' }, formatted: '75.000,00 RSD' },
+        ],
+        formatted: {
+          goal: 'Letovanje',
+          headline: '25.000,00 RSD',
+          contributed: '25.000,00 RSD',
+          target: '100.000,00 RSD',
+          remaining: '75.000,00 RSD',
+          progressPercent: '25',
+          targetDate: '2027-06-01',
+          monthsRemaining: '9',
+        },
+      });
+    case 'SCHEDULE':
+      return factsOf({
+        rows: [
+          { label: 'Netflix (next 2026-09-25)', value: '120000', formatted: '1.200,00 RSD' },
+          { label: 'Teretana (paused)', value: '300000', formatted: '3.000,00 RSD' },
+        ],
+        formatted: { headline: '2', count: '2', pausedCount: '1', days: '30' },
+      });
     case 'REFUSAL':
       return factsOf({
         rows: [],
@@ -84,11 +113,15 @@ describe('the template answer for every intent', () => {
     expect(validation.unaccounted, `${intent}: ${text}`).toEqual([]);
   });
 
-  it('never names a date, because provenance is rendered beside the answer, not inside it', () => {
+  it('never names the provenance period, because provenance is rendered beside the answer, not inside it', () => {
     for (const intent of ASSISTANT_INTENTS) {
       const facts = factsFor(intent);
       const text = render(intent, facts);
-      expect(text, intent).not.toContain('2026-09');
+      // The full bounds, not the month prefix: a recurring row's own next-occurrence date is a **fact**
+      // (it is in the payload, and the sentence may quote it), while repeating the range provenance
+      // already shows beside the answer is duplication.
+      expect(text, intent).not.toContain(provenance.periodStart);
+      expect(text, intent).not.toContain(provenance.periodEnd);
     }
   });
 });
@@ -340,6 +373,56 @@ describe('how each frame reads', () => {
       'This period 46.650,00 RSD, against a usual 3.333,33 RSD — a difference of 43.316,67 RSD.',
     );
   });
+
+  // ---------------------------------------------------------------------------------------------
+  // Goals and recurring rules (A-2) — the four templates that used to render a refusal
+  // ---------------------------------------------------------------------------------------------
+
+  it('a goal, with the percentage the domain calculator produced', () => {
+    expect(render('GOAL_PROGRESS', factsFor('GOAL_PROGRESS'))).toBe(
+      '“Letovanje” stands at 25.000,00 RSD of 100.000,00 RSD (25%), with 75.000,00 RSD to go.',
+    );
+  });
+
+  it('a goal with no target date says so instead of a figure it does not have', () => {
+    const facts = factsFor('GOAL_PROGRESS');
+    const without = {
+      ...facts,
+      formatted: { ...facts.formatted, remaining: undefined as unknown as string },
+    };
+    delete (without.formatted as Record<string, string>)['remaining'];
+    expect(render('GOAL_PROGRESS', without)).toBe('“Letovanje” stands at 25.000,00 RSD of 100.000,00 RSD (25%).');
+  });
+
+  it('the monthly amount to reach a goal, with the months it is divided over', () => {
+    // `factsFor('GOAL')` carries `monthsRemaining` and `targetDate` for exactly this frame.
+    const facts = factsFor('GOAL_REQUIRED_MONTHLY');
+    expect(
+      render('GOAL_REQUIRED_MONTHLY', {
+        ...facts,
+        formatted: { ...facts.formatted, headline: '8.333,34 RSD' },
+      }),
+    ).toBe('Reaching “Letovanje” by 2027-06-01 needs 8.333,34 RSD a month for 9 months.');
+  });
+
+  it('a schedule of recurring charges, saying how many are paused', () => {
+    expect(render('RECURRING_LIST', factsFor('RECURRING_LIST'))).toBe(
+      'You have 2 recurring charges: Netflix (next 2026-09-25) 1.200,00 RSD, then Teretana (paused) 3.000,00 RSD. 1 of them are paused.',
+    );
+  });
+
+  it('a schedule with nothing in it, rather than a zero figure', () => {
+    const facts = factsFor('RECURRING_LIST');
+    expect(render('RECURRING_LIST', { ...facts, rows: [] })).toBe('There are no recurring charges on this ledger.');
+  });
+
+  it('what is due in the next 30 days, using the rule’s own occurrence date', () => {
+    const facts = factsFor('RECURRING_UPCOMING');
+    expect(render('RECURRING_UPCOMING', facts)).toBe(
+      '2 charges are due in the next 30 days: Netflix (next 2026-09-25) 1.200,00 RSD, then Teretana (paused) 3.000,00 RSD.',
+    );
+    expect(render('RECURRING_UPCOMING', { ...facts, rows: [] })).toBe('Nothing is due in the next 30 days.');
+  });
 });
 
 describe('the refusal copy', () => {
@@ -352,10 +435,13 @@ describe('the refusal copy', () => {
   });
 
   it('distinguishes "not built" from "not understood"', () => {
-    expect(renderRefusal('NOT_BUILT:goals')).toContain('not part of the ledger yet');
-    expect(renderRefusal('NOT_BUILT:recurring')).toContain('not part of the ledger yet');
+    // A-2 built the last four templates that refused this way, so the arm is generic now — it names the
+    // missing piece from the reason rather than carrying prose for a template nobody has written.
+    expect(renderRefusal('NOT_BUILT:something')).toContain('not part of the ledger');
     expect(renderRefusal('NEEDS_TWO_PERIODS')).toContain('two periods');
     expect(renderRefusal('NO_TEMPLATE_MATCH')).toContain('cannot answer that');
+    // A goal with no date is a **state**, not a missing feature, and the sentence says which state.
+    expect(renderRefusal('NO_TARGET_DATE')).toContain('no target date');
   });
 
   it('has a fallback for a reason it has never seen, rather than an empty string', () => {
@@ -363,7 +449,7 @@ describe('the refusal copy', () => {
   });
 
   it('contains no numerals at all, which is the point of a refusal', () => {
-    for (const reason of ['NO_TEMPLATE_MATCH', 'NEEDS_TWO_PERIODS', 'NOT_BUILT:goals', 'UNRUNNABLE:merchantId']) {
+    for (const reason of ['NO_TEMPLATE_MATCH', 'NEEDS_TWO_PERIODS', 'NOT_BUILT:something', 'NO_TARGET_DATE', 'UNRUNNABLE:merchantId']) {
       expect(renderRefusal(reason), reason).not.toMatch(/\p{Nd}/u);
     }
   });

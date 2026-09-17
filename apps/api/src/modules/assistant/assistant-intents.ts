@@ -105,7 +105,7 @@ export interface IntentTemplate {
    */
   readonly kind: 'EXPENSE' | 'INCOME' | 'BOTH' | 'NONE';
   /** How the answer reads, and therefore how the narrator is prompted. */
-  readonly shape: 'TOTAL' | 'ROWS' | 'LIST' | 'STATE' | 'REFUSAL';
+  readonly shape: 'TOTAL' | 'ROWS' | 'LIST' | 'STATE' | 'REFUSAL' | 'GOAL' | 'SCHEDULE';
 }
 
 /**
@@ -287,14 +287,17 @@ export const INTENT_TEMPLATES: Readonly<Record<AssistantIntent, IntentTemplate>>
     requiredSlots: ['goalId'],
     optionalSlots: [],
     kind: 'NONE',
-    shape: 'TOTAL',
+    // A goal is a **state**, not a period aggregate: progress is the sum of its contributions, and the
+    // frame that reads it is not "You spent X". `GOAL` rather than `TOTAL` so the registry says what the
+    // answer looks like — the field is documentation and the test fixture both.
+    shape: 'GOAL',
   },
   GOAL_REQUIRED_MONTHLY: {
     sourceQuery: 'goals.requiredMonthly.v1',
     requiredSlots: ['goalId'],
     optionalSlots: [],
     kind: 'NONE',
-    shape: 'TOTAL',
+    shape: 'GOAL',
   },
   SAVINGS_PROPOSAL: {
     // Deliberately not `goals.…`: a savings proposal reads the ledger's spend and needs no SavingGoal
@@ -311,16 +314,18 @@ export const INTENT_TEMPLATES: Readonly<Record<AssistantIntent, IntentTemplate>>
   RECURRING_UPCOMING: {
     sourceQuery: 'recurring.upcoming.v1',
     requiredSlots: [],
-    optionalSlots: ['limit'],
+    // Naming a rule narrows the answer to it — "kada mi sledeći Netflix dolazi" — which is the same
+    // kind of optional scope `categoryId` is on the spending templates.
+    optionalSlots: ['limit', 'recurringRuleId'],
     kind: 'BOTH',
-    shape: 'LIST',
+    shape: 'SCHEDULE',
   },
   RECURRING_LIST: {
     sourceQuery: 'recurring.list.v1',
     requiredSlots: [],
-    optionalSlots: ['limit'],
+    optionalSlots: ['limit', 'recurringRuleId'],
     kind: 'BOTH',
-    shape: 'LIST',
+    shape: 'SCHEDULE',
   },
   NO_TEMPLATE_MATCH: {
     // The refusal has no repository method because it computes nothing — and naming that here is what
