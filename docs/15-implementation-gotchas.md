@@ -1779,6 +1779,24 @@ Short, and load-bearing.
 
 ---
 
+- **A cue list that mixes adjectives with imperatives turns ordinary questions into offered writes.**
+  The action planner's cue vocabulary is hand-written and matched token-wise, so a word in it is a word
+  that *means* the action wherever it appears. `nova`/`novu`/`novi`/`novo`/`new` are attributive
+  adjectives, not verbs: with them listed as verbs, *"koja je nova kategorija najveća"* — a question
+  about a category — planned as a request to create one named `najveća`, and *"koliko sam potrošio na
+  novu kategoriju hrana"* planned as a write **beside** the `SPEND_BY_CATEGORY` answer it should have
+  got. English `make` did the same to *"make a report of spending by category"* (a `SPEND_TOTAL` read).
+  Found by planning every action-shaped question against the read planner before building the card that
+  renders a proposal — the overlap is invisible from either planner alone, and it is measured, not
+  reasoned about. Two rules fix it and both are worth keeping: an **imperative** counts anywhere before
+  the object (a request is still a request when it is asked — *"can you create a category Travel"*), and
+  an **adjective-only** request shape counts only as the question's **first** token (*"nova kategorija
+  Hrana"* is the whole request; *"koja je nova kategorija…"* is a question about one). `make` was
+  dropped rather than rescued: no cheap rule separates it from *"make a report"*, and a missed proposal
+  is a refusal the user retries while a wrong proposal is an offered write (R-29, docs/06 §8.16).
+
+---
+
 ## Related
 
 - `docs/10-testing-and-quality.md` — what a change has to prove before it is done.

@@ -3993,7 +3993,20 @@ did not say what to create, which asks the user rather than writing something no
 that is empty, over 80 characters, or already taken **does** throw (`VALIDATION_FAILED` / `CONFLICT`),
 because those are failures of a request the user made, not refusals to answer a question.
 
-**Verified**: `action-planner.spec.ts` 7, `pending-action.store.spec.ts` 6, `assistant-actions.spec.ts`
+**A cue list is a heuristic, and B-2b measured it before rendering anything.** The action planner runs
+*before* the read planner, so a word in its vocabulary is a word that means the action wherever it
+appears. Listing the attributive adjectives `nova`/`novu`/`novi`/`novo`/`new` as verbs planned
+*"koja je nova kategorija najveća"* as a request to create a Category named `najveća` and *"koliko sam
+potrošio na novu kategoriju hrana"* as a write **beside** the `SPEND_BY_CATEGORY` answer it should have
+got; English `make` did the same to *"make a report of spending by category"*. Two rules now separate
+them, and both are tested in `action-planner.spec.ts`: an **imperative** counts anywhere before the
+object (a request is still a request when it is asked — *"can you create a category Travel"*), while an
+**adjective-only** request shape counts only as the question's **first** token (*"nova kategorija Hrana"*
+is the whole request). `make` was dropped rather than rescued — a missed proposal is a refusal the user
+retries, a wrong proposal is an offered write (R-29). The measurement, and the second line of defence
+that the read planner answers first, are in [15](15-implementation-gotchas.md).
+
+**Verified**: `action-planner.spec.ts` 10, `pending-action.store.spec.ts` 6, `assistant-actions.spec.ts`
 4, `assistant-action.resolver.spec.ts` 5, `assistant-action.integration.spec.ts` 8 (a real Postgres: the
 approved action writes the Category through the same service the screen uses, a repeated idempotency key
 replays one row, a consumed proposal cannot be executed again, another Household's proposal is

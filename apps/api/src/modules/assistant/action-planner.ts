@@ -28,13 +28,31 @@ interface RawToken {
 /**
  * One action's cue vocabulary.
  *
- * `verbs` and `objects` are matched **token-wise** rather than as fixed phrases, because Serbian and
- * English both insert words between them: *"napravi **novu** kategoriju"*, *"add **a new** category"*.
- * A phrase list would have to enumerate every insertion, and the one it missed would be a silent
- * refusal.
+ * The words and the `objects` are matched **token-wise** rather than as fixed phrases, because Serbian
+ * and English both insert words between them: *"napravi **novu** kategoriju"*, *"add **a new**
+ * category"*. A phrase list would have to enumerate every insertion, and the one it missed would be a
+ * silent refusal.
+ *
+ * ## Two verb lists, because one of them is not a verb
+ *
+ * `imperatives` are real imperatives and count **anywhere** before the object, which is what makes
+ * *"molim te dodaj kategoriju X"* and *"can you create a category X"* work.
+ *
+ * `leadAdjectives` are the adjective-only request shapes Serbian and English allow — *"nova kategorija
+ * Hrana"*, *"new category Travel"* — and they count **only as the question's first token**. They have
+ * to: `nova`/`novu`/`novi`/`novo`/`new` are ordinary attributive adjectives that occur inside real
+ * questions, and counting them anywhere planned *"koja je nova kategorija najveća"* as a request to
+ * create a Category named `najveća`, and *"koliko sam potrošio na novu kategoriju hrana"* as one
+ * alongside the `SPEND_BY_CATEGORY` answer it should have got. A question may begin with the adjective
+ * because that is the whole request; it does not begin with it when it is a question about one.
+ *
+ * `make` is deliberately **absent**: *"make a report of spending by category"* is a read, and no cheap
+ * rule separates it from *"make a category X"*. A missed proposal is a refusal the user retries; a
+ * wrong proposal is an offered write (R-29), so the ambiguity is resolved toward refusing.
  */
 interface ActionCues {
-  readonly verbs: readonly string[];
+  readonly imperatives: readonly string[];
+  readonly leadAdjectives: readonly string[];
   readonly objects: readonly string[];
 }
 
@@ -45,11 +63,12 @@ interface ActionCues {
  */
 const CUES: Readonly<Record<AssistantAction, ActionCues>> = Object.freeze({
   ADD_CATEGORY: {
-    verbs: [
+    imperatives: [
       'dodaj', 'dodajte', 'dodati', 'napravi', 'napravite', 'napraviti',
-      'kreiraj', 'kreirajte', 'kreirati', 'nova', 'novu', 'novi', 'novo',
-      'add', 'create', 'make', 'new',
+      'kreiraj', 'kreirajte', 'kreirati',
+      'add', 'create',
     ],
+    leadAdjectives: ['nova', 'novu', 'novi', 'novo', 'new'],
     objects: ['kategorija', 'kategoriju', 'kategorije', 'kategorijom', 'category', 'categories'],
   },
 });
@@ -81,6 +100,11 @@ function cleanName(raw: string): string {
  * `null` is the ordinary case: most questions are reads, and this runs before the read planner so an
  * imperative must not be mistaken for one. The rule is the pair — a **verb before an object**, with
  * the name after it — which is why *"koliko sam potrošio na kategoriju hrana"* is not an action.
+ *
+ * ⚠️ **This runs first, but it does not win.** The read side answers a question it can answer, and the
+ * card is offered only when the read refused (B-2b, the ordering docs/06 §8.16 records). That is the
+ * second line of defence behind the cue lists: a cue list is a heuristic, and where it is wrong the
+ * consequence here is a proposal nobody sees rather than a wrong answer.
  */
 export function planAction(question: string): {
   readonly action: AssistantAction;
@@ -98,9 +122,12 @@ export function planAction(question: string): {
     const objectAt = tokens.findIndex((token) => cues.objects.includes(token.folded));
     if (objectAt < 0) continue;
 
-    // A verb *before* the object is what makes it an imperative rather than a mention.
-    const hasVerb = tokens.slice(0, objectAt).some((token) => cues.verbs.includes(token.folded));
-    if (!hasVerb) continue;
+    // A verb *before* the object is what makes it an imperative rather than a mention — and the
+    // adjective-only shapes count only in first position (see `ActionCues`).
+    const before = tokens.slice(0, objectAt);
+    const hasImperative = before.some((token) => cues.imperatives.includes(token.folded));
+    const leadsWithAdjective = cues.leadAdjectives.includes(tokens[0]?.folded ?? '');
+    if (!hasImperative && !(leadsWithAdjective && objectAt > 0)) continue;
 
     const name = cleanName(tokens.slice(objectAt + 1).map((token) => token.raw).join(' '));
     if (name.length === 0) {

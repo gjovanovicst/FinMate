@@ -51,6 +51,31 @@ describe('planAction (docs/06 §8.16)', () => {
     expect(planAction('')).toBeNull();
   });
 
+  it('does not read an attributive adjective inside a question as an imperative', () => {
+    // Found while preparing B-2b, by planning every action-shaped question against the read planner:
+    // `nova`/`novu`/`novi`/`novo`/`new` are ordinary adjectives, and counting them anywhere before the
+    // object made all three of these propose a write. The first two are questions about a category; the
+    // third is a report. None may offer to create anything.
+    expect(planAction('koja je nova kategorija najveća')).toBeNull();
+    expect(planAction('koliko sam potrošio na novu kategoriju hrana')).toBeNull();
+    expect(planAction('make a report of spending by category')).toBeNull();
+  });
+
+  it('still reads the adjective-only request shape when it leads', () => {
+    // Serbian and English both drop the verb, so the leading adjective *is* the request — which is the
+    // distinction the rule draws, and not a ban on the word.
+    expect(planAction('nova kategorija Hrana')?.slots['name']).toBe('Hrana');
+    expect(planAction('new category Travel')?.slots['name']).toBe('Travel');
+    expect(planAction('napravi novu kategoriju Hrana')?.slots['name']).toBe('Hrana');
+  });
+
+  it('takes an imperative that a polite lead-in precedes', () => {
+    // Why the imperative rung is not "first token only": a request is still a request when it is asked
+    // rather than ordered.
+    expect(planAction('molim te dodaj kategoriju Putovanja')?.slots['name']).toBe('Putovanja');
+    expect(planAction('can you create a category Travel')?.slots['name']).toBe('Travel');
+  });
+
   it('does not guess an action from a bare noun phrase', () => {
     // "nova kategorija" *is* a request shape — Serbian drops the verb — so it plans and then refuses
     // for want of a name, which asks the user rather than writing something nobody specified.
