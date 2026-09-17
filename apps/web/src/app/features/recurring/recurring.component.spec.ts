@@ -215,4 +215,19 @@ describe('the recurring screen', () => {
 
     expect(fixture.nativeElement.querySelector('[role="alert"]')?.textContent ?? '').not.toBe('');
   });
+  it('cancels the form submit, so saving a rule does not reload the page', async () => {
+    // The third screen with the same defect (docs/15): `(ngSubmit)` with no forms module imported
+    // compiles, never fires, and lets the browser navigate instead.
+    const { fixture } = await mount();
+    // The composer is behind its own toggle, so the form only exists once it is open.
+    fixture.componentInstance.toggleForm();
+    fixture.detectChanges();
+    const form = (fixture.nativeElement as HTMLElement).querySelector('form');
+
+    expect(form).not.toBeNull();
+    const event = new Event('submit', { cancelable: true, bubbles: true });
+    form?.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
 });

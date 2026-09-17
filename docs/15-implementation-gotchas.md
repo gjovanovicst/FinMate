@@ -1460,6 +1460,23 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   something else consumes the value. The general rule: **`computed` tracks signals, and a reactive form
   has none.**
 
+- **`(ngSubmit)` on a `<form>` in a component that imports no forms module compiles, never fires, and
+  lets the browser submit the form natively — a full page reload.** The binding is not an error: Angular
+  treats an unknown **event** name on a known element as a DOM listener, so it quietly registers an
+  event called `ngSubmit` that nothing ever dispatches. What still happens is the browser's own default
+  action, and a form with no `action` does a GET to the current URL — so the screen reloads, the work is
+  lost, and no error is reported anywhere. Found in three screens at once (the assistant composer, both
+  goals forms and the recurring-rule form): clicking *Ask* reloaded `/assistant?` → `/assistant` with no
+  answer, and creating a Goal or a Rule did the same. **The two forms that worked had it right by
+  accident of a different pattern** — the app-lock unlock and the settings PIN arming bind `(submit)` and
+  call `event.preventDefault()` in their handler, and that is the pattern to copy. Two ways out: import
+  `FormsModule` so `NgForm` applies (its `onSubmit` returns `false`, which cancels the default) or bind
+  the native `(submit)` and cancel it yourself. Prefer the second: it keeps working if a forms module is
+  removed later, and the reason is visible at the call site. **The regression test is a dispatched
+  cancelable event**, not a click — `new Event('submit', { cancelable: true })` on the form element, then
+  `expect(event.defaultPrevented).toBe(true)`; a click in jsdom submits nothing, so it would pass on the
+  broken code.
+
 ## 10. Cross-cutting rules of the codebase
 
 - **A live check that measures the wrong element lies in both directions.** Three times in 4.3.1 a

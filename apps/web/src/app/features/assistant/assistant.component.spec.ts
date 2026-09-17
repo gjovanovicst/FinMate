@@ -327,6 +327,27 @@ describe('the assistant screen', () => {
     expect(document.activeElement).toBe(input);
   });
 
+  it('cancels the form submit, so asking a question does not reload the page', async () => {
+    // The regression this exists for: with `(ngSubmit)` and no forms module imported, the binding was
+    // registered as a DOM event named "ngSubmit" that never fires, the browser did its native GET
+    // submit, and a real browser reloaded /assistant with no answer (measured; docs/15).
+    const { fixture, client } = await mount();
+    const component = fixture.componentInstance;
+    component.question.set('koliko sam potrošio u lidlu');
+    const form = (fixture.nativeElement as HTMLElement).querySelector('form.ask');
+
+    expect(form).not.toBeNull();
+    const event = new Event('submit', { cancelable: true, bubbles: true });
+    form?.dispatchEvent(event);
+    await fixture.whenStable();
+
+    expect(event.defaultPrevented).toBe(true);
+    // And the question really went out, which is what the reload used to prevent.
+    expect(
+      client.query.mock.calls.some((call) => String(call[0]).includes('query AssistantAnswer')),
+    ).toBe(true);
+  });
+
   it('asks nothing for an empty or whitespace-only question', async () => {
     const { fixture, client } = await mount();
     const component = fixture.componentInstance;

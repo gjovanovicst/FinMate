@@ -204,6 +204,23 @@ describe('the goals screen', () => {
     expect(queries.some((query) => query.includes('deleteSavingGoal'))).toBe(false);
   });
 
+  it("cancels every form's submit, so creating a goal does not reload the page", async () => {
+    // Same defect as the assistant composer: `(ngSubmit)` without a forms module never fires, and the
+    // browser submits the form natively — a full page reload and no goal (docs/15).
+    const { fixture } = await mount();
+    // The composer is behind its own toggle, so the form only exists once it is open.
+    fixture.componentInstance.toggleCreate();
+    fixture.detectChanges();
+    const forms = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('form'));
+
+    expect(forms.length).toBeGreaterThan(0);
+    for (const form of forms) {
+      const event = new Event('submit', { cancelable: true, bubbles: true });
+      form.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    }
+  });
+
   it('shows an error instead of an empty list when the query fails', async () => {
     const client = { query: vi.fn(() => Promise.reject(new Error('boom'))) };
     TestBed.configureTestingModule({

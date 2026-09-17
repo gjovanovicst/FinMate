@@ -938,6 +938,15 @@ infinity.
 > in docs/06 §8.5: the mode carried no information while every deployment fell back; it is now the only
 > statement of which path produced the words. The screen has **not been looked at by a human at
 > any width** yet.
+>
+> ⚠️ **Fixed after a live report (2026-09-17).** *Ask* reloaded the whole page instead of answering: the
+> form bound `(ngSubmit)` while the component imports no forms module, so the binding compiled, never
+> fired, and the browser's native submit navigated — the account, the goals composer and the recurring
+> rule composer had the same defect (docs/15 has the entry). All four now bind the native `(submit)` and
+> cancel it, and each screen has a spec that dispatches a cancelable event and asserts `defaultPrevented`
+> — a click in jsdom would not catch it. **Verified live 10/10** against the production build: no reload
+> on any of the three screens, the question is sent and answered (with an AI-narrated provenance line),
+> the goal and the rule are created and listed, and an incomplete rule is refused in place.
 
 ### 4.17 Notifications centre — F-22
 

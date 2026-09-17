@@ -78,7 +78,9 @@ import {
       @if (creating()) {
         <section class="panel" aria-labelledby="goals-new">
           <h2 class="panel__title" id="goals-new">{{ i18n.t('goals.new') }}</h2>
-          <form class="form" (ngSubmit)="create()" novalidate>
+          <!-- (submit) with a cancelled default, not (ngSubmit): this component imports no forms
+               module, so NgForm is never applied and (ngSubmit) never fires (docs/15). -->
+          <form class="form" (submit)="create($event)" novalidate>
             <label class="form__field">
               <span>{{ i18n.t('goals.name') }}</span>
               <input
@@ -198,7 +200,7 @@ import {
             }
 
             @if (contributingFor() === goal.id) {
-              <form class="form form--inline" (ngSubmit)="contribute(goal)" novalidate>
+              <form class="form form--inline" (submit)="contribute(goal, $event)" novalidate>
                 <label class="form__field">
                   <span>{{ i18n.t('goals.paymentAmount') }}</span>
                   <input
@@ -537,7 +539,9 @@ export class GoalsComponent {
     this.draft.set(EMPTY_DRAFT);
   }
 
-  async create(): Promise<void> {
+  /** See `assistant.component.ts`: `event` must be cancelled or the browser navigates instead. */
+  async create(event?: Event): Promise<void> {
+    event?.preventDefault();
     const problem = draftProblem(this.draft(), this.currency());
     if (problem !== null) {
       this.problem.set(problemKey(problem));
@@ -583,7 +587,8 @@ export class GoalsComponent {
    * Add a contribution. The key is minted **here**, once per submit: a retry after a network failure
    * reuses nothing new, and a double-tap cannot save the money twice (I-10).
    */
-  async contribute(goal: Goal): Promise<void> {
+  async contribute(goal: Goal, event?: Event): Promise<void> {
+    event?.preventDefault();
     if (contributionProblem(this.paymentAmount(), this.currency()) !== null) {
       this.paymentProblem.set('goals.problem.AMOUNT');
       return;

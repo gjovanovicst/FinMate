@@ -120,7 +120,9 @@ import {
           <h2 class="panel__title" id="recurring-form">
             {{ editingId() === null ? i18n.t('recurring.new') : i18n.t('recurring.edit') }}
           </h2>
-          <form class="form" (ngSubmit)="save()" novalidate>
+          <!-- (submit) with a cancelled default, not (ngSubmit): this component imports no forms
+               module, so NgForm is never applied and (ngSubmit) never fires (docs/15). -->
+          <form class="form" (submit)="save($event)" novalidate>
             <label class="form__field">
               <span>{{ i18n.t('recurring.description') }}</span>
               <input
@@ -646,7 +648,9 @@ export class RecurringComponent {
     this.problem.set(null);
   }
 
-  async save(): Promise<void> {
+  /** See `assistant.component.ts`: `event` must be cancelled or the browser navigates instead. */
+  async save(event?: Event): Promise<void> {
+    event?.preventDefault();
     const problem = draftProblem(this.draft(), this.currency());
     if (problem !== null) {
       this.problem.set(problemKey(problem));

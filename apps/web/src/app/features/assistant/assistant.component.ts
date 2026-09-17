@@ -77,7 +77,13 @@ import {
       <h1 class="head">{{ i18n.t('assistant.title') }}</h1>
       <p class="muted">{{ i18n.t('assistant.subtitle') }}</p>
 
-      <form class="ask" (ngSubmit)="ask()" novalidate>
+      <!--
+        (submit), not (ngSubmit). This component imports no forms module, so NgForm is never applied: an
+        (ngSubmit) binding still compiles — Angular treats an unknown event name on an element as a DOM
+        listener — but it never fires, and the browser's own submit then reloads the whole page.
+        Measured before the fix: the URL went /assistant? -> /assistant and no answer arrived.
+      -->
+      <form class="ask" (submit)="ask($event)" novalidate>
         <label class="ask__label" for="assistant-question">{{ i18n.t('assistant.askLabel') }}</label>
         <div class="ask__row">
           <input
@@ -478,7 +484,15 @@ export class AssistantComponent {
   }
 
   /** Ask the question in the box. Refuses an empty or in-flight one rather than sending it. */
-  async ask(): Promise<void> {
+  /**
+   * Ask the assistant.
+   *
+   * `event` is the form's submit, and cancelling it is not optional: with no forms module the native
+   * submit is what a browser does, so without `preventDefault()` the page reloads and no question is
+   * ever sent. Optional so the chip path (`useSuggestion`) can call the same method.
+   */
+  async ask(event?: Event): Promise<void> {
+    event?.preventDefault();
     const question = this.question().trim();
     if (question.length === 0 || this.asking()) return;
 
