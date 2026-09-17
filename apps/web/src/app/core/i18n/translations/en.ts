@@ -210,6 +210,21 @@ export const en = {
   'assistant.suggestions': 'Something else I can answer',
   'assistant.provenanceOne': 'based on 1 transaction, {period}',
   'assistant.provenanceMany': 'based on {count} transactions, {period}',
+  // How an answer was put into words (4.3.7b, docs/06 §8.5). Inside the provenance panel, never a
+  // badge: the first line is always shown, and a `why.*` line only for a reason this build can name.
+  'assistant.narration.llm': 'An AI model put this answer into words; every figure came from your ledger.',
+  'assistant.narration.template':
+    'This answer was put into words by the app itself, from the same figures — no AI model was used.',
+  'assistant.narration.why.consent':
+    'AI processing is not allowed for this household, so no model was asked.',
+  'assistant.narration.why.none': 'No AI model is configured on this deployment, so no model was asked.',
+  'assistant.narration.why.unreachable': 'The AI model could not be reached, so the app wrote this itself.',
+  'assistant.narration.why.unaccounted':
+    'A model answered, but its wording could not be checked against the figures, so the app wrote this itself.',
+  // The one *visible* sentence, and only for a fallback the reader caused and can undo.
+  'assistant.narration.consentNote':
+    'An AI model could put these answers into words, but AI processing is not allowed for this household.',
+  'assistant.narration.settings': 'AI settings',
   'assistant.openList': 'Open the filtered list',
   'assistant.openReview': 'Open the review queue',
   'assistant.openBudgets': 'Open the budgets',

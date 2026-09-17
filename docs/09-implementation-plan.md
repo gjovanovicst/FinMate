@@ -283,7 +283,14 @@ consented to said *"It goes to DEEPSEEK, a data centre outside the European Econ
 (`AiSeams.calledTasks`, derived from the seams the composition root builds — `PARSE` stays routed so
 `AI_PARSE_PRIMARY` is not dead config again, and a routed-but-uncalled task is logged rather than disclosed),
 and the client renders one sentence per `(provider, region)` while the API keeps its per-task rows. The copy
-version deliberately does **not** move: no purpose, provider or region changed. **(a) ships as 4.3.7b.** | 0.5 | F-28, F-23 |
+version deliberately does **not** move: no purpose, provider or region changed. **(a) shipped in 4.3.7b**:
+`/assistant` now names the path that put an answer into words — one line in the provenance panel, the reason
+in words for every prefix this build knows, and **one visible sentence plus a `/settings` link only when the
+fallback was the reader's own withheld consent** (the one reason with an action). docs/06 §8.5's
+"make the fallback invisible" is **amended, not ignored**: the reasoning it was written under (every
+deployment fell back, so the mode said nothing) no longer holds, and the part it was protecting is kept by
+the wording — the template is described as what it is, never as a failure. Verified live both ways, 0 px
+overflow at 320/768/1280 px, no raw machine string on the page | 0.5 | F-28, F-23 |
 | 5.8 | **The password-reset and email-verify screens — added by a live finding (see below).** docs/02 §2 lists
 `/auth/verify` and `/auth/reset` in the screen inventory and neither exists; the app has sign-in and sign-up only.
 The API half works end to end — `POST /auth/request-password-reset` mails a token, `POST /auth/reset-password`

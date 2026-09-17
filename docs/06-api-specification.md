@@ -3333,8 +3333,16 @@ means the validator is not absolute for single digits, and it is still absolute 
 
 Consequences that are part of the contract:
 
-- `narrationMode` is always populated and the UI is expected to make template fallback invisible (it is
-  never framed as an error — a correct answer delivered without an LLM is not a degraded experience).
+- `narrationMode` is always populated, and since **4.3.7b** the UI **discloses it** — inside the answer's
+  provenance panel, plus one visible sentence when the fallback was a decision the reader can undo
+  (`CONSENT_DECLINED`, with a link to `/settings`). The earlier wording here said the UI *"is expected to
+  make template fallback invisible"*, and it was right while it was written: every deployment fell back, so
+  the mode carried no information and a badge on every answer is how a person learns to distrust the
+  figures. Once `NARRATE` is routable (ADR-032) the mode is the only *statement* of which path produced the
+  words — the remaining clue is that the fallback's copy is English and a model answers in the household's
+  locale, which is a clue rather than a statement (and the second instance of §5.14's no-catalogue breach).
+  The distinction the old rule protected is kept by the **wording**: the fallback is described as what it is
+  (*"put into words by the app itself"*), never as a failure, and it is never framed as an error.
 - `NO_TEMPLATE_MATCH` ⇒ `answered = false`, `answerText` says the ledger cannot answer it, and
   `suggestions` lists the canonical answerable questions. **No figure is ever produced**, and the
   narrator is not called at all (§8.7).

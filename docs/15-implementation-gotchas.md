@@ -1289,6 +1289,22 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   One consequence worth knowing when reading that mapping: it fails **closed**, so an endpoint that is
   neither `LOCAL` nor `_EU` is reported NON_EEA rather than defaulting to something reassuring.
 
+- **A document's rule outlives the condition that justified it, so a reversal has to be written where the
+  rule is.** docs/06 §8.5 said the UI *"is expected to make template fallback invisible"*, and when it was
+  written that was right: every deployment fell back, so `narrationMode` carried no information and a badge on
+  every answer is how a person learns to distrust the numbers. Task 4.3.7b routed `NARRATE`, and the mode
+  became the only **statement** of which path produced the words — the surviving clue is that the fallback's
+  copy is English while a model answers in the household's locale, which is a clue, not a statement. The
+  implementation was amended *and* §8.5 was amended with the reasoning and the part of the old rule that
+  survives (the template is described as what it is — *"put into words by the app itself"* — never as a
+  failure). Two lessons: a spec sentence that names a UI behaviour is a **requirement**, so changing the
+  behaviour without changing the sentence leaves the next reader implementing the old rule; and the
+  difference between "invisible" and "disclosed quietly" is where it lives (inside the provenance panel,
+  never a badge on the card) plus **one visible sentence only where there is an action** — consent, with a
+  link to `/settings`. The machine `reason` is still never rendered: it is diagnostic (docs/06 §8.5), so it
+  is mapped by its prefix, and a prefix this build does not know gets no sentence rather than an invented
+  explanation.
+
 - **A disclosure is not a dump of the routing table, and a sentence is not a row.** Two defects in that same
   mapping, both measured on 2026-09-17 (ADR-034, task 4.3.7a). **(a)** `aiEgress` listed `PARSE` — the
   configuration key is validated, `assembleAi` routes it, and *nothing in the build invokes the task*:

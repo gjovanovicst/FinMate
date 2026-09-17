@@ -210,6 +210,22 @@ export const srLatn: Record<keyof typeof en, string> = {
   'assistant.suggestions': 'Mogu da odgovorim i na ovo',
   'assistant.provenanceOne': 'na osnovu 1 transakcije, {period}',
   'assistant.provenanceMany': 'na osnovu {count} transakcija, {period}',
+  // Kako je odgovor sročen (4.3.7b, docs/06 §8.5). Unutar panela porekla, nikad kao značka.
+  'assistant.narration.llm': 'Ovaj odgovor je sročio AI model; svaki broj dolazi iz tvoje knjige.',
+  'assistant.narration.template':
+    'Ovaj odgovor je sročila sama aplikacija, iz istih brojeva — AI model nije korišćen.',
+  'assistant.narration.why.consent':
+    'Obrada uz pomoć AI nije dozvoljena za ovo domaćinstvo, pa model nije ni pozvan.',
+  'assistant.narration.why.none':
+    'Na ovom postavljanju nema podešenog AI modela, pa model nije ni pozvan.',
+  'assistant.narration.why.unreachable':
+    'AI model nije bio dostupan, pa je aplikacija sama sročila odgovor.',
+  'assistant.narration.why.unaccounted':
+    'Model je odgovorio, ali njegove reči nisu mogle biti proverene prema brojevima, pa je aplikacija sama sročila odgovor.',
+  // Jedina *vidljiva* rečenica, i to samo za izbor koji je čitalac napravio i može da poništi.
+  'assistant.narration.consentNote':
+    'AI model bi mogao da sroči ove odgovore, ali obrada uz pomoć AI nije dozvoljena za ovo domaćinstvo.',
+  'assistant.narration.settings': 'AI podešavanja',
   'assistant.openList': 'Otvori filtriranu listu',
   'assistant.openReview': 'Otvori red za proveru',
   'assistant.openBudgets': 'Otvori budžete',

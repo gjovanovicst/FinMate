@@ -20,9 +20,8 @@ initAngularTesting();
  *
  * The decisions live in `assistant.view.spec.ts`; what a *rendered* component proves beyond them is
  * that the composer actually asks, that a refusal offers chips that ask again, that the figures go
- * through `fm-money`, and — the one that matters most — that **nothing on the page mentions the
- * narration mode**. docs/06 §8.5 wants the template fallback invisible: in this build every answer is
- * one, so a badge would sit on every answer and teach users to distrust the numbers.
+ * through `fm-money`, and — since 4.3.7b — that **how the answer was worded is disclosed inside the
+ * provenance panel, and no diagnostic machine string ever reaches the page**.
  */
 const ANSWER = {
   id: 'a1',
@@ -166,16 +165,66 @@ describe('the assistant screen', () => {
     );
   });
 
-  it('never mentions how the answer was narrated', async () => {
-    // docs/06 §8.5: a correct answer computed without a model is not a degraded experience, and a
-    // badge on every answer is how a user learns to distrust the numbers.
+  it('says how the answer was worded, inside the provenance panel and never as a badge', async () => {
+    // docs/06 §8.5 asked for the fallback to stay invisible; 4.3.7b reversed that once narration became
+    // routable, because the mode is the only *statement* of which path produced the words. The wording
+    // is the part §8.5 was protecting: the template is described as what it is, not as a failure.
     const { fixture } = await mount();
     await typeAndAsk(fixture, 'koliko sam potrošio ovog meseca');
 
+    const panel = fixture.nativeElement.querySelector('details.prov');
+    expect(panel).not.toBeNull();
+    expect(panel?.textContent).toContain('put into words by the app itself');
+    expect(panel?.textContent).toContain('No AI model is configured');
+
+    // The machine string is diagnostic (docs/06 §8.5) and must never be rendered.
     const text = textOf(fixture);
     expect(text).not.toContain('TEMPLATE_FALLBACK');
     expect(text).not.toContain('AI_UNAVAILABLE');
     expect(text).not.toContain('UNACCOUNTED');
+  });
+
+  it('says a model narrated when one did, and claims nothing else', async () => {
+    const { fixture } = await mount((query) => {
+      if (query.includes('query AssistantSuggestions')) return { assistantSuggestions: [] };
+      return { assistantAnswer: { ...ANSWER, narrationMode: 'LLM', reason: null } };
+    });
+
+    await typeAndAsk(fixture, 'koliko sam potrošio ovog meseca');
+
+    const text = textOf(fixture);
+    expect(text).toContain('An AI model put this answer into words');
+    expect(text).not.toContain('no AI model was used');
+    // A narrated answer is not a fallback, so nothing is offered for a decision that was never blocked.
+    expect(fixture.nativeElement.querySelector('.card__note')).toBeNull();
+  });
+
+  it('offers the way back when consent is why the answer was a template', async () => {
+    // The one visible sentence, and only for the reason the reader caused and can undo.
+    const { fixture } = await mount((query) => {
+      if (query.includes('query AssistantSuggestions')) return { assistantSuggestions: [] };
+      return {
+        assistantAnswer: {
+          ...ANSWER,
+          narrationMode: 'TEMPLATE_FALLBACK',
+          reason: 'CONSENT_DECLINED:CONSENT_DECLINED',
+        },
+      };
+    });
+
+    await typeAndAsk(fixture, 'koliko sam potrošio ovog meseca');
+
+    const note = fixture.nativeElement.querySelector('.card__note');
+    expect(note?.textContent).toContain('AI processing is not allowed for this household');
+    expect(note?.querySelector('a')?.getAttribute('href')).toBe('/settings');
+  });
+
+  it('keeps that note off the card for a fallback nobody can act on', async () => {
+    // `ANSWER`'s reason is `AI_UNAVAILABLE:no-provider-configured`: a deployment property, not a choice.
+    const { fixture } = await mount();
+    await typeAndAsk(fixture, 'koliko sam potrošio ovog meseca');
+
+    expect(fixture.nativeElement.querySelector('.card__note')).toBeNull();
   });
 
   it('shows a refusal with chips that ask again, which is the point of the refusal', async () => {

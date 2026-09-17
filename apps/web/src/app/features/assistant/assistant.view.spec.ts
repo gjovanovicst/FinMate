@@ -6,7 +6,10 @@ import {
   drillThroughTarget,
   factRows,
   factTotals,
+  fallbackNoteKey,
   isProposal,
+  narrationKey,
+  narrationReasonKey,
   moneyRow,
   periodLabel,
   phaseOf,
@@ -269,5 +272,50 @@ describe('the provenance line', () => {
 
   it('falls back to the raw day rather than throwing on a value it cannot read', () => {
     expect(periodLabel({ ...provenance, periodStart: 'not-a-day', periodEnd: 'not-a-day' }, 'en')).toBe('not-a-day');
+  });
+});
+
+describe('how the answer was put into words', () => {
+  it('names the path that produced the sentence, in both directions', () => {
+    // docs/06 §8.5 said the fallback stays invisible; 4.3.7b reversed that once narration became
+    // routable, because the mode is the only *statement* of which path produced the words.
+    expect(narrationKey('LLM')).toBe('assistant.narration.llm');
+    expect(narrationKey('TEMPLATE_FALLBACK')).toBe('assistant.narration.template');
+  });
+
+  it('explains a fallback by the prefix of a diagnostic reason, and invents nothing otherwise', () => {
+    // `reason` is a machine string (`CONSENT_DECLINED:CONSENT_DECLINED`,
+    // `UNACCOUNTED_NUMERALS:99.000,00`, …), so only the prefix is read.
+    expect(narrationReasonKey('CONSENT_DECLINED:CONSENT_DECLINED')).toBe('assistant.narration.why.consent');
+    expect(narrationReasonKey('CONSENT_DECLINED')).toBe('assistant.narration.why.consent');
+    expect(narrationReasonKey('AI_UNAVAILABLE:no-provider-configured')).toBe('assistant.narration.why.none');
+    expect(narrationReasonKey('PROVIDER_UNAVAILABLE:TASK_NOT_SUPPORTED')).toBe(
+      'assistant.narration.why.unreachable',
+    );
+    expect(narrationReasonKey('CIRCUIT_OPEN:x')).toBe('assistant.narration.why.unreachable');
+    expect(narrationReasonKey('UNACCOUNTED_NUMERALS:99.000,00')).toBe('assistant.narration.why.unaccounted');
+    expect(narrationReasonKey('EMPTY_NARRATION')).toBe('assistant.narration.why.unaccounted');
+    // A reason this build does not know gets no sentence: an invented explanation is worse than none.
+    expect(narrationReasonKey('SOMETHING_NEW:42')).toBeNull();
+    expect(narrationReasonKey(null)).toBeNull();
+  });
+
+  it('puts the visible note on consent alone, because it is the only reason with an action', () => {
+    expect(
+      fallbackNoteKey(answer({ narrationMode: 'TEMPLATE_FALLBACK', reason: 'CONSENT_DECLINED:CONSENT_DECLINED' })),
+    ).toBe('assistant.narration.consentNote');
+
+    // A deployment that configured no model is not something the reader can change from here.
+    expect(
+      fallbackNoteKey(answer({ narrationMode: 'TEMPLATE_FALLBACK', reason: 'AI_UNAVAILABLE:no-provider-configured' })),
+    ).toBeNull();
+    // A narrated answer says nothing on the card whatever its reason (there is none).
+    expect(fallbackNoteKey(answer({ narrationMode: 'LLM', reason: null }))).toBeNull();
+    // A refusal is not narrated at all: the narrator is never called (`answered: false`).
+    expect(
+      fallbackNoteKey(
+        answer({ answered: false, narrationMode: 'TEMPLATE_FALLBACK', reason: 'CONSENT_DECLINED:x' }),
+      ),
+    ).toBeNull();
   });
 });

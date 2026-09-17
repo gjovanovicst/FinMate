@@ -893,9 +893,12 @@ infinity.
 > different inputs — docs/06 §8.8); and F-30's proposal table **ships without its *Primeni* button**: the
 > plan is computed and labelled *Predlog (izračunato)* with its target and shortfall, and the screen says
 > "a suggestion only — no budget has been changed", because applying it means deciding what "apply" does
-> to a Budget that already exists (docs/06 §8.8). `narrationMode` and `reason` are **not rendered**:
-> a correct answer computed without a model is not a degraded experience, and this build has no provider
-> configured, so a badge would sit on every answer. The screen has **not been looked at by a human at
+> to a Budget that already exists (docs/06 §8.8). `narrationMode` and `reason` **used to be unrendered**
+> and since **4.3.7b** are disclosed inside the provenance panel — always one line saying which path put the
+> answer into words, plus the reason in words when this build can name it, plus one visible sentence with a
+> link to `/settings` when the fallback was the reader's own withheld consent. The reason the rule changed is
+> in docs/06 §8.5: the mode carried no information while every deployment fell back; it is now the only
+> statement of which path produced the words. The screen has **not been looked at by a human at
 > any width** yet.
 
 ### 4.17 Notifications centre — F-22

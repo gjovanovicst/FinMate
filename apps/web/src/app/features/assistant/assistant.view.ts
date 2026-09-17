@@ -136,10 +136,12 @@ export function factTotals(facts: AssistantFacts): readonly { label: string; mon
 }
 
 /**
- * Whether the answer has anything to expand.
+ * Whether the answer has figures to expand.
  *
- * The provenance line ("based on N transactions") is always shown; the *expandable* part is the named
- * rows, and a `<details>` with nothing inside it is a control that does nothing.
+ * The provenance line ("based on N transactions") is always shown, and since 4.3.7b it is always a
+ * `<details>` — the panel also carries how the answer was worded, so it is never a control that opens on
+ * nothing. This decides only whether the **figures** belong inside it, which they do not when the card
+ * already renders them (a proposal's table is above, and a report of what happened has none at all).
  */
 export function canExpand(facts: AssistantFacts): boolean {
   return facts.rows.length > 0 || facts.totals.length > 0;
@@ -289,4 +291,67 @@ export function periodLabel(provenance: Provenance, localeTag: string): string {
   return provenance.periodStart === provenance.periodEnd
     ? format(provenance.periodStart)
     : `${format(provenance.periodStart)} – ${format(provenance.periodEnd)}`;
+}
+
+/**
+ * How the sentence a person is reading was produced — task 4.3.7b.
+ *
+ * docs/06 §8.5 used to say the UI makes the template fallback **invisible**, on the grounds that "a
+ * correct answer computed without a model is not a degraded experience". That was written when every
+ * deployment fell back, so the mode carried no information — every answer was the template, and a badge
+ * saying so would have trained people to distrust the figures. It is no longer true of a deployment that
+ * routes `NARRATE` (ADR-032, and the dev `.env` does): the mode is now the only *statement* of which path
+ * produced the words. The remaining clue that a fallback happened is that its copy is English while a
+ * model answers in the household's locale — a clue, not a statement, and the second instance of the
+ * no-catalogue breach §5.14 records.
+ *
+ * So it is disclosed, and quietly: inside the provenance panel, never as a badge on the card. The
+ * distinction §8.5 was protecting is kept by the wording — the fallback is described as what it is
+ * ("put into words by the app itself"), not as a failure.
+ */
+export function narrationKey(
+  mode: NarrationMode,
+): 'assistant.narration.llm' | 'assistant.narration.template' {
+  return mode === 'LLM' ? 'assistant.narration.llm' : 'assistant.narration.template';
+}
+
+/**
+ * Why a fallback happened, in words — or `null` for a reason nobody can act on.
+ *
+ * `reason` is a diagnostic machine string (docs/06 §8.5: *"diagnostic, not an error"*), so it is mapped
+ * by the prefix before the first `:` and never rendered. The producers are `assistant.service.ts`
+ * (`AI_UNAVAILABLE:…`, `UNACCOUNTED_NUMERALS:…`), `assistant-narrator.ts` (`EMPTY_NARRATION`, and the
+ * router's `${reason}:${failures}`) and the router itself (`CONSENT_DECLINED`, `PROVIDER_UNAVAILABLE`,
+ * `CIRCUIT_OPEN`). An unrecognised prefix says nothing beyond {@link narrationKey}: inventing an
+ * explanation for a reason this build does not know is how a disclosure becomes fiction.
+ */
+export function narrationReasonKey(reason: string | null): TranslationKey | null {
+  switch (reason?.split(':', 1)[0]) {
+    case 'CONSENT_DECLINED':
+      return 'assistant.narration.why.consent';
+    case 'AI_UNAVAILABLE':
+      return 'assistant.narration.why.none';
+    case 'PROVIDER_UNAVAILABLE':
+    case 'CIRCUIT_OPEN':
+      return 'assistant.narration.why.unreachable';
+    case 'UNACCOUNTED_NUMERALS':
+    case 'EMPTY_NARRATION':
+      return 'assistant.narration.why.unaccounted';
+    default:
+      return null;
+  }
+}
+
+/**
+ * The one visible sentence about the mode: when the fallback was a **decision the reader can change**.
+ *
+ * Everything else stays in the panel, because a note with no action attached is noise on every answer.
+ * Consent is different in kind: the Household withheld it, `/settings` is where it is given back, and a
+ * reader who never learns that will conclude the feature does not work.
+ */
+export function fallbackNoteKey(answer: AssistantAnswer): TranslationKey | null {
+  if (!answer.answered || answer.narrationMode !== 'TEMPLATE_FALLBACK') return null;
+  return answer.reason?.split(':', 1)[0] === 'CONSENT_DECLINED'
+    ? 'assistant.narration.consentNote'
+    : null;
 }

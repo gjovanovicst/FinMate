@@ -19,7 +19,10 @@ import {
   drillThroughTarget,
   factRows,
   factTotals,
+  fallbackNoteKey,
   isProposal,
+  narrationKey,
+  narrationReasonKey,
   periodLabel,
   phaseOf,
   proposalLabelKey,
@@ -42,12 +45,14 @@ import {
  * and `facts` is the backend's payload. The one thing the client formats is a *date range* in the
  * provenance line, which is presentation of a value the server chose.
  *
- * ## What is deliberately invisible
+ * ## What the screen says about how an answer was worded
  *
- * `narrationMode` and `reason` are **not rendered**. docs/06 §8.5: the UI is expected to make the
- * template fallback invisible, because "a correct answer delivered without an LLM is not a degraded
- * experience". A badge reading "computed" on every answer in this build — where no provider is
- * configured, so *every* answer is the fallback — would train users to distrust the numbers.
+ * `narrationMode` and `reason` are rendered **inside the provenance panel**, never as a badge on the
+ * card, plus one visible sentence when the fallback was a decision the reader can change (consent, with
+ * a link to `/settings`). docs/06 §8.5 used to ask for the fallback to be invisible; the reasoning and
+ * the reversal are in {@link narrationKey} — the short version is that a mode every answer shares
+ * carries no information, and once narration is routed it is the only statement of which path produced
+ * the words.
  *
  * ## The transcript is the client's, and only for this visit
  *
@@ -151,11 +156,14 @@ import {
                   }
                   <p class="proposal__note">{{ i18n.t('assistant.proposalNote') }}</p>
                 </section>
-                <p class="prov__summary">{{ provenanceText(answer) }}</p>
-              } @else if (answer.answered) {
-                @if (canExpand(answer.facts)) {
-                  <details class="prov">
-                    <summary class="prov__summary">{{ provenanceText(answer) }}</summary>
+              }
+
+              @if (answer.answered) {
+                <!-- One panel for every answer, so how it was worded is always reachable and never a
+                     badge. The figures live inside it only when the card does not already show them. -->
+                <details class="prov">
+                  <summary class="prov__summary">{{ provenanceText(answer) }}</summary>
+                  @if (!isProposal(answer.facts) && canExpand(answer.facts)) {
                     <ul class="facts">
                       @for (total of factTotals(answer.facts); track total.label) {
                         <li class="facts__row facts__row--total">
@@ -171,9 +179,18 @@ import {
                       }
                     </ul>
                     <p class="prov__meta">{{ answer.provenance.sourceQuery }}</p>
-                  </details>
-                } @else {
-                  <p class="prov__summary">{{ provenanceText(answer) }}</p>
+                  }
+                  <p class="prov__note">{{ i18n.t(narrationKey(answer.narrationMode)) }}</p>
+                  @if (narrationReasonKey(answer.reason); as whyKey) {
+                    <p class="prov__note">{{ i18n.t(whyKey) }}</p>
+                  }
+                </details>
+
+                @if (fallbackNoteKey(answer); as noteKey) {
+                  <p class="card__note">
+                    {{ i18n.t(noteKey) }}
+                    <a class="card__link" routerLink="/settings">{{ i18n.t('assistant.narration.settings') }}</a>
+                  </p>
                 }
               }
 
@@ -351,6 +368,19 @@ import {
         font-size: var(--text-xs);
         opacity: 0.7;
       }
+      .prov__note {
+        margin: var(--space-2) 0 0;
+        font-size: var(--text-sm);
+        color: var(--color-text-muted);
+      }
+      .card__note {
+        margin: var(--space-3) 0 0;
+        font-size: var(--text-sm);
+        color: var(--color-text-muted);
+      }
+      .card__note .card__link {
+        margin-block-start: 0;
+      }
       .facts {
         margin: var(--space-2) 0 0;
         padding: 0;
@@ -420,7 +450,10 @@ export class AssistantComponent {
   readonly drillThroughTarget = drillThroughTarget;
   readonly factRows = factRows;
   readonly factTotals = factTotals;
+  readonly fallbackNoteKey = fallbackNoteKey;
   readonly isProposal = isProposal;
+  readonly narrationKey = narrationKey;
+  readonly narrationReasonKey = narrationReasonKey;
   readonly proposalSummary = proposalSummary;
   readonly suggestionChips = suggestionChips;
 
