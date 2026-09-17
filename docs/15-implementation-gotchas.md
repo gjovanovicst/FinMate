@@ -208,7 +208,10 @@ Everything here has cost time at least once, and most of it fails in a way that 
   miss for the same reason `nx` output is easy to misread: `npx nx run web:build 2>&1 | tail -4` prints
   the Nx footer and hides the `Application bundle generation failed` line above it, and the pipeline's
   exit status is `tail`'s. Run the build without a pipe (or check `${PIPESTATUS[0]}`) before believing
-  it, and rebuild before driving a browser at `dist`. The error that found this was in a **spec** — see
+  it, and rebuild before driving a browser at `dist`. It is not a build-only trap: `nx run api:typecheck
+  2>&1 | tail -3` printed a clean footer while `tsc` had failed on an `indexOf` over an `as const` tuple
+  (A-3b) — the check that would have caught it ran only in CI. `… > /tmp/out.log 2>&1; echo "exit=$?"` costs
+  one extra line and cannot lie. The error that found this was in a **spec** — see
   group 9's entry about `tsconfig.json` including specs in the production program: the build type-checks
   them, so a `Window`-typed `Event` constructor in a spec is a build failure, not a test failure.
 

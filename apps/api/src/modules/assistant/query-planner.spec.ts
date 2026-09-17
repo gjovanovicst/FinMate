@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { addDays, addMonths, monthPeriod, weekPeriod } from '@finmate/domain';
+
 import {
   ASSISTANT_INTENTS,
   INTENT_TEMPLATES,
@@ -271,6 +273,103 @@ describe('intent routing', () => {
     expect(plan('jesam li isplanirano').intent).toBe('BUDGET_PACE_VS_PLAN');
     // With the noun it routes the same way, so the two phrasings cannot disagree.
     expect(plan('da li sam preko plana sa budžetom').intent).toBe('BUDGET_PACE_VS_PLAN');
+  });
+});
+
+/**
+ * English (A-3b). The catalogue is English-primary (ADR-019), so an English question has to route — and
+ * the *ordered* rule list is shared with Serbian rather than duplicated, because two orders in two
+ * languages are two orders to keep in step and the drift would be silent in one language only.
+ *
+ * Most of these assert what must **not** happen: an English cue is a substring test over the folded
+ * question, so a short one is a collision waiting to happen (`net` inside `netflix`).
+ */
+describe('English questions route the same way (A-3b)', () => {
+  it('routes an unscoped spend question', () => {
+    expect(plan('what did I spend this month').intent).toBe('SPEND_TOTAL');
+    expect(plan('how much did I spend today').intent).toBe('SPEND_TOTAL');
+    expect(plan('how much did i earn this month').intent).toBe('INCOME_TOTAL');
+  });
+
+  it('refuses a scope it cannot resolve instead of answering the total', () => {
+    // The Household's tree is Serbian, so `food` resolves nothing. Answering the month's whole spend
+    // would be a true figure to a different question — the failure ADR-017 exists to prevent. Before
+    // this, the unresolved-scope check knew only `na`/`za`/`u`/`kod` and the question fell through.
+    expect(plan('how much did I spend on food').intent).toBe('NO_TEMPLATE_MATCH');
+    expect(plan('how much did I spend for fuel').intent).toBe('NO_TEMPLATE_MATCH');
+    // …while a period introduced by the same preposition is a **resolved** scope, not an entity.
+    expect(plan('how much did I spend in august').intent).toBe('SPEND_TOTAL');
+    expect(plan('what did I spend this month').intent).toBe('SPEND_TOTAL');
+  });
+
+  it('resolves the English period phrases, including a named month', () => {
+    const lastMonth = monthPeriod(addMonths(CONTEXT.today, -1));
+    expect(plan('what did I spend last month').slots.period.start).toBe(lastMonth.start);
+    expect(plan('what did I spend this month').slots.period.start).toBe(monthPeriod(CONTEXT.today).start);
+    expect(plan('what did I spend yesterday').slots.period.start).toBe(addDays(CONTEXT.today, -1));
+    expect(plan('what did I spend this week').slots.period.start).toBe(weekPeriod(CONTEXT.today).start);
+    expect(plan('what did I spend in august').slots.period.start).toBe('2026-08-01');
+    expect(plan('what did I spend in august').slots.period.start).not.toBe(plan('what did I spend in september').slots.period.start);
+    // The phrase the user wrote is the provenance, not the Serbian default.
+    expect(plan('what did I spend this month').matchedOn).toContain('this month');
+    expect(plan('what did I spend last month').slots.period.matchedOn).toBe('prošlog meseca');
+    // `last 30 days` is the same window as `poslednjih 30 dana`.
+    expect(plan('what did I spend in the last 30 days').slots.period.start).toBe(addDays(CONTEXT.today, -29));
+  });
+
+  it('reads an English month only after a preposition, because the words are ordinary', () => {
+    // `may` and `march` are verbs and nouns before they are months.
+    expect(plan('may I ask a question').intent).not.toBe('TREND_VS_LAST_MONTH');
+    expect(plan('what did I spend in may').slots.period.matchedOn).toBe('in may');
+    // …and a bare `may` in a spend question does not become May.
+    expect(plan('what did I spend in may').slots.period.start).toBe('2026-05-01');
+  });
+
+  it('does not read `net` inside `netflix`, which is why the cash-flow cue is multi-word', () => {
+    // A bare `net` would make this a cash-flow question. It is a Merchant scope instead.
+    expect(plan('how much did I spend on netflix').intent).not.toBe('NET_CASHFLOW');
+    expect(plan('what is my net cash flow this month').intent).toBe('NET_CASHFLOW');
+    expect(plan('how much do I have left over').intent).toBe('NET_CASHFLOW');
+  });
+
+  it('does not make a spending question a goal question just because it says per month', () => {
+    // `per month` lives *inside* the goal branch, so it can only classify a question that already named
+    // a goal. On its own it must not become GOAL_PROGRESS — which then refuses for want of a goalId.
+    expect(plan('how much do I spend per month').intent).not.toBe('GOAL_PROGRESS');
+    expect(plan('how much do i spend per month').intent).toBe('SPEND_TOTAL');
+    // With a goal named (or the vocabulary) it is a goal question, and a monthly one.
+    expect(
+      planQuestion('how much do I need per month for my goal', {
+        ...CONTEXT,
+        goals: [{ id: 'goal-holiday', name: 'Letovanje' }],
+      }).intent,
+    ).toBe('GOAL_REQUIRED_MONTHLY');
+  });
+
+  it('routes the other English intents', () => {
+    const cases: readonly (readonly [string, AssistantIntent])[] = [
+      ['what is my balance', 'ACCOUNT_BALANCE_ALL'],
+      ['which budgets do I have', 'BUDGET_LIST'],
+      ['how much is left of my budget', 'BUDGET_STATUS'],
+      ['how much can I spend today', 'SAFE_TO_SPEND'],
+      ['am I over budget', 'BUDGET_PACE_VS_PLAN'],
+      ['what is my projection for the end of the month', 'MONTH_PROJECTION'],
+      ['how does this month compare to last month', 'TREND_VS_LAST_MONTH'],
+      ['where does my money go', 'TOP_CATEGORIES'],
+      ['what are my largest transactions', 'LARGEST_TRANSACTIONS'],
+      ['what is my average per day', 'AVERAGE_DAILY_SPEND'],
+      ['how many transactions do I have', 'TRANSACTION_COUNT'],
+      ['which transactions need review', 'UNCATEGORISED_REVIEW'],
+      ['show my transactions', 'TRANSACTION_LIST'],
+      ['what are my subscriptions', 'RECURRING_LIST'],
+      ['what bills are due soon', 'RECURRING_UPCOMING'],
+      ['how can I save 20000', 'SAVINGS_PROPOSAL'],
+    ];
+    for (const [question, intent] of cases) {
+      expect(plan(question).intent, question).toBe(intent);
+    }
+    // The savings target comes out of the question through the same cue that routed it.
+    expect(plan('how can I save 20000').slots.targetMinor).toBe('2000000');
   });
 });
 

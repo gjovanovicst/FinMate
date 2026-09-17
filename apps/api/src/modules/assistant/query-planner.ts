@@ -315,33 +315,40 @@ function hasSlot(slots: ResolvedSlots, slot: SlotName): boolean {
  * cannot reconcile with anything.
  */
 export function resolvePeriod(folded: string, today: LocalDate): ResolvedPeriod {
-  if (/\bdanas\b/.test(folded)) return { start: today, end: today, matchedOn: 'danas' };
-  if (/\bjuce\b|\bjucer\b/.test(folded)) {
+  if (/\bdanas\b|\btoday\b/.test(folded)) return { start: today, end: today, matchedOn: 'danas' };
+  if (/\bjuce\b|\bjucer\b|\byesterday\b/.test(folded)) {
     const yesterday = addDays(today, -1);
     return { start: yesterday, end: yesterday, matchedOn: 'juče' };
   }
-  if (/\bove nedelje\b|\bova nedelja\b/.test(folded)) {
+  if (/\bove nedelje\b|\bova nedelja\b|\bthis week\b/.test(folded)) {
     const week = weekPeriod(today);
     return { ...week, matchedOn: 'ove nedelje' };
   }
-  if (/\bprosle nedelje\b|\bprosla nedelja\b/.test(folded)) {
+  if (/\bprosle nedelje\b|\bprosla nedelja\b|\blast week\b/.test(folded)) {
     const week = weekPeriod(addDays(weekPeriod(today).start, -1));
     return { ...week, matchedOn: 'prošle nedelje' };
   }
-  if (/\bproslog meseca\b|\bprosli mesec\b/.test(folded)) {
+  if (/\bproslog meseca\b|\bprosli mesec\b|\blast month\b/.test(folded)) {
     const month = monthPeriod(addMonths(today, -1));
     return { start: month.start, end: month.end, matchedOn: 'prošlog meseca' };
   }
-  if (/\bove godine\b|\bova godina\b/.test(folded)) {
+  // English "this month" is named explicitly even though it is also the default, so that a question
+  // asked in English carries the phrase the user wrote in its provenance rather than the Serbian
+  // default (docs/06 §8.3's "the question they will re-read is the one they wrote").
+  if (/\bthis month\b/.test(folded)) {
+    const month = monthPeriod(today);
+    return { start: month.start, end: month.end, matchedOn: 'this month' };
+  }
+  if (/\bove godine\b|\bova godina\b|\bthis year\b/.test(folded)) {
     return { start: `${today.slice(0, 4)}-01-01`, end: `${today.slice(0, 4)}-12-31`, matchedOn: 'ove godine' };
   }
-  if (/\bprosle godine\b|\bprosla godina\b/.test(folded)) {
+  if (/\bprosle godine\b|\bprosla godina\b|\blast year\b/.test(folded)) {
     const year = Number(today.slice(0, 4)) - 1;
     return { start: `${year}-01-01`, end: `${year}-12-31`, matchedOn: 'prošle godine' };
   }
 
-  // "poslednjih 30 dana" / "zadnjih 7 dana"
-  const window = /\b(?:poslednjih|zadnjih|proteklih)\s+(\d{1,3})\s+dana\b/.exec(folded);
+  // "poslednjih 30 dana" / "zadnjih 7 dana" / "last 30 days"
+  const window = /\b(?:poslednjih|zadnjih|proteklih|last|past|previous)\s+(\d{1,3})\s+(?:dana|days)\b/.exec(folded);
   if (window !== null) {
     const days = Math.min(Math.max(Number(window[1]), 1), 366);
     return { start: addDays(today, -(days - 1)), end: today, matchedOn: `poslednjih ${days} dana` };
@@ -352,19 +359,59 @@ export function resolvePeriod(folded: string, today: LocalDate): ResolvedPeriod 
   for (const [index, stem] of MONTH_STEMS.entries()) {
     const hit = new RegExp(`\\b${stem}[a-z]{0,3}\\b`).exec(folded);
     if (hit === null) continue;
-    const monthNumber = index + 1;
-    const pad = String(monthNumber).padStart(2, '0');
-    const thisYear = `${today.slice(0, 4)}-${pad}-01`;
-    const anchor = thisYear > today ? `${Number(today.slice(0, 4)) - 1}-${pad}-01` : thisYear;
-    const month = monthPeriod(anchor);
     // The **word as typed** (`avgustu`, `septembru`), not the table entry: provenance is for the user,
     // and the question they will re-read is the one they wrote.
-    return { start: month.start, end: month.end, matchedOn: hit[0] };
+    return monthPeriodPhrase(index + 1, today, hit[0]);
+  }
+
+  // An English month name, **only after `in`/`during`**. `may`, `march` and `august` are ordinary
+  // English words, so matching them bare would read "may I ask…" as May; a preposition is what makes
+  // the word a month, and it is how the question is written anyway ("what did I spend in august?").
+  const englishMonth = new RegExp(`\\b(?:in|during)\\s+(${ENGLISH_MONTHS.join('|')})\\b`).exec(folded);
+  if (englishMonth !== null) {
+    const monthNumber = ENGLISH_MONTHS.indexOf(englishMonth[1] as string) + 1;
+    return monthPeriodPhrase(monthNumber, today, englishMonth[0]);
   }
 
   const month = monthPeriod(today);
   return { start: month.start, end: month.end, matchedOn: DEFAULT_PERIOD_PHRASE };
 }
+
+/**
+ * The most recent occurrence of a named month, as a period.
+ *
+ * Extracted so the Serbian stem table and the English name table cannot disagree about which year a
+ * month belongs to — asking "u avgustu" in March means last August, and answering with the August that
+ * has not happened yet would be a figure the user cannot reconcile with anything.
+ */
+function monthPeriodPhrase(monthNumber: number, today: LocalDate, matchedOn: string): ResolvedPeriod {
+  const pad = String(monthNumber).padStart(2, '0');
+  const thisYear = `${today.slice(0, 4)}-${pad}-01`;
+  const anchor = thisYear > today ? `${Number(today.slice(0, 4)) - 1}-${pad}-01` : thisYear;
+  const month = monthPeriod(anchor);
+  return { start: month.start, end: month.end, matchedOn };
+}
+
+/**
+ * English month names in calendar order — `ENGLISH_MONTHS.indexOf(name) + 1` is the month number.
+ *
+ * Typed `readonly string[]` rather than an `as const` tuple: the name arrives from a regex capture, so
+ * the tuple's literal union cannot be satisfied without a cast that would hide a typo in the pattern.
+ */
+const ENGLISH_MONTHS: readonly string[] = [
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+];
 
 interface IntentCues {
   readonly hasCategory: boolean;
@@ -405,6 +452,13 @@ const SAVINGS_CUES = [
   'kako da ustedim',
   'predlog za stednju',
   'predlog za štednju',
+  // English. These are also what {@link resolveTarget} anchors the amount to, so "how can i save 20000"
+  // takes the 20.000 and not some other numeral.
+  'how can i save',
+  'how do i save',
+  'how to save',
+  'saving plan',
+  'savings plan',
 ] as const;
 
 function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
@@ -418,23 +472,41 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
   // `da li sam preko plana` names the judgement and never the noun, and requiring *budžet* refused a
   // question the pace template answers from the Household's own limits. It is checked **before** the
   // budget branch because the phrase does not contain the word the branch looks for.
-  if (has('preko plana', 'iznad plana', 'isplanirano', 'prekoracio plan', 'prekoračio plan', 'odstupa od plana')) {
+  if (
+    has(
+      'preko plana', 'iznad plana', 'isplanirano', 'prekoracio plan', 'prekoračio plan', 'odstupa od plana',
+      // English: `over budget` / `over plan` / `ahead of plan`. Multi-word on purpose — a bare `over`
+      // would match "left over".
+      'over budget', 'over plan', 'over my budget', 'ahead of plan', 'on plan',
+    )
+  ) {
     return note('BUDGET_PACE_VS_PLAN', 'preko plana');
   }
-  if (has('budzet') || has('budžet')) {
+  if (has('budzet') || has('budžet') || has('budget')) {
     if (has('tempo', 'preko plana', 'isplanirano', 'odstupa')) {
       return note('BUDGET_PACE_VS_PLAN', 'budžet + tempo');
     }
     // "which budgets exist" is a list question; "how much is left of the budget" is a status one.
-    if (has('koji budzet', 'koji budžet', 'koje budzete', 'koje budžete', 'svi budzeti', 'svi budžeti', 'lista budzeta', 'lista budžeta', 'spisak budzeta', 'spisak budžeta')) {
+    if (
+      has(
+        'koji budzet', 'koji budžet', 'koje budzete', 'koje budžete', 'svi budzeti', 'svi budžeti',
+        'lista budzeta', 'lista budžeta', 'spisak budzeta', 'spisak budžeta',
+        'which budgets', 'my budgets', 'all budgets', 'list of budgets', 'budget list',
+      )
+    ) {
       return note('BUDGET_LIST', 'lista budžeta');
     }
     return note('BUDGET_STATUS', 'budžet');
   }
-  if (has('mogu da potrosim', 'mogu da potrošim', 'mogu li da potrosim', 'mogu li da potrošim')) {
+  if (
+    has(
+      'mogu da potrosim', 'mogu da potrošim', 'mogu li da potrosim', 'mogu li da potrošim',
+      'can i spend', 'can i still spend', 'how much can i spend',
+    )
+  ) {
     return note('SAFE_TO_SPEND', 'mogu da potrošim');
   }
-  if (has('projekcija', 'kraj meseca', 'do kraja meseca')) {
+  if (has('projekcija', 'kraj meseca', 'do kraja meseca', 'projection', 'forecast', 'end of the month', 'on track')) {
     return note('MONTH_PROJECTION', 'projekcija');
   }
 
@@ -445,8 +517,10 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
   // A goal question is either one that **names** a goal or one that uses the vocabulary. The verbs
   // matter: `uštedeo`/`ustedim` are how a person asks how a goal is doing, and they were not cues at
   // all — so the two goal templates could only be reached through the noun.
-  if (cues.hasGoal || has('cilj', 'cilju', 'stednja', 'štednja', 'usted', 'ušted', 'stek', 'štek')) {
-    if (has('mesecno', 'mesečno', 'koliko mesecno', 'koliko mesečno')) {
+  if (cues.hasGoal || has('cilj', 'cilju', 'stednja', 'štednja', 'usted', 'ušted', 'stek', 'štek', 'goal', 'goals', 'saving for', 'save for', 'saving towards')) {
+    // The **monthly** phrases are checked inside the branch rather than as entry cues: "how much do i
+    // spend per month" must not become a goal question just because it says *per month*.
+    if (has('mesecno', 'mesečno', 'koliko mesecno', 'koliko mesečno', 'per month', 'a month', 'each month', 'monthly')) {
       return note('GOAL_REQUIRED_MONTHLY', 'cilj + mesečno');
     }
     return note('GOAL_PROGRESS', 'cilj');
@@ -456,12 +530,22 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
   // `sledec` rather than `sledece`: the word inflects (`sledeći`, `sledeća`, `sledeće`), and the
   // `A-2` recurring templates are unreachable without it — "Kada mi sledeći Netflix dolazi?" routed to
   // the *list* because the cue only knew the neuter form.
-  const imminent = has('uskoro', 'dolazec', 'dolazeć', 'sledec', 'sledeć', 'ovog meseca', 'ovih dana');
+  const imminent = has(
+    'uskoro', 'dolazec', 'dolazeć', 'sledec', 'sledeć', 'ovog meseca', 'ovih dana',
+    'due soon', 'upcoming', 'coming up', 'next payment', 'this month',
+  );
   // `placa`/`plaća` rather than the phrase "placa se": people write "šta mi se plaća uskoro" and the
   // verb and its clitic are in the other order. The word also means *salary*, but the income templates
   // cue on `zaradio`/`prihod`/`plata`, so the two do not collide.
-  const charge = has('placa', 'plaća', 'naplat', 'racun', 'račun', 'trosak', 'trošak');
-  if (cues.hasRecurringRule || has('pretplat', 'ponavljajuc', 'ponavljajuć', 'rekurentn') || (imminent && charge)) {
+  const charge = has(
+    'placa', 'plaća', 'naplat', 'racun', 'račun', 'trosak', 'trošak',
+    'payment', 'bill', 'charge', 'invoice',
+  );
+  if (
+    cues.hasRecurringRule ||
+    has('pretplat', 'ponavljajuc', 'ponavljajuć', 'rekurentn', 'subscription', 'recurring', 'standing order') ||
+    (imminent && charge)
+  ) {
     if (imminent) {
       return note('RECURRING_UPCOMING', 'pretplate + uskoro');
     }
@@ -471,61 +555,96 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
   // ---- income & flow
   // `novca ostaje` covers "koliko mi novca ostaje", which inserts a word into `koliko mi ostaje` — the
   // kind of phrasing a cue list written from one example never has.
-  if (has('neto', 'na neto', 'koliko mi ostaje', 'novca ostaje', 'koliko mi je ostalo od prihoda', 'cashflow')) {
+  if (
+    has(
+      'neto', 'na neto', 'koliko mi ostaje', 'novca ostaje', 'koliko mi je ostalo od prihoda', 'cashflow',
+      // ⚠️ Not a bare `net`: `netflix` contains it, so "how much did I spend on netflix" would become a
+      // cash-flow question. Every English phrase here is either multi-word or unambiguous.
+      'cash flow', 'net cash', 'net income', 'left over', 'leftover', 'what is left', 'have left',
+    )
+  ) {
     return note('NET_CASHFLOW', 'neto');
   }
-  if (has('zaradio', 'zaradila', 'prihod', 'prihodi', 'primitak')) {
+  // ⚠️ `salary` and `pension` are deliberately **not** cues: this template is unscoped income, so
+  // "how much is my pension" would be answered with the month's whole income — a true figure to a
+  // different question (docs/06 §8.8 records the missing income-by-Category template).
+  if (has('zaradio', 'zaradila', 'prihod', 'prihodi', 'primitak', 'income', 'earn', 'got paid', 'my pay')) {
     return note('INCOME_TOTAL', 'prihod');
   }
   // `imam na računu` is the phrasing people actually use ("koliko imam na računu"), and it was not a
   // cue: the list knew `stanje na računu` and the inverted `na računu imam`, but not the natural order.
   // `koliko imam` alone is deliberately **not** a cue — it fronts questions about goals, budgets and
   // everything else a Household has.
-  if (has('stanje na racunu', 'stanje na računu', 'stanje racuna', 'stanje računa', 'na racunu imam', 'na računu imam', 'imam na racunu', 'imam na računu')) {
+  if (
+    has(
+      'stanje na racunu', 'stanje na računu', 'stanje racuna', 'stanje računa', 'na racunu imam',
+      'na računu imam', 'imam na racunu', 'imam na računu',
+      'balance', 'account balance', 'in my account', 'on my account', 'how much do i have',
+    )
+  ) {
     return cues.hasAccount ? note('ACCOUNT_BALANCE', 'stanje + račun') : note('ACCOUNT_BALANCE_ALL', 'stanje');
   }
 
   // ---- comparison & trend (a trend cue beats a plain spend question, because the comparison is the
   // question: "kako stojim u odnosu na prošli mesec" is not "how much did I spend")
-  if (has('u odnosu na prosli mesec', 'u odnosu na prošli mesec', 'nego proslog meseca', 'nego prošlog meseca', 'poredenju sa proslim', 'poređenju sa prošlim')) {
+  if (
+    has(
+      'u odnosu na prosli mesec', 'u odnosu na prošli mesec', 'nego proslog meseca', 'nego prošlog meseca',
+      'poredenju sa proslim', 'poređenju sa prošlim',
+      'than last month', 'compared to last month', 'compare to last month', 'compare with last month',
+      'versus last month', 'vs last month',
+    )
+  ) {
     return note('TREND_VS_LAST_MONTH', 'odnos prema prošlom mesecu');
   }
-  if (has('uporedi', 'uporedimo', 'poredjenje', 'poređenje', 'uporedjenje', 'upoređenje')) {
+  if (has('uporedi', 'uporedimo', 'poredjenje', 'poređenje', 'uporedjenje', 'upoređenje', 'compare', 'comparison')) {
     return note('COMPARE_PERIODS', 'uporedi');
   }
   // Deliberately *not* a bare "prosek": "prosečno dnevno" is a different template, and the spending
   // block below would never be reached if a bare stem stole it.
-  if (has('odnosu na prosek', 'odstupa od proseka', 'odstupam', 'uobicajeno', 'uobičajeno')) {
+  if (has('odnosu na prosek', 'odstupa od proseka', 'odstupam', 'uobicajeno', 'uobičajeno', 'than usual', 'above average', 'below average', 'usual', 'typical')) {
     return note('TREND_VS_AVERAGE', 'u odnosu na prosek');
   }
 
   // ---- spending
-  if (has('najvise', 'najviše', 'gde mi odlazi', 'gde odlazi')) {
+  if (has('najvise', 'najviše', 'gde mi odlazi', 'gde odlazi', 'most money', 'where does my money go', 'where my money goes')) {
     if (has('prodavac', 'prodavca', 'prodavci', 'merchant', 'radnj')) {
       return note('TOP_MERCHANTS', 'najviše + prodavci');
     }
     return note('TOP_CATEGORIES', 'najviše');
   }
-  if (has('najvece transakcije', 'najveće transakcije', 'najveci iznos', 'najveći iznos', 'najveca kupovina', 'najveća kupovina')) {
+  if (
+    has(
+      'najvece transakcije', 'najveće transakcije', 'najveci iznos', 'najveći iznos',
+      'najveca kupovina', 'najveća kupovina',
+      'largest transactions', 'biggest transactions', 'largest purchase', 'biggest purchase', 'largest expense', 'biggest expense',
+    )
+  ) {
     return note('LARGEST_TRANSACTIONS', 'najveće transakcije');
   }
-  if (has('prosecno dnevno', 'prosečno dnevno', 'dnevni prosek', 'po danu')) {
+  if (has('prosecno dnevno', 'prosečno dnevno', 'dnevni prosek', 'po danu', 'average per day', 'daily average', 'average daily', 'per day')) {
     return note('AVERAGE_DAILY_SPEND', 'prosečno dnevno');
   }
-  if (has('koliko transakcija', 'broj transakcija', 'koliko kupovina', 'koliko unosa')) {
+  if (has('koliko transakcija', 'broj transakcija', 'koliko kupovina', 'koliko unosa', 'how many transactions', 'number of transactions', 'how many purchases')) {
     return note('TRANSACTION_COUNT', 'broj transakcija');
   }
-  if (has('za proveru', 'neprepoznat', 'bez kategorije', 'nekategorisan', 'cekaju proveru', 'čekaju proveru')) {
+  if (has('za proveru', 'neprepoznat', 'bez kategorije', 'nekategorisan', 'cekaju proveru', 'čekaju proveru', 'need review', 'needs review', 'for review', 'awaiting review', 'pending review', 'uncategorised', 'uncategorized', 'no category', 'without a category')) {
     return note('UNCATEGORISED_REVIEW', 'za proveru');
   }
-  if (has('prikazi transakcije', 'lista transakcija', 'spisak transakcija', 'koje transakcije')) {
+  if (has('prikazi transakcije', 'lista transakcija', 'spisak transakcija', 'koje transakcije', 'show my transactions', 'show transactions', 'list transactions', 'my transactions')) {
     return note('TRANSACTION_LIST', 'lista transakcija');
   }
   // `dao`/`dala` are as common as `potrošio` ("koliko sam dao za kiriju"). Adding them cannot make a
   // question answerable that was not: this branch answers only when a Category, Merchant, Account or
   // Tag resolved, and refuses otherwise — so a question about something the Household has no name for
   // still refuses rather than totalling everything.
-  if (has('potrosio', 'potrošio', 'potrosila', 'potrošila', 'trosio', 'trošio', 'kupio', 'kupila', 'kupovao', 'kupovala', 'platio', 'platila', 'placao', 'plaćao', 'dao', 'dala', 'dali', 'rashod')) {
+  if (
+    has(
+      'potrosio', 'potrošio', 'potrosila', 'potrošila', 'trosio', 'trošio', 'kupio', 'kupila', 'kupovao',
+      'kupovala', 'platio', 'platila', 'placao', 'plaćao', 'dao', 'dala', 'dali', 'rashod',
+      'spent', 'spend', 'paid', 'bought', 'purchase', 'cost',
+    )
+  ) {
     if (cues.hasCategory) return note('SPEND_BY_CATEGORY', 'potrošio + kategorija');
     if (cues.hasMerchant) return note('SPEND_BY_MERCHANT', 'potrošio + prodavac');
     if (cues.hasAccount) return note('SPEND_BY_ACCOUNT', 'potrošio + račun');
@@ -664,6 +783,10 @@ const SCOPE_WORDS = new Set([
   'ovog', 'ovog', 'proslog', 'prošlog', 'ove', 'prosle', 'prošle', 'poslednjih', 'zadnjih', 'proteklih',
   'meseca', 'mesec', 'nedelje', 'godine', 'dana', 'danas', 'juce', 'juče', 'sve', 'svih', 'kartici',
   'racuna', 'računa', 'gotovinu', 'gotovine', 'prosek', 'proseka', 'ukupno',
+  // English, because the check itself is now bilingual: `in august` and `this month` are a resolved
+  // period, not an unresolved entity.
+  'this', 'last', 'past', 'previous', 'month', 'months', 'week', 'weeks', 'year', 'years', 'day', 'days',
+  'today', 'yesterday', 'total', 'average', 'account', 'all',
 ]);
 
 function hasUnresolvedScope(folded: string, period: ResolvedPeriod): boolean {
@@ -674,7 +797,12 @@ function hasUnresolvedScope(folded: string, period: ResolvedPeriod): boolean {
     if (word.length > 0) allowed.add(word);
   }
 
-  for (const match of folded.matchAll(/\b(?:na|za|u|kod)\s+([a-z]{4,})/g)) {
+  // ⚠️ The English prepositions are **load-bearing, not cosmetic**: without them "how much did i spend
+  // on food" (a scope this Household's Serbian tree has no name for) fell through to `SPEND_TOTAL` and
+  // answered the month's whole spend — a true figure to a different question, which is the failure
+  // ADR-017 exists to make impossible. `at` is included for "at lidl", which resolves through the
+  // Merchant rung when the name exists and refuses here when it does not.
+  for (const match of folded.matchAll(/\b(?:na|za|u|kod|on|for|at|in|to)\s+([a-z]{4,})/g)) {
     if (!allowed.has(match[1] ?? '')) return true;
   }
   return false;

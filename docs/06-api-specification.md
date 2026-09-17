@@ -3463,13 +3463,14 @@ them would have published a contract the API could not keep. The module was regi
 >
 > **A-3 (2026-09-17) fixed the cue half of this list and re-classified the rest.** Three of the nine were
 > really vocabulary (§8.11): `koliko imam na računu`, `koliko mi novca ostaje`, `da li sam preko plana`,
-> plus `dao` as a spend verb. The other six are **not** cue gaps, and calling them that would have meant
+> plus `dao` as a spend verb; and **A-3b** added the English cues and English period phrases, which is
+> what item 3 below and both English questions needed. The battery is **32 of 37 answered** now. The other six are **not** cue gaps, and calling them that would have meant
 > adding phrases that answer a different question:
 >
-> - **Two are English** — the planner has no English cues *or* English period phrases while the catalogue
->   is English-primary ([ADR-019](14-decisions-and-risks.md)). That is A-3b and it needs the ADR-019
->   amendment §8.11 records, because "one ordered rule list, each rule multilingual" is an i18n decision
->   rather than a phrase list.
+> - **Two were English — FIXED in A-3b** (§8.11), which needed an [ADR-019](14-decisions-and-risks.md)
+>   amendment because "one ordered rule list, each rule's phrases per language" is an i18n decision and
+>   not a phrase list. `how much did I spend on food` still refuses, for the taxonomy reason recorded
+>   below rather than a cue one.
 > - **`Maxi` vs `Maksiju` is a FOLD gap, not a cue one** — `normaliseForMatching('Maxi')` is `maxi` and
 >   `'Maksiju'` is `maksiju`, so neither the exact rung nor the three-character stem rung matches the
 >   Serbian spelling of a foreign name. It is not the assistant's to fix: the same fold decides whether a
@@ -3674,12 +3675,38 @@ The six are the re-classified ones above: two English (A-3b), `Maxi`/`Maksiju` (
 kiriju` (correct as it stands — this Household has no such Category). All four additions are also
 asserted in `query-planner.spec.ts`, including the cases they must **not** catch.
 
-> **Not decided here:** English. The planner has no English cues and no English period phrases while the
-> catalogue is English-primary (ADR-019), and the two English questions in the battery are the visible
-> half of it — `resolvePeriod` is Serbian-only, so even a fully translated cue list would answer
-> *"how much did I spend last month"* with **this** month. A-3b owns that, with the ADR-019 amendment it
-> needs: one ordered rule list where each rule's phrases are per-locale, rather than a second rule list
-> that would let the locales drift apart.
+**A-3b (same day) added English, and the two halves belong together.** The catalogue is English-primary
+(ADR-019) while the planner matched Serbian phrases only, so *"what did I spend this month"* was refused
+by an English-primary product — and `resolvePeriod` was Serbian-only, so translating the cues alone would
+have answered *"what did I spend last month"* with **this** month. `resolvePeriod` now resolves
+`today`/`yesterday`/`this week`/`last week`/`last month`/`this month`/`this year`/`last year`/`last 30
+days` and an English month name, and every rule's phrase set covers both languages **in the one ordered
+list** — the ADR-019 amendment records why a per-locale table was rejected (two orders to keep in step,
+drifting silently in one language only).
+
+| Decision | Built | Why |
+|---|---|---|
+| One ordered rule list, phrase sets per language | Every cue rule carries its English phrases beside its Serbian ones | A second rule list is a second order; the failure when the two drift is silent misrouting in one language, which only a speaker of that language notices. |
+| An English month resolves only after `in`/`during` | `\b(?:in|during)\s+(january|…|december)\b` | `may`, `march` and `august` are ordinary English words. Matching them bare would read *"may I ask…"* as May. |
+| `hasUnresolvedScope` takes English prepositions | `on`, `for`, `at`, `in`, `to` joined `na`, `za`, `u`, `kod` | **The safety-critical half.** Without it *"how much did I spend on food"* fell through to `SPEND_TOTAL` and answered the month's whole spend — a true figure to a different question, which is exactly what ADR-017 forbids. Provenance is unaffected: a period introduced by the same preposition (`in august`, `this month`) is a **resolved** scope and still answers. |
+| The cash-flow cue is multi-word | `cash flow`, `left over`, `what is left`, `have left` — never a bare `net` | `netflix` contains `net`, so a bare cue would turn *"how much did I spend on netflix"* into a cash-flow question. Asserted in the spec. |
+| The **monthly** goal phrases stay inside the goal branch | `per month`, `a month`, `monthly` | As an entry cue, *"how much do I spend per month"* would become a goal question and then refuse for want of a `goalId`. It is a spend question. |
+| `salary` and `pension` are **not** income cues | Deliberately absent | `INCOME_TOTAL` is unscoped, so *"how much is my pension"* would be answered with the month's whole income. The missing piece is an income-scoped template (below), not a phrase. |
+
+**Verified live 11/11** (`/tmp/verify-a3b.mjs`), including the three things that must not happen: an
+unresolvable English scope **refuses** rather than totalling, `on netflix` is a Merchant scope and not a
+cash-flow question, and `in may` is May while `may I ask` is not. **The battery is now 32 of 37
+answered** (it was 25/12 before A-1). The five left are all named above: `Maksiju` (a fold gap),
+`kolika mi je penzija` and `kada mi sledeća plata dolazi` (the registry gap), `koliko sam dao za kiriju`
+(correct — this Household has no such Category), and `how much did I spend on food`.
+
+> **Named, not fixed (A-3b's own residual):** an English question **about a Category** still refuses,
+> because the seeded tree is Serbian-named with Serbian keywords — *"how much did I spend on food"* is
+> understood as a scoped spend question and the scope resolves nothing. That is a taxonomy-vocabulary
+> gap (English keywords or aliases on the seed content, docs/04), not a planner one, and the refusal is
+> the correct behaviour in the meantime: answering the month's total would be a wrong answer to the
+> question asked. Also still Serbian-only: the six `SUGGESTED_QUESTIONS` a refusal offers, and the
+> refusal copy itself (English-only — §5.14's breach, A-6's work).
 
 ---
 

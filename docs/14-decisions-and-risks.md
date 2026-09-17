@@ -596,6 +596,53 @@ out of scope and would require its own ADR**.
 switch script), route-prefixed locales (`/sr/...`, pointless behind auth), a third-party runtime
 translation service (adds egress for user-visible copy and a network dependency on first paint).
 
+**Amendment (task A-3b, 2026-09-17) — the assistant's cue vocabulary is multilingual in ONE ordered
+rule list.**
+
+**Context.** Decision 3 above makes the *server* locale-agnostic, and the assistant's planner took that
+to mean Serbian-only: every cue phrase and every period phrase was Serbian while `en` is the primary
+catalogue language (the amendment above). Measured consequence: *"what did I spend this month"* was
+refused by an English-primary product.
+
+**Decision.** The planner keeps **one ordered rule list**, and each rule's phrase set covers every
+language the catalogue ships; `resolvePeriod` gains the English phrases and month names. There is no
+per-locale rule table and no `locale` parameter on `planQuestion`.
+
+**Why not a per-locale table.** The rules are **order-sensitive** — `budžet` must beat `koliko`, and a
+trend cue must beat a plain spend cue. Two ordered lists in two languages are two orders to keep in
+step, and the failure when they drift is silent misrouting in *one* language only, which only a speaker
+of that language would notice. One list cannot drift from itself, and the phrase sets sit beside each
+other so a reviewer sees both at once.
+
+**Why not locale-gated.** The planner's job is to understand the question; the *answer's* language comes
+from `locale`, which reaches the narrator's instructions and is a separate concern. Matching both
+languages regardless of the requested locale is strictly more permissive, cannot produce an answer in
+the wrong language, and means an English question typed into a Serbian session still works.
+
+**Consequences, and the discipline it needs.**
+- ⚠️ **An English phrase must be distinctive, because the match is a substring over the folded
+  question.** `net` is deliberately **not** a cash-flow cue — `netflix` contains it — and the cash-flow
+  phrases are `cash flow`/`left over`/`what is left`. `may`, `march` and `august` are ordinary English
+  words, so an English month name resolves only after `in`/`during`. Each of these has a spec case
+  asserting the collision that must **not** happen.
+- ⚠️ **`hasUnresolvedScope` had to become bilingual in the same change, and it is the safety-critical
+  half.** Without the English prepositions, *"how much did I spend on food"* — a scope this Household's
+  Serbian tree has no name for — fell through to `SPEND_TOTAL` and answered the month's whole spend: a
+  true figure to a different question, which is what ADR-017 exists to make impossible.
+- ⚠️ **`salary` and `pension` are still not cues.** `INCOME_TOTAL` is unscoped, so "how much is my
+  pension" would be answered with the month's whole income; the missing piece is an income-scoped
+  template (docs/06 §8.8), not a phrase.
+- ⚠️ **An English question about a Category still refuses** while the seeded tree is Serbian-named with
+  Serbian keywords: the *cue* is understood and the *scope* is not. That is a taxonomy-vocabulary gap
+  (English keywords on the seed tree, docs/04), recorded in docs/06 §8.11, not a planner one.
+- ⚠️ A refusal's **suggestions** are the six Serbian `SUGGESTED_QUESTIONS` even when the question was
+  English — the same no-catalogue breach §5.14 records for the refusal copy, and A-6's work.
+
+**Alternatives rejected (this amendment).** A per-locale rule table (silent drift, above); a
+`locale`-gated match (the planner would then also have to guess the locale's language from a question
+that may be in either); a machine-translation pass over the phrase lists (opaque, unreviewable, and it
+would translate the *entity* names the planner must not touch).
+
 ---
 
 ### ADR-020 — SWC, not tsx/esbuild, as the NestJS development runtime
