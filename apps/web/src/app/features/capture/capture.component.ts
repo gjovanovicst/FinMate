@@ -14,6 +14,7 @@ import {
 } from '../../core/consent/consent.view';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { InstallService } from '../../core/install/install.service';
 import type { TranslationKey } from '../../core/i18n/translations';
 import { CAPTURE_COMMIT, SyncService } from '../../core/offline/sync.service';
 import { TaxonomyService } from '../../core/offline/taxonomy.service';
@@ -867,6 +868,8 @@ export class CaptureComponent {
   private readonly sync = inject(SyncService);
   /** ADR-025 decision 5's taxonomy cache: what the composer's two pickers work from offline. */
   private readonly taxonomy = inject(TaxonomyService);
+  /** docs/07 §4.7's funnel: the second confirmed capture is what opens the Add-to-Home-Screen sheet. */
+  private readonly install = inject(InstallService);
   private readonly auth = inject(AuthStore);
   /** Public because the template reads `routes()`, `saving()` and `error()` off it. */
   readonly consent = inject(ConsentService);
@@ -1327,6 +1330,11 @@ export class CaptureComponent {
           ? `${head} ${this.i18n.t('capture.savedReview', { count: blockedBefore })}`
           : head,
       );
+
+      // docs/07 §4.7's trigger. Only a capture the server **accepted** counts: a queued batch is a
+      // promise, and a replay is a capture that was already counted once (it is the same
+      // `idempotencyKey` coming back). The service decides whether the second one is the moment.
+      if (!replay && committed.length > 0) this.install.noteConfirmedCapture();
 
       this.clearDraft();
     } catch (error) {

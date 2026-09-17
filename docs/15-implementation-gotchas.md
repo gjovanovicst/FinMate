@@ -199,6 +199,20 @@ Everything here has cost time at least once, and most of it fails in a way that 
   fails the build" silently vacuous — the check must read `app.routes.ts`'s lazy imports, and a
   component inside a route (`transaction-detail`, `receipt-attachment`) is not a route.
 
+- **A failed `web:build` empties the served `dist`, and a pipe hides the failure.** `web:build` is
+  `ng build --configuration production`, whose output path is `apps/web/dist/browser`; the builder
+  **clears it before it starts**, so a compile error leaves the *previous* good bundle deleted rather
+  than intact. Anything serving that directory — the `serve-dist.mjs` harness that the offline and
+  funnel checks run against — then answers every request with the SPA fallback's `index.html` or a
+  `404`, which reads as "the app broke" instead of "the build failed". The failure itself is easy to
+  miss for the same reason `nx` output is easy to misread: `npx nx run web:build 2>&1 | tail -4` prints
+  the Nx footer and hides the `Application bundle generation failed` line above it, and the pipeline's
+  exit status is `tail`'s. Run the build without a pipe (or check `${PIPESTATUS[0]}`) before believing
+  it, and rebuild before driving a browser at `dist`. The error that found this was in a **spec** — see
+  group 9's entry about `tsconfig.json` including specs in the production program: the build type-checks
+  them, so a `Window`-typed `Event` constructor in a spec is a build failure, not a test failure.
+
+
 ## 2. Prisma and the database
 
 Prisma 7 plus a tenancy extension plus hand-written SQL means the driver is not the only thing deciding what a query does.
@@ -1385,6 +1399,16 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   "Decline is not offered once permission is held" fails for a reason that has nothing to do with the
   purpose under test — the screen was right and the test was wrong. Find the `article` by the name it
   renders, then query inside it.
+
+- **A synthetic `Event` is not cancelable unless it says so, and `preventDefault()` then does nothing.**
+  `new Event('beforeinstallprompt')` — the way a spec supplies an event no headless browser fires —
+  defaults to `cancelable: false`, so a service that *does* call `preventDefault()` leaves
+  `event.defaultPrevented === false` and the assertion reads as a service defect ("it did not take the
+  event over") when the harness was wrong. The real event is cancelable. Pass
+  `{ cancelable: true }` when the point of the test is that the listener consumes it (4.3.2b's install
+  funnel). The same class of mistake is a synthetic `beforeinstallprompt` dispatched with `page.goto`
+  between two captures: a full page load tears the service down, and the deferred event lives in memory,
+  so navigate through the router instead and re-fire the event after any reload you do need.
 
 ## 10. Cross-cutting rules of the codebase
 

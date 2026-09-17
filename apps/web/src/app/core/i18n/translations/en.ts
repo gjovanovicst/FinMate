@@ -19,6 +19,23 @@ export const en = {
   'app.update.broken': 'Some parts of the app could not be loaded. Reload to continue.',
   'app.update.reload': 'Reload',
   'app.update.reloading': 'Reloading…',
+  // ---- Add to Home Screen (F-26, docs/07 §4.7) ----
+  // Two sheets, because the platforms differ in what is possible: Chromium has a real install API, iOS
+  // Safari has instructions and nothing else. ADR-019: whole sentences, never assembled fragments.
+  'install.title.native': 'Install FinMate',
+  'install.title.ios': 'Add FinMate to the Home Screen',
+  'install.why.native': 'Add it to the Home Screen — and you get notifications.',
+  'install.why.ios': 'On iPhone and iPad, notifications work only from the app added to the Home Screen.',
+  'install.native.note': 'It is free and takes up almost nothing, and you can remove it whenever you like. Notifications still need your permission, which the app asks for separately.',
+  'install.ios.step1': 'Tap Share in the Safari toolbar.',
+  'install.ios.step2': 'Choose “Add to Home Screen”.',
+  'install.ios.step3': 'Tap “Add”.',
+  'install.ios.after': 'Open FinMate from the Home Screen after that. Notifications work only from there.',
+  'install.accept': 'Install',
+  'install.working': 'Opening…',
+  'install.dismiss': 'Not now',
+  'install.understood': 'Got it',
+  'install.failed': 'The browser did not open its install prompt. You can install the app from the browser menu instead.',
 
   // ---- navigation ----
   'nav.dashboard': 'Overview',

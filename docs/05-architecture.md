@@ -312,6 +312,7 @@ Not an afterthought; the metrics below are how the success metrics in
 | `ai.tokens`, `ai.cost_micros` per household | ai | Unit economics and abuse detection |
 | `correction.rate` per household per week | classification | The compounding-moat signal |
 | `sync.pending_age` | web | Offline backlog health |
+| `install.prompt_shown`, `install.accepted` | web | [07 §4.7](07-platform-strategy-mobile-desktop.md#47-install--add-to-home-screen)'s funnel and T3's conversion. **Emitted since 4.3.2b, still with no transport** — see that section's residual |
 | `ledger.balance_drift` | reconcile job | Should always be 0; non-zero is a P1 |
 
 Structured JSON logs with a `requestId` propagated to every AI call, so "why did this transaction get

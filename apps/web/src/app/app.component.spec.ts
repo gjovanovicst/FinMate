@@ -4,7 +4,7 @@
 // `capture.component.spec.ts` for the full reasoning).
 import { initAngularTesting } from '@web-test/angular-testing';
 
-import { provideZonelessChangeDetection, signal } from '@angular/core';
+import { CUSTOM_ELEMENTS_SCHEMA, provideZonelessChangeDetection, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { SwUpdate } from '@angular/service-worker';
@@ -13,9 +13,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthStore } from './core/auth/auth.store';
 import { GraphqlClient } from './core/graphql/graphql.client';
+import { InstallService } from './core/install/install.service';
+import type { InstallPromptKind } from './core/install/install.view';
 import { SyncService } from './core/offline/sync.service';
 import { AppLockService } from './core/app-lock/app-lock.service';
 import { PushService } from './core/push/push.service';
+import { InstallSheetComponent } from './shared/ui/install-sheet/install-sheet.component';
 import { AppComponent } from './app.component';
 
 initAngularTesting();
@@ -49,6 +52,8 @@ async function mount(
   lockState: 'OFF' | 'LOCKED' | 'UNLOCKED' = 'OFF',
   /** ADR-033's third shell state: an unlocked lock whose session could not be restored. */
   restoreFailure: 'UNREACHABLE' | 'REFUSED' | 'SIGNED_OUT' | null = null,
+  /** docs/07 §4.7: what the install service is offering right now, or `null` for nothing. */
+  installKind: InstallPromptKind | null = null,
 ): Promise<{
   fixture: ReturnType<typeof TestBed.createComponent<AppComponent>>;
 }> {
@@ -104,6 +109,19 @@ async function mount(
         },
       },
       {
+        // The funnel's own decisions are `install.view.spec.ts`'s and `install.service.spec.ts`'s
+        // subject; here it is only the question of whether the shell draws the chrome.
+        provide: InstallService,
+        useValue: {
+          promptKind: signal(installKind),
+          busy: signal(false),
+          failed: signal(false),
+          accept: vi.fn(),
+          dismiss: vi.fn(),
+          setOnboarding: vi.fn(),
+        },
+      },
+      {
         provide: AuthStore,
         useValue: {
           isAuthenticated: signal(restoreFailure === null),
@@ -114,6 +132,15 @@ async function mount(
         },
       },
     ],
+  });
+
+  // `fm-install-sheet` is a custom element here, for the reason `setSignalInput`'s doc records: the JIT
+  // renderer cannot bind a signal-input child inside a parent template, so a mounted sheet would throw
+  // NG0950. Its own copy and verbs are `install-sheet.component.spec.ts`'s subject; what the shell owns
+  // is *where* the chrome goes and when it is drawn at all.
+  TestBed.overrideComponent(AppComponent, {
+    remove: { imports: [InstallSheetComponent] },
+    add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
 
   const fixture = TestBed.createComponent(AppComponent);
@@ -182,6 +209,24 @@ describe('AppComponent nav (mounted)', () => {
 
     expect(host.querySelector('fm-sync-chip')).not.toBeNull();
     expect(host.querySelector('a[href="/pending"]')).toBeNull();
+  });
+
+  it('draws the install sheet when the funnel offers one (docs/07 §4.7)', async () => {
+    // Chrome rather than a screen: it opens itself after the second confirmed capture, so it belongs
+    // where the update line is — inside the content region, above the route.
+    const { fixture } = await mount(0, 0, 'OFF', null, 'IOS_INSTRUCTIONS');
+    const host = fixture.nativeElement as HTMLElement;
+    const sheet = host.querySelector('fm-install-sheet');
+
+    expect(sheet).not.toBeNull();
+    expect(sheet?.closest('main')).not.toBeNull();
+    // Above the route: the newest chrome is the first thing read.
+    expect(host.querySelector('main > fm-install-sheet + router-outlet')).not.toBeNull();
+  });
+
+  it('draws nothing when the funnel is not offering', async () => {
+    const { fixture } = await mount(0, 0);
+    expect((fixture.nativeElement as HTMLElement).querySelector('fm-install-sheet')).toBeNull();
   });
 
   afterEach(() => {

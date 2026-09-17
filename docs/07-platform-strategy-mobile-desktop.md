@@ -339,11 +339,46 @@ honest in the CTA ("Dodaj na početni ekran — dobijaš obaveštenja"); record 
 > offline. `pnpm icons:generate` writes them with a **dependency-free** PNG encoder over `node:zlib`.
 > **Verified against Chrome rather than against the files**: CDP `Page.getInstallabilityErrors` returns
 > **none**, the worker is `activated` at `/`, and every icon is fetched and its PNG header decoded rather
-> than trusted. **Not built (4.3.2b) is the funnel above** — the sheet, the 2nd-capture trigger, the
-> 30-day suppression and the two events — and the events currently have **no sink** (there is no analytics
-> endpoint; this document's §11 RUM is unwired), which is that task's own residual. ⚠️ The brand is now
-> written in `index.html`, the manifest and the apple title as well as in `APP_NAME`/`app.name`: a static
-> asset cannot read a config token, so a rename is a search over five places, not one.
+> than trusted. ⚠️ The brand is now written in `index.html`, the manifest and the apple title as well as in
+> `APP_NAME`/`app.name`: a static asset cannot read a config token, so a rename is a search over five
+> places, not one.
+>
+> **Built in 4.3.2b — the funnel above.** `apps/web/src/app/core/install/` holds the decision
+> (`install.view.ts`, pure: every gate in the table is asserted in its spec), the seam the two events go
+> to (`install-events.ts`) and the one object that touches the window (`install.service.ts`);
+> `shared/ui/install-sheet/` is the sheet, rendered by the **shell** beside the update line because
+> `beforeinstallprompt` fires once, early, and long before anybody reaches `/capture`. Records:
+>
+> - **The trigger is a capture the server accepted.** A queued offline batch is a *promise*, and a replayed
+>   commit carries the same `idempotencyKey` — neither counts. `capture.component.ts` reports the one case
+>   that does.
+> - **`offeredAt` is a timestamp and not a flag, and that is the whole of the "When we ask" column.** An
+>   offer that was never answered is not repeated; a **dismissal** is a 30-day pause and nothing more, so
+>   the funnel can come back once the window passes — which a boolean `shown` could not express without
+>   either suppressing for ever or reappearing on every capture (the shape a first draft had).
+> - **Acceptance is measured, never asserted.** Chromium answers through `userChoice`/`appinstalled`; iOS
+>   has no API at all, so its only evidence is a later launch in `display-mode: standalone` — recorded once,
+>   and attributed only if a sheet was actually shown (an install from the browser's own menu is marked
+>   installed and invents no event). There is no "I installed it" button for the same reason, and the event
+>   set is therefore exactly the two §4.7 asks for: *shown without accepted* **is** the T3 gap.
+> - **Which sheet is decided by what the platform can do, not by its name.** A deferred
+>   `beforeinstallprompt` means the real button (Chromium, desktop included — §4.7's row says *Android*
+>   because that is where the funnel matters, not because a desktop Chromium cannot install); iOS without
+>   one gets the instructions; and a browser with neither — Firefox, desktop Safari — gets **nothing**,
+>   because instructions for a menu that does not exist are worse than silence.
+> - **It is not modal and it moves no focus.** §7.4's focus rules are written for a sheet the *user*
+>   opened, and §4.7's prose is explicit that install must never block the app. The panel sits in the
+>   content flow, labels itself as a `region`, and leaves the caret where it was.
+>
+> **Verified live 25/25** against the served production build (both platforms, the dismissal window, the
+> standalone gate, three widths, and the button reached **with Tab**), axe reports **0 violations** with the
+> sheet open at 320 and 1280 px, and the shell budget moved 137.9 → **140.6 KB** of 150.
+> ⚠️ **The residual this task owns:** `install.prompt_shown` and `install.accepted` have **no sink**. The
+> web client has no telemetry transport at all — the same is true of §11's RUM and of `sync.pending_age` in
+> [05 §10](05-architecture.md#10-observability-hooks-built-in-from-day-one) — so the two events are typed,
+> emitted at the right moment, and written to a bounded on-device log that a transport can drain, and T3 is
+> **not measurable until one is wired**. `INSTALL_EVENT_SINK` is the one provider override that fixes it.
+> **Also not built**: nothing distinguishes a member who ignored the sheet from one who never saw it.
 
 ### 4.8 iOS PWA push limitations — stated plainly
 
@@ -372,9 +407,10 @@ changes nothing about the ledger; (4) delivery status is recorded from day one, 
 > `SERVER_OFF` (no VAPID pair) and `UNSUPPORTED`. Nothing prompts without a button press, which is the
 > gesture requirement; the states where a subscription cannot be established offer email, per
 > consequence (2); and `PushService.syncOnStart` re-registers an existing subscription once per app
-> start, which is the last row of the table. What is **not** built is the A2HS install funnel itself
-> (`T3`, docs/02 §4.1's install prompt — 4.3.2, **unblocked 2026-09-17** by the name decision; the
-> screening that decision skipped is R-28).
+> start, which is the last row of the table. The A2HS install funnel itself (`T3`) is **built in 4.3.2b**
+> — §4.7's panel, which this screen's `IOS_INSTALL` state is what makes actionable; ⚠️ the cross-reference
+> this note used to carry (docs/02 §4.1) was wrong: §4.1 is the onboarding wizard and never had an install
+> prompt, so the panel's screen-level record now lives in docs/02 §2.
 
 ### 4.9 Storage eviction risk (IndexedDB)
 

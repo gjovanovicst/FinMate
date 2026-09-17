@@ -19,6 +19,21 @@ export const srLatn: Record<keyof typeof en, string> = {
   'app.update.broken': 'Neki delovi aplikacije nisu mogli da se učitaju. Ponovo učitaj da nastaviš.',
   'app.update.reload': 'Ponovo učitaj',
   'app.update.reloading': 'Učitavam ponovo…',
+  // ---- dodavanje na početni ekran (F-26, docs/07 §4.7) ----
+  'install.title.native': 'Instaliraj FinMate',
+  'install.title.ios': 'Dodaj FinMate na početni ekran',
+  'install.why.native': 'Dodaj na početni ekran — dobijaš obaveštenja.',
+  'install.why.ios': 'Na iPhone-u i iPad-u obaveštenja rade samo iz aplikacije dodate na početni ekran.',
+  'install.native.note': 'Besplatno je i ne zauzima skoro ništa, a možeš je ukloniti kad hoćeš. Za obaveštenja je i dalje potrebna tvoja dozvola, koju aplikacija traži posebno.',
+  'install.ios.step1': 'Tapni Podeli u Safari alatnoj traci.',
+  'install.ios.step2': 'Izaberi „Dodaj na početni ekran”.',
+  'install.ios.step3': 'Tapni „Dodaj”.',
+  'install.ios.after': 'Posle toga otvori FinMate sa početnog ekrana. Obaveštenja rade samo odatle.',
+  'install.accept': 'Instaliraj',
+  'install.working': 'Otvaram…',
+  'install.dismiss': 'Ne sada',
+  'install.understood': 'Razumem',
+  'install.failed': 'Pregledač nije otvorio svoj dijalog za instalaciju. Aplikaciju možeš instalirati iz menija pregledača.',
 
   // ---- navigation ----
   'nav.dashboard': 'Pregled',

@@ -139,6 +139,27 @@ Size classes are [07 §3.1](07-platform-strategy-mobile-desktop.md): `compact` <
 - The household switcher exists in the avatar menu **disabled with a tooltip** (*Dostupno uz deljenje
   domaćinstva*) — the schema supports it and v2 enables it (F-29, ADR-008). It is never a broken control.
 
+#### Add-to-Home-Screen panel — F-26 (chrome, not a screen)
+
+Built in 4.3.2b to [07 §4.7](07-platform-strategy-mobile-desktop.md#47-install--add-to-home-screen)'s table.
+It is chrome for the same reason the update line above is: it opens by itself, on whatever screen the
+second confirmed capture happened to be.
+
+| Property | Behaviour |
+|---|---|
+| Appears | After the **2nd** capture the server **accepted**. Never on first load, never during `/onboarding`, never in `display-mode: standalone`, and never a second time once offered — a *dismissal* is what starts the 30-day clock, and after it the next confirmed capture may offer again |
+| Chromium | `beforeinstallprompt` is taken over (`preventDefault`) and held; the panel's *Instaliraj* runs the browser's own prompt. A refusal from the browser is said out loud, with the browser menu named — the panel does not close as if it worked |
+| iOS Safari | Instructions, not a button: Share → *Dodaj na početni ekran* → *Dodaj*, then open the app from the Home Screen. There is **no** install verb, because Safari exposes no install API |
+| Other browsers | Nothing at all — Firefox and desktop Safari have neither an API nor a menu that matches |
+| Placement | Inside `<main>`, under the update line and above the route. **Not** a modal and **not** a bottom sheet yet: §7.4's focus/trap rules describe a sheet the user opened, and 07 §4.7 forbids blocking the app behind an install, so focus is never moved and the background is never inert |
+| Verbs | *Instaliraj* + *Ne sada* (Chromium) · *Razumem* (iOS). Keyboard-operable; the panel is a labelled `region`, not a dialog |
+| Copy | 07 §4.7's honest CTA — *"Dodaj na početni ekran — dobijaš obaveštenja."* — plus one sentence naming the permission the app still has to ask for separately |
+| Telemetry | `install.prompt_shown` / `install.accepted`, recorded **on the device only** — there is no collector (07 §4.7's residual). Acceptance is a measurement (the browser's answer, or a later standalone launch), never a button that claims it |
+
+⚠️ **Not looked at by a human at any width**, like every screen since `/review` (docs/02 §9). The measured
+facts are 320/768/1280 px with no horizontal overflow and axe clean; whether the panel belongs at the top
+of the content or anchored to the bottom of a phone screen is a judgement for the visual pass.
+
 ### 2.3 The review-queue badge
 
 | Property | Behaviour |

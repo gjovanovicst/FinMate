@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
+import { InstallService } from '../../core/install/install.service';
 import { SyncService } from '../../core/offline/sync.service';
 import { TaxonomyService } from '../../core/offline/taxonomy.service';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
@@ -157,13 +158,19 @@ async function mount(
 ): Promise<{
   fixture: ReturnType<typeof TestBed.createComponent<CaptureComponent>>;
   component: CaptureComponent;
+  /** The install funnel's trigger (docs/07 §4.7): a spy, so "how many confirmed captures" is readable. */
+  install: { readonly noteConfirmedCapture: ReturnType<typeof vi.fn> };
 }> {
+  const install = { noteConfirmedCapture: vi.fn() };
   TestBed.configureTestingModule({
     imports: [CaptureComponent],
     providers: [
       provideZonelessChangeDetection(),
       provideRouter([]),
       { provide: GraphqlClient, useValue: client },
+      // docs/07 §4.7's funnel. The service's own decisions are its own spec's subject; what this screen
+      // owns is *which* commits count as a confirmation.
+      { provide: InstallService, useValue: install },
       // The role is what this screen reads; `accessToken` is what the queue's flush gate reads
       // (ADR-033 decision 4), and a real session is the state every mount here is in unless stated.
       { provide: AuthStore, useValue: { role: signal(role), accessToken: signal('token-1') } },
@@ -186,7 +193,7 @@ async function mount(
   const fixture = TestBed.createComponent(CaptureComponent);
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, component: fixture.componentInstance };
+  return { fixture, component: fixture.componentInstance, install };
 }
 
 describe('CaptureComponent (mounted)', () => {
@@ -297,6 +304,58 @@ describe('CaptureComponent (mounted)', () => {
     expect(component.text()).toBe('');
     expect(component.rows()).toHaveLength(0);
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Added 1.');
+  });
+
+  it('counts a landed capture towards the install funnel (docs/07 §4.7)', async () => {
+    const { fixture, component, install } = await mount(stubClient().client);
+    component.onInput('Lidl 2000');
+    fixture.detectChanges();
+
+    await component.commit();
+
+    expect(install.noteConfirmedCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not count a queued capture, because a queued batch is a promise and not a confirmation', async () => {
+    const client = stubClient();
+    (client.query as ReturnType<typeof vi.fn>).mockImplementation((document: string) => {
+      if (document.includes('CaptureAccounts')) return Promise.resolve(ACCOUNTS);
+      if (document.includes('CaptureCategories')) return Promise.resolve(CATEGORIES);
+      if (document.includes('CaptureParse')) return Promise.resolve(PARSE);
+      return Promise.reject({ status: 0, message: 'Failed to fetch', errors: [] });
+    });
+
+    const { component, install } = await mount(client.client, {
+      enqueueCapture: vi.fn().mockResolvedValue({ seq: 1 }),
+    });
+    component.onInput('Lidl 2000');
+
+    await component.commit();
+
+    expect(install.noteConfirmedCapture).not.toHaveBeenCalled();
+  });
+
+  it('does not count a replay, which is the same capture arriving twice', async () => {
+    const client = stubClient();
+    (client.query as ReturnType<typeof vi.fn>).mockImplementation((document: string) => {
+      if (document.includes('CaptureAccounts')) return Promise.resolve(ACCOUNTS);
+      if (document.includes('CaptureCategories')) return Promise.resolve(CATEGORIES);
+      if (document.includes('CaptureParse')) return Promise.resolve(PARSE);
+      return Promise.resolve({
+        captureCommit: {
+          __typename: 'CaptureCommitSuccessModel',
+          replayed: true,
+          committed: [{ clientRowId: 'row-1', wasReplayed: true, transaction: { id: 'tx-1' } }],
+        },
+      });
+    });
+
+    const { component, install } = await mount(client.client);
+    component.onInput('Lidl 2000');
+
+    await component.commit();
+
+    expect(install.noteConfirmedCapture).not.toHaveBeenCalled();
   });
 
   it('queues the batch and clears the draft when the commit fails retryably (F-26)', async () => {

@@ -15,6 +15,7 @@ import { AppLockService } from './core/app-lock/app-lock.service';
 import { AuthStore } from './core/auth/auth.store';
 import { I18nService } from './core/i18n/i18n.service';
 import type { TranslationKey } from './core/i18n/translations';
+import { InstallService } from './core/install/install.service';
 import { NAV_ITEMS, OVERFLOW_ITEMS, badgeAccessibleName, badgeText } from './core/navigation';
 import { NotificationStore } from './core/notifications/notification.store';
 import { PushService } from './core/push/push.service';
@@ -23,6 +24,7 @@ import { SyncService } from './core/offline/sync.service';
 import { ReviewQueueStore } from './core/review/review-queue.store';
 import { AppLockScreenComponent } from './shared/ui/app-lock/app-lock-screen.component';
 import { AppUpdateComponent } from './shared/ui/app-update/app-update.component';
+import { InstallSheetComponent } from './shared/ui/install-sheet/install-sheet.component';
 import { LanguageSwitcherComponent } from './shared/ui/language-switcher/language-switcher.component';
 import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
 
@@ -51,6 +53,7 @@ import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
     AppUpdateComponent,
     AppLockScreenComponent,
     SyncChipComponent,
+    InstallSheetComponent,
   ],
   template: `
     <a class="skip-link" href="#main">{{ i18n.t('app.skipToContent') }}</a>
@@ -203,6 +206,18 @@ import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
              inside the main region rather than as a fourth grid area, because the layout is named areas
              and a banner that appears only sometimes must not push the nav out of its row. -->
         <fm-app-update />
+        <!-- docs/07 §4.7's Add-to-Home-Screen sheet (task 4.3.2b). Chrome rather than a screen: it
+             opens on its own after the second confirmed capture, wherever the person happens to be,
+             and it is deliberately non-modal — §4.7 forbids blocking the app behind an install. -->
+        @if (install.promptKind(); as kind) {
+          <fm-install-sheet
+            [kind]="kind"
+            [busy]="install.busy()"
+            [failed]="install.failed()"
+            (install)="installApp()"
+            (dismiss)="install.dismiss()"
+          />
+        }
         <router-outlet />
       </main>
     </div>
@@ -569,6 +584,8 @@ export class AppComponent {
   private readonly push = inject(PushService);
   /** Public because the template gates on it: while LOCKED the shell renders only the lock screen. */
   readonly appLock = inject(AppLockService);
+  /** Public because the template renders the sheet from it (docs/07 §4.7, task 4.3.2b). */
+  readonly install = inject(InstallService);
   private readonly snapshot = inject(SnapshotService);
   private readonly sync = inject(SyncService);
   readonly i18n = inject(I18nService);
@@ -667,6 +684,11 @@ export class AppComponent {
       }
     });
 
+    // docs/07 §4.7: never prompt for an install during onboarding. The service enforces it as a fact
+    // rather than the template gating a chrome element, so the rule is asserted in `install.view.spec`
+    // instead of being visible only in the markup.
+    effect(() => this.install.setOnboarding(this.url().startsWith('/onboarding')));
+
     // Entering the offline shell (ADR-033) is a *navigation* the router has already decided the other
     // way: at boot it sent an unauthenticated visitor to `/sign-in` before the lock was unlocked, so
     // the unlock has to move it to the one screen that works. Only when the current route is not
@@ -722,6 +744,11 @@ export class AppComponent {
           void this.notificationsStore.refresh();
         }
       });
+  }
+
+  /** The sheet's *Install*: a promise-returning call from a template handler, so the void is explicit. */
+  installApp(): void {
+    void this.install.accept();
   }
 
   async signOut(): Promise<void> {
