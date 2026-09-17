@@ -1633,6 +1633,19 @@ Short, and load-bearing.
   server kept the old figure. A changed payload needs a new key (which is what a fresh `clientRowId` +
   `idempotencyKey` from a new capture gives it).
 
+- **A second copy of a decision can be *pinned by a test*, so the test passes while the feature is
+  inert.** A-4c made the planner build a refusal's suggestions from what the question resolved — for
+  `kolika mi je penzija`, the first chip became *"Koliko sam potrošio na kategoriji „Penzija" ovog
+  meseca?"*. The planner's unit tests passed and the battery gate passed. **The live API still returned
+  the six canonical strings**, because `assistant.service.ts` built its own list from
+  `SUGGESTED_QUESTIONS` and ignored `plan.suggestions` — and `assistant.integration.spec.ts` asserted
+  exactly that (`expect(answer.suggestions).toEqual(SUGGESTED_QUESTIONS.map(…))`), so the duplicate was
+  not merely unnoticed but **locked in**: the spec encoded the old decision as the correct answer, and no
+  amount of testing the planner could see it. Two lessons, both cheap: **assert the property, not the
+  current value** (that spec now checks every suggestion is answerable end to end, by asking it), and
+  **exercise the seam the user actually reaches** — a pure layer's tests cannot prove the layer above it
+  uses the result. Found by asking the live question instead of trusting the suite.
+
 - **`AGENTS.md` has a hard size budget, and per-task narratives grow it back.** It was split into this
   file at task 2.3.3 because it had passed 64 KB and the harness was silently truncating it — dropping
   the end of the file, including *Do not build without asking*. By 4.2.5 it had grown back to

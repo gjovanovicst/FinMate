@@ -16,7 +16,6 @@ import { LedgerModule } from '../ledger/ledger.module';
 import { RecurringModule } from '../recurring/recurring.module';
 import { TaxonomyModule } from '../taxonomy/taxonomy.module';
 import { NARRATOR, type AssistantNarrator, type NarrateOutcome, type NarrateRequest } from './assistant-narrator';
-import { SUGGESTED_QUESTIONS } from './assistant-intents';
 import { AssistantService, factStrings, NARRATE_PER_DAY, NARRATE_PER_MINUTE } from './assistant.service';
 import { FactAssemblyService } from './fact-assembly.service';
 import { validateNarration } from './numeric-validator';
@@ -345,11 +344,28 @@ describe('the assistant (integration)', () => {
     expect(answer.answered).toBe(false);
     expect(answer.facts.totals).toEqual([]);
     expect(answer.facts.rows).toEqual([]);
-    expect(answer.suggestions).toEqual(SUGGESTED_QUESTIONS.map((suggestion) => suggestion.question));
+    // ⚠️ The suggestions come from the **plan**, not from a second list in this service. A copy lived
+    // here until A-4c and silently discarded the planner's entity-aware suggestions — see docs/15.
+    expect(answer.suggestions.length).toBeGreaterThan(0);
+    expect(answer.suggestions.every((suggestion) => suggestion.length > 0)).toBe(true);
     expect(answer.drillThrough).toBeNull();
     expect(answer.reason).toBe('NO_TEMPLATE_MATCH');
     // The refusal is decided before the narrator is reached, so a model cannot answer it anyway.
     expect(calls).toHaveLength(0);
+  });
+
+  it('offers a question about the entity the question named, and can answer it (A-4c)', async () => {
+    // `koliko je bilo za hranu` resolves the `Hrana` Category and no template matches, so the first
+    // chip is about that Category — and the assertion that matters is the second half: asking it works.
+    scriptNarrations(['You spent 12.000,00 RSD on Hrana.', 'You spent 12.000,00 RSD.']);
+
+    const answer = await ask('koliko je bilo za hranu');
+    expect(answer.intent).toBe('NO_TEMPLATE_MATCH');
+    expect(answer.suggestions[0]).toContain('Hrana');
+
+    const followUp = await ask(answer.suggestions[0] as string);
+    expect(followUp.answered).toBe(true);
+    expect(followUp.intent).toBe('SPEND_BY_CATEGORY');
   });
 
   it('refuses a template whose data does not exist, naming the reason', async () => {

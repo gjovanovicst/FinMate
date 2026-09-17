@@ -13,7 +13,7 @@ import { CategoriesService } from '../taxonomy/categories.service';
 import { MerchantsService } from '../taxonomy/merchants.service';
 import { TagsService } from '../taxonomy/tags.service';
 import { NARRATOR, type AssistantNarrator } from './assistant-narrator';
-import { SUGGESTED_QUESTIONS, type AssistantIntent } from './assistant-intents';
+import type { AssistantIntent } from './assistant-intents';
 import { FactAssemblyService, type AssistantFactsView, type ProvenanceView } from './fact-assembly.service';
 import { renderRefusal, renderTemplateAnswer, type TemplateAnswerInput } from './narration-template';
 import { validateNarration, type NumericPayload } from './numeric-validator';
@@ -205,7 +205,13 @@ export class AssistantService {
         facts: assembled.facts,
         provenance: assembled.provenance,
         drillThrough: null,
-        suggestions: SUGGESTED_QUESTIONS.map((suggestion) => suggestion.question),
+        // ⚠️ From the **plan**, not a local list. A second copy of this decision lived here until A-4c,
+        // and it silently discarded the planner's entity-aware suggestions: the planner resolved the
+        // Category a question named and offered a question the Household can actually have answered,
+        // and the service replaced it with the six canonical strings. The planner is the only layer that
+        // knows this Household's vocabulary, so it is the only layer that can decide what is answerable
+        // — `planner-gate.spec.ts` asserts every one of its suggestions routes and is runnable.
+        suggestions: plan.suggestions ?? [],
         narrationMode: 'TEMPLATE_FALLBACK',
         latencyMs: Date.now() - startedAt,
         costMicros: null,
