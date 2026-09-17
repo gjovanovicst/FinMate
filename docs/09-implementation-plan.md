@@ -267,6 +267,14 @@ configured). The first run of the harness found and fixed two real defects — s
 | 5.5 | Onboarding funnel instrumentation + product analytics | 1.5 | Needed to read the launch metrics |
 | 5.6 | Load test at 10× expected beta volume; cost review vs. the model in [12](12-monetization-and-pricing.md) | 1 | |
 | 5.7 | Beta ops: invite flow, feedback capture, support runbook, incident checklist | 2 | |
+| 5.8 | **The password-reset and email-verify screens — added by a live finding (see below).** docs/02 §2 lists
+`/auth/verify` and `/auth/reset` in the screen inventory and neither exists; the app has sign-in and sign-up only.
+The API half works end to end — `POST /auth/request-password-reset` mails a token, `POST /auth/reset-password`
+consumes it and revokes every session — but the mail links to `${APP_BASE_URL}/reset-password?token=…`, and
+**no such route exists**, so a user who forgets their password can only recover through the API. Verified
+live on the dev stack: the email arrives (Mailhog, *Reset lozinke*), the token resets the password, sign-in
+succeeds — and the link itself lands on a route the router does not know. Found while recovering the demo
+account's password by hand (2026-09-17); schedule with F-28's remaining screens, before beta invites | 1 | F-28 |
 
 **Launch gates (all must pass — these are the same numbers as [10 §6](10-testing-and-quality.md))**
 - AI evaluation gates green on the frozen prompt/model version, against the **full 1 300-case golden

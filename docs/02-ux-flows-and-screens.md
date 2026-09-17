@@ -64,6 +64,14 @@ Household is resolved from the session, never the URL (ADR-008).
 | Route | Screen | F-IDs | Nav slot |
 |---|---|---|---|
 | `/auth/sign-in`, `/auth/sign-up`, `/auth/verify`, `/auth/reset` | Auth | F-28 | — |
+
+> **Build state (4.3.6's follow-up).** Only **`/auth/sign-in`** and **`/auth/sign-up`** exist. `/auth/verify` and
+> `/auth/reset` are specified above and unbuilt, and the password-reset mail the API sends links to
+> `${APP_BASE_URL}/reset-password?token=…` — a **third** path that is not a route either, so the link lands on the
+> shell with nothing in the outlet. The API half is complete and verified live (request → Mailhog → consume → sign
+> in), so this is UI only; scheduled as docs/09's **5.8**, with F-28. Until it ships, a forgotten password is
+> recovered through the API (or by a developer), which is not a beta-launchable state.
+
 | `/onboarding` | Onboarding wizard | F-13 | — |
 | `/` | Dashboard | F-19, F-21 | Danas |
 | `/capture` | Capture | F-05, F-06, F-14 | ➕ centre action |
