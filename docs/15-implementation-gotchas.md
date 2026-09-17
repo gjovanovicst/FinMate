@@ -1289,6 +1289,23 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   One consequence worth knowing when reading that mapping: it fails **closed**, so an endpoint that is
   neither `LOCAL` nor `_EU` is reported NON_EEA rather than defaulting to something reassuring.
 
+- **A disclosure is not a dump of the routing table, and a sentence is not a row.** Two defects in that same
+  mapping, both measured on 2026-09-17 (ADR-034, task 4.3.7a). **(a)** `aiEgress` listed `PARSE` — the
+  configuration key is validated, `assembleAi` routes it, and *nothing in the build invokes the task*:
+  parsing a typed fragment is `packages/nlp`'s job and it is local. A deployment that pointed `PARSE` at a
+  non-EEA endpoint would have disclosed a Chapter V transfer no request could make, and `requiresConsent`
+  would have opened a first-use sheet about nothing. The rows are now the intersection of routed and
+  callable (`AiSeams.calledTasks`, derived from the seams the composition root builds), and a
+  routed-but-uncalled task is **logged** (`<task> routed but not called by this build`) rather than
+  disclosed. **(b)** the card renders one `consent.egress` sentence **per row**, and that copy names the
+  provider and the region, not the task — so with `CLASSIFY` and `NARRATE` both riding `DEEPSEEK_GLOBAL` it
+  printed *"It goes to DEEPSEEK, a data centre outside the European Economic Area."* **twice**. Identical
+  adjacent lines read as a rendering fault, which is what they were; `egressDestinations` deduplicates by
+  `(provider, region)` while the API keeps its per-task rows, because `task` is what makes them auditable.
+  The regression is invisible to a substring assertion — the component spec now **counts** the sentences.
+  The general shape: `aiEgress` describes a capability table, and anything put in front of a person to decide
+  on must first be reduced to what the code actually does.
+
 - **Modelling "no value" as an empty catalogue string is a defect, not a shorthand.** A per-purpose note
   key with `''` for the two purposes that need none fails the i18n spec, which asserts every catalogue value
   in every locale is non-empty (`consent.kind.*.note` did exactly that). The fix is one key for the case

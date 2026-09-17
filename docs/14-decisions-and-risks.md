@@ -2036,6 +2036,77 @@ exactly what the user needs: the queued captures and the cached ledger.
 
 ---
 
+### ADR-034 — The consent disclosure names what a caller can reach, once per destination
+
+**Status:** Accepted (2026-09-17), from the AI-disclosure audit — task 4.3.7a.
+
+**Context.** ADR-032 made the router ask an injected consent gate on every call, and `aiEgress` the
+disclosure a person decides on: [08 §6.6](08-security-privacy-and-compliance.md) requires the sheet to name
+*the provider and the region*. Two measured defects showed that a disclosure is not automatically true just
+because it is rendered from the routing table.
+
+1. **A routed task is not a called task.** `AI_PARSE_PRIMARY` is validated by `loadConfig`, routed by
+   `assembleAi` and therefore listed by `aiEgress` — while nothing in `apps/` invokes `PARSE`:
+   `AiClassifier` exposes only `classify`, and a typed fragment is parsed by `packages/nlp` **on this
+   node**. On a deployment that routes `PARSE` to a non-EEA endpoint the sheet would ask a Household to
+   permit a Chapter V transfer for a request no code can make, and `requiresConsent` would open a first-use
+   sheet about nothing. It is invisible on the dev deployment only because `AI_PARSE_PRIMARY=LOCAL` with no
+   `LOCAL_AI_BASE_URL`.
+2. **A row is per task; a decision is per destination.** Measured live: `aiEgress` returned
+   `CLASSIFY→DEEPSEEK_GLOBAL` and `NARRATE→DEEPSEEK_GLOBAL`, both `AI_DATA_PROCESSING`, and the card renders
+   one `consent.egress` sentence per row — so the disclosure a person read said *"It goes to DEEPSEEK, a
+   data centre outside the European Economic Area."* **twice**. The copy names the provider and the region
+   and not the task, so the two rows were indistinguishable and the repetition read as a rendering fault,
+   which it was.
+
+**Decision.**
+
+1. **Disclose the intersection of routed and callable — never the routing table alone.**
+   `AiSeams.calledTasks` is derived in `makeAiSeams` from the seams it constructs (the seams *are* the
+   callers), and `toAiEgressModels(assembly, calledTasks)` projects onto it. A routed task with no seam is
+   **logged** — `<task> routed but not called by this build` — so an operator sees that the configuration was
+   read and is simply unused, and is **not disclosed**, so no consent is requested for it.
+2. **`PARSE` stays routed.** Removing it from `ROUTED_TASKS` would make `AI_PARSE_PRIMARY` a
+   validated-but-unread key again — the exact defect ADR-032's composition root exists to eliminate — and a
+   future parse seam would then need its own routing change. The capability belongs in the table; the
+   disclosure belongs to the callers.
+3. **One sentence per destination.** The API keeps its rows per task, because that is the truth about
+   routing and `task` is the field that says so; the **client** deduplicates by `(provider, region)` in
+   `egressDestinations`, because "how many sentences to print" is a property of the copy. Two tasks to the
+   same place are one place.
+4. **This does not bump `AI_CONSENT_POLICY_VERSION`.** §6.6 makes a material change to the copy force
+   re-consent, and the test for *material* is whether the set of purposes, providers or regions a person is
+   agreeing to changed. It did not: the second line was a duplicate of the first, so nothing was added,
+   withheld or reworded. A bump here would force every Household to re-consent to a rendering fix — the
+   behaviour that teaches people to click through consent screens.
+
+**Consequences.**
+- ✅ The sheet answers "what will this deployment send", which is the question §6.6 asks, rather than "what
+  could this deployment be configured to send".
+- ✅ A deployment whose only non-EEA route is uncallable asks for nothing, which is what *there is nothing to
+  consent to* should mean.
+- ✅ Adding a real caller is one edit in one branch: the seam and its `calledTasks` entry are recorded
+  together, and `ai-providers.spec.ts` asserts the set.
+- ⚠️ **The drift direction that matters is under-disclosure, and it is not structurally impossible.** A new
+  `router.invoke('X', …)` call added *outside* a seam would not appear in `calledTasks`. The guard is that
+  every router call in `apps/` goes through a seam and `calledTasks` is the seam list — recorded in
+  [15](15-implementation-gotchas.md) rather than left to be rediscovered.
+- ⚠️ **The duplicate was invisible to every test.** `consent.view.spec.ts` asserted `egressFor` returned the
+  rows it was given, and the component spec used one route per purpose. Both now cover the
+  two-rows-one-destination case, and the component spec counts the sentences rather than checking a
+  substring.
+- ⚠️ `aiEgress`'s rows stay per task, so a client that renders them naively reintroduces the duplicate. The
+  dedupe lives in `consent.view.ts` with the copy's other decisions.
+
+**Alternatives rejected.** **(a) Drop `PARSE` from `ROUTED_TASKS`** and amend [04 §9](04-categorization-and-ai-engine.md)
+— makes the disclosure true by shrinking the product's stated capability, and re-creates the dead-config
+defect. **(b) Disclose every routed task and accept the false positive** — asks permission for egress that
+cannot happen, which is the consent theatre §6.6's first-use trigger exists to avoid. **(c) Deduplicate in
+the API** — would drop the `task` field's information from the wire for a rendering reason, and `task` is
+what makes the rows auditable. **(d) Bump the policy version** — decision 4.
+
+---
+
 ## Part 2 — Risk register
 
 Scored as **Likelihood (L)** and **Impact (I)** on 1–5; **Exposure = L × I**. Anything ≥ 12 gets an

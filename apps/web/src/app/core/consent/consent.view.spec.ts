@@ -4,6 +4,7 @@ import {
   AI_CONSENT_POLICY_VERSION,
   CONSENT_KINDS,
   canChangeConsent,
+  egressDestinations,
   egressFor,
   needsConsent,
   purposeToAsk,
@@ -52,6 +53,33 @@ describe('the consent view', () => {
     // `CLOUD_OCR` on this deployment: OCR is unrouted, so there is no OCR decision to put to anybody.
     expect(needsConsent([route()], 'CLOUD_OCR')).toBe(false);
     expect(egressFor([route()], 'CLOUD_OCR')).toEqual([]);
+    expect(egressDestinations([route()], 'CLOUD_OCR')).toEqual([]);
+  });
+
+  it('names a destination once, however many tasks ride it', () => {
+    // Measured live on 2026-09-17: `CLASSIFY` and `NARRATE` both routed to `DEEPSEEK_GLOBAL`, and the
+    // card printed the identical sentence twice. A route row is per task because a router routes tasks;
+    // a sentence is per place, because that is what somebody is deciding about.
+    expect(
+      egressDestinations([route(), route({ task: 'NARRATE' })], 'AI_DATA_PROCESSING'),
+    ).toEqual([{ provider: 'DEEPSEEK', region: 'NON_EEA' }]);
+  });
+
+  it('keeps destinations apart when either half of the pair differs, in the API’s order', () => {
+    expect(
+      egressDestinations(
+        [
+          route(),
+          route({ task: 'NARRATE', endpoint: 'DEEPSEEK_EU', region: 'EEA', requiresConsent: false }),
+          route({ task: 'PARSE', provider: 'OPENAI', region: 'EEA', requiresConsent: false }),
+        ],
+        'AI_DATA_PROCESSING',
+      ),
+    ).toEqual([
+      { provider: 'DEEPSEEK', region: 'NON_EEA' },
+      { provider: 'DEEPSEEK', region: 'EEA' },
+      { provider: 'OPENAI', region: 'EEA' },
+    ]);
   });
 
   it('asks once for an unasked purpose, and never again after a decline or a withdrawal', () => {

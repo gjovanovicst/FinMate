@@ -204,7 +204,7 @@ describe('ConsentPurposeComponent', () => {
     expect(button('Decline')?.disabled).toBe(true);
   });
 
-  it('names every route the purpose actually carries', () => {
+  it('names every destination the purpose actually reaches', () => {
     // A purpose can hold more than one task (text and receipts both ride AI_DATA_PROCESSING here), and a
     // disclosure that named one of two providers would be a half-truth.
     const { text } = mount({
@@ -219,5 +219,16 @@ describe('ConsentPurposeComponent', () => {
     expect(text()).toContain('MISTRAL');
     // One route is outside the EEA, so the sentence is owed regardless of the EEA sibling.
     expect(text()).toContain('transfer outside the EEA');
+  });
+
+  it('says where it goes once, even when two tasks ride the same destination', () => {
+    // Measured live on 2026-09-17 with `CLASSIFY` and `NARRATE` both routed to `DEEPSEEK_GLOBAL`: the
+    // card printed the identical sentence twice, which reads as a rendering fault to the person deciding.
+    const { text } = mount({
+      kind: 'AI_DATA_PROCESSING',
+      routes: [NON_EEA[0]!, { ...NON_EEA[0]!, task: 'NARRATE' }],
+    });
+
+    expect(text().split('It goes to')).toHaveLength(2);
   });
 });

@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, output } f
 
 import { I18nService } from '../../../core/i18n/i18n.service';
 import {
-  egressFor,
+  egressDestinations,
   kindNameKey,
   kindWhatKey,
   needsConsent as needsConsentFor,
@@ -43,9 +43,14 @@ import { syncedAtLabel } from '../../../core/offline/sync.view';
       <h3>{{ i18n.t(nameKey()) }}</h3>
       <p class="muted small">{{ i18n.t(whatKey()) }}</p>
 
-      @for (route of egress(); track route.task) {
+      @for (destination of destinations(); track destination.provider + '|' + destination.region) {
         <p class="muted small">
-          {{ i18n.t('consent.egress', { provider: route.provider, region: i18n.t(regionKey(route.region)) }) }}
+          {{
+            i18n.t('consent.egress', {
+              provider: destination.provider,
+              region: i18n.t(regionKey(destination.region)),
+            })
+          }}
         </p>
       }
       @if (needsConsent()) {
@@ -140,7 +145,8 @@ export class ConsentPurposeComponent {
   readonly nameKey = computed(() => kindNameKey(this.kind()));
   readonly whatKey = computed(() => kindWhatKey(this.kind()));
   readonly state = computed(() => this.record()?.state ?? 'NOT_ASKED');
-  readonly egress = computed(() => egressFor(this.routes(), this.kind()));
+  /** One entry per **distinct destination**, not per routed task — see `egressDestinations`. */
+  readonly destinations = computed(() => egressDestinations(this.routes(), this.kind()));
   readonly needsConsent = computed(() => needsConsentFor(this.routes(), this.kind()));
 
   readonly recordedAtLabel = computed(() => {

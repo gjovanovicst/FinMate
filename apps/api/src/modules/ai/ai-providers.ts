@@ -27,6 +27,15 @@
  * outside the EEA is then reachable only for a Household that has recorded consent for the purpose
  * the task carries. A table that names one and has no gate cannot even be constructed.
  *
+ * ## What is disclosed is what a seam can call, not what the table routes
+ *
+ * The routing table is a *capability*: `AI_PARSE_PRIMARY` is set, validated and routed, and nothing in
+ * this build invokes `PARSE` — parsing a typed fragment is `packages/nlp`'s job and it is local. The
+ * consent disclosure must not describe that as egress, because a sheet asking permission for a call
+ * that can never happen asks about nothing (docs/08 §6.5, §6.6). So {@link AiSeams.calledTasks} is
+ * derived from the seams constructed below — the seams *are* the callers — and
+ * `toAiEgressModels` projects the routing table onto it.
+ *
  * @module apps/api/src/modules/ai
  */
 
@@ -231,6 +240,16 @@ export interface AiSeams {
   /** `null` when no task has a usable endpoint: nothing to construct, nothing to break a circuit. */
   readonly router: AiRouter | null;
   readonly assembly: AiAssembly;
+  /**
+   * The routed tasks a seam in this build can actually invoke, in docs/04 §9's order.
+   *
+   * It exists for the consent disclosure, and it is deliberately **not** `assembly.routedTasks`: a
+   * configuration can route a task no code calls (`PARSE` today — parsing is `packages/nlp`'s and
+   * local), and disclosing that as egress would ask a person to consent to a transfer that cannot
+   * happen. Deriving it here, beside the seams it describes, is what keeps the two from drifting: a
+   * new caller adds its seam and its entry in the same branch.
+   */
+  readonly calledTasks: readonly Task[];
   readonly classifier: AiClassifier;
   readonly narrator: AssistantNarrator;
   readonly ocr: OcrService;
@@ -266,21 +285,47 @@ export function makeAiSeams(config: AppConfig, fetchImpl: FetchLike, gate: Conse
     }
   }
 
+  // The seams are the callers, and `calledTasks` is recorded in the same branch that builds each one:
+  // a task with no seam has no call site, and must not be disclosed as egress (see the module header).
+  let classifier: AiClassifier = UNCONFIGURED_AI_CLASSIFIER;
+  let narrator: AssistantNarrator = UNCONFIGURED_NARRATOR;
+  let ocr: OcrService = UNCONFIGURED_OCR;
+  const calledTasks: Task[] = [];
+
+  if (router !== null) {
+    if (router.endpoints('CLASSIFY').length > 0) {
+      classifier = new RoutedAiClassifier(router);
+      calledTasks.push('CLASSIFY');
+    }
+    if (router.endpoints('NARRATE').length > 0) {
+      narrator = new RoutedNarrator(router);
+      calledTasks.push('NARRATE');
+    }
+    if (router.endpoints('OCR').length > 0) {
+      ocr = new RoutedOcrService(router);
+      calledTasks.push('OCR');
+    }
+  }
+
+  if (router !== null) {
+    // A routed task with no caller is a real configuration, not a mistake — and an operator who set
+    // `AI_PARSE_PRIMARY` deserves to know it is read, routed, and not yet called by anything.
+    const uncalled = assembly.routedTasks.filter((task) => !calledTasks.includes(task));
+    if (uncalled.length > 0) {
+      logger.log(
+        `${uncalled.join(', ')} routed but not called by this build: no seam invokes it, so it is not ` +
+          `disclosed as egress (docs/08 §6.6).`,
+      );
+    }
+  }
+
   return {
     router,
     assembly,
-    classifier:
-      router !== null && router.endpoints('CLASSIFY').length > 0
-        ? new RoutedAiClassifier(router)
-        : UNCONFIGURED_AI_CLASSIFIER,
-    narrator:
-      router !== null && router.endpoints('NARRATE').length > 0
-        ? new RoutedNarrator(router)
-        : UNCONFIGURED_NARRATOR,
-    ocr:
-      router !== null && router.endpoints('OCR').length > 0
-        ? new RoutedOcrService(router)
-        : UNCONFIGURED_OCR,
+    calledTasks,
+    classifier,
+    narrator,
+    ocr,
     embeddings: UNCONFIGURED_EMBEDDINGS,
   };
 }

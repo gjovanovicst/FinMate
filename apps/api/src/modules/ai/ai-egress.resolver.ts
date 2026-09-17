@@ -21,11 +21,11 @@ export class AiEgressResolver {
 
   @Query(() => [AiEgressModel], {
     description:
-      'The routes this deployment would use for the consent-governed tasks, with the region derived from ' +
-      'the endpoint registry. Empty when no endpoint is configured, which is the honest answer: nothing ' +
-      'leaves this server and there is nothing to consent to.',
+      'The routes this deployment would use for the consent-governed tasks **something in this build can ' +
+      'call**, with the region derived from the endpoint registry. Empty when no endpoint is configured, ' +
+      'which is the honest answer: nothing leaves this server and there is nothing to consent to.',
   })
   aiEgress(): AiEgressModel[] {
-    return toAiEgressModels(this.seams.assembly);
+    return toAiEgressModels(this.seams.assembly, this.seams.calledTasks);
   }
 }

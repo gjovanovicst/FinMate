@@ -716,6 +716,18 @@ are removed only by the Household purge, except the §8.5 tombstone.
 > called (`degraded: true`, `usedAi: false`), declining writes `DECLINED` and keeps it refused, and allowing turns
 > the same entry into `decidedBy: AI`. What is **still not built**, and recorded rather than implied:
 > `EVAL_DATASET` consumption (§8.7) and an `audit_log` entry per transition.
+>
+> **What the disclosure is projected from (ADR-034, task 4.3.7a).** `aiEgress` is not a dump of the routing
+> table: a routing table answers "where *could* this go" and §6.6 needs "what will this deployment send". The
+> two differ by every routed task with no call site — `PARSE` today, because `packages/nlp` parses typed
+> fragments locally and nothing invokes the task — so the rows are drawn from `AiSeams.calledTasks`, which the
+> composition root derives from the seams it builds, and a routed-but-uncalled task is logged rather than
+> disclosed. A sheet asking permission for a call that can never happen asks about nothing. The **sentences**
+> are projected once per `(provider, region)` rather than once per task: a live measurement found the card
+> printing *"It goes to DEEPSEEK, a data centre outside the European Economic Area."* twice, since `CLASSIFY`
+> and `NARRATE` both rode `DEEPSEEK_GLOBAL` and the copy names the provider and the region, not the task. The
+> copy version does **not** move for that repair: no purpose, provider or region changed, so nothing a person
+> agreed to is different.
 
 ### 6.7 What degrades without AI consent
 

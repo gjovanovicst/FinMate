@@ -94,6 +94,42 @@ export function egressFor(
   return egress.filter((entry) => entry.purpose === kind);
 }
 
+/** One place a purpose's traffic would reach. */
+export interface EgressDestination {
+  readonly provider: string;
+  readonly region: EgressRegion;
+}
+
+/**
+ * The distinct destinations this purpose's routes reach, in the order the API listed them.
+ *
+ * The route rows are per **task**, because a router routes tasks; a sentence is owed per
+ * **destination**, because that is what a person is deciding about. Two tasks pointing at one provider
+ * and one region are one place, and rendering them twice is how the consent card came to say "It goes
+ * to DEEPSEEK, a data centre outside the European Economic Area." **twice** — measured live on
+ * 2026-09-17, with `CLASSIFY` and `NARRATE` both routed to `DEEPSEEK_GLOBAL`. Presented to somebody
+ * deciding whether to allow egress, a duplicated line reads as a rendering fault, which is what it is.
+ *
+ * Deduplicating here rather than in the API is deliberate: the rows are the truth about routing (and
+ * `task` is part of that truth), while "how many sentences to print" is a property of the copy.
+ */
+export function egressDestinations(
+  egress: readonly AiEgressEntry[],
+  kind: ConsentKind,
+): readonly EgressDestination[] {
+  const seen = new Set<string>();
+  const destinations: EgressDestination[] = [];
+
+  for (const entry of egressFor(egress, kind)) {
+    const key = `${entry.provider}|${entry.region}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    destinations.push({ provider: entry.provider, region: entry.region });
+  }
+
+  return destinations;
+}
+
 /**
  * Does this purpose need permission in this deployment?
  *

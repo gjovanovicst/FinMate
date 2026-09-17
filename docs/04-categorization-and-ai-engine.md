@@ -806,6 +806,18 @@ what the dev `.env` does; verified live end to end — `narrationMode: LLM`, a S
 micros, and withdrawing `AI_DATA_PROCESSING` drops the same question to `TEMPLATE_FALLBACK` with
 `CONSENT_DECLINED` before any socket is opened.
 
+**A routed task is not a called task, and the consent disclosure says so (ADR-034).** `PARSE` is in the
+table above, its primary is validated at boot and `assembleAi` routes it — and nothing in `apps/` invokes it:
+a typed fragment is parsed by `packages/nlp` on this node, and `AiClassifier` exposes only `classify`. A
+configuration that pointed `PARSE` at a non-EEA endpoint therefore produced a *disclosure* of a Chapter V
+transfer that no request could make, and a first-use sheet asking permission for it. `aiEgress` now projects
+the routing table onto the tasks a seam can actually call (`AiSeams.calledTasks`, derived from the seams the
+composition root builds), a routed-but-uncalled task is logged rather than disclosed, and the card renders
+one sentence per destination rather than one per routed task — a live measurement found the same DEEPSEEK /
+non-EEA sentence printed twice, since `CLASSIFY` and `NARRATE` shared it and the copy names provider and
+region, not task. The task stays routed on purpose: removing it would make `AI_PARSE_PRIMARY` a dead config
+key again ([14](14-decisions-and-risks.md), ADR-032 decision 6).
+
 Cross-cutting requirements on every adapter:
 
 - **Timeouts** (2 s parse/classify, 8 s narrate, 20 s OCR) with one retry on transient failure only.

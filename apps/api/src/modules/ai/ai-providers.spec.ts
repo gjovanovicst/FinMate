@@ -8,6 +8,7 @@ import { UNCONFIGURED_AI_CLASSIFIER } from '../classification/ai-classifier';
 import { UNCONFIGURED_EMBEDDINGS } from '../classification/embedding-provider';
 import { UNCONFIGURED_NARRATOR } from '../assistant/assistant-narrator';
 import { UNCONFIGURED_OCR } from '../receipts/ocr';
+import { toAiEgressModels } from './ai-egress.model';
 import { assembleAi, makeAiSeams } from './ai-providers';
 
 /**
@@ -116,6 +117,8 @@ describe('assembleAi — inert when nothing is configured', () => {
     expect(seams.classifier).toBe(UNCONFIGURED_AI_CLASSIFIER);
     expect(seams.narrator).toBe(UNCONFIGURED_NARRATOR);
     expect(seams.ocr).toBe(UNCONFIGURED_OCR);
+    // Nothing is routed, so there is nothing a caller could reach and nothing to disclose.
+    expect(seams.calledTasks).toEqual([]);
     // Rung 5 needs a model and a width, not a host (ADR-021); it stays inert even with a local host.
     expect(seams.embeddings).toBe(UNCONFIGURED_EMBEDDINGS);
   });
@@ -132,6 +135,33 @@ describe('assembleAi — a usable endpoint produces the real seams', () => {
     expect(seams.classifier).not.toBe(UNCONFIGURED_AI_CLASSIFIER);
     expect(seams.narrator).not.toBe(UNCONFIGURED_NARRATOR);
     expect(seams.ocr).not.toBe(UNCONFIGURED_OCR);
+    // `PARSE` is routed and no seam invokes it: a typed fragment is parsed by `packages/nlp`, on this
+    // node. The three that follow are the tasks with a caller (docs/08 §6.6's disclosure).
+    expect(seams.calledTasks).toEqual(['CLASSIFY', 'NARRATE', 'OCR']);
+  });
+
+  it('routes a task nothing calls, and keeps it out of the consent disclosure', () => {
+    // The measured defect (`4.3.7`): `AI_PARSE_PRIMARY` was validated, routed and disclosed, so a
+    // deployment could ask a Household to consent to a non-EEA transfer for a task no code performs.
+    // With PARSE pointed at a non-EEA endpoint and the called task staying local, the disclosure must
+    // contain no consent-requiring row at all — and therefore no sheet is owed.
+    const config = loadConfig({
+      ...BASE_ENV,
+      AI_PARSE_PRIMARY: 'DEEPSEEK_GLOBAL',
+      AI_CLASSIFY_PRIMARY: 'LOCAL',
+      DEEPSEEK_API_KEY: 'sk-test-not-a-real-key',
+      LOCAL_AI_BASE_URL: 'http://localhost:11434',
+    });
+    const seams = makeAiSeams(config, stubFetch().fetch, { permits: () => true });
+
+    expect(seams.assembly.routedTasks).toEqual(['PARSE', 'CLASSIFY', 'NARRATE', 'OCR']);
+    expect(seams.calledTasks).toEqual(['CLASSIFY', 'NARRATE', 'OCR']);
+
+    // Every routed task but `PARSE` rides the local host, so the only non-EEA row the routing table
+    // could produce is the one nothing calls — and the disclosure has none.
+    const rows = toAiEgressModels(seams.assembly, seams.calledTasks);
+    expect(rows.map((row) => row.task)).toEqual(['CLASSIFY', 'NARRATE', 'OCR']);
+    expect(rows.some((row) => row.requiresConsent)).toBe(false);
   });
 
   it('routes DEEPSEEK_GLOBAL once a key exists, and names the endpoint truthfully', () => {

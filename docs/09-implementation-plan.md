@@ -275,7 +275,15 @@ model answers in the Household locale, the fallback in English, which is a *clue
 (b) **`aiEgress` can name a task no code performs** — `PARSE` is routed and disclosed while only `CLASSIFY`
 is ever called (`AiClassifier` has no parse; `packages/nlp` parses locally), so the consent sheet could
 disclose an egress that never happens. Either drop `PARSE` from `ROUTED_TASKS` or make the disclosure name
-what is called; both are small, both need a decision about what the sheet promises | 0.5 | F-28, F-23 |
+what is called; both are small, both need a decision about what the sheet promises. **Decided and (b) closed
+in 4.3.7a, together with a third defect the same audit measured: `aiEgress` returned `CLASSIFY` and `NARRATE`
+both on `DEEPSEEK_GLOBAL`, and the card prints one `consent.egress` sentence per row — so the copy a person
+consented to said *"It goes to DEEPSEEK, a data centre outside the European Economic Area."* twice.**
+[ADR-034](14-decisions-and-risks.md): the disclosure is the intersection of routed and *callable*
+(`AiSeams.calledTasks`, derived from the seams the composition root builds — `PARSE` stays routed so
+`AI_PARSE_PRIMARY` is not dead config again, and a routed-but-uncalled task is logged rather than disclosed),
+and the client renders one sentence per `(provider, region)` while the API keeps its per-task rows. The copy
+version deliberately does **not** move: no purpose, provider or region changed. **(a) ships as 4.3.7b.** | 0.5 | F-28, F-23 |
 | 5.8 | **The password-reset and email-verify screens — added by a live finding (see below).** docs/02 §2 lists
 `/auth/verify` and `/auth/reset` in the screen inventory and neither exists; the app has sign-in and sign-up only.
 The API half works end to end — `POST /auth/request-password-reset` mails a token, `POST /auth/reset-password`

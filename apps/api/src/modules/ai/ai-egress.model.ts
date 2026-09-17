@@ -1,6 +1,6 @@
 import { Field, ObjectType, registerEnumType } from '@nestjs/graphql';
 
-import { isEeaOrLocal } from '@finmate/ai';
+import { isEeaOrLocal, type Task } from '@finmate/ai';
 
 import { consentKindForTask } from '../consent/consent';
 import { ConsentKindEnum } from '../consent/consent.model';
@@ -42,7 +42,9 @@ export class AiEgressModel {
   purpose!: string;
 
   @Field(() => String, {
-    description: 'PARSE, CLASSIFY, NARRATE or OCR — which task this row is about.',
+    description:
+      'Which task this row is about — `CLASSIFY`, `NARRATE` or `OCR`. A task the configuration routes but ' +
+      'no code in this build calls is never listed, because it is not egress a person could consent to.',
   })
   task!: string;
 
@@ -66,15 +68,28 @@ export class AiEgressModel {
 }
 
 /**
- * Project the assembled routing table onto the wire.
+ * Project the assembled routing table onto the wire, restricted to the tasks a caller can reach.
  *
  * Pure, so `ai-egress.spec.ts` can assert every branch without a Nest module — and so the mapping from
  * "an endpoint name" to "a region a person can be told about" has exactly one implementation.
+ *
+ * **`calledTasks` is a filter, not a convenience.** The routing table answers "where *could* this go";
+ * a disclosure has to answer "what will this deployment send", and those differ by every routed task
+ * with no call site in this build. `PARSE` is the live example: `packages/nlp` parses locally, nothing
+ * invokes the task, and a row for it would put a Chapter V transfer in front of a person as something
+ * they could permit — and could be asked to permit — when no request would ever be made. The rows are
+ * therefore drawn from the intersection, and `AiSeams.calledTasks` is derived from the seams themselves
+ * so a real caller cannot be added without appearing here.
  */
-export function toAiEgressModels(assembly: AiAssembly): AiEgressModel[] {
+export function toAiEgressModels(
+  assembly: AiAssembly,
+  calledTasks: readonly Task[],
+): AiEgressModel[] {
   const rows: AiEgressModel[] = [];
 
   for (const task of assembly.routedTasks) {
+    if (!calledTasks.includes(task)) continue;
+
     const endpoint = assembly.routing[task]?.primary;
     if (endpoint === undefined) continue;
 
