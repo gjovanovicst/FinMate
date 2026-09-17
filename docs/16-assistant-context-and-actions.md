@@ -63,14 +63,19 @@ So why do they answer `NOT_BUILT`? Two reasons, and the second is the one that i
 Widening `PlannerContext` with `goals` and `recurringRules` is therefore part of the same slice, and it
 is where `PLANNER_PAGE_SIZE`'s existing cap has to be considered for two more lists.
 
-### A.2 The six moves, each with its cost and its non-goals
+### A.2 The moves, each with its cost and its non-goals
 
-**A-1 · Finish the declared registry.** Four fact builders + `goals`/`recurringRules` in
+**A-1 · Fix the `MONTH_PROJECTION` 500 — and it was not one line (2026-09-17).** Reported as a sign
+bug on a declared, routed intent; it was a **class**. Every assistant total is derived, so eight call
+sites handed a signed `Balance` to a formatter that refuses a negative — a month that spent less than the
+last one, an overspent budget, an overdrawn account. See [06 §8.9](06-api-specification.md).
+
+**A-2 · Finish the declared registry.** Four fact builders + `goals`/`recurringRules` in
 `PlannerContext` + the two slot resolutions. No ADR: [06 §8.1](06-api-specification.md) already declares
 these intents, and ADR-017 already fixes the mechanism. This turns four "I cannot answer that" into four
 answers using methods that exist today.
 
-**A-2 · Widen the cue vocabulary, including English.** The product's primary locale is English
+**A-3 · Widen the cue vocabulary, including English (2026-09-17).** The product's primary locale is English
 ([ADR-019](14-decisions-and-risks.md)) and the planner's cue table is Serbian-only, so *"how much did I
 spend on groceries this month"* is refused by an English-primary product. Two shapes are possible:
 per-locale cue tables, or one **ordered** rule list where each rule carries a phrase set per locale. The
@@ -78,8 +83,6 @@ second is safer — the rules are order-sensitive (`budžet` must beat `koliko`,
 plain spend cue), and a duplicated rule list is how the two locales stop agreeing. Whatever is chosen,
 the test is the same: **every locale the catalogue ships must route the battery** — an English-primary
 product whose planner only reads Serbian is a defect, not a missing feature.
-
-**A-3 · Fix the `MONTH_PROJECTION` 500.** A one-line sign bug on a declared, routed intent.
 
 **A-4 · A fuzzy second planner rung — closed set, no AI. BUILT, MEASURED, REJECTED (2026-09-17).**
 
@@ -112,7 +115,16 @@ calls, and — decisively — the failure mode is different. A wrong cue match r
 answers a *different question confidently*. The embedding rung ADR-021 built and left inert is the same
 idea with a model behind it, and it can be switched on later without changing this design.
 
-**A-5 · Follow-ups, without a conversation store.** A large share of "it doesn't understand me" is not a
+**A-5 · Make the planner read the taxonomy it is handed (DONE, 2026-09-17).** A Category now resolves
+through its **`INCLUDE` keywords** as well as its name — `benzin` is a seeded keyword of `Gorivo`, so the
+capture path already classified a typed `benzin 5000` while a *question* about it could not resolve the
+Category. Names outrank keywords (four score tiers), `EXCLUDE` keywords are never passed (they mean *this
+word does not belong here*, docs/04 §5.4), and a spend question scoped to an **INCOME** Category now
+**refuses** instead of answering a confident `0,00 RSD` — the capture path has reconciled direction since
+2.2.7 and the planner had no equivalent. [06 §8.11](06-api-specification.md) records the decisions and the
+measured effect (battery 51 → 52 of 58).
+
+**A-6 · Follow-ups, without a conversation store.** A large share of "it doesn't understand me" is not a
 missing template — it is *"a prošli mesec?"* asked after a question that already resolved a period.
 `conversationId` is deliberately unbuilt (no conversation store, [06 §8.4](06-api-specification.md)). It
 does not need to be built: **the client already holds the transcript**, so `assistantAnswer` can take
@@ -125,7 +137,7 @@ never a previously resolved entity id.** An entity the user has since deleted or
 answer about a row that no longer exists; if the follow-up needs an entity and does not name one, the
 honest outcome is a refusal that says which entity is missing.
 
-**A-6 · A refusal that is useful. DONE for the suggestions (A-4c, 2026-09-17); the copy is still A-6's.**
+**A-7 · A refusal that is useful. DONE for the suggestions (A-4c, 2026-09-17); the copy is still its own.**
 
 ADR-017 already says the limitation *"must be messaged well ('I can't answer that yet, but I can tell
 you…')"*. The suggestions are no longer six static strings, and — given A-4's measurement — **not**
@@ -141,12 +153,12 @@ suggestion a refusal offers routes to a runnable plan in the context that produc
 and introduced by a noun rather than inflected into the sentence, because generating the accusative of an
 arbitrary Household name is how a suggestion ends up reading like `na odeća i obuću`.
 
-Still A-6's: the refusal **copy** is English-only while the suggestions are Serbian (§5.14's breach). And when the intent *matched* but a required slot did not, say exactly that
+Still A-7's: the refusal **copy** is English-only while the suggestions are Serbian (§5.14's breach). And when the intent *matched* but a required slot did not, say exactly that
 in the Household's own vocabulary (*"Nisam našao kategoriju „X"…"*), not the generic sentence. Also
 translate the refusal and template fallback copy — the money is already formatted in the Household's
 locale and the connectives around it are not.
 
-**A-7 · Measure coverage as a gate, not as an impression.** Phase 2's exit criteria are measured numbers;
+**A-8 · Measure coverage as a gate, not as an impression.** Phase 2's exit criteria are measured numbers;
 the assistant's are not. Add the question battery to `pnpm test:evals` as a **planner gate**: each
 question with an expected intent, a bar on the routed share, and — more important than the bar — an
 assertion that **every unrouted question is unrouted deliberately**, with the reason named. That
@@ -155,7 +167,7 @@ recorded product limitation or a bug.
 
 ### A.3 The one thing Part A cannot decide for itself
 
-A-7's honest version wants real questions. A question is user text about their finances, so recording
+A-8's honest version wants real questions. A question is user text about their finances, so recording
 it is personal data with a **new purpose** ([08](08-security-privacy-and-compliance.md)) — and one of the
 three options is not a technical choice:
 
@@ -309,9 +321,10 @@ One commit per row, per the working agreement. Part A rows are independent of Pa
 | A-4a | the battery as an eval gate (`test:evals` + the fast suite) | A-1..A-3 to have something to measure | coverage becomes a number with a bar — **done** |
 | A-4b | the fuzzy second rung | the measurement above | **rejected**: 3/12 right on held-out questions, 9 wrong answers |
 | A-4c | refusal suggestions built structurally | A-4a | a refusal names what the ledger *can* say about the entity asked about — **done** |
-| A-5 | follow-up context (`previousIntent` + `previousPeriod`) | a [06 §8](06-api-specification.md) contract extension | *"a prošli mesec?"* works |
-| A-6 | useful refusal + i18n of refusal/fallback copy | catalogue entries | ADR-017's "message it well" |
-| A-7 | refusal telemetry | **Q-12** | the gap list becomes data |
+| A-5 | the planner matches `INCLUDE` `CategoryKeyword`s below names, and a spend question scoped to an INCOME Category refuses | A-4a | scope resolves the way the capture path already classifies, and a wrong-direction answer becomes a refusal — **done** |
+| A-6 | follow-up context (`previousIntent` + `previousPeriod`) | a [06 §8](06-api-specification.md) contract extension | *"a prošli mesec?"* works |
+| A-7 | useful refusal + i18n of refusal/fallback copy | catalogue entries | ADR-017's "message it well" |
+| A-8 | refusal telemetry | **Q-12** | the gap list becomes data |
 | **B-1** | **ADR-035: propose writes, never execute them** | **Q-11** | the architectural gate |
 | B-2 | action registry + `ADD_CATEGORY` end to end | B-1 | the first action, no money, trivially undoable |
 | B-3 | `ADD_TRANSACTION` through the existing capture preview | B-2 | highest-value action, ~90 % already built |

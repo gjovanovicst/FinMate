@@ -3635,7 +3635,7 @@ for their signed figures — the assistant was the outlier.
 
 > **Named, not fixed:** two template frames read awkwardly for a negative — `SAFE` (*"You can spend
 > −1.000,00 RSD safely today"*) and `BUDGET` (*"You have −2.000,00 RSD left"*). The facts and the sign
-> are right and the sentence is not a lie, but it is clumsy; that is A-6's copy work and it is recorded
+> are right and the sentence is not a lie, but it is clumsy; that is A-7's copy work and it is recorded
 > here rather than papered over with a special case per frame.
 
 ### 8.10 Goals and recurring rules: the four templates that refused (task A-2, 2026-09-17)
@@ -3681,7 +3681,7 @@ unpaced run is how the first attempt "found" 35 refusals).
 > **Named, not fixed:** `GOAL_PROGRESS` requires a goal to be **named**. A Household with exactly one
 > goal, asked *"koliko sam uštedeo za cilj"*, is refused rather than answered, because resolving the only
 > goal would be the planner inferring a scope the question did not state. That is a product call rather
-> than a bug, and it belongs with A-6's refusal work — the suggestions a refusal offers are still the six
+> than a bug, and it belongs with A-7's refusal work — the suggestions a refusal offers are still the six
 > static ones.
 
 ### 8.11 The cue vocabulary a measured battery found missing (task A-3a, 2026-09-17)
@@ -3797,7 +3797,7 @@ a suggestion ends up reading like `na odeća i obuću`.
 > gap (English keywords or aliases on the seed content, docs/04), not a planner one, and the refusal is
 > the correct behaviour in the meantime: answering the month's total would be a wrong answer to the
 > question asked. Also still Serbian-only: the six `SUGGESTED_QUESTIONS` a refusal offers, and the
-> refusal copy itself (English-only — §5.14's breach, A-6's work).
+> refusal copy itself (English-only — §5.14's breach, A-7's work).
 
 ---
 
