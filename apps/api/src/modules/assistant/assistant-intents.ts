@@ -33,6 +33,7 @@ export const ASSISTANT_INTENTS = [
   'UNCATEGORISED_REVIEW',
   // income & flow
   'INCOME_TOTAL',
+  'INCOME_BY_CATEGORY',
   'NET_CASHFLOW',
   'ACCOUNT_BALANCE',
   'ACCOUNT_BALANCE_ALL',
@@ -197,6 +198,18 @@ export const INTENT_TEMPLATES: Readonly<Record<AssistantIntent, IntentTemplate>>
     optionalSlots: ['period', 'limit'],
     kind: 'NONE',
     shape: 'LIST',
+  },
+  INCOME_BY_CATEGORY: {
+    // A **distinct** provenance string for the same underlying call, deliberately: the read model's
+    // `byCategory` is one method with a `kind`, and reusing `spend.byCategory.v1` here would tell a
+    // reader that an income answer came from a spend query. The registry's own test asserts the strings
+    // are unique, which is what forced the question — and the answer is that the string names the
+    // *question* the figure answers, not the function that happens to serve it.
+    sourceQuery: 'income.byCategory.v1',
+    requiredSlots: ['categoryId'],
+    optionalSlots: ['period'],
+    kind: 'INCOME',
+    shape: 'TOTAL',
   },
   INCOME_TOTAL: {
     sourceQuery: 'income.total.v1',

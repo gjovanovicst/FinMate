@@ -91,13 +91,14 @@ describe('what a refusal offers', () => {
     expect(suggestions[0]).toContain('Hrana');
   });
 
-  it('offers nothing scoped when the entity points the other way', () => {
-    // `kolika mi je penzija` resolves the INCOME Category `Penzija`, and the direction gate refuses
-    // every spend template scoped to it — so the chips must not include one, or the refusal would offer
-    // a chip that refuses in turn. The canonical questions remain, because those *are* answerable.
-    const { suggestions = [] } = planQuestion('kolika mi je penzija', battery.context);
-    expect(suggestions.some((suggestion) => suggestion.includes('Penzija'))).toBe(false);
-    expect(suggestions.length).toBeGreaterThan(0);
+  it('offers an income question when the entity is an income Category', () => {
+    // `kada mi sledeća plata dolazi` resolves the INCOME Category `Plata` and no template answers a
+    // *schedule* question, so the first chip is the amount question for that Category — in the income
+    // direction (A-9), because a spend question scoped to an income Category would refuse in turn.
+    const { suggestions = [] } = planQuestion('kada mi sledeća plata dolazi', battery.context);
+    expect(suggestions[0]).toContain('Plata');
+    expect(suggestions[0]).toContain('zaradio');
+    expect(suggestions.some((suggestion) => suggestion.includes('potrošio na kategoriji „Plata'))).toBe(false);
   });
 
   it('drops a canonical question this Household cannot have answered', () => {

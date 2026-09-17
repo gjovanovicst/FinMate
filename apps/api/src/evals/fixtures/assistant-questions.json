@@ -264,12 +264,11 @@
     {
       "question": "kada mi sledeća plata dolazi",
       "intent": "NO_TEMPLATE_MATCH",
-      "why": "no template aggregates income by Category, and it is really a schedule question (`dueSoon` lists EXPENSE rules only)"
+      "why": "it asks WHEN income arrives, which is a schedule question, and `dueSoon` lists EXPENSE rules only — so an income rule's occurrences are listed nowhere. The amount question it can answer is now offered as a suggestion (A-9, docs/06 §8.12)"
     },
     {
       "question": "kolika mi je penzija",
-      "intent": "NO_TEMPLATE_MATCH",
-      "why": "no template aggregates income by Category: `SPEND_BY_CATEGORY` declares EXPENSE and `INCOME_TOTAL` accepts no categoryId"
+      "intent": "INCOME_BY_CATEGORY"
     },
     {
       "question": "koliko sam platio struju",

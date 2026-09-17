@@ -948,6 +948,19 @@ The tables hold platform content beside the Household’s own rows, which is whe
   global row the Household's own is `update`, whose copy-on-write branch clones it and moves references.
   Onboarding step 4 depends on that, and so does any future "adopt a shipped merchant" path.
 
+- **A `CategoryKeyword` matches as a whole word; a Category *name* may take a Serbian case ending. The
+  two rungs are not interchangeable, and swapping them answers the wrong question.** `zarada` is a
+  keyword of `Plata`, so scoring keyword *stems* let the stem `zarad` match the **verb** `zaradio` and
+  the unscoped question *"koliko sam zaradio ovog meseca"* answered the salary instead of the month's
+  income. The planner's `matchEntityScored` therefore passes `stemScore: null` for keywords and keeps
+  the rung for names (`na hranu` → `Hrana`, `od plate` → `Plata`), because case endings attach to names
+  in a question and never to a list of single tokens. The mirror failure is a missing **spend verb**: only
+  the past tense was listed, so *"koliko ću da platim porez"* fell through to the income branch and was
+  read as `INCOME_BY_CATEGORY` on `Plata` — `plati`/`placam`/`plaćam` (infinitive, future, first person)
+  were added, which does **not** catch the noun `plata`. When a scope resolves but the figure is
+  plausibly someone else's, check both: is the matched token a keyword or a name, and is the question's
+  verb in the direction list?
+
 ---
 
 - **An element with `role="img"` hides everything inside it, including the links a chart needs.** A

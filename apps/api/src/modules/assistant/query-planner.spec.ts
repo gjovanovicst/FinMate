@@ -376,6 +376,47 @@ describe('English questions route the same way (A-3b)', () => {
   });
 });
 
+describe('income scoped by Category (A-9)', () => {
+  it('answers an income Category question from an income template', () => {
+    // `Plata` is an INCOME Category. Before A-9 there was no template that could scope income, so
+    // *"koliko sam zaradio od plate"* answered the month's whole income and *"kolika mi je penzija"*
+    // refused. The frame's verb follows the registry entry's `kind`, so the sentence reads "received".
+    const scoped = plan('koliko sam zaradio od plate');
+    expect(scoped.intent).toBe('INCOME_BY_CATEGORY');
+    expect(scoped.slots.categoryId).toBe('cat-salary');
+    expect(scoped.template.kind).toBe('INCOME');
+  });
+
+  it('keeps the unscoped income question unscoped', () => {
+    // ⚠️ The keyword rung must **not** run for keywords: `zarada` is a keyword of `Plata`, and on the
+    // stem rung it matched the verb `zaradio`, so the unscoped question answered the salary.
+    expect(plan('koliko sam zaradio ovog meseca').intent).toBe('INCOME_TOTAL');
+    expect(plan('how much did I earn this month').intent).toBe('INCOME_TOTAL');
+  });
+
+  it('lets a spend verb win, so a spend question about an income Category still refuses', () => {
+    // The mirror of A-5's gate, and the reason `spendVerb` is hoisted: answering the salary to
+    // "koliko sam potrošio na platu" would be a wrong figure, not a scoped one.
+    const spend = plan('koliko sam potrošio na platu');
+    expect(spend.intent).toBe('NO_TEMPLATE_MATCH');
+    expect(spend.matchedOn).toContain('category:Plata');
+    // …and the future/first-person forms of `to pay` are spend verbs too, or this is read as income.
+    expect(plan('koliko ću da platim porez na imovinu').intent).not.toBe('INCOME_BY_CATEGORY');
+  });
+
+  it('refuses an income question scoped to an EXPENSE Category', () => {
+    expect(plan('koliko sam zaradio na hrani').intent).toBe('NO_TEMPLATE_MATCH');
+    expect(plan('koliko sam zaradio na hrani').matchedOn).toContain('category:Hrana');
+  });
+
+  it('offers an income question about an income Category', () => {
+    // The chip follows the Category's direction too, or it would be a chip that refuses in turn.
+    const { suggestions = [] } = planQuestion('kada mi sledeća plata dolazi', CONTEXT);
+    expect(suggestions[0]).toContain('Plata');
+    expect(suggestions[0]).toContain('zaradio');
+  });
+});
+
 describe('Category keywords and direction (A-5)', () => {
   it('resolves a Category by its keyword when no name matches', () => {
     // `benzin` is a seeded strong keyword of `Gorivo`. The capture path categorises a typed
@@ -689,6 +730,7 @@ describe('every intent is reachable', () => {
       'TRANSACTION_LIST',
       'UNCATEGORISED_REVIEW',
       'INCOME_TOTAL',
+      'INCOME_BY_CATEGORY',
       'NET_CASHFLOW',
       'ACCOUNT_BALANCE',
       'ACCOUNT_BALANCE_ALL',

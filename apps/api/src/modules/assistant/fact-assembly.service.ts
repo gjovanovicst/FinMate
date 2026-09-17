@@ -244,6 +244,14 @@ export class FactAssemblyService {
     TRANSACTION_LIST: (context) => this.listTransactions(context),
     UNCATEGORISED_REVIEW: (context) => this.needsReview(context),
     INCOME_TOTAL: (context) => this.spend(context, {}, 'INCOME'),
+    INCOME_BY_CATEGORY: async (context) => {
+      // The same read model call as `SPEND_BY_CATEGORY`, with `kind: 'INCOME'` — the split-aware
+      // aggregate is one implementation, and the direction is an argument to it rather than a second
+      // query. `scopePhrase` and the `TOTAL_AMOUNT` frame read `plan.template.kind`, so the labelled
+      // sentence ("You received X on Plata") follows from the registry entry rather than from a branch.
+      const categoryIds = await this.subtree(context.householdId, context.plan.slots.categoryId);
+      return this.spend(context, { categoryIds }, 'INCOME');
+    },
     NET_CASHFLOW: (context) => this.netCashflow(context),
     ACCOUNT_BALANCE: (context) => this.accountBalances(context, context.plan.slots.accountId),
     ACCOUNT_BALANCE_ALL: (context) => this.accountBalances(context, undefined),

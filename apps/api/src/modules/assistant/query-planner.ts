@@ -356,7 +356,15 @@ function refusalSuggestions(
   // sentence: generating the accusative of an arbitrary Household name is how a suggestion ends up
   // reading like `na odeća i obuću`.
   if (resolved.category !== null) {
-    add(`Koliko sam potrošio na kategoriji „${resolved.category.path ?? resolved.category.name}" ovog meseca?`);
+    // The verb follows the Category's **direction**: offering a spend question about an income Category
+    // would offer a chip that refuses in turn (the routability filter below would drop it anyway, and
+    // then the refusal would say nothing about the entity the user asked about).
+    const path = resolved.category.path ?? resolved.category.name;
+    add(
+      resolved.category.kind === 'INCOME'
+        ? `Koliko sam zaradio na kategoriji „${path}" ovog meseca?`
+        : `Koliko sam potrošio na kategoriji „${path}" ovog meseca?`,
+    );
   }
   if (resolved.merchant !== null) {
     add(`Koliko sam potrošio kod prodavca „${resolved.merchant.name}" ovog meseca?`);
@@ -571,6 +579,24 @@ const SAVINGS_CUES = [
 
 function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
   const has = (...phrases: string[]): boolean => phrases.some((phrase) => folded.includes(phrase));
+  /**
+   * Whether the question asks what was **spent**.
+   *
+   * Hoisted above the rules that need it, because two of them must yield to it: a recurring-rule *name*
+   * cannot outrank an explicit spend question (A-4), and neither can an income Category — *"koliko sam
+   * potrošio na platu"* is a spend question about a Category that points the other way, and answering
+   * the salary would be worse than refusing it (A-5's direction gate).
+   */
+  const spendVerb = has(
+    'potrosio', 'potrošio', 'potrosila', 'potrošila', 'trosio', 'trošio', 'kupio', 'kupila', 'kupovao',
+    'kupovala', 'platio', 'platila', 'placao', 'plaćao', 'dao', 'dala', 'dali', 'rashod',
+    // `plati` covers the infinitive and the future/first person (`platiti`, `platim`, `plaćam`) without
+    // catching `plata` — the noun does not contain it. Found by A-9: *"koliko ću da platim porez"* was
+    // read as an **income** question scoped to the `Plata` Category, because the only pay-shaped verbs
+    // in the list were the past tense.
+    'plati', 'placam', 'plaćam',
+    'spent', 'spend', 'paid', 'bought', 'purchase', 'cost',
+  );
   const note = (intent: AssistantIntent, phrase: string): AssistantIntent => {
     cues.matchedOn.push(`intent:${phrase}`);
     return intent;
@@ -655,11 +681,6 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
   // before the spend branch was ever reached. The name is still evidence (it is why "kada mi sledeći
   // Netflix dolazi" routes here), it just cannot outrank an explicit spend question about a scope the
   // Household has a name for. Found by the A-4 battery fixture.
-  const spendVerb = has(
-    'potrosio', 'potrošio', 'potrosila', 'potrošila', 'trosio', 'trošio', 'kupio', 'kupila', 'kupovao',
-    'kupovala', 'platio', 'platila', 'placao', 'plaćao', 'dao', 'dala', 'dali', 'rashod',
-    'spent', 'spend', 'paid', 'bought', 'purchase', 'cost',
-  );
   const namesRecurring =
     cues.hasRecurringRule &&
     !(spendVerb && (cues.hasMerchant || cues.hasCategory || cues.hasAccount || cues.hasTag));
@@ -687,10 +708,22 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
   ) {
     return note('NET_CASHFLOW', 'neto');
   }
-  // ⚠️ `salary` and `pension` are deliberately **not** cues: this template is unscoped income, so
+  // ⚠️ `salary` and `pension` are still **not** cues by themselves: `INCOME_TOTAL` is unscoped, so
   // "how much is my pension" would be answered with the month's whole income — a true figure to a
-  // different question (docs/06 §8.8 records the missing income-by-Category template).
-  if (has('zaradio', 'zaradila', 'prihod', 'prihodi', 'primitak', 'income', 'earn', 'got paid', 'my pay')) {
+  // different question. What makes such a question answerable is the **Category it names** (A-9):
+  const incomeVerb = has('zaradio', 'zaradila', 'primio', 'primila', 'prihod', 'prihodi', 'primitak', 'income', 'earn', 'got paid', 'my pay');
+  // A question about an *amount* — as opposed to *when* something arrives, which is a schedule question
+  // and must stay one ("kada mi sledeća plata dolazi" names `Plata` too).
+  const asksAmount = has('kolika', 'koliko', 'how much', 'how many', 'iznos', 'amount');
+  // A **spend** verb yields to nothing here: the question is about money going out, and the Category it
+  // named points the other way, so the spend branch refuses it rather than this branch answering income.
+  if (cues.hasIncomeCategory && !spendVerb && (incomeVerb || asksAmount)) {
+    return note('INCOME_BY_CATEGORY', 'prihod + kategorija');
+  }
+  if (incomeVerb) {
+    // The mirror of the spend direction gate: an income question scoped to an **EXPENSE** Category has no
+    // template either, and answering the unscoped income total would answer a different question.
+    if (cues.hasCategory) return note('NO_TEMPLATE_MATCH', 'kategorija je rashod');
     return note('INCOME_TOTAL', 'prihod');
   }
   // `imam na računu` is the phrasing people actually use ("koliko imam na računu"), and it was not a
@@ -848,7 +881,8 @@ function matchEntityScored(
     entity: NamedEntity,
     text: string,
     exactScore: number,
-    stemScore: number,
+    /** `null` disables the case-ending rung — see the keyword loop below for why that matters. */
+    stemScore: number | null,
   ): void => {
     const foldedName = normaliseForMatching(text);
     if (foldedName.length < 2) return;
@@ -859,6 +893,7 @@ function matchEntityScored(
       candidates.push({ entity, score: exactScore + foldedName.length, exact: true });
       return;
     }
+    if (stemScore === null) return;
 
     const stem = longestSharedStem(foldedName, words);
     if (stem !== null) candidates.push({ entity, score: stemScore + stem, exact: false });
@@ -867,7 +902,13 @@ function matchEntityScored(
   for (const entity of entities) {
     for (const name of namesOf(entity)) consider(entity, name, SCORE.nameExact, SCORE.nameStem);
     for (const keyword of keywordsOf?.(entity) ?? []) {
-      consider(entity, keyword, SCORE.keywordExact, SCORE.keywordStem);
+      // ⚠️ A keyword matches as a **whole word only** — the case-ending rung is *disabled*, not merely
+      // scored lower. A name takes Serbian case endings in a question ("na hranu", "od plate"); a
+      // keyword is a single token the tree lists, and letting it take the stem rung made a **verb**
+      // resolve a Category: `zarada` is a keyword of `Plata`, so the stem `zarad` matched `zaradio`,
+      // and *"koliko sam zaradio ovog meseca"* — the unscoped income question — answered the salary
+      // instead of the month's income. Exact matching keeps `benzin` working and leaves the verb alone.
+      consider(entity, keyword, SCORE.keywordExact, null);
     }
   }
 

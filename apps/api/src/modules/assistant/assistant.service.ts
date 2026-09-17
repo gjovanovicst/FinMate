@@ -119,6 +119,7 @@ const DRILL_ROUTES: Readonly<Record<AssistantIntent, DrillRoute | null>> = {
   TRANSACTION_LIST: { route: '/transactions', period: 'plan' },
   UNCATEGORISED_REVIEW: { route: '/review', period: 'none', needsReview: true },
   INCOME_TOTAL: { route: '/transactions', kind: 'INCOME', period: 'plan' },
+  INCOME_BY_CATEGORY: { route: '/transactions', kind: 'INCOME', period: 'plan' },
   NET_CASHFLOW: { route: '/transactions', period: 'plan' },
   ACCOUNT_BALANCE: { route: '/accounts', period: 'none' },
   ACCOUNT_BALANCE_ALL: { route: '/accounts', period: 'none' },

@@ -3214,6 +3214,7 @@ enum AssistantIntent {
 
   # income & flow
   INCOME_TOTAL
+  INCOME_BY_CATEGORY
   NET_CASHFLOW
   ACCOUNT_BALANCE
   ACCOUNT_BALANCE_ALL
@@ -3477,14 +3478,14 @@ them would have published a contract the API could not keep. The module was regi
 >   **typed** `Maksi 2000` resolves the `Maxi` Merchant in the classifier, so the fix belongs in
 >   `packages/nlp` (an `x`↔`ks` pair, or a seeded alias on the copy-on-write Merchant) and it changes
 >   stored keywords, which is why it is not a one-line change. **Recorded, unscheduled.**
-> - **`kolika mi je penzija` / `kada mi sledeća plata dolazi` are a REGISTRY gap** — `Penzija` and `Plata`
->   are INCOME Categories and both resolve, but **no template aggregates income by Category**:
->   `SPEND_BY_CATEGORY` declares `kind: 'EXPENSE'`, and `INCOME_TOTAL` accepts no `categoryId`. Routing
->   them to the income total would answer "how much did I earn" rather than "how much is my pension", so
->   the refusal is correct and the missing piece is a direction-aware category template — a registry
->   change (the plan carries the template's `kind`, and the narration verb follows it). **Recorded,
->   unscheduled**; the second question is additionally a *schedule* question, and `dueSoon` filters
->   `kind: 'EXPENSE'`, so income occurrences are not listed either.
+> - **`kolika mi je penzija` / `kada mi sledeća plata dolazi` were a REGISTRY gap — FIXED in A-9 (§8.12).**
+>   `Penzija` and `Plata` are INCOME Categories and both resolved, but no template aggregated income by
+>   Category: `SPEND_BY_CATEGORY` declares `kind: 'EXPENSE'` and `INCOME_TOTAL` accepts no `categoryId`.
+>   `INCOME_BY_CATEGORY` now closes it — the registry gained one member, the builder is the same
+>   split-aware `byCategory` call with `kind: 'INCOME'`, and the narration verb follows the entry's `kind`.
+>   The *second* question is still a gap for its own reason: it asks **when** money arrives, which is a
+>   schedule question, and `dueSoon` filters `kind: 'EXPENSE'` — so income occurrences are not listed and
+>   the refusal now offers the amount question about `Plata` instead.
 > 6. **Two misroutes the A-4 battery fixture found before the gate was written — both FIXED (2026-09-17).**
 >    They are worth reading together, because one *lowered* the answered count and improved the product.
 >    - **`koliko sam potrošio na benzin` was answered with a pharmacy's total.** The planner's stem rung
@@ -3790,6 +3791,49 @@ a suggestion ends up reading like `na odeća i obuću`.
 > (§8.8 item 6), and the fixes took the answered count **down** — 52 → 51 — because a wrong answer
 > became a refusal. An answered count rewards exactly the outcome ADR-017 forbids, so the gate is
 > *behaves as declared* and the share is only a floor.
+
+### 8.12 Income scoped by Category (task A-9, 2026-09-17)
+
+The registry had **no template that could scope income**. `SPEND_BY_CATEGORY` declares
+`kind: 'EXPENSE'` and `INCOME_TOTAL` accepts no `categoryId`, so *"kolika mi je penzija"* refused while
+the Household's tree named `Penzija` and the ledger held the figure. Routing it to `INCOME_TOTAL` would
+have answered "how much did I earn this month" — a true figure to a different question.
+
+| Decision | Built | Why |
+|---|---|---|
+| One **new intent**, not a direction-aware `SPEND_BY_CATEGORY` | `INCOME_BY_CATEGORY`, `kind: 'INCOME'`, `shape: 'TOTAL'`, `requiredSlots: ['categoryId']` | The registry declares a direction per template and §8.1 says adding a member is a schema change; making an existing entry's `kind` mean "whichever the Category is" would turn a declaration into a runtime inference, and every `Record<AssistantIntent, …>` in the module (templates, builders, frames, drill routes) fails `tsc` until the new member is handled — which is what caught four missing entries in this very change. |
+| The builder is the **same call** with a different `kind` | `this.spend(context, { categoryIds }, 'INCOME')` — no second aggregate | The split-aware `SpendReadModel.byCategory` is one implementation; the direction is an argument to it. `scopePhrase` reads the plan's resolved slot and the `TOTAL_AMOUNT` frame reads `template.kind`, so the sentence *"You received X on Plata"* follows from the registry entry rather than from a branch nobody would remember to update. |
+| A **distinct** `sourceQuery` | `income.byCategory.v1`, not `spend.byCategory.v1` | The registry's own test asserts the provenance strings are unique — and it is right to: the string names the *question* the figure answers, and reusing a spend label would tell a reader that an income answer came from a spend query. |
+| A **spend verb wins** over the new rule | `spendVerb` is hoisted above the income branch | *"koliko sam potrošio na platu"* names the same Category, and answering the salary would be a wrong figure rather than a scoped one. With a spend verb present the question reaches the spend branch and refuses (A-5's gate). |
+| An income question scoped to an **EXPENSE** Category refuses | The mirror of the gate above | *"koliko sam zaradio na hrani"* has no template either, and the unscoped income total would answer a different question. |
+| A refusal about an INCOME Category offers an **income** question | `refusalSuggestions` follows the Category's direction | A spend chip about an income Category is unroutable, so the routability filter would drop it and the refusal would say nothing about the entity the user asked about. |
+
+**Two defects this closed on the way, both found by the fixture rather than by a user:**
+
+- **The keyword rung was not actually exact-only.** A-5's rule scored keyword stems lower rather than
+  disabling the rung, so `zarada` — a keyword of `Plata` — matched the **verb** `zaradio` on the stem
+  `zarad`, and *"koliko sam zaradio ovog meseca"*, the **unscoped** income question, answered the salary.
+  The rung is now disabled for keywords (`stemScore: null`); names keep it, because Serbian case endings
+  attach to names in a question (`na hranu`, `od plate`).
+- **`plati` was not a spend verb.** Only the past tense was listed, so *"koliko ću da platim porez"* was
+  read as an **income** question scoped to `Plata` and answered the salary. `plati`/`placam`/`plaćam`
+  cover the infinitive and the future/first person without catching the noun `plata`, and they also fix
+  *"koliko ću da platim struju"* → `SPEND_BY_CATEGORY`.
+
+**Verified live 6/6** (`/tmp/verify-a9.mjs`) and asserted against Postgres in
+`fact-assembly.integration.spec.ts` (a 150.000 RSD salary filed under `Plata` is what
+`INCOME_BY_CATEGORY` returns, labelled *Income on Plata*, and the same call scoped to an EXPENSE Category
+is a true zero). **The battery is 53 of 58 answerable (91.4 %)** — `kolika mi je penzija` flipped from
+*refused* to *answered*, a reviewed edit to the fixture. The five declared refusals that remain are four
+gaps — the `x`↔`ks` fold pair, seed content for `kirija`/English, and the income *schedule* question
+named below — plus `koliko sam potrošio na platu`, whose refusal is **correct**: `Plata` is an INCOME
+Category, so no scoped spend figure exists to give.
+
+> **Named, not fixed:** a question that asks **when** income arrives (*"kada mi sledeća plata dolazi"*)
+> still refuses, because `RecurringService.dueSoon` filters `kind: 'EXPENSE'` — an income rule's
+> occurrences are not listed anywhere. The refusal now offers the amount question about `Plata`, which is
+> the honest thing it *can* answer. Listing income occurrences is a change to `dueSoon` and to the
+> `/recurring` screen's own reading, so it is recorded rather than slipped in here.
 
 > **Named, not fixed (A-3b's own residual):** an English question **about a Category** still refuses,
 > because the seeded tree is Serbian-named with Serbian keywords — *"how much did I spend on food"* is

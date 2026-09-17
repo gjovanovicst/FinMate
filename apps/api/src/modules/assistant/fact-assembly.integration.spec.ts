@@ -64,6 +64,7 @@ describe('fact assembly (integration)', () => {
   let lidlId: string;
   let holidayGoalId: string;
   let phoneGoalId: string;
+  let salaryId: string;
   let netflixRuleId: string;
   let gymRuleId: string;
   let planner: PlannerContext;
@@ -171,6 +172,13 @@ describe('fact assembly (integration)', () => {
         data: { id: uuidv7(), name: 'Gorivo', kind: 'EXPENSE' },
       });
       fuelId = fuel.id;
+
+      // An INCOME Category, which is what A-9's `INCOME_BY_CATEGORY` scopes to. The month's salary row
+      // below is filed under it, so the template has a non-zero figure to be judged on.
+      const salary = await prisma.client.categories.create({
+        data: { id: uuidv7(), name: 'Plata', kind: 'INCOME' },
+      });
+      salaryId = salary.id;
 
       const lidl = await prisma.client.merchants.create({
         data: { id: uuidv7(), household_id: householdId, name: 'Lidl' },
@@ -319,6 +327,7 @@ describe('fact assembly (integration)', () => {
       day: '2026-09-01',
       description: 'Plata',
       kind: 'INCOME',
+      categoryId: salaryId,
     });
     // A 999.000 PENDING row and a 20.000 uncategorised row flagged for review: the first must not
     // contribute to anything (I-7), the second must contribute to spend and appear in the queue.
@@ -368,6 +377,7 @@ describe('fact assembly (integration)', () => {
         { id: foodId, name: 'Hrana', path: 'Hrana' },
         { id: marketId, name: 'Supermarket', path: 'Hrana / Supermarket' },
         { id: fuelId, name: 'Gorivo', path: 'Gorivo' },
+        { id: salaryId, name: 'Plata', path: 'Plata', kind: 'INCOME' },
       ],
       merchants: [{ id: lidlId, name: 'Lidl' }],
       accounts: [{ id: accountId, name: 'Tekući' }],
@@ -721,6 +731,9 @@ describe('fact assembly (integration)', () => {
     // trusting that a future edit did not reach for a cast.
     const available: readonly (readonly [AssistantIntent, Partial<ResolvedSlots>])[] = [
       ['SPEND_BY_CATEGORY', { categoryId: foodId }],
+      // A-9: income scoped by Category — the same test's own goal fixture is an EXPENSE Category, so
+      // the slot is supplied directly rather than through a question.
+      ['INCOME_BY_CATEGORY', { categoryId: foodId }],
       ['SPEND_BY_MERCHANT', { merchantId: lidlId }],
       ['SPEND_BY_ACCOUNT', { accountId }],
       ['SPEND_BY_TAG', { tagId }],
@@ -750,6 +763,21 @@ describe('fact assembly (integration)', () => {
   // ---------------------------------------------------------------------------------------------
   // Goals and recurring rules (A-2) — the four templates that used to answer NOT_BUILT
   // ---------------------------------------------------------------------------------------------
+
+  it('answers income scoped to a Category, from the same split-aware aggregate (A-9)', async () => {
+    const result = await assemble(planFor('INCOME_BY_CATEGORY', { categoryId: salaryId }));
+
+    expect(result.available).toBe(true);
+    // 150.000 of September income is filed under `Plata`; the expense categories are a different kind,
+    // so the same call with `kind: 'INCOME'` cannot pick them up.
+    expect(result.facts.totals[0]?.money.amountMinor).toBe('15000000');
+    expect(result.facts.totals[0]?.label).toBe('Income on Plata');
+    expect(result.facts.formatted['scope']).toBe('on Plata');
+    expect(result.provenance.sourceQuery).toBe('income.byCategory.v1');
+    // …and an EXPENSE Category has nothing to contribute to it.
+    const wrongDirection = await assemble(planFor('INCOME_BY_CATEGORY', { categoryId: foodId }));
+    expect(wrongDirection.facts.totals[0]?.money.amountMinor).toBe('0');
+  });
 
   it('reports progress toward a goal from the calculator the screen uses (F-18)', async () => {
     const result = await assemble(planFor('GOAL_PROGRESS', { goalId: holidayGoalId }));
