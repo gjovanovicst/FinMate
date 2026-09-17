@@ -26,7 +26,7 @@ Non-negotiables inherited from the ADR log ([14](14-decisions-and-risks.md)); re
 | ADR-011 | One ledger currency per household; currency selectors are read-only, not broken-looking. |
 | ADR-012 | No Open Banking screens, no native-app screens. "Add an account" is manual. |
 | ADR-013 | Single-node deployment: no tenant/plan administration UI. |
-| ADR-014 | The name is undecided. **No user-facing string hardcodes a brand**; the shell renders an `APP_NAME` config token. |
+| ADR-014 | **The name is `FinMate`** (owner decision 2026-09-17; screening outstanding, R-28). **No user-facing string hardcodes a brand** — the shell renders an `APP_NAME` config token, so a rename stays one commit plus a manifest. |
 
 **Vocabulary in copy.** §10 maps canonical terms to Serbian UI words (`Merchant` → **prodavac**). Those
 are translations, not aliases: the entity is still `Merchant` in prose, code and the API.
@@ -1418,4 +1418,4 @@ a string.
 2. Never *AI je odlučio* without stating the confidence and offering the alternative.
 3. Never a bare number: every amount is produced by `ui-money` with its currency.
 4. Never promise more than the system knows: *nisam siguran* is a complete, acceptable sentence.
-5. Never a brand name in copy until ADR-014 is closed; the shell renders `APP_NAME`.
+5. Never a brand name in copy — the shell renders `APP_NAME`; ADR-014 is decided (`FinMate`) and the rule outlives it, because R-28 may still force a rename.

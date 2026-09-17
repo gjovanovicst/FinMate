@@ -360,7 +360,8 @@ changes nothing about the ledger; (4) delivery status is recorded from day one, 
 > gesture requirement; the states where a subscription cannot be established offer email, per
 > consequence (2); and `PushService.syncOnStart` re-registers an existing subscription once per app
 > start, which is the last row of the table. What is **not** built is the A2HS install funnel itself
-> (`T3`, docs/02 §4.1's install prompt — 4.3.2, blocked on the product name).
+> (`T3`, docs/02 §4.1's install prompt — 4.3.2, **unblocked 2026-09-17** by the name decision; the
+> screening that decision skipped is R-28).
 
 ### 4.9 Storage eviction risk (IndexedDB)
 

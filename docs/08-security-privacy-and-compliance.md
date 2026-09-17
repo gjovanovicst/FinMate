@@ -11,7 +11,7 @@ recovery path — trust loss is product loss ([00](00-executive-summary.md)).
 [ADR-008](14-decisions-and-risks.md) (Household-scoped from day one) · [ADR-009](14-decisions-and-risks.md) (confidence gates) ·
 [ADR-010](14-decisions-and-risks.md) (learning by rule synthesis) · [ADR-011](14-decisions-and-risks.md) (single ledger currency) ·
 [ADR-012](14-decisions-and-risks.md) (native + Open Banking deferred) · [ADR-013](14-decisions-and-risks.md) (single-node Compose) ·
-[ADR-014](14-decisions-and-risks.md) (name undecided) ·
+[ADR-014](14-decisions-and-risks.md) (name `FinMate`, screening outstanding as R-28) ·
 [ADR-016](14-decisions-and-risks.md) (offline capture via client IDs + outbox) ·
 [ADR-017](14-decisions-and-risks.md) (assistant constrained query planner) ·
 [ADR-018](14-decisions-and-risks.md) (self-hosted S3-compatible object storage).

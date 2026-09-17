@@ -159,6 +159,7 @@ technical feasibility — it is onboarding cold-start and retention, which is wh
 disproportionate effort on knowledge seeding, correction UX, and measurement rather than on model
 choice.
 
-Two decisions still need a human: the **product name** (FinMate is taken —
-[13](13-brand-and-naming.md)) and the **mobile delivery route** (PWA-first vs. native shell, with a
-recommendation in [07](07-platform-strategy-mobile-desktop.md)). Neither blocks Phase 0.
+The product name was decided on 2026-09-17 — **`FinMate`**, the placeholder, against the screening advice
+in [13](13-brand-and-naming.md), with the skipped checks carried as **R-28**. One decision still needs a
+human: the **mobile delivery route** (PWA-first vs. native shell, with a recommendation in
+[07](07-platform-strategy-mobile-desktop.md)). It does not block Phase 0.

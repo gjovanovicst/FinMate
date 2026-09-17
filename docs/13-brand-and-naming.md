@@ -2,7 +2,13 @@
 
 **Status:** Proposal under [ADR-014](14-decisions-and-risks.md) (product name undecided) · **Owner:** product lead · **Blocks:** nothing in Phase 0; everything public from Phase 5 onward.
 
-> **TL;DR.** The working title **FinMate is unusable** — it is an existing finance product, as are
+> **Decided 2026-09-17: the product name is `FinMate`** — the owner's decision, recorded in
+> [ADR-014](14-decisions-and-risks.md#adr-014--product-name-is-undecided-finmate-is-a-working-title-only)
+> and carried as **R-28**. This document's screening still says the opposite, and that is deliberate: the
+> analysis below is what the risk is measured against, and **no trademark, domain or app-store check was
+> run**. Read the recommendation as advice the owner declined, not as a stale conclusion.
+>
+> **TL;DR (screening result, unchanged).** The working title **FinMate is unusable** — it is an existing finance product, as are
 > **Finora, Finio** and **Monevo** (established in the source conversation). [ADR-014](14-decisions-and-risks.md)
 > records the name as *undecided*. This document fixes the weighted criteria, scores the source
 > conversation's 20 candidates, adds 20 new ones, and **recommends `Ostava`**, with `Vedro` and
@@ -52,6 +58,7 @@ Three independent axes, any one disqualifying:
 > **ADR-014 — Product name is undecided; FinMate is a working title only.**
 > **Status:** Open. **Context:** FinMate, Finora, Finio and Monevo are existing finance products; the workspace and doc headers nonetheless use FinMate.
 > **Decision:** the product name is *not* FinMate, and stays unresolved until the screening checklist below is executed.
+> **Amended 2026-09-17:** the owner decided the name **is** `FinMate` (ADR-014's amendment, R-28) without executing that checklist.
 > **Consequences:** (a) no user-facing artefact may ship named FinMate; (b) everything expensive to rename later — the PWA manifest name, the npm scope (ADR-004), the email sending domain, the storage bucket prefix, the legal trading name — is deferred or built behind one constant; (c) the name must be frozen before public beta, at the Phase 5 gate ([09 §7](09-implementation-plan.md#7-phase-5--hardening--beta-weeks-1516-14-pd)).
 > A rename is a configuration change, not a refactor ([§11](#11-rename-execution-plan)).
 
