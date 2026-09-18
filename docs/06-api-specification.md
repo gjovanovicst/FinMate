@@ -4025,6 +4025,22 @@ and matching one here would turn every unanswerable question containing a number
 The assistant needs an imperative; `dodaj kafu 180` and `dodaj trošak kafa 180` are the two shapes it
 takes.
 
+**The transaction card (task B-3b, 2026-09-18).** `lines` is what the card draws: each row's text, its
+amount **through `fm-money`**, the Category the pipeline chose, the day it will be filed under, and — when
+the confidence gate will file it — that it goes to the review queue. The sentence stays above it, so the
+amount is readable even before the rows are. Two consequences worth stating:
+
+- **The account is a control, not a statement.** When the diff's `accountId` row is flagged `defaulted`,
+  the card fetches the Household's live Accounts (lazily, once, and only for a card that offers it) and
+  renders a picker whose change re-proposes with that `accountId`. That is what makes duplicating
+  `/capture`'s preselection rule safe rather than silent — a guess the reader can correct. An archived
+  Account is never offered, and a failed list leaves the row showing the Account the server named with no
+  control at all, because a *convenience* control that cannot work must not become an error on a
+  confirmation the reader can already make.
+- **The archived-Account filter and the picker are the client's only account logic.** Which Account the
+  proposal fills is the server's decision (`defaulted`), so the two cannot disagree about what the row
+  says.
+
 **The card, and the ordering it needed (task B-2b, 2026-09-17).** `/assistant` renders the proposal
 after the answer, and **only after a refusal** — the client asks `assistantAnswer` first, and asks
 `assistantProposeAction` only when `answered: false`. The order is the second line of defence behind the
@@ -4094,6 +4110,24 @@ toggle, which is what keeps the control on the card), a named account wins over 
 an account from another Household is refused before a button is offered. Both integration suites build
 the service **from `AssistantModule`**, with only the store overridden, so a missing module import is a
 boot failure rather than a surprise.
+
+**B-3b verified**: `assistant.view.spec.ts` 41 and `assistant.component.spec.ts` 33 — `previewLines`
+reading `undefined` as none (a proposal stored before the field existed), `accountRow` refusing a row with
+no machine value, `dayLabel` shared with the provenance range so one day cannot be formatted two ways, the
+rows and their amount through `fm-money`, the review note, the picker offering **live** Accounts only and
+re-proposing with the chosen one, no picker — or query — when the question named the account, and the
+per-action result half. **Browser 19/19** (Playwright on `:4200`): the card under the refusal with its row
+and the amount in the money component, the Category and the day, the picker listing the Household's
+Accounts and re-proposing with the chosen one, the confirm writing the row to that Account, the entry
+appearing on `/transactions`, the undo removing it and saying which list it left — 0 horizontal overflow
+at 320/768/1280 px, axe **0 critical / 0 serious** with the card on screen, and no uncaught page error.
+
+⚠️ **The browser pass found the gap this task existed to close**: the confirmed Transaction offered **no
+Undo at all**, because `undoPlan` knew only `SOFT_DELETE` while `ADD_TRANSACTION` declares
+`UNDO_CAPTURE` — a control the unit tests could not miss but never asked for. It is fixed here, per
+action: `undoCapture(transactionIds: [id])` for a Transaction against `deleteCategory(id)` for a
+Category, the sentence naming which list the row left, and the result link going to the
+`/transactions/:id` drill-in rather than to a list the reader then has to search.
 
 **B-2b verified**: `assistant.view.spec.ts` 36 and `assistant.component.spec.ts` 28 (the ordering, the
 confirm arguments, the key's stability across a repeat and its replacement on a re-propose, the toggle's

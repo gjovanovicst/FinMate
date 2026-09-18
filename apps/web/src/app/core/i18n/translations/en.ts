@@ -265,6 +265,10 @@ export const en = {
   'assistant.action.expired': 'This offer is no longer valid — it expired or was already applied. Ask again and I will make a new one.',
   'assistant.action.needName': 'Tell me what to call it — for example, “add a category Travel”.',
   'assistant.action.notRunnable': 'I need one more detail before I can offer that.',
+  'assistant.action.undoneTransaction': 'Undone — “{name}” was removed from your transactions.',
+  'assistant.action.openTransaction': 'Open the entry',
+  'assistant.action.uncategorised': 'no category yet',
+  'assistant.action.lineReview': 'goes to the review queue',
   'assistant.action.needText': 'Tell me what to record — for example, “dodaj trošak kafa 180”.',
   'assistant.action.needAmount': 'I could not find an amount in that. Say it like “kafa 180”.',
   'assistant.action.ambiguousAmount':

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  accountRow,
   actionDiffRows,
   actionRefusalKey,
   canExpand,
+  dayLabel,
   drillThroughLabelKey,
   drillThroughTarget,
   factRows,
@@ -18,12 +20,17 @@ import {
   periodLabel,
   phaseOf,
   proposalLabelKey,
+  previewLines,
   proposalSummary,
+  resultLink,
   provenanceKey,
   renderableProposal,
   suggestionChips,
   undoPlan,
+  undoneKey,
+  type ActionDiffEntry,
   type ActionPreview,
+  type ActionPreviewLine,
   type ActionProposal,
   type ActionResult,
   type AssistantAnswer,
@@ -430,11 +437,82 @@ describe('the assistant write path (docs/06 §8.16)', () => {
 
   it('offers an undo only where the server says one exists and this client knows how', () => {
     expect(undoPlan(result())).toEqual({ action: 'ADD_CATEGORY', id: 'c1' });
+    // A captured Transaction is undone by a different operation — `undoCapture`, by id — and the card
+    // has to know which one it is offering (found by the browser pass: `SOFT_DELETE` alone left a
+    // confirmed entry with no Undo control at all).
+    expect(undoPlan(result({ action: 'ADD_TRANSACTION', undo: 'UNDO_CAPTURE' }))).toEqual({
+      action: 'ADD_TRANSACTION',
+      id: 'c1',
+    });
     // The server never offers a `NONE` action, so this is a belt-and-braces gate rather than a path.
     expect(undoPlan(result({ undo: 'NONE' }))).toBeNull();
     // A client one release behind a server that added an action: no control, rather than a call to
     // whatever the fall-through happened to name.
     expect(undoPlan(result({ action: 'ADD_TAG' }))).toBeNull();
+  });
+
+  it('names the operation that actually ran when it says something was undone', () => {
+    // "no longer among your categories" over a removed ledger row would be a small lie about where the
+    // money went.
+    expect(undoneKey('ADD_CATEGORY')).toBe('assistant.action.undone');
+    expect(undoneKey('ADD_TRANSACTION')).toBe('assistant.action.undoneTransaction');
+  });
+
+  it('links to the row that was written, not to a list the reader has to search', () => {
+    // `ADD_CATEGORY` has no per-row route, so it opens the tree — the ordering of the two cases is the
+    // only thing that decides this, so both are asserted.
+    expect(resultLink(result())).toEqual({
+      route: ['/categories'],
+      labelKey: 'assistant.action.openCategories',
+    });
+    expect(resultLink(result({ action: 'ADD_TRANSACTION' }))).toEqual({
+      route: ['/transactions', 'c1'],
+      labelKey: 'assistant.action.openTransaction',
+    });
+  });
+
+  it('reads the rows a proposal will write, and reads none as none', () => {
+    // `undefined` is not hypothetical: a proposal stored before `lines` existed is still one this
+    // client must render, and a template that spread `preview.lines` would throw on it.
+    const line: ActionPreviewLine = {
+      label: 'kafa',
+      amount: { amountMinor: '18000', currency: 'RSD' },
+      category: 'Kafa i kolači',
+      occurredOn: '2026-09-18',
+      needsReview: false,
+    };
+    expect(previewLines({ sentence: 's', diff: [], lines: [line] })).toEqual([line]);
+    expect(previewLines({ sentence: 's', diff: [] })).toEqual([]);
+    expect(previewLines(null)).toEqual([]);
+  });
+
+  it('offers the account picker only for a row the server defaulted and identified', () => {
+    const row = (over: Partial<ActionDiffEntry> = {}): ActionDiffEntry => ({
+      slot: 'accountId',
+      field: 'račun',
+      before: null,
+      after: 'Keš',
+      afterValue: 'account-1',
+      defaulted: true,
+      ...over,
+    });
+    expect(accountRow(preview([row()]))?.afterValue).toBe('account-1');
+    // A question that named the account is not a suggestion to revise.
+    expect(accountRow(preview([row({ defaulted: false })]))).toBeNull();
+    // No id, no control: a picker whose value the server did not state cannot show what is selected.
+    expect(accountRow(preview([row({ afterValue: null })]))).toBeNull();
+    expect(accountRow(preview([]))).toBeNull();
+    expect(accountRow(null)).toBeNull();
+  });
+
+  it('renders a calendar day as a day, in the reader\'s language', () => {
+    // The same helper the provenance range uses, so a card and the answer beside it cannot format the
+    // same day two ways (I-2: a LocalDate is a calendar day, not an instant).
+    expect(dayLabel('2026-09-18', 'en-GB')).toContain('2026');
+    expect(dayLabel('2026-09-18', 'en-GB')).toMatch(/18/);
+    // An unparseable value is shown as it arrived rather than as "Invalid Date".
+    expect(dayLabel('not-a-day', 'en-GB')).toBe('not-a-day');
+    expect(dayLabel('', 'en-GB')).toBe('');
   });
 
   it('renders the expiry as a clock time, and nothing at all when it cannot read one', () => {

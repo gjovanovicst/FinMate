@@ -280,25 +280,30 @@ export function provenanceKey(count: number): 'assistant.provenanceOne' | 'assis
   return count === 1 ? 'assistant.provenanceOne' : 'assistant.provenanceMany';
 }
 
+/**
+ * One calendar day, formatted for reading.
+ *
+ * A `LocalDate` is a calendar day, not an instant, so it is rendered through a UTC date — which keeps
+ * the day the server meant whatever the browser's zone (I-2) — and an unparseable value is shown as it
+ * arrived rather than as "Invalid Date".
+ */
+export function dayLabel(day: string, localeTag: string): string {
+  const [year, month, date] = day.split('-').map(Number);
+  if (!year || !month || !date) return day;
+  try {
+    return new Intl.DateTimeFormat(localeTag, { day: 'numeric', month: 'short', year: 'numeric' }).format(
+      new Date(Date.UTC(year, month - 1, date)),
+    );
+  } catch {
+    return day;
+  }
+}
+
 /** The period a figure covers, formatted for reading. Dates only: a provenance range is not an instant. */
 export function periodLabel(provenance: Provenance, localeTag: string): string {
-  const format = (day: string): string => {
-    const [year, month, date] = day.split('-').map(Number);
-    if (!year || !month || !date) return day;
-    try {
-      return new Intl.DateTimeFormat(localeTag, { day: 'numeric', month: 'short', year: 'numeric' }).format(
-        // A calendar day, rendered as one: the UTC instant keeps the day the server meant, whatever
-        // the browser's zone (I-2).
-        new Date(Date.UTC(year, month - 1, date)),
-      );
-    } catch {
-      return day;
-    }
-  };
-
   return provenance.periodStart === provenance.periodEnd
-    ? format(provenance.periodStart)
-    : `${format(provenance.periodStart)} – ${format(provenance.periodEnd)}`;
+    ? dayLabel(provenance.periodStart, localeTag)
+    : `${dayLabel(provenance.periodStart, localeTag)} – ${dayLabel(provenance.periodEnd, localeTag)}`;
 }
 
 /**
@@ -368,8 +373,20 @@ export function fallbackNoteKey(answer: AssistantAnswer): TranslationKey | null 
 // The write path — propose → confirm → execute (B-2b; docs/06 §8.16, ADR-035)
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * One Account, as the picker needs it.
+ *
+ * Four fields and no more, for the same reason the offline taxonomy record carries four: a control that
+ * lists accounts is not a reason to hold the Household's balances on this screen.
+ */
+export interface AssistantAccount {
+  readonly id: string;
+  readonly name: string;
+  readonly isArchived: boolean;
+}
+
 /** The assistant's closed action set, mirroring the API's `AssistantAction`. */
-export const ASSISTANT_ACTIONS = ['ADD_CATEGORY'] as const;
+export const ASSISTANT_ACTIONS = ['ADD_CATEGORY', 'ADD_TRANSACTION'] as const;
 export type AssistantActionName = (typeof ASSISTANT_ACTIONS)[number];
 
 /**
@@ -391,10 +408,28 @@ export interface ActionDiffEntry {
   readonly defaulted: boolean;
 }
 
+/**
+ * One row the proposal will write, for an action that creates a row rather than a named entity.
+ *
+ * `amount` arrives as the API's `Money` scalar — minor units + currency, never a pre-formatted
+ * string — so the card can hand it to `fm-money`, the one money renderer in the client (ADR-003).
+ */
+export interface ActionPreviewLine {
+  readonly label: string;
+  readonly amount: MoneyWire;
+  /** The resolved Category name, or `null` when nothing chose one. */
+  readonly category: string | null;
+  readonly occurredOn: string;
+  /** True when the confidence gate will file this row for review rather than as confirmed (I-8). */
+  readonly needsReview: boolean;
+}
+
 /** The backend-rendered proposal: one sentence and a diff. Never narrated (ADR-035 decision 8). */
 export interface ActionPreview {
   readonly sentence: string;
   readonly diff: readonly ActionDiffEntry[];
+  /** The rows the action will write. Empty for an action that creates one named entity. */
+  readonly lines?: readonly ActionPreviewLine[];
 }
 
 /**
@@ -527,6 +562,30 @@ export function actionDiffRows(preview: ActionPreview | null | undefined): reado
   return (preview?.diff ?? []).filter((entry) => entry.after !== null);
 }
 
+/**
+ * The rows a proposal will write — `[]` for an action that writes none.
+ *
+ * A separate reader rather than `preview.lines ?? []` in the template so the `undefined` case (a
+ * proposal stored before the field existed) is handled once, in a place a test can reach.
+ */
+export function previewLines(
+  preview: ActionPreview | null | undefined,
+): readonly ActionPreviewLine[] {
+  return preview?.lines ?? [];
+}
+
+/**
+ * The account row the card may change, or `null` when it may not.
+ *
+ * The same rule as {@link kindChoice}: the server flags a row `defaulted` when the *question* did not
+ * state it, and an account the user named is not a suggestion to revise. Unlike `kind`, the options come
+ * from the Household rather than from a fixed pair, so the caller supplies them.
+ */
+export function accountRow(preview: ActionPreview | null | undefined): ActionDiffEntry | null {
+  const row = actionDiffRows(preview).find((entry) => entry.slot === 'accountId');
+  return row?.defaulted === true && typeof row.afterValue === 'string' ? row : null;
+}
+
 /** One option of a two-way choice, as the card renders it. */
 export interface KindChoice {
   readonly current: 'EXPENSE' | 'INCOME';
@@ -567,11 +626,47 @@ export interface UndoPlan {
  * cannot be undone never reaches this branch. But a client one release behind a server that added an
  * action would know nothing about taking *that* action back, and `ASSISTANT_ACTIONS` being closed is
  * what makes that a `null` here rather than a mutation call against the wrong row.
+ *
+ * The two undos the API declares are genuinely different operations — a Category is soft-deleted,
+ * a captured Transaction is undone through `undoCapture`, all-or-nothing and by id (docs/02 §3) — and
+ * naming *which* one is the caller's job, not this function's.
  */
 export function undoPlan(result: ActionResult): UndoPlan | null {
-  if (result.undo !== 'SOFT_DELETE') return null;
+  if (result.undo !== 'SOFT_DELETE' && result.undo !== 'UNDO_CAPTURE') return null;
   if (!(ASSISTANT_ACTIONS as readonly string[]).includes(result.action)) return null;
   return { action: result.action as AssistantActionName, id: result.createdId };
+}
+
+/**
+ * What the card says after an undo, per action.
+ *
+ * A Category and a Transaction are undone by different operations and the sentence has to match the one
+ * that ran: "no longer among your categories" printed over a removed ledger row would be a small lie
+ * about where the money went.
+ */
+export function undoneKey(action: string): TranslationKey {
+  return action === 'ADD_TRANSACTION'
+    ? 'assistant.action.undoneTransaction'
+    : 'assistant.action.undone';
+}
+
+/** Where the result card's link goes and what it says: the row that was written, not a generic list. */
+export interface ResultLink {
+  readonly route: readonly string[];
+  readonly labelKey: TranslationKey;
+}
+
+/**
+ * The link under a confirmed write.
+ *
+ * `ADD_CATEGORY` has no per-row route, so it opens the tree; a Transaction has one — the
+ * `/transactions/:id` drill-in docs/02 §2.1 lists — so the reader lands on the row that was just
+ * created rather than on a list they then have to search.
+ */
+export function resultLink(result: ActionResult): ResultLink {
+  return result.action === 'ADD_TRANSACTION'
+    ? { route: ['/transactions', result.createdId], labelKey: 'assistant.action.openTransaction' }
+    : { route: ['/categories'], labelKey: 'assistant.action.openCategories' };
 }
 
 /**

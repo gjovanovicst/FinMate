@@ -406,13 +406,65 @@ const RESULT = {
   replayed: false,
 };
 
+/**
+ * A transaction proposal, as `assistantProposeAction` returns one (docs/06 §8.16).
+ *
+ * `lines[].amount` is the API's `Money` scalar — minor units plus currency, which is what `fm-money`
+ * takes. The card must never format a figure itself (ADR-003).
+ */
+const TRANSACTION_PROPOSAL = {
+  proposed: true,
+  reason: null,
+  proposalId: 'proposal-tx',
+  action: 'ADD_TRANSACTION',
+  preview: {
+    sentence: 'Nova transakcija „kafa” — 180,00 RSD, Kafa i kolači',
+    diff: [
+      { slot: 'kind', field: 'vrsta', before: null, after: 'rashod', afterValue: 'EXPENSE', defaulted: false },
+      { slot: 'accountId', field: 'račun', before: null, after: 'Keš', afterValue: 'acct-1', defaulted: true },
+    ],
+    lines: [
+      {
+        label: 'kafa',
+        amount: { amountMinor: '18000', currency: 'RSD' },
+        category: 'Kafa i kolači',
+        occurredOn: '2026-09-18',
+        needsReview: false,
+      },
+    ],
+  },
+  expiresAt: '2026-09-20T10:10:00.000Z',
+};
+
+const TRANSACTION_RESULT = {
+  action: 'ADD_TRANSACTION',
+  createdId: 'tx-1',
+  createdLabel: 'kafa',
+  undo: 'UNDO_CAPTURE',
+  sentence: 'Dodato „kafa” — 180,00 RSD.',
+  replayed: false,
+};
+
+/** The picker's options — including an archived Account, which must not be offered. */
+const ACCOUNTS = {
+  accounts: {
+    edges: [
+      { node: { id: 'acct-1', name: 'Keš', isArchived: false } },
+      { node: { id: 'acct-2', name: 'Tekući', isArchived: false } },
+      { node: { id: 'acct-3', name: 'Stari', isArchived: true } },
+    ],
+  },
+};
+
 /** A responder that refuses the question and answers the write path from `over`. */
 function writeResponder(over: Partial<Record<'answer' | 'propose' | 'execute' | 'undo', unknown>> = {}) {
   return (query: string, _variables?: Record<string, unknown>): unknown => {
     if (query.includes('query AssistantSuggestions')) return { assistantSuggestions: [] };
+    if (query.includes('query AssistantAccounts')) return ACCOUNTS;
     if (query.includes('mutation AssistantProposeAction')) return { assistantProposeAction: over.propose ?? PROPOSAL };
     if (query.includes('mutation AssistantExecuteAction')) return { assistantExecuteAction: over.execute ?? RESULT };
     if (query.includes('mutation AssistantUndoAddCategory')) return { deleteCategory: true };
+    if (query.includes('mutation AssistantUndoCapture')) return { undoCapture: 1 };
     return { assistantAnswer: over.answer ?? REFUSAL };
   };
 }
@@ -560,6 +612,122 @@ describe('the assistant write path (B-2b)', () => {
       ...fixture.nativeElement.querySelectorAll('.act__toggle'),
     ] as HTMLButtonElement[];
     expect(togglesAfter[1]?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('renders the rows a transaction will write, with the amount through fm-money', async () => {
+    const { fixture, client } = await mount(writeResponder({ propose: TRANSACTION_PROPOSAL }));
+    await askAndSettle(fixture, 'dodaj trošak kafa 180');
+
+    const text = textOf(fixture);
+    // The row: its text, its Category and its day.
+    expect(text).toContain('kafa');
+    expect(text).toContain('Kafa i kolači');
+    expect(text).toContain('2026');
+    const line = fixture.nativeElement.querySelector('.act__line');
+    expect(line).not.toBeNull();
+    // Every figure goes through the only money renderer in the client (ADR-003), and the amount arrives
+    // as minor units — never as a string this component formatted itself.
+    expect(line.querySelector('fm-money')).not.toBeNull();
+    // The picker's list was asked for, once.
+    expect(
+      client.query.mock.calls.filter((call) => String(call[0]).includes('query AssistantAccounts')),
+    ).toHaveLength(1);
+  });
+
+  it('says a row will go to the review queue rather than implying it is settled', async () => {
+    const { fixture } = await mount(
+      writeResponder({
+        propose: {
+          ...TRANSACTION_PROPOSAL,
+          preview: {
+            ...TRANSACTION_PROPOSAL.preview,
+            lines: [
+              { ...TRANSACTION_PROPOSAL.preview.lines[0], category: null, needsReview: true },
+            ],
+          },
+        },
+      }),
+    );
+    await askAndSettle(fixture, 'dodaj trošak kafa 180');
+
+    const text = textOf(fixture);
+    expect(text).toContain('no category yet');
+    expect(text).toContain('goes to the review queue');
+  });
+
+  it('offers the account the proposal filled as a control, and re-proposes with the chosen one', async () => {
+    const { fixture, client } = await mount(writeResponder({ propose: TRANSACTION_PROPOSAL }));
+    await askAndSettle(fixture, 'dodaj trošak kafa 180');
+
+    const select = fixture.nativeElement.querySelector('.act__select') as HTMLSelectElement;
+    expect(select).not.toBeNull();
+    // The live Accounts only: an archived one is not somewhere a new row may be written.
+    expect([...select.options].map((option) => option.textContent)).toEqual(['Keš', 'Tekući']);
+    expect(select.value).toBe('acct-1');
+
+    select.value = 'acct-2';
+    select.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const calls = client.query.mock.calls.filter((call) =>
+      String(call[0]).includes('mutation AssistantProposeAction'),
+    );
+    // The same mechanism as the kind toggle, and the same reason: the API answers a changed default
+    // with a **new** proposal, never with a changed one (ADR-035 decision 2).
+    expect((calls.at(-1)?.[1] as Record<string, unknown>)['accountId']).toBe('acct-2');
+  });
+
+  it('undoes a confirmed transaction through undoCapture, and links to the row', async () => {
+    // The card's result half is per-action: a Transaction is undone by a different mutation than a
+    // Category, and its link goes to the row rather than to a list (found by the browser pass — the
+    // confirmed entry had no Undo at all while `undoPlan` knew only `SOFT_DELETE`).
+    const { fixture, client } = await mount(
+      writeResponder({ propose: TRANSACTION_PROPOSAL, execute: TRANSACTION_RESULT }),
+    );
+    await askAndSettle(fixture, 'dodaj trošak kafa 180');
+    (fixture.nativeElement.querySelector('.act__confirm') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const link = fixture.nativeElement.querySelector('.act--done a') as HTMLAnchorElement;
+    expect(link?.getAttribute('href')).toBe('/transactions/tx-1');
+
+    (fixture.nativeElement.querySelector('.act__undo') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const call = client.query.mock.calls.find((entry) =>
+      String(entry[0]).includes('mutation AssistantUndoCapture'),
+    );
+    // A **list**, because that is what `undoCapture` takes — docs/02 §3's toast is all-or-nothing per
+    // call, and this action writes one row.
+    expect((call?.[1] as Record<string, unknown>)['transactionIds']).toEqual(['tx-1']);
+    // …and the sentence names what was removed from where.
+    expect(textOf(fixture)).toContain('removed from your transactions');
+  });
+
+  it('offers no account control, and asks for no accounts, when the question named the account', async () => {
+    const { fixture, client } = await mount(
+      writeResponder({
+        propose: {
+          ...TRANSACTION_PROPOSAL,
+          preview: {
+            ...TRANSACTION_PROPOSAL.preview,
+            diff: TRANSACTION_PROPOSAL.preview.diff.map((row) =>
+              row.slot === 'accountId' ? { ...row, defaulted: false } : row,
+            ),
+          },
+        },
+      }),
+    );
+    await askAndSettle(fixture, 'dodaj trošak kafa 180');
+
+    expect(fixture.nativeElement.querySelector('.act__select')).toBeNull();
+    expect(
+      client.query.mock.calls.some((call) => String(call[0]).includes('query AssistantAccounts')),
+    ).toBe(false);
+    expect(textOf(fixture)).toContain('kafa');
   });
 
   it('offers no kind toggle when the question stated the kind', async () => {

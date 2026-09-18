@@ -264,6 +264,10 @@ export const srLatn: Record<keyof typeof en, string> = {
   'assistant.action.expired': 'Ova ponuda više ne važi — istekla je ili je već primenjena. Pitaj ponovo i napraviću novu.',
   'assistant.action.needName': 'Reci mi kako da se zove — na primer: „dodaj kategoriju Putovanja”.',
   'assistant.action.notRunnable': 'Treba mi još jedan podatak da bih to ponudio.',
+  'assistant.action.undoneTransaction': 'Opozvano — „{name}” je uklonjeno iz tvojih transakcija.',
+  'assistant.action.openTransaction': 'Otvori unos',
+  'assistant.action.uncategorised': 'još bez kategorije',
+  'assistant.action.lineReview': 'ide na pregled',
   'assistant.action.needText': 'Reci mi šta da zabeležim — na primer: „dodaj trošak kafa 180”.',
   'assistant.action.needAmount': 'U tome nisam našao iznos. Reci ga ovako: „kafa 180”.',
   'assistant.action.ambiguousAmount':

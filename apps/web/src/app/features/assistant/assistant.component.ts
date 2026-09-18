@@ -17,9 +17,11 @@ import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
 import { MoneyComponent, type MoneyWire } from '../../shared/ui/money/money.component';
 import {
+  accountRow,
   actionDiffRows,
   actionRefusalKey,
   canExpand,
+  dayLabel,
   drillThroughLabelKey,
   drillThroughTarget,
   expiryTime,
@@ -34,16 +36,20 @@ import {
   phaseOf,
   proposalLabelKey,
   proposalSummary,
+  previewLines,
   provenanceKey,
   renderableProposal,
+  resultLink,
   suggestionChips,
   undoPlan,
+  undoneKey,
   type ActionProposal,
   type ActionResult,
   type AnswerPhase,
   type AssistantActionName,
   type AssistantAnswer,
   type AssistantFacts,
+  type AssistantAccount,
   type KindChoice,
   type Turn,
   type TurnAction,
@@ -243,7 +249,7 @@ import {
                 }
                 @if (action.undone) {
                   <p class="act__note">
-                    {{ i18n.t('assistant.action.undone', { name: result.createdLabel }) }}
+                    {{ i18n.t(undoneKey(result.action), { name: result.createdLabel }) }}
                   </p>
                 } @else if (undoPlan(result); as plan) {
                   <button
@@ -255,9 +261,11 @@ import {
                     {{ action.undoing ? i18n.t('assistant.action.undoing') : i18n.t('assistant.action.undo') }}
                   </button>
                 }
-                <a class="card__link" routerLink="/categories">
-                  {{ i18n.t('assistant.action.openCategories') }}
-                </a>
+                @if (resultLink(result); as link) {
+                  <a class="card__link" [routerLink]="link.route">
+                    {{ i18n.t(link.labelKey) }}
+                  </a>
+                }
               </section>
             } @else if (renderableProposal(action.proposal); as proposal) {
               <section class="act" [attr.aria-labelledby]="'act-' + turn.id">
@@ -267,6 +275,28 @@ import {
                 <!-- The sentence is the backend's, never the model's: a write confirmation carries
                      figures and names, so ADR-017 applies to it exactly as to an answer. -->
                 <p class="act__sentence">{{ proposal.preview.sentence }}</p>
+
+                @if (previewLines(proposal.preview).length > 0) {
+                  <!-- The rows this will write, with every figure handed to fm-money — the only money
+                       renderer in the client (ADR-003). A server-formatted amount inside the sentence
+                       above is readable but is a number no money component ever sees. No backticks in
+                       this literal, not even in a comment (AGENTS.md). -->
+                  <ul class="act__lines">
+                    @for (line of previewLines(proposal.preview); track line.label + line.occurredOn) {
+                      <li class="act__line">
+                        <span class="act__lineLabel">{{ line.label }}</span>
+                        <fm-money class="act__lineAmount" [amount]="line.amount" />
+                        <span class="act__lineMeta">
+                          {{ line.category ?? i18n.t('assistant.action.uncategorised') }}
+                          · {{ day(line.occurredOn) }}
+                          @if (line.needsReview) {
+                            · {{ i18n.t('assistant.action.lineReview') }}
+                          }
+                        </span>
+                      </li>
+                    }
+                  </ul>
+                }
 
                 <ul class="act__diff">
                   @for (row of actionDiffRows(proposal.preview); track row.slot) {
@@ -297,6 +327,27 @@ import {
                         {{ i18n.t(option.key) }}
                       </button>
                     }
+                  </div>
+                }
+
+                @if (accountRow(proposal.preview); as row) {
+                  <!-- The account is filled by the proposal, so it is *correctable* here: a preselection
+                       nobody can change is a silent guess, and the server accepts an accountId on a
+                       re-propose for exactly this control (ADR-035 decision 5). -->
+                  <div class="act__account">
+                    <label class="act__field" [for]="'act-account-' + turn.id">{{ row.field }}</label>
+                    <select
+                      class="act__select"
+                      [id]="'act-account-' + turn.id"
+                      [value]="row.afterValue"
+                      [disabled]="action.switching || action.stale"
+                      (change)="setAccount(turn, $event)"
+                    >
+                      @for (account of accountOptions(); track account.id) {
+                        <option [value]="account.id">{{ account.name }}</option>
+                      }
+                    </select>
+                    <span class="act__flag">{{ i18n.t('assistant.action.defaulted') }}</span>
                   </div>
                 }
 
@@ -573,12 +624,48 @@ import {
         color: var(--color-text-muted);
         font-size: var(--text-xs);
       }
-      .act__kind {
+      .act__kind,
+      .act__account {
         display: flex;
         flex-wrap: wrap;
         gap: var(--space-2);
         align-items: center;
         margin-block-start: var(--space-3);
+      }
+      .act__lines {
+        margin: var(--space-3) 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .act__line {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        align-items: baseline;
+        padding-block: var(--space-2);
+        border-block-start: 1px solid var(--color-border);
+      }
+      .act__lineLabel {
+        min-inline-size: 0;
+        overflow-wrap: anywhere;
+        font-weight: 600;
+      }
+      .act__lineAmount {
+        margin-inline-start: auto;
+      }
+      .act__lineMeta {
+        flex-basis: 100%;
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+      }
+      .act__select {
+        min-block-size: var(--control-size, 2.75rem);
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        background: var(--color-surface);
+        color: inherit;
+        font: inherit;
       }
       .act__toggle,
       .act__confirm,
@@ -632,6 +719,15 @@ export class AssistantComponent {
   readonly error = signal<string | null>(null);
   /** The API's canonical answerable questions — one source, also used by a refusal's chips. */
   readonly starters = signal<readonly string[]>([]);
+  /**
+   * The Household's live Accounts, loaded **only** when a proposal offers to change the one it filled.
+   *
+   * Lazy on purpose: most questions never produce a card, and the composer's own screens already pay
+   * for this list — asking for it on every visit would be a query for a control that usually is not
+   * there. An empty list is the honest failure state: the row still shows the account the server named,
+   * and no control is offered.
+   */
+  readonly accounts = signal<readonly AssistantAccount[]>([]);
 
   readonly latest = computed<Turn | null>(() => this.thread().at(-1) ?? null);
   readonly phase = computed<AnswerPhase>(() => phaseOf(this.latest(), this.asking()));
@@ -777,14 +873,21 @@ export class AssistantComponent {
     }
   }
 
-  /** Take the completed action back, through the same mutation `/categories` uses. */
+  /**
+   * Take the completed action back, through the mutation its own screen uses.
+   *
+   * `Record<AssistantActionName, …>` for the same reason the server's registry is: a value with no
+   * entry cannot be reached, so an action this client cannot undo offers no control at all
+   * ({@link undoPlan}) rather than calling whatever a fall-through happened to name.
+   */
   async undo(turn: Turn, plan: UndoPlan): Promise<void> {
     const action = turn.action ?? null;
     if (action === null || action.undoing) return;
 
+    const operation = UNDO_OPERATIONS[plan.action];
     this.patchAction(turn.id, { undoing: true, error: null });
     try {
-      await this.graphql.query(UNDO_MUTATIONS[plan.action], { id: plan.id });
+      await this.graphql.query(operation.document, operation.variables(plan.id));
       this.patchAction(turn.id, { undoing: false, undone: true });
     } catch (error) {
       this.patchAction(turn.id, { undoing: false, error: this.actionErrorMessage(error) });
@@ -800,6 +903,18 @@ export class AssistantComponent {
    * the previous kind's outcome.
    */
   async setKind(turn: Turn, kind: 'EXPENSE' | 'INCOME'): Promise<void> {
+    await this.repropose(turn, { kind });
+  }
+
+  /**
+   * Ask the server for a proposal with one changed default — the `kind` toggle and the account picker
+   * are the same call, because the API's answer to both is "here is a **new** proposal", never "here is
+   * a changed one" (ADR-035 decision 2).
+   */
+  private async repropose(
+    turn: Turn,
+    change: { readonly kind?: 'EXPENSE' | 'INCOME'; readonly accountId?: string },
+  ): Promise<void> {
     const action = turn.action ?? null;
     if (action === null || action.switching) return;
 
@@ -807,7 +922,7 @@ export class AssistantComponent {
     try {
       const result = await this.graphql.query<{ assistantProposeAction: ActionProposal | null }>(
         PROPOSE_ACTION,
-        { question: turn.question, kind, locale: this.i18n.tag() },
+        { question: turn.question, ...change, locale: this.i18n.tag() },
       );
       const proposal = result.assistantProposeAction ?? null;
       if (renderableProposal(proposal) === null) {
@@ -828,6 +943,27 @@ export class AssistantComponent {
     } catch (error) {
       this.patchAction(turn.id, { switching: false, error: this.actionErrorMessage(error) });
     }
+  }
+
+  /**
+   * The accounts the picker offers, and never an empty select: the row the server filled is always one
+   * of them, so a query that has not answered yet (or failed) leaves the control hidden rather than
+   * showing a picker whose only option the server did not choose.
+   */
+  accountOptions(): readonly AssistantAccount[] {
+    return this.accounts();
+  }
+
+  /** One calendar day, in the reader's own language. */
+  day(day: string): string {
+    return dayLabel(day, this.i18n.tag());
+  }
+
+  /** Re-propose with the account the reader picked. See {@link setKind} — the same mechanism. */
+  async setAccount(turn: Turn, event: Event): Promise<void> {
+    const accountId = (event.target as HTMLSelectElement).value;
+    if (accountId.length === 0) return;
+    await this.repropose(turn, { accountId });
   }
 
   /** The two kind options, with the one the server currently proposes marked active. */
@@ -854,10 +990,14 @@ export class AssistantComponent {
   }
 
   // The write path's view decisions, re-exposed for the template without logic in it.
+  readonly accountRow = accountRow;
   readonly actionDiffRows = actionDiffRows;
   readonly kindChoice = kindChoice;
+  readonly previewLines = previewLines;
   readonly renderableProposal = renderableProposal;
+  readonly resultLink = resultLink;
   readonly undoPlan = undoPlan;
+  readonly undoneKey = undoneKey;
 
   /**
    * Ask whether the question was a request to **write** something.
@@ -889,6 +1029,10 @@ export class AssistantComponent {
         stale: false,
         error: null,
       });
+      // Only a card that offers the account control needs the list, and only once per visit.
+      if (accountRow(proposal?.preview) !== null && this.accounts().length === 0) {
+        void this.loadAccounts();
+      }
     } catch (error) {
       this.setAction(turnId, {
         proposal: null,
@@ -946,6 +1090,27 @@ export class AssistantComponent {
     this.thread.update((turns) =>
       turns.map((turn) => (turn.id === id ? { ...turn, ...update } : turn)),
     );
+  }
+
+  /**
+   * The picker's options: the Household's live Accounts, newest first — the same list and the same
+   * order the composer uses.
+   *
+   * A failure is swallowed rather than surfaced: the account the server filled is still shown on the
+   * card, the write still goes to it, and an error about a *convenience* control would be noise on a
+   * confirmation the user can already make.
+   */
+  private async loadAccounts(): Promise<void> {
+    try {
+      const result = await this.graphql.query<{
+        accounts: { edges: { node: AssistantAccount }[] };
+      }>(ACCOUNTS_QUERY);
+      this.accounts.set(
+        result.accounts.edges.map((edge) => edge.node).filter((account) => !account.isArchived),
+      );
+    } catch {
+      this.accounts.set([]);
+    }
   }
 
   private async loadStarters(): Promise<void> {
@@ -1015,6 +1180,21 @@ const ASSISTANT_QUERY = /* GraphQL */ `
 const STARTERS_QUERY = /* GraphQL */ `
   query AssistantSuggestions {
     assistantSuggestions
+  }
+`;
+
+/** The account picker's options. The same query the composer makes, asked only when a card needs it. */
+const ACCOUNTS_QUERY = /* GraphQL */ `
+  query AssistantAccounts {
+    accounts(first: 50) {
+      edges {
+        node {
+          id
+          name
+          isArchived
+        }
+      }
+    }
   }
 `;
 
@@ -1093,10 +1273,28 @@ const EXECUTE_ACTION = /* GraphQL */ `
  * The one entry calls `deleteCategory`, the same mutation `/categories` calls. The server declares the
  * action's undo as `SOFT_DELETE`, and a soft delete is what this is.
  */
-const UNDO_MUTATIONS: Readonly<Record<AssistantActionName, string>> = {
-  ADD_CATEGORY: /* GraphQL */ `
-    mutation AssistantUndoAddCategory($id: ID!) {
-      deleteCategory(id: $id)
-    }
-  `,
+const UNDO_OPERATIONS: Readonly<
+  Record<
+    AssistantActionName,
+    { readonly document: string; readonly variables: (id: string) => Record<string, unknown> }
+  >
+> = {
+  ADD_CATEGORY: {
+    document: /* GraphQL */ `
+      mutation AssistantUndoAddCategory($id: ID!) {
+        deleteCategory(id: $id)
+      }
+    `,
+    variables: (id) => ({ id }),
+  },
+  // `undoCapture` takes a **list** — docs/02 §3's undo toast is all-or-nothing per call — and this
+  // action writes one row, so the list has one id in it.
+  ADD_TRANSACTION: {
+    document: /* GraphQL */ `
+      mutation AssistantUndoCapture($transactionIds: [ID!]!) {
+        undoCapture(transactionIds: $transactionIds)
+      }
+    `,
+    variables: (id) => ({ transactionIds: [id] }),
+  },
 };

@@ -24,7 +24,8 @@
 > ambiguous amount, a text that reads as several entries, or a Household with no account. Proposing
 > therefore became a **`Mutation`**: it runs the classifier, and a Query that spends money is a lie
 > about itself (docs/06 §8.16). **B-3b is the card half** — the rows, the amounts through `fm-money`,
-> and the account picker.
+> and the account picker — and it is where the browser pass found a real gap: a confirmed entry offered
+> **no Undo**, because the client's undo registry knew only the Category's operation.
 >
 > [14 §Part 3](14-decisions-and-risks.md) also carries **Q-12** (refusal telemetry), which A-8 needs.
 
@@ -355,7 +356,7 @@ One commit per row, per the working agreement. Part A rows are independent of Pa
 | B-2a | action registry + `text` slot + Redis proposals + `assistantProposeAction`/`assistantExecuteAction` + `ADD_CATEGORY` | B-1 | the first action, server-side and live-verifiable — **done** ([06 §8.16](06-api-specification.md)) |
 | B-2b | the proposal card on `/assistant` (preview, diff, **confirm**, the `kind` toggle, the undo affordance) | B-2a | the same action, reachable by a person — the half B-2a deliberately leaves — **done** ([06 §8.16](06-api-specification.md), [02 §4.16](02-ux-flows-and-screens.md)) |
 | B-3a | `ADD_TRANSACTION` server-side: the registry entry, the transaction cues, propose-via-`parse`, execute-via-`captureCommit`, the structured preview lines, `assistantProposeAction` becomes a `Mutation` | B-2 | the highest-value action, on the method `/capture` already calls — **done**, live 18/18 ([06 §8.16](06-api-specification.md)) |
-| B-3b | the transaction card: the preview rows with their amounts through `fm-money`, the Category and day, the review note, and the **account picker** | B-3a | the same action, reachable and correctable by a person |
+| B-3b | the transaction card: the preview rows with their amounts through `fm-money`, the Category and day, the review note, the **account picker**, and the per-action result half (`undoCapture`, the row's own link) | B-3a | the same action, reachable and correctable by a person — **done**, browser 19/19 ([02 §4.16](02-ux-flows-and-screens.md), [06 §8.16](06-api-specification.md)) |
 | B-4 | `SET_BUDGET`, `ADD_GOAL`, `ADD_TAG` | B-2 | "configure", as asked |
 | B-5 | `CREATE_RULE_FROM_CORRECTION` | B-2 | ADR-010's confirmation, reached by question |
 

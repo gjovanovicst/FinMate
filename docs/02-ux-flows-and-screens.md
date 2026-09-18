@@ -960,9 +960,17 @@ infinity.
 > - The one editable field is the **`kind` toggle**, offered only where the server flagged the row
 >   `defaulted`; choosing one re-proposes, so the id a person confirms always names the action they were
 >   shown.
-> - After the write, the card quotes **the returned row** and offers **Undo**, which soft-deletes the
->   Category through the same mutation `/categories` calls. A lapsed offer says so instead of failing
->   under a button that cannot work.
+> - After the write, the card quotes **the returned row** and offers **Undo** — the operation that
+>   action's own screen uses: `deleteCategory` for a Category, `undoCapture` for a captured entry, with
+>   the sentence naming which list the row left and the link going to the row itself (`/transactions/:id`
+>   where a per-row route exists). A lapsed offer says so instead of failing under a button that cannot
+>   work.
+> - **A transaction proposal draws its rows** (B-3b): each row's text, its amount through `fm-money`,
+>   the Category the pipeline chose, the day it will be filed under, and — when the confidence gate will
+>   file it — that it goes to the review queue. The **account** the proposal filled is a `<select>` of
+>   the Household's live Accounts, so the preselection `/capture` also makes is correctable here rather
+>   than silent; changing it or the `kind` re-proposes, because the API's answer to a changed default is
+>   a *new* proposal.
 >
 > ⚠️ **Not the same thing as F-30's *Primeni*.** The savings proposal's button is still unbuilt and still
 > its own product decision (docs/06 §8.8): applying *that* means deciding what "apply" does to a Budget
