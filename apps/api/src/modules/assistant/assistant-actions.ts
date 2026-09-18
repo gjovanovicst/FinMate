@@ -38,6 +38,7 @@ export const ASSISTANT_ACTIONS = [
   'ADD_TRANSACTION',
   'SET_BUDGET',
   'ADD_GOAL',
+  'ADD_TAG',
 ] as const;
 
 export type AssistantAction = (typeof ASSISTANT_ACTIONS)[number];
@@ -161,6 +162,23 @@ export const ACTION_TEMPLATES: Readonly<Record<AssistantAction, ActionTemplate>>
   ADD_GOAL: {
     mutation: 'createSavingGoal',
     requiredSlots: ['text'],
+    defaultedSlots: [],
+    role: 'MEMBER',
+    undo: 'SOFT_DELETE',
+    destroys: false,
+  },
+  /**
+   * A tag: a name and nothing else (B-4c).
+   *
+   * `createTag` never overwrites and a Tag's delete is a **hard delete that cascades its assignments**
+   * (docs/03), which is correct as an undo precisely because the row this action created has none yet.
+   */
+  ADD_TAG: {
+    mutation: 'createTag',
+    requiredSlots: ['name'],
+    // Nothing is filled: a tag is a name. ⚠️ The colour the `/tags` screen can set is deliberately
+    // **not** filled here — the question never states one, and a colour has no consequence the reader
+    // needs to confirm, unlike a goal's missing deadline (which changes what the ledger can compute).
     defaultedSlots: [],
     role: 'MEMBER',
     undo: 'SOFT_DELETE',

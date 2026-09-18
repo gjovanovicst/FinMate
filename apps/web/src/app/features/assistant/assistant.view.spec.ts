@@ -30,6 +30,7 @@ import {
   undoneKey,
   type ActionDiffEntry,
   type ActionPreview,
+  type AssistantActionName,
   type ActionPreviewLine,
   type ActionProposal,
   type ActionResult,
@@ -476,9 +477,14 @@ describe('the assistant write path (docs/06 §8.16)', () => {
     });
     // The server never offers a `NONE` action, so this is a belt-and-braces gate rather than a path.
     expect(undoPlan(result({ undo: 'NONE' }))).toBeNull();
+    // A Tag is soft-deleted like a Category, but by `deleteTag`, which cascades its assignments — so the
+    // card must offer it (the closed registry is what says *how*, and `UNDO_OPERATIONS` is keyed the same
+    // way).
+    expect(undoPlan(result({ action: 'ADD_TAG' }))).toEqual({ action: 'ADD_TAG', id: 'c1' });
     // A client one release behind a server that added an action: no control, rather than a call to
-    // whatever the fall-through happened to name.
-    expect(undoPlan(result({ action: 'ADD_TAG' }))).toBeNull();
+    // whatever the fall-through happened to name. The next one the registry gains is docs/16's B-5, so
+    // that is the honest stand-in for an action this build has never heard of.
+    expect(undoPlan(result({ action: 'CREATE_RULE_FROM_CORRECTION' as AssistantActionName }))).toBeNull();
   });
 
   it('names the operation that actually ran when it says something was undone', () => {
@@ -488,6 +494,7 @@ describe('the assistant write path (docs/06 §8.16)', () => {
     expect(undoneKey('ADD_TRANSACTION')).toBe('assistant.action.undoneTransaction');
     expect(undoneKey('SET_BUDGET')).toBe('assistant.action.undoneBudget');
     expect(undoneKey('ADD_GOAL')).toBe('assistant.action.undoneGoal');
+    expect(undoneKey('ADD_TAG')).toBe('assistant.action.undoneTag');
   });
 
   it('links to the row that was written, not to a list the reader has to search', () => {
@@ -509,6 +516,12 @@ describe('the assistant write path (docs/06 §8.16)', () => {
     expect(resultLink(result({ action: 'ADD_GOAL' }))).toEqual({
       route: ['/goals'],
       labelKey: 'assistant.action.openGoals',
+    });
+    // A Tag has no per-row route either, so it opens `/tags` — and it must not fall through to
+    // `/categories`, which is the default arm.
+    expect(resultLink(result({ action: 'ADD_TAG' }))).toEqual({
+      route: ['/tags'],
+      labelKey: 'assistant.action.openTags',
     });
   });
 

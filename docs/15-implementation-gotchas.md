@@ -216,6 +216,24 @@ Everything here has cost time at least once, and most of it fails in a way that 
   them, so a `Window`-typed `Event` constructor in a spec is a build failure, not a test failure.
 
 
+- **`browser.newPage()` creates a *new context*, so a second Playwright tab is signed out — and every
+  assertion about what it shows is an assertion about the sign-in form.** A pass that reads a screen in a
+  second tab must build the context once and open both pages from it (`browser.newContext()` →
+  `context.newPage()`); on a `Browser` there is no `page.context().newPage()`, which fails outright with
+  *"Please use browser.newContext()"*. B-4c's browser pass "verified" that a Tag had been removed from
+  `/tags` because the tab had no session cookie and `/tags` had redirected to sign-in — the check passed
+  for the wrong reason, and only printing the page's own words in the failure detail exposed it. **Print
+  the evidence a check used, not just its verdict.**
+
+- **The login limiter counts by email *and* by IP at 10 attempts per 900 s, so a morning of live probes
+  locks the demo account out** — and a probe that does not check the login response reads the resulting
+  `RATE_LIMITED` as an empty ledger (`TypeError: Cannot read properties of null`). The counters are
+  `ratelimit:<scope>:<subject>` in the dev Redis, so
+  `docker exec finmate-redis redis-cli --scan --pattern 'ratelimit:*' | xargs -r docker exec -i finmate-redis redis-cli DEL`
+  clears them without waiting the window out. ⚠️ That pattern also matches `ratelimit:assistant:narrate:day`,
+  a *daily* quota, so clearing it grants the Household extra narrations for the rest of the day — harmless
+  in dev, but it is a state change, not just a cache clear.
+
 ## 2. Prisma and the database
 
 Prisma 7 plus a tenancy extension plus hand-written SQL means the driver is not the only thing deciding what a query does.
@@ -502,6 +520,17 @@ Code-first GraphQL with custom scalars: most of these are registration problems 
   cannot happen. The same trap applies to any stub that mutates and re-returns a signal's current value.
 
 ---
+
+- **A proposal the server *refuses to build* and a proposal that fails the *duplicate check* arrive by
+  different routes, and one of them is not a payload at all.** Only an `UnrunnableSlot` inside a builder is
+  turned into `{ proposed: false, reason: 'UNRUNNABLE:<slot>' }`; everything else a builder throws — the
+  `CONFLICT` a taken name raises, for instance — propagates as a **GraphQL error**, `data: null`. Three
+  consequences. A client reads the cause off the **error code** (the typed filter flattens it onto the
+  error object: `{ message, code, retryable, path }` — there is no `extensions` nesting). A probe helper
+  that unwraps `data.assistantProposeAction` gets `undefined` for the error envelope, so a refusal looks
+  like success while `response.errors` is what actually holds the answer — assert on the error, and keep a
+  raw-envelope helper for exactly this. And the integration suite sees the same fact from the other side:
+  it asserts the resolver **rejects** (task B-4c).
 
 ## 5. Domain: money, dates and Serbian input
 
@@ -1010,6 +1039,16 @@ The tables hold platform content beside the Household’s own rows, which is whe
 
 
 ---
+
+- **Two taxonomy writes, two different uniqueness rules — and copying the wrong check offers a button
+  that cannot work.** A Category's uniqueness is the database's `categories_unique_name`, which compares
+  **`lower(name)`**; a Tag's is `TagsService.assertNameFree`, which compares
+  **`normaliseForMatching(name)`** — the **fold**. So `Hrana`/`hrana` collide but `Храна`/`Hrana` do not,
+  while `Путовања`/`Putovanja` are one Tag because the fold transliterates. A propose-time duplicate check
+  must mirror the rule the *write* enforces, or the preview offers a Confirm for a call that is refused
+  (ADR-035 decision 5). ⚠️ **Pick the discriminating pair carefully**: it must be one `lower()` cannot
+  equate, so `Путовања`/`Putovanja` works and `Rođendan`/`Rodjendan` does **not** — the fold maps `đ` → `d`
+  and leaves the digraph `dj` alone, which is docs/04 §8.1.7's `đ`/`ђ` asymmetry (task B-4c).
 
 ## 9. Web UI, templates and i18n
 
@@ -1575,6 +1614,22 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   **resolved slot** — the node the question named, not the subtree the query widened to. Two general
   lessons: a fact set is only as good as its labels, and *"the model refuses"* is a symptom to chase into
   the payload before touching the prompt.
+
+- **A unit fixture supplies the sentence, so it cannot disagree with the server — only a pass against
+  the real API can.** The card quotes a backend-rendered sentence, and a spec that feeds its own string
+  agrees with itself no matter what the server says. B-4c's Serbian card copy read `Novi tag` while every
+  Serbian screen calls that entity an **oznaka** (`nav.tags` and `tags.title` are `Oznake`, the create
+  sheet says `Nova oznaka`), and the fixture — written from the screen's vocabulary — said `Nova oznaka`
+  and passed. The same class as B-4a's unselected `afterMoney`: **derive a fixture from what the server
+  really sends, and check the joined-up wording in the browser.**
+
+- **A card that renders an error by its *code* alone cannot name the resource the error is about.** The
+  assistant's `CONFLICT` sentence was *"A category with that name already exists"* — correct while the only
+  action that could collide was `ADD_CATEGORY`, and a lie the moment `ADD_TAG` landed, because the error
+  carries **no action** and the card announced a refused *tag* as a category the reader would go hunting
+  for. The copy names no noun now. Before writing a message per error code, ask whether the code is enough
+  to know *what* is being talked about; if it is not, the sentence has to stay general or the payload has to
+  carry the noun (task B-4c).
 
 ## 10. Cross-cutting rules of the codebase
 

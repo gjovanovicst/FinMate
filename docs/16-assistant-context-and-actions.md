@@ -359,8 +359,12 @@ One commit per row, per the working agreement. Part A rows are independent of Pa
 | B-3b | the transaction card: the preview rows with their amounts through `fm-money`, the Category and day, the review note, the **account picker**, and the per-action result half (`undoCapture`, the row's own link) | B-3a | the same action, reachable and correctable by a person — **done**, browser 19/19 ([02 §4.16](02-ux-flows-and-screens.md), [06 §8.16](06-api-specification.md)) |
 | B-4a | `SET_BUDGET` — resolved slots (a Category from the tree, an amount from the parser), `afterMoney` on the card, and the **command refusal** the ordering needed | B-3 | "configure", as asked — **done**, live 16/16 + browser 16/16 ([06 §8.16](06-api-specification.md)) |
 | B-4b | `ADD_GOAL` — the name from the parser's leftover text, the target as a money row, and a **stated** missing deadline | B-4a | saving goals by question — **done**, live 15/15 + browser 14/14 ([06 §8.16](06-api-specification.md)) |
-| B-4c | `ADD_TAG` — a name, the simplest of the three | B-4a | labels by question |
+| B-4c | `ADD_TAG` — a name, and a duplicate rule that is **not** the Category action's (a Tag is unique by the fold) | B-4a | labels by question — **done**, live 19/19 + browser 22/22 ([06 §8.16](06-api-specification.md)) |
 | B-5 | `CREATE_RULE_FROM_CORRECTION` | B-2 | ADR-010's confirmation, reached by question |
+
+**Part B is now five actions deep: B-1, B-2a, B-2b, B-3a, B-3b, B-4a, B-4b and B-4c have shipped**,
+leaving **B-5** (`CREATE_RULE_FROM_CORRECTION`, ADR-010's confirmation reached by a question) as the only
+write still to come.
 
 **The A-series is nearly done: A-1, A-2, A-3, A-4a, A-4c, A-5, A-9, A-10, A-12 and A-13a have shipped**
 (A-4b was measured and rejected). What remains of Part A is A-6, A-7 and A-8 — the last needs **Q-12** —
@@ -371,7 +375,9 @@ product decision, not a matcher fix. The other open rows need no decision: **A-6
 extension and catalogue entries, **A-11** a `RecurringService` read. The remaining battery gaps that are
 **not** A-rows are seed content for `kirija`/English (docs/04). **Part B is no longer gated**: Q-11 was
 answered, [ADR-035](14-decisions-and-risks.md) records it, and B-1/B-2a/B-2b shipped the first action end
-to end. What B-3–B-5 need is not a decision but the next executor and its own card affordances.
+to end. What B-3–B-5 needed was not a decision but the next executor and its own card affordances; only
+B-5 remains, and its shape is different from the four before it — it proposes a **Rule** from a
+Correction, so its preview must show the rule's own conditions rather than a single filled slot.
 
 ### B.8 What this deliberately does not build
 

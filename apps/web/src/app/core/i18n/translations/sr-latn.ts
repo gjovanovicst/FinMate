@@ -274,6 +274,8 @@ export const srLatn: Record<keyof typeof en, string> = {
     'Već imaš budžet za tu kategoriju ovog meseca, i neću ga ovde prepisati — izmeni ga na ekranu budžeta.',
   'assistant.action.undoneGoal': 'Opozvano — cilj „{name}” je uklonjen.',
   'assistant.action.openGoals': 'Otvori ciljeve',
+  'assistant.action.undoneTag': 'Opozvano — oznaka „{name}” je uklonjena.',
+  'assistant.action.openTags': 'Otvori oznake',
   'assistant.action.uncategorised': 'još bez kategorije',
   'assistant.action.lineReview': 'ide na pregled',
   'assistant.action.needText': 'Reci mi šta da zabeležim — na primer: „dodaj trošak kafa 180”.',
@@ -288,7 +290,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'assistant.action.undoing': 'Opozivam…',
   'assistant.action.undone': 'Opozvano — „{name}” više nije među tvojim kategorijama.',
   'assistant.action.replayed': 'Ovo je već primenjeno, pa ništa nije urađeno dvaput.',
-  'assistant.action.taken': 'Kategorija s tim imenom već postoji, pa ništa nije napravljeno.',
+  'assistant.action.taken': 'Već postoji nešto s tim imenom, pa ništa nije napravljeno.',
   'assistant.action.openCategories': 'Otvori kategorije',
 
   'notifications.title': 'Obaveštenja',

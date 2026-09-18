@@ -982,6 +982,16 @@ infinity.
 >   the Household's live Accounts, so the preselection `/capture` also makes is correctable here rather
 >   than silent; changing it or the `kind` re-proposes, because the API's answer to a changed default is
 >   a *new* proposal.
+> - **A goal proposal states what it could not fill** (B-4b): the name and the target through `fm-money`,
+>   and a *još bez roka* row rather than an invented deadline — relative dates have no parser, so the card
+>   says the goal has none instead of offering a date control it could not drive. Nothing else is
+>   defaulted, so no toggle and no picker appear.
+> - **A tag proposal is one row and nothing else** (B-4c): its name, and no figure, control or guess flag —
+>   a Tag is a name. The wording is the **server's**, in the question's own language, so the Serbian card
+>   says *oznaka* exactly as `/tags`' title (`Oznake`) and create sheet (*Nova oznaka*) do; the card links
+>   to `/tags` and its undo is `deleteTag`, the mutation that screen calls. ⚠️ A refused duplicate says
+>   **"something with that name already exists"** and names no noun: the `CONFLICT` error carries no action,
+>   and the sentence used to say *category* even for a Tag, sending the reader to the wrong screen.
 >
 > ⚠️ **Not the same thing as F-30's *Primeni*.** The savings proposal's button is still unbuilt and still
 > its own product decision (docs/06 §8.8): applying *that* means deciding what "apply" does to a Budget

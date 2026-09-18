@@ -51,11 +51,13 @@ import {
 import { extractFragment } from '@finmate/nlp';
 
 import { ApiError } from '../../common/filters/all-exceptions.filter';
+import { normaliseForMatching } from '../../common/text/normalise';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { BudgetsService } from '../budgeting/budgets.service';
 import { BudgetPeriodEnum } from '../budgeting/budget.model';
 import { GoalsService } from '../goals/goals.service';
+import { TagsService } from '../taxonomy/tags.service';
 import { ClassificationService, type FragmentResult } from '../classification/classification.service';
 import { CaptureCommitRejected, TransactionsService } from '../ledger/transactions.service';
 import { TransactionKind, TransactionStatus } from '../ledger/transaction.model';
@@ -142,6 +144,7 @@ const COPY = {
       `Monthly budget for ${category}: ${amount} (${period})`,
     budgetPeriod: 'this month',
     goal: (name: string, target: string): string => `New saving goal “${name}” — ${target}`,
+    tag: (name: string): string => `New tag “${name}”`,
     noDeadline: 'no deadline yet',
     allCategories: 'all categories',
     // Built by joining parts rather than by referring to the sibling key: a template that reads
@@ -182,6 +185,12 @@ const COPY = {
       `Mesečni budžet za ${category}: ${amount} (${period})`,
     budgetPeriod: 'ovaj mesec',
     goal: (name: string, target: string): string => `Novi cilj „${name}” — ${target}`,
+    // **`oznaka`, not `tag`.** The Serbian screens call this entity an *oznaka* (`nav.tags`/`tags.title`
+    // are `Oznake`, the create sheet says `Nova oznaka`), and the card is quoting the server's sentence,
+    // so a Serbian card saying `Novi tag` would use a different word for the same row than the screen it
+    // links to. The cue list accepts both (`tag` *and* `oznaka`) — that is about what a *question* says,
+    // which is not the glossary (docs/03).
+    tag: (name: string): string => `Nova oznaka „${name}”`,
     noDeadline: 'još bez roka',
     allCategories: 'sve kategorije',
     transaction: (
@@ -213,6 +222,7 @@ export class AssistantActionService {
     private readonly categories: CategoriesService,
     private readonly budgets: BudgetsService,
     private readonly goals: GoalsService,
+    private readonly tags: TagsService,
     private readonly classification: ClassificationService,
     private readonly transactions: TransactionsService,
     private readonly accounts: AccountsService,
@@ -463,6 +473,29 @@ export class AssistantActionService {
       };
     },
 
+    ADD_TAG: async ({ householdId, slots, locale }) => {
+      const name = this.requireName(slots['name'], 'tag');
+      await this.assertTagNameFree(householdId, name);
+
+      const copy = copyFor(locale);
+      return {
+        slots: { name },
+        preview: {
+          sentence: copy.tag(name),
+          diff: [
+            {
+              slot: 'name',
+              field: copy.fields.name,
+              before: null,
+              after: name,
+              afterValue: null,
+              defaulted: false,
+            },
+          ],
+        },
+      };
+    },
+
     ADD_GOAL: async ({ householdId, slots, locale }) => {
       const text = this.requireText(slots['text']);
 
@@ -704,6 +737,17 @@ export class AssistantActionService {
       };
     },
 
+    ADD_TAG: async (proposal) => {
+      const created = await this.tags.create(proposal.householdId, {
+        name: proposal.slots['name'] as string,
+      });
+      return {
+        id: created.id,
+        label: created.name,
+        sentence: copyFor(proposal.locale).tag(created.name),
+      };
+    },
+
     ADD_GOAL: async (proposal) => {
       const args = proposal.args ?? {};
       const name = args['name'];
@@ -882,6 +926,26 @@ export class AssistantActionService {
   }
 
   /**
+   * The same rule `TagsService.assertNameFree` enforces — and it is a **different rule** from the
+   * category one, which is why this is not `assertNameFree`.
+   *
+   * A Tag's uniqueness is by the **fold** (`normaliseForMatching`), not by `lower(name)`: `Odmor` and
+   * `odmor` collide, and so do `Путовања` and `Putovanja`, because the fold transliterates and `lower`
+   * does not. A propose-time check that used the category's rule would offer a confirm button for a write
+   * `createTag` refuses. (Not `Rođendan`/`Rodjendan`: the fold maps `đ` → `d` and leaves the digraph `dj`
+   * alone — the `đ`/`ђ` asymmetry docs/15 records as a Phase 2 gap.)
+   */
+  private async assertTagNameFree(householdId: string, name: string): Promise<void> {
+    const folded = normaliseForMatching(name);
+    const clash = (await this.tags.list(householdId)).find(
+      (tag) => normaliseForMatching(tag.name) === folded,
+    );
+    if (clash !== undefined) {
+      throw new ApiError('CONFLICT', `"${clash.name}" already exists.`);
+    }
+  }
+
+  /**
    * The account a capture goes to: the one `/capture` preselects — the Household's newest live
    * account, because `AccountsService.list` orders by the UUIDv7 key descending.
    *
@@ -930,7 +994,7 @@ export class AssistantActionService {
    * "you did not say what to call it" is a question for the reader and "that is too long" is a failure of
    * a request they made.
    */
-  private requireName(raw: string | undefined, noun: 'category' | 'goal'): string {
+  private requireName(raw: string | undefined, noun: 'category' | 'goal' | 'tag'): string {
     const name = (raw ?? '').trim();
     if (name.length === 0) {
       throw new ApiError('VALIDATION_FAILED', `A ${noun} name is required.`);

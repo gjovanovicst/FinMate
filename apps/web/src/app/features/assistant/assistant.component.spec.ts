@@ -511,6 +511,29 @@ const GOAL_RESULT = {
   replayed: false,
 };
 
+const TAG_PROPOSAL = {
+  proposed: true,
+  reason: null,
+  proposalId: 'proposal-tag',
+  action: 'ADD_TAG',
+  preview: {
+    sentence: 'Nova oznaka „Odmor”',
+    diff: [
+      { slot: 'name', field: 'naziv', before: null, after: 'Odmor', afterValue: null, afterMoney: null, defaulted: false },
+    ],
+  },
+  expiresAt: '2026-09-20T10:10:00.000Z',
+};
+
+const TAG_RESULT = {
+  action: 'ADD_TAG',
+  createdId: 'tag-1',
+  createdLabel: 'Odmor',
+  undo: 'SOFT_DELETE',
+  sentence: 'Nova oznaka „Odmor”.',
+  replayed: false,
+};
+
 /** The picker's options — including an archived Account, which must not be offered. */
 const ACCOUNTS = {
   accounts: {
@@ -533,6 +556,7 @@ function writeResponder(over: Partial<Record<'answer' | 'propose' | 'execute' | 
     if (query.includes('mutation AssistantUndoCapture')) return { undoCapture: 1 };
     if (query.includes('mutation AssistantUndoBudget')) return { deleteBudget: true };
     if (query.includes('mutation AssistantUndoGoal')) return { deleteSavingGoal: { id: 'goal-1' } };
+    if (query.includes('mutation AssistantUndoTag')) return { deleteTag: true };
     return { assistantAnswer: over.answer ?? REFUSAL };
   };
 }
@@ -899,6 +923,49 @@ describe('the assistant write path (B-2b)', () => {
     expect(textOf(fixture)).toContain('goal “Letovanje” was removed');
   });
 
+  it('renders a tag as one name row, with no figure and no control to change', async () => {
+    const { fixture } = await mount(writeResponder({ propose: TAG_PROPOSAL }));
+    await askAndSettle(fixture, 'dodaj tag Odmor');
+
+    const text = textOf(fixture);
+    expect(text).toContain('Odmor');
+    expect(text).toContain('Nova oznaka');
+    // A Tag has one field and no number in it, so the card offers no money row, no kind toggle and no
+    // account picker — a control here would be a control over nothing.
+    expect(fixture.nativeElement.querySelector('.act__row fm-money')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.act__flag')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.act__select')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.act__undo')).toBeNull();
+  });
+
+  it('undoes a confirmed tag through deleteTag, and links to the tags screen', async () => {
+    const { fixture, client } = await mount(
+      writeResponder({ propose: TAG_PROPOSAL, execute: TAG_RESULT }),
+    );
+    await askAndSettle(fixture, 'dodaj tag Odmor');
+    (fixture.nativeElement.querySelector('.act__confirm') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // `/tags` has no per-row route, so the link opens the list — and it must not fall through to
+    // `/categories`, which is the default arm of `resultLink`.
+    const link = fixture.nativeElement.querySelector('.act--done a') as HTMLAnchorElement;
+    expect(link?.getAttribute('href')).toBe('/tags');
+
+    (fixture.nativeElement.querySelector('.act__undo') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // The same mutation `/tags` calls — a Tag's delete cascades its assignments, which is what makes
+    // this the operation that actually takes the write back.
+    const call = client.query.mock.calls.find((entry) =>
+      String(entry[0]).includes('mutation AssistantUndoTag'),
+    );
+    expect((call?.[1] as Record<string, unknown>)['id']).toBe('tag-1');
+    // …and the sentence names a tag, not a category: "no longer among your categories" would be a lie.
+    expect(textOf(fixture)).toContain('tag “Odmor” was removed');
+  });
+
   it('offers no account control, and asks for no accounts, when the question named the account', async () => {
     const { fixture, client } = await mount(
       writeResponder({
@@ -1007,6 +1074,8 @@ describe('the assistant write path (B-2b)', () => {
   it('names the collision when the name is already taken, in the reader’s language', async () => {
     // `CONFLICT` is the one error whose specific cause the reader can fix. The shared mapper would say
     // "something with those details already exists", which hides the only actionable word: the name.
+    // ⚠️ The sentence names **no noun**: the error carries no action, and a Tag can collide as well as a
+    // Category (B-4c) — "a category with that name" over a refused tag is the wrong screen.
     const { fixture } = await mount((query) => {
       if (query.includes('query AssistantSuggestions')) return { assistantSuggestions: [] };
       if (query.includes('mutation AssistantProposeAction')) {
@@ -1019,7 +1088,7 @@ describe('the assistant write path (B-2b)', () => {
     });
     await askAndSettle(fixture, 'dodaj kategoriju Hrana');
 
-    expect(textOf(fixture)).toContain('A category with that name already exists');
+    expect(textOf(fixture)).toContain('Something with that name already exists');
     expect(fixture.nativeElement.querySelector('.act')).toBeNull();
   });
 

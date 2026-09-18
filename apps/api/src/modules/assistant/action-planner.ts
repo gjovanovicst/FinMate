@@ -108,6 +108,28 @@ const CUES: Readonly<Record<AssistantAction, ActionCues>> = Object.freeze({
     amountAnchor: false,
   },
   /**
+   * A tag is a name, so this is the category action's shape: a verb, then the object, then the name.
+   *
+   * The object list carries both languages' words for it, and `label` is included because that is what an
+   * English speaker calls one — the *canonical* vocabulary is Tag (docs/03), but a question is not
+   * written in the glossary.
+   */
+  ADD_TAG: {
+    imperatives: [
+      'dodaj', 'dodajte', 'dodati',
+      'napravi', 'napravite', 'napraviti',
+      'kreiraj', 'kreirajte', 'kreirati',
+      'postavi', 'postavite', 'postaviti',
+      'add', 'create', 'new', 'set',
+    ],
+    leadAdjectives: [],
+    objects: ['tag', 'taga', 'tagu', 'tagovi', 'tagove', 'oznaka', 'oznaku', 'oznake', 'label', 'labels'],
+    slot: 'name',
+    // A tag's name is not a number, and a bare *"dodaj tag 2"* must not create one called `2`. The name
+    // is whatever follows the object, which is the same rule the category action uses.
+    amountAnchor: false,
+  },
+  /**
    * A goal is **named** by the word for it, so this action joins `SET_BUDGET` on the object rung: the
    * object word (not the verb) is what says a goal is being made, and the two-pass rule in `planAction`
    * keeps *"dodaj cilj Letovanje 200000"* away from the entry action's amount rung.

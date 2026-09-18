@@ -45,6 +45,7 @@ describe('the action registry (ADR-035)', () => {
       'captureCommit',
       'upsertBudget',
       'createSavingGoal',
+      'createTag',
     ]);
   });
 
@@ -77,6 +78,19 @@ describe('the action registry (ADR-035)', () => {
     expect(template.requiredSlots).toEqual(['text']);
     expect(template.defaultedSlots).toEqual([]);
     // `deleteSavingGoal`, and correct for the same reason the budget's is: this action only creates.
+    expect(template.undo).toBe('SOFT_DELETE');
+    expect(template.destroys).toBe(false);
+  });
+
+  it('declares the tag action as a name and nothing else', () => {
+    const template = ACTION_TEMPLATES.ADD_TAG;
+    expect(template.mutation).toBe('createTag');
+    expect(template.requiredSlots).toEqual(['name']);
+    // No defaulted slot at all, and that is the decision: the colour `/tags` can set is not filled,
+    // because the question never states one and a colour has no consequence to confirm.
+    expect(template.defaultedSlots).toEqual([]);
+    // `deleteTag` — a hard delete that cascades assignments, correct as an undo because the row this
+    // action creates has none yet.
     expect(template.undo).toBe('SOFT_DELETE');
     expect(template.destroys).toBe(false);
   });

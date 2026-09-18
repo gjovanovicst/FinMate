@@ -391,6 +391,7 @@ export const ASSISTANT_ACTIONS = [
   'ADD_TRANSACTION',
   'SET_BUDGET',
   'ADD_GOAL',
+  'ADD_TAG',
 ] as const;
 export type AssistantActionName = (typeof ASSISTANT_ACTIONS)[number];
 
@@ -685,6 +686,8 @@ export function undoneKey(action: string): TranslationKey {
       return 'assistant.action.undoneBudget';
     case 'ADD_GOAL':
       return 'assistant.action.undoneGoal';
+    case 'ADD_TAG':
+      return 'assistant.action.undoneTag';
     default:
       return 'assistant.action.undone';
   }
@@ -713,6 +716,8 @@ export function resultLink(result: ActionResult): ResultLink {
     case 'ADD_GOAL':
       // The same reason: `/goals` is a list, not a per-row route.
       return { route: ['/goals'], labelKey: 'assistant.action.openGoals' };
+    case 'ADD_TAG':
+      return { route: ['/tags'], labelKey: 'assistant.action.openTags' };
     default:
       return { route: ['/categories'], labelKey: 'assistant.action.openCategories' };
   }

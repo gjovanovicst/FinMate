@@ -160,6 +160,20 @@ describe('planAction (docs/06 §8.16)', () => {
     expect(planAction('koliko sam uštedeo za letovanje')).toBeNull();
   });
 
+  it('plans ADD_TAG from its own object word, in both languages', () => {
+    // The category action's shape: a verb, then the object, then the name.
+    expect(planAction('dodaj tag Odmor')?.action).toBe('ADD_TAG');
+    expect(planAction('dodaj tag Odmor')?.slots['name']).toBe('Odmor');
+    expect(planAction('napravi oznaku Rođendan')?.slots['name']).toBe('Rođendan');
+    expect(planAction('add a label Travel')?.slots['name']).toBe('Travel');
+    // A bare noun phrase is the same "unmistakable but incomplete" case the category action has, so the
+    // caller refuses with `UNRUNNABLE:name` rather than treating the question as a read.
+    expect(planAction('dodaj tag')?.action).toBe('ADD_TAG');
+    expect(planAction('dodaj tag')?.slots['name']).toBeUndefined();
+    // …and a question that merely mentions one is not a command.
+    expect(planAction('koliko sam potrošio na tag Odmor')).toBeNull();
+  });
+
   it('does not guess an action from a bare noun phrase', () => {
     // "nova kategorija" *is* a request shape — Serbian drops the verb — so it plans and then refuses
     // for want of a name, which asks the user rather than writing something nobody specified.

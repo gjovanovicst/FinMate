@@ -234,6 +234,7 @@ A registered assistant action. Closed: the registry has no unregistered member (
 enum AssistantAction {
   ADD_CATEGORY
   ADD_GOAL
+  ADD_TAG
   ADD_TRANSACTION
   SET_BUDGET
 }

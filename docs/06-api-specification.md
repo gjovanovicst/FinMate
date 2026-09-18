@@ -4079,6 +4079,41 @@ Three things are deliberately narrower than `createSavingGoal` itself:
 | **No Account** | `createSavingGoal` accepts one; a goal does not need it, and the card would have to offer a picker for a field the question never implies. `/goals` sets it. |
 | A target with **no name** is a refusal (`UNRUNNABLE:name`) | `"napravi cilj 200000"` has an amount and nothing to call it. That is the same distinction the category action draws: a missing slot is a question for the reader, while a name that is too long is a failure of a request they made. The shared `requireName` now takes the noun, so a goal is not told its *category* name is too long. |
 
+**`ADD_TAG` (task B-4c, 2026-09-18).** *"dodaj tag Odmor"*, *"napravi oznaku Rođendan"*, *"add a label
+Travel"*. The last of the three name-shaped actions: the category action's shape, a verb and then the
+object, with the object list carrying `tag`/`oznaka`/`label` and their inflections. The name is whatever
+follows the object, and `amountAnchor: false` keeps a bare *"dodaj tag 2"* from creating a Tag called `2`.
+
+**Its one interesting property is that the Category action's duplicate rule is the wrong rule here**, and a
+copy of it would have offered a doomed button:
+
+| | `ADD_CATEGORY` | `ADD_TAG` |
+|---|---|---|
+| The write's rule | `categories_unique_name` compares **`lower(name)`** | `TagsService.assertNameFree` compares **`normaliseForMatching(name)`** — the fold |
+| What that means | `Hrana` and `hrana` collide; `Храна` does not collide with `Hrana` | `Путовања` **and** `Putovanja` are one Tag, because the fold transliterates |
+| The propose-time check | `assertNameFree` (`lower`) | `assertTagNameFree` (the fold) |
+
+This is ADR-035 decision 5 in the small: the preview must check the rule the write enforces, or the card
+offers a Confirm button for a call that cannot succeed. The integration suite asserts the discriminating
+case — a Cyrillic Tag exists, its Latin spelling is refused — which is a pair `lower` cannot equate. Two
+things came out of writing it down, both recorded in [15](15-implementation-gotchas.md): the fold maps
+`đ` → `d` and leaves the digraph `dj` alone (so `Rođendan`/`Rodjendan` is *not* such a pair — the `đ`/`ђ`
+asymmetry docs/04 §8.1.7 already owns), and a duplicate reaches the client as a **GraphQL `CONFLICT`
+error**, not as a `proposed: false` reason, because only an `UnrunnableSlot` becomes a refusal.
+
+Three smaller decisions:
+
+- **No colour.** `/tags` can set one; the question never states one, and unlike a goal's missing deadline a
+  colour changes nothing the reader needs to weigh. So `defaultedSlots` is empty and the diff is one row.
+- **The undo is `deleteTag`** — a hard delete that cascades its assignments, which is correct *because* the
+  row this action creates has none yet.
+- **No Account, no Category, no amount** — the slot whitelist is `['name']`, so a client cannot inject one.
+
+⚠️ **The card's `CONFLICT` sentence named a Category, and B-4c made that a lie.** The copy existed for the
+category action (*"A category with that name already exists"*, `assistant.action.taken`) and was rendered
+from the error code alone — and the error carries no action, so a refused **Tag** was announced as a
+category the reader would then go looking for. It now names no noun. The browser pass asserts it.
+
 **The transaction card (task B-3b, 2026-09-18).** `lines` is what the card draws: each row's text, its
 amount **through `fm-money`**, the Category the pipeline chose, the day it will be filed under, and — when
 the confidence gate will file it — that it goes to the review queue. The sentence stays above it, so the
@@ -4192,12 +4227,37 @@ reads**, which is the guard a fixture cannot be.
 `assistant-goal.integration.spec.ts` **7** against a real Postgres (the name and target out of one text,
 the amount as `Money` on the wire, the deadline stated and the monthly requirement consequently absent, a
 Cyrillic name kept Cyrillic, the three refusals by name, and the replayed key), plus the client's
-`assistant.view.spec.ts` 44 and `assistant.component.spec.ts` 38. API **1110**, web **912**, **2835
+`assistant.view.spec.ts` 43 and `assistant.component.spec.ts` 39 (corrected by B-4c — the row said
+44/38; see below). API **1110**, web **912**, **2835
 total**, lint 9/9, typecheck 9/9, `api:evals` green (54/58, 93.10 %), `web:build` + `bundle:budget` ok.
 **Live 15/15** (`/tmp/verify-b4b.mjs`) and **browser 14/14** (Playwright on `:4200`, screenshots in
 `.artifacts/visual-audit/b4b-goal-*.png`): the card with its target in `fm-money` and its missing deadline,
 0 horizontal overflow at 320/768/1280 px, axe **0 critical / 0 serious**, the confirm landing on `/goals`,
 the undo removing it, and the probe's goal deleted so the demo is as it was found.
+
+**B-4c verified**: `action-planner.spec.ts` 18, `assistant-actions.spec.ts` 10,
+`assistant-tag.integration.spec.ts` **5** against a real Postgres — one name row and nothing filled, the
+row written through the same `TagsService.create` `/tags` calls with no colour, a Cyrillic name kept
+Cyrillic **and its Latin spelling refused** (the fold, told apart from `lower`), the nameless request
+refused with its slot, and the replayed idempotency key — plus the client's `assistant.view.spec.ts` 43 and
+`assistant.component.spec.ts` 41. API **1117**, web **914**, **2844 total**, lint 9/9, typecheck 9/9,
+`api:evals` green (54/58, 93.10 %), `web:build` + `bundle:budget` ok. **Live 19/19**
+(`/tmp/verify-b4c.mjs`): the card's shape, the sentence in the screen's own vocabulary, the stored row with
+no colour, the Cyrillic/Latin pair, the `UNRUNNABLE:name` and `NOT_AN_ACTION` refusals, the replayed key
+against a different one, and every probe Tag removed. **Browser 22/22** (Playwright on `:4200`, Serbian
+locale, screenshots in `.artifacts/visual-audit/b4c-tag-*.png`): the card with its one row and **no** money
+row, picker or guess flag, 0 horizontal overflow at 320/768/1280 px, axe **0 critical / 0 serious**, the
+confirm by keyboard alone, the link to `/tags`, the Tag visible on that screen, the duplicate ask rendered
+with the noun-free sentence, the undo naming an *oznaka*, the Tag gone from `/tags`, and no uncaught page
+error.
+
+⚠️ **Two corrections this task owes the record.** (a) The B-4b row below claimed
+`assistant.view.spec.ts` **44** and `assistant.component.spec.ts` **38**; the commit those numbers describe
+holds **43** and **39** (they sum to the same 82, which is why nothing caught it). (b) The Serbian card said
+`Novi tag` while every Serbian screen calls the entity an **oznaka** (`nav.tags` and `tags.title` are
+`Oznake`, the create sheet says `Nova oznaka`) — found by the browser pass, in the same class as B-4a's
+unselected `afterMoney`: a unit fixture supplies the sentence, so it can agree with itself while the server
+says something else. The cue list keeps `tag` **and** `oznaka`, because that is about what a *question* says.
 
 **B-3b verified**: `assistant.view.spec.ts` 41 and `assistant.component.spec.ts` 33 — `previewLines`
 reading `undefined` as none (a proposal stored before the field existed), `accountRow` refusing a row with

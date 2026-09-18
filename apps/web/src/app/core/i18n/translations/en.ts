@@ -275,6 +275,8 @@ export const en = {
     'You already have a budget for that category this month, and I will not overwrite it here — change it on the budgets screen.',
   'assistant.action.undoneGoal': 'Undone — the goal “{name}” was removed.',
   'assistant.action.openGoals': 'Open the goals',
+  'assistant.action.undoneTag': 'Undone — the tag “{name}” was removed.',
+  'assistant.action.openTags': 'Open the tags',
   'assistant.action.uncategorised': 'no category yet',
   'assistant.action.lineReview': 'goes to the review queue',
   'assistant.action.needText': 'Tell me what to record — for example, “dodaj trošak kafa 180”.',
@@ -289,7 +291,10 @@ export const en = {
   'assistant.action.undoing': 'Undoing…',
   'assistant.action.undone': 'Undone — “{name}” is no longer among your categories.',
   'assistant.action.replayed': 'This was already applied, so nothing was created twice.',
-  'assistant.action.taken': 'A category with that name already exists, so nothing was created.',
+  // **No noun**, deliberately: the card renders this from a GraphQL `CONFLICT` error, which carries no
+  // action, and a Tag, Goal or Budget can collide too (B-4c). "A category with that name already exists"
+  // over a refused *tag* sends the reader to the wrong screen (docs/15).
+  'assistant.action.taken': 'Something with that name already exists, so nothing was created.',
   'assistant.action.openCategories': 'Open the categories',
 
   'notifications.title': 'Notifications',

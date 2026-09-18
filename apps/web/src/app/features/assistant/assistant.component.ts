@@ -1305,6 +1305,16 @@ const UNDO_OPERATIONS: Readonly<
     `,
     variables: (id) => ({ id }),
   },
+  // `deleteTag` — a hard delete that cascades its assignments, and correct here for exactly that
+  // reason: the row this action created has none.
+  ADD_TAG: {
+    document: /* GraphQL */ `
+      mutation AssistantUndoTag($id: ID!) {
+        deleteTag(id: $id)
+      }
+    `,
+    variables: (id) => ({ id }),
+  },
   // `deleteSavingGoal` — correct because the action only ever creates.
   ADD_GOAL: {
     document: /* GraphQL */ `

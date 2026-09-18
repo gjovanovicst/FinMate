@@ -235,6 +235,7 @@ export enum AssistantActionEnum {
   ADD_TRANSACTION = 'ADD_TRANSACTION',
   SET_BUDGET = 'SET_BUDGET',
   ADD_GOAL = 'ADD_GOAL',
+  ADD_TAG = 'ADD_TAG',
 }
 
 /**
@@ -253,6 +254,7 @@ export const ASSISTANT_ACTION_ENUM_MIRROR: Readonly<
   ADD_TRANSACTION: AssistantActionEnum.ADD_TRANSACTION,
   SET_BUDGET: AssistantActionEnum.SET_BUDGET,
   ADD_GOAL: AssistantActionEnum.ADD_GOAL,
+  ADD_TAG: AssistantActionEnum.ADD_TAG,
 };
 
 registerEnumType(AssistantActionEnum, {
