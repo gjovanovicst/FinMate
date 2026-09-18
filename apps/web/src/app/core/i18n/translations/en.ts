@@ -1294,6 +1294,21 @@ export const en = {
   'receipts.error.reconcile': 'That could not be reconciled. Please try again.',
   'receipts.error.commit': 'The transaction could not be created. Nothing was saved.',
   'receipts.error.detach': 'That could not be detached. Please try again.',
+  'receipts.error.extract': 'The photo could not be sent for reading. Please try again.',
+
+  // ---- reading a Receipt photograph (ADR-037) ----
+  // A missing reader is *not* an error, and the copy must not read like one: the manual lines below
+  // are the documented fallback, and `{count}` is the number of lines the reader wrote.
+  'receipts.items.recognise': 'Read the photo',
+  'receipts.items.recognising': 'Reading the photo…',
+  'receipts.extract.wrote': 'Lines read from the photo: {count}.',
+  'receipts.extract.unavailable':
+    'This server has no receipt reader configured, so lines are typed in by hand.',
+  'receipts.extract.failed':
+    'The receipt reader did not finish. Nothing was changed — type the lines in or try again.',
+  'receipts.extract.skippedLines':
+    'Printed lines without a readable amount were left out: {count}.',
+  'receipts.extract.code': 'Reader answer',
 
   // ---- API error codes (docs/06 §10) ----
   'onboarding.back': 'Back',

@@ -210,6 +210,7 @@ configured). The first run of the harness found and fixed two real defects — s
 | 4.1.3 | OCR adapter + item extraction + item-level classification | 3.5 | F-14 |
 | 4.1.4 | Reconciliation against the receipt total (I-6) + mismatch resolution UI | 2 | F-14 |
 | 4.1.5 | Itemised breakdown UI, per-item category override | 1.5 | F-14 |
+| 4.1.6 | **A reader for the receipt, and a screen that asks it** — **added because 4.1.3 shipped an API no deployment could serve**: `AI_OCR_MODEL` + `AI_OCR_TIMEOUT_MS` ([ADR-037](14-decisions-and-risks.md)), the `assembleAi` capability gate (an adapter that lists no model for a task is a logged skip, not a route that fails on the first receipt), `CLOUD_OCR` consent on every non-`LOCAL` OCR route ([ADR-038](14-decisions-and-risks.md)), the optional local sidecar (docs/11 §2.5) and *Read the photo* on `/receipts/:id` | 2 | F-14 |
 
 ### Sprint 4.2 (week 13) — Offline & sync, ~10 pd
 

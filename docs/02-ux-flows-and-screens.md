@@ -703,11 +703,16 @@ rather than a spinner page.
 > every line has a Category) and links to the created row through `/transactions/:id`; *Otkači* unlinks
 > the photo and leaves the Transaction alone.
 >
-> **No OCR provider is configured**, so `extractReceipt` answers `{extracted: false, reason:
-> "AI_UNAVAILABLE:no-provider-configured"}` and the receipt is itemised by hand; that is the state the
-> sentence above describes, and it is reported rather than faked. The detail screen therefore does
-> **not** call `extractReceipt` (a button that always fails for a missing provider is a control this
-> build cannot honour) and the item rows are typed in rather than streamed with ⚪ badges while OCR runs.
+> **4.1.6 gave the screen its reader, and the reader an endpoint.** *Pročitaj sa sliku* / *Read the photo*
+> calls `extractReceipt` and this screen reports the **answer**, not an error state: `{extracted: true,
+> itemsWritten: n}` prints how many lines were written (and how many printed lines had no readable amount),
+> while a refusal prints the sentence for its cause and the machine reason underneath — `AI_UNAVAILABLE:
+> no-provider-configured` when the deployment has no reader (a state, not a fault: the copy points at the
+> manual rows below) or `AI_ERROR:…` when a reader ran and failed. Before this, the same API answer was
+> **invisible**: nothing called the mutation, so a person saw an empty list and no explanation. There is
+> still no ⚪ streaming: one request, one answer, and the manual rows stay the documented fallback
+> (docs/04 §9's degradation ladder). The item rows are re-read after a successful read, so the numbers come
+> from the API's stored values rather than a client estimate.
 > Also **not** built: a per-item `quantity`/`unitPrice` UI; *Uskladi ručno* offers `ADJUST_TOTAL` (the
 > **absolute** new total) and `ADD_ROUNDING_LINE` rather than a per-item adjust dialog, and the second
 > is offered only while the lines fall **short**, because `receipt_items.amount_minor` cannot be

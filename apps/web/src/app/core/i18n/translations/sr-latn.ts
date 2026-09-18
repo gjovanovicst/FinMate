@@ -1260,6 +1260,20 @@ export const srLatn: Record<keyof typeof en, string> = {
   'receipts.error.reconcile': 'To nije moglo da se uskladi. Pokušaj ponovo.',
   'receipts.error.commit': 'Transakcija nije mogla da se napravi. Ništa nije sačuvano.',
   'receipts.error.detach': 'To nije moglo da se otkači. Pokušaj ponovo.',
+  'receipts.error.extract': 'Fotografija nije mogla da se pošalje na čitanje. Pokušaj ponovo.',
+
+  // ---- čitanje fotografije računa (ADR-037) ----
+  // Nepodešen čitač nije greška i tekst ne sme tako da zvuči: ručne stavke ispod su predviđeni
+  // način rada, a `{count}` je broj stavki koje je čitač upisao.
+  'receipts.items.recognise': 'Pročitaj sa slike',
+  'receipts.items.recognising': 'Čitam sliku…',
+  'receipts.extract.wrote': 'Pročitano sa slike: {count} stavki.',
+  'receipts.extract.unavailable':
+    'Na ovom serveru nije podešen čitač računa, pa se stavke unose ručno.',
+  'receipts.extract.failed':
+    'Čitač računa nije završio. Ništa nije izmenjeno — unesi stavke ručno ili pokušaj ponovo.',
+  'receipts.extract.skippedLines': 'Linije bez čitljivog iznosa su izostavljene: {count}.',
+  'receipts.extract.code': 'Odgovor čitača',
 
   // ---- API error codes ----
   'onboarding.back': 'Nazad',

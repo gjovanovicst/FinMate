@@ -8,6 +8,7 @@ import {
   canPost,
   capturedLabel,
   confidenceBadge,
+  extractReport,
   messageKeyForStatus,
   postHintKey,
   receiptNoteKeys,
@@ -245,5 +246,58 @@ describe('capturedLabel', () => {
   it('renders nothing rather than "Invalid Date" for a value it cannot read', () => {
     // The API always sends an instant, so this is a defensive answer, not a state the wire produces.
     expect(capturedLabel('not-a-date', 'en-GB')).toBe('');
+  });
+});
+
+describe('extractReport', () => {
+  it('says how many lines were written when the reader answered', () => {
+    const report = extractReport({
+      extracted: true,
+      itemsWritten: 7,
+      reason: null,
+      linesWithoutAmount: 0,
+    });
+    expect(report.messageKey).toBe('receipts.extract.wrote');
+    expect(report.tone).toBe('info');
+    // Nothing failed, so there is no machine answer to quote.
+    expect(report.showCode).toBe(false);
+  });
+
+  it('tells a missing reader from a failed one, and shows the code for both', () => {
+    // The two refusals look identical on screen and are not the same problem: one is a deployment
+    // state an operator fixes, the other may succeed on a retry. Printing the reason is the whole
+    // difference between them (ADR-037).
+    const withoutProvider = extractReport({
+      extracted: false,
+      itemsWritten: 0,
+      reason: 'AI_UNAVAILABLE:no-provider-configured',
+      linesWithoutAmount: 0,
+    });
+    expect(withoutProvider.messageKey).toBe('receipts.extract.unavailable');
+    expect(withoutProvider.tone).toBe('info');
+    expect(withoutProvider.showCode).toBe(true);
+
+    const failed = extractReport({
+      extracted: false,
+      itemsWritten: 0,
+      reason: 'AI_ERROR:PROVIDER_UNAVAILABLE:TIMEOUT',
+      linesWithoutAmount: 0,
+    });
+    expect(failed.messageKey).toBe('receipts.extract.failed');
+    expect(failed.tone).toBe('warn');
+    expect(failed.showCode).toBe(true);
+  });
+
+  it('treats a refusal with no reason as a failure rather than as success', () => {
+    // A `null` reason is not a state the API produces, and reading it as "nothing to report" would
+    // hide a refusal behind an empty line.
+    const report = extractReport({
+      extracted: false,
+      itemsWritten: 0,
+      reason: null,
+      linesWithoutAmount: 0,
+    });
+    expect(report.messageKey).toBe('receipts.extract.failed');
+    expect(report.showCode).toBe(true);
   });
 });

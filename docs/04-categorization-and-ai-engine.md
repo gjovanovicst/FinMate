@@ -945,6 +945,28 @@ what the dev `.env` does; verified live end to end — `narrationMode: LLM`, a S
 micros, and withdrawing `AI_DATA_PROCESSING` drops the same question to `TEMPLATE_FALLBACK` with
 `CONSENT_DECLINED` before any socket is opened.
 
+**…and the same map is why `OCR` could never work at all (measured 2026-09-18, ADR-037).** The paragraph
+above says a task with no model entry is not supported by that adapter. `LOCAL` was the only factory that
+listed an `OCR` model (`qwen2.5vl:3b`) and no deployment ran a local runtime, while `OPENAI_EU` set
+`supportsOcr: true` and was **never given a model** — so `supports('OCR')` was `false` everywhere, and a
+fully configured EEA vision endpoint still could not read a receipt. Three real camera captures in the demo
+Household answered `{extracted: false, reason: "AI_UNAVAILABLE:no-provider-configured"}` and `aiEgress`
+listed only `CLASSIFY` and `NARRATE`. Three changes, and the third is the one that generalises:
+
+1. `AI_OCR_MODEL` names the model, with **no default** — `LOCAL` keeps its compiled-in one, a cloud
+   endpoint gets one only from the operator (ADR-031's "a default is a claim" rule, one layer down).
+2. The local sidecar is part of the deployment (docs/11 §2.5), so `LOCAL` is a real option rather than a
+   default that cannot answer.
+3. `assembleAi` now asks the constructed provider `supports(task)` **before** it writes a route, so an
+   unsupported task is a logged skip with an actionable reason instead of a route that refuses at call
+   time. That is the same defect class as `NARRATE` above, closed for every task rather than for the one
+   that was measured.
+
+⚠️ **And an image is not a text payload.** docs/08 §6.5 makes cloud OCR consent-gated *in an EEA region
+too*, which the router did not implement: its gate was asked only for endpoints outside the EEA. That is
+[ADR-038](14-decisions-and-risks.md) — `IMAGE_TASKS` now asks for `CLOUD_OCR` on every endpoint but
+`LOCAL`, and a routing table naming a cloud OCR route cannot be constructed without a gate.
+
 **A routed task is not a called task, and the consent disclosure says so (ADR-034).** `PARSE` is in the
 table above, its primary is validated at boot and `assembleAi` routes it — and nothing in `apps/` invokes it:
 a typed fragment is parsed by `packages/nlp` on this node, and `AiClassifier` exposes only `classify`. A

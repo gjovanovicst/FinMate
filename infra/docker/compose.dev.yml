@@ -107,7 +107,41 @@ services:
       - '${MAILHOG_UI_PORT:-8025}:8025'
     restart: unless-stopped
 
+  # ---------------------------------------------------------------------------
+  # Ollama — the local model runtime that reads Receipt photographs (ADR-037).
+  #
+  #   pnpm dev:ai           start it and pull the vision model
+  #   pnpm dev:ai:down      stop it (keeps the downloaded model)
+  #
+  # **Opt-in, behind the `ai` profile**: `pnpm dev:infra` does not start it, because a ~3 GB model on
+  # a laptop's CPU is a choice rather than a default (docs/08 §6.8's honest performance limit). With it
+  # running, `LOCAL_AI_BASE_URL=http://localhost:11434` (no `/v1`; the adapter appends the path) makes
+  # `OCR` route LOCAL and the photograph
+  # never leaves the node — which is the whole point of ADR-037.
+  #
+  # Bound to 127.0.0.1 on purpose: this sidecar reads a Household's receipts, and a vision model on the
+  # LAN is a bigger surface than the port it saves. Production runs the same service on the node's
+  # private network (docs/11 §2.5).
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: finmate-ollama
+    profiles: ['ai']
+    ports:
+      - '127.0.0.1:${OLLAMA_PORT:-11434}:11434'
+    volumes:
+      - ollamadata:/root/.ollama
+    healthcheck:
+      # `ollama list` is the cheapest call that proves the server is up rather than the port is open.
+      test: ['CMD-SHELL', 'ollama list >/dev/null 2>&1 || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
 volumes:
   pgdata:
   redisdata:
   miniodata:
+  ollamadata:

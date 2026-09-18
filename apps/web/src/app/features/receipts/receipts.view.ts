@@ -284,3 +284,44 @@ export function capturedLabel(instant: string, tag: string): string {
   if (Number.isNaN(at.getTime())) return '';
   return new Intl.DateTimeFormat(tag, { dateStyle: 'medium' }).format(at);
 }
+
+/** What `extractReceipt` answered, as the wire spells it (docs/06 §9.3, ADR-037). */
+export interface ExtractOutcome {
+  readonly extracted: boolean;
+  readonly itemsWritten: number;
+  readonly reason: string | null;
+  readonly linesWithoutAmount: number;
+}
+
+export interface ExtractReport {
+  /** What to say, in the reader's language. */
+  readonly messageKey: TranslationKey;
+  /** A refusal is not an error: nothing is broken, and the fallback is the manual rows below. */
+  readonly tone: 'info' | 'warn';
+  /** Whether to print the machine reason. */
+  readonly showCode: boolean;
+}
+
+/**
+ * How the screen reports an OCR attempt — and the reason this is a function rather than a ternary in
+ * the template.
+ *
+ * `extracted: false` has **two** meanings that look identical on screen and must not be conflated: a
+ * deployment with no reader configured (`AI_UNAVAILABLE:…`, a permanent state the operator fixes) and
+ * a reader that ran and failed (`AI_ERROR:…`, which a retry may fix). Both are refusals rather than
+ * errors — the manual line editor is the documented fallback (docs/02 §4.11, docs/04 §9's degradation
+ * ladder) — so both are rendered as information, with the machine code shown so the difference is
+ * visible to whoever has to act on it. A spinner that never resolves is the failure mode this exists
+ * to prevent.
+ */
+export function extractReport(outcome: ExtractOutcome): ExtractReport {
+  if (outcome.extracted) {
+    return { messageKey: 'receipts.extract.wrote', tone: 'info', showCode: false };
+  }
+  const unavailable = outcome.reason?.startsWith('AI_UNAVAILABLE') === true;
+  return {
+    messageKey: unavailable ? 'receipts.extract.unavailable' : 'receipts.extract.failed',
+    tone: unavailable ? 'info' : 'warn',
+    showCode: true,
+  };
+}

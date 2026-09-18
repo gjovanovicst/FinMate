@@ -2392,6 +2392,129 @@ numeric validator.
 
 ---
 
+### ADR-037 — A Receipt is read by a vision model the deployment *names*, and the node can serve it itself
+
+**Status:** Accepted
+
+**Context.** `OCR` has been routed since 2.2.1 and has never once worked. Measured on 2026-09-18 against the
+running dev API, with three real camera captures in the demo Household: `extractReceipt` answered
+`{extracted: false, itemsWritten: 0, reason: "AI_UNAVAILABLE:no-provider-configured"}`, `aiEgress` listed
+only `CLASSIFY` and `NARRATE`, and the client never called the mutation at all (docs/02 §4.11 recorded the
+last part as deliberate, because a control that always fails is a control this build cannot honour).
+
+Three separate causes, and only one of them was "no model is running":
+
+1. `AI_OCR_PRIMARY` defaults to `LOCAL`, and `LOCAL_AI_BASE_URL` has no default — so a dev machine has no
+   reader. That part is the *honest* default ADR-031 asked for.
+2. **A factory serves a task by listing a model for it** (docs/04 §9), and no cloud endpoint had ever been
+   given one: `createOpenAiProvider` sets `supportsOcr: true` and the composition root never passed an OCR
+   model, so `supports('OCR')` was `false` on every endpoint but `LOCAL`. A deployment *could not* read a
+   receipt no matter what it configured — including a fully configured EEA vision endpoint. This is the
+   same defect class §9 already recorded for `NARRATE` ("implemented, routed, disclosed, and refused at
+   call time with `TASK_NOT_SUPPORTED`"), one task later and in the opposite direction.
+3. The only endpoint with a vision model compiled in is `LOCAL` (`qwen2.5vl:3b`), and nothing ran it.
+
+**Decision.**
+
+1. **The local reader is a container on the node**, the same shape as the rest of the stack (ADR-013): an
+   `ollama` service in the dev compose behind an **`ai` profile** (opt-in — `pnpm dev:infra` stays light),
+   bound to `127.0.0.1`, with the vision model pulled by `pnpm dev:ai`. Production runs the same container
+   on the node's private network; `LOCAL_AI_BASE_URL` is the only thing that changes.
+2. **A cloud reader must be named: `AI_OCR_MODEL`, and there is no default.** `LOCAL` keeps its compiled-in
+   model, because the sidecar's model is part of the local deployment; a cloud endpoint gets one only from
+   this key. A configuration that names a cloud endpoint without a model leaves `OCR` unrouted and says so
+   in the boot log — never a fallback to a vendor's model name that nobody chose. This is ADR-031's rule
+   ("there is no default, because the default *was* a lie") applied one layer down.
+3. **An adapter that cannot read an image may not be routed for `OCR`.** `assembleAi` asks the constructed
+   provider `supports(task)` before it writes a route, so a text-only endpoint (DeepSeek's platform serves
+   no vision model) is a **logged skip with a reason**, not a route that fails on the first receipt. The
+   seam stays `UNCONFIGURED_OCR`, which is what keeps `aiEgress` honest.
+4. **The screen asks, and reports the answer** (`/receipts/:id`, 4.1.6): a *Read the photo* action calling
+   `extractReceipt`, the machine reason rendered verbatim when nothing was written, and the manual line
+   editor unchanged as the documented fallback. A missing reader is copy, not an error state.
+5. **Cloud OCR is consent-gated by `CLOUD_OCR` even inside the EEA** — [ADR-038](#adr-038--an-image-leaving-the-node-needs-cloud_ocr-consent-whatever-the-regions) makes the router
+   ask, because docs/08 §6.5 already requires it and the router did not.
+
+**Consequences.**
+- ✅ A receipt can be read on a laptop with no key and no egress, and on a server with an EEA vision
+  endpoint — the same seam, one config value apart.
+- ✅ "Why is OCR not working?" now has one answer per cause: no sidecar (`LOCAL_AI_BASE_URL` unset), no
+  model named (`AI_OCR_MODEL` unset on a cloud endpoint), a text-only endpoint, or no consent. Each is a
+  log line with the task named.
+- ✅ The most sensitive payload in the system (an image) is local-first by default, which is the ordering
+  docs/08 §6.5 asks for.
+- ⚠️ **A 3B vision model on the CPU of a single node is slow.** The documented budget is **20 s** per call
+  (docs/04 §9). Measured on this machine (3 cores, no GPU, `qwen2.5vl:3b`): **see docs/11 §2.5** — the
+  number decides whether the default model is usable on a laptop, and the answer is recorded there rather
+  than assumed here.
+- ⚠️ The sidecar costs ~1.5 GB of image and ~3.2 GB of model on the node's disk, and it is **opt-in**
+  precisely so a machine that does not want it pays nothing.
+- ⚠️ A deployment that wants fast cloud OCR now has to *choose* a vendor and a model (Q-4), which is the
+  point: the previous state hid that choice inside a default nobody could see.
+- ⚠️ Reversal cost is low on purpose (one env key), but the *rule* — an unnamed model is an unrouted task —
+  is the part to keep: it is what stops the next "looks configured, fails at the first receipt" defect.
+
+**Alternatives rejected.**
+- **(a) Default `AI_OCR_MODEL` to a vendor's model name** — picks a processor and a jurisdiction at boot for
+  every deployment, which is exactly the `ANTHROPIC_EU`/`*_EU_BASE_URL` mistake ADR-031 corrected. Rejected
+  as a constraint, not a preference.
+- **(b) Route OCR to DeepSeek with a model name anyway** — its platform serves no vision model, so the
+  configuration would be a claim the wire cannot honour. Refused at assembly by decision 3.
+- **(c) Implement `GEMINI_EU` now** — it is docs/04 §9's OCR *fallback* and it has no adapter; a
+  vendor-specific wire format is its own ADR and its own task, and it would still need decisions 2 and 3.
+- **(d) Cloud-only OCR** — contradicts docs/08 §6.8's "process only on our servers" option and puts the
+  image on the network by default. The local sidecar is ~1.5 GB and one profile away.
+
+---
+
+### ADR-038 — An image leaving the node needs `CLOUD_OCR` consent, whatever the region's
+
+**Status:** Accepted
+
+**Context.** docs/08 §6.5's table says of `OCR`, in the *requirements we must hold in writing before a
+provider is enabled*: **"EU region · same retention, plus images deleted ≤ 30 days · Consent-gated; most
+sensitive payload."** The router did not implement the last clause. Its consent gate is asked per endpoint,
+and only for endpoints that are **not `LOCAL` or `_EU`** (`packages/ai/src/router.ts`, `ConsentGate`'s doc):
+an EEA host is treated as permitted by adequacy alone.
+
+For text that is a defensible reading of ADR-007. For a photograph of a household's shopping it is not what
+the document says, and the difference is not academic: `CLOUD_OCR` exists as its own purpose in the shipped
+`consents` CHECK (`AI_DATA_PROCESSING`, `EVAL_DATASET`, `MARKETING_EMAIL`, `CLOUD_OCR`) and in the consent
+copy, and the demo Household granted it on 2026-09-16 — a permission the code has, until now, never asked
+for. Left alone, wiring ADR-037's cloud path would have shipped images to a third party on the strength of a
+consent record that was never consulted.
+
+**Decision.** A task whose payload is an **image** — `OCR` today, and any future one that adds itself to
+`IMAGE_TASKS` — asks the consent gate for its own consent kind on **every endpoint except `LOCAL`**, EEA or
+not. Text tasks are unchanged: they ask only when they would leave the EEA.
+
+**Consequences.**
+- ✅ The code matches docs/08 §6.5's table, and the `CLOUD_OCR` purpose becomes a consent that is actually
+  enforced rather than one that is merely displayed.
+- ✅ A Household that wants the strongest privacy posture gets it by declining `CLOUD_OCR` alone, while
+  keeping text narration on an EEA provider — the two permissions stay independent, which is why the
+  purpose was split in the first place.
+- ⚠️ A cloud OCR deployment now needs **two** consents (`AI_DATA_PROCESSING` for text, `CLOUD_OCR` for the
+  image) or the seam returns `CONSENT_DECLINED` and receipts are itemised by hand. That is the intended
+  cost, and the reason must be visible in the screen's copy (`AI_ERROR:…`), not a silent no-op.
+- ⚠️ A router whose table names a non-`LOCAL` `OCR` route can no longer be constructed without a consent
+  gate — the constructor's fail-closed rule now covers "an image would leave the node", not only "a
+  payload would leave the EEA". A test asserts both halves.
+- ⚠️ Reversal cost if this proves too strict: one predicate. But reversing it silently would remove a
+  compliance control, which is why it is a named decision rather than a code comment.
+
+**Alternatives rejected.**
+- **(a) Leave it to ADR-007's region rule** — that is what the code did, and it contradicts a written
+  requirement in the same repository. A gap between two documents is not a decision.
+- **(b) Gate `CLOUD_OCR` only when the endpoint is outside the EEA** — reduces to (a) for every deployment
+  that can actually serve OCR today (the only vision-capable cloud endpoint is `OPENAI_EU`), so the
+  permission would exist and never be asked.
+- **(c) Fold `CLOUD_OCR` into `AI_DATA_PROCESSING`** — would force every Household to re-consent through a
+  `consents` CHECK migration to widen a purpose they already hold, and would lose the ability to decline
+  image egress while allowing text. The split is the feature.
+
+---
+
 ## Part 2 — Risk register
 
 Scored as **Likelihood (L)** and **Impact (I)** on 1–5; **Exposure = L × I**. Anything ≥ 12 gets an
@@ -2437,6 +2560,9 @@ owner and a checkpoint in [09](09-implementation-plan.md).
 | **R-29** | **A confirmed assistant write is wrong or duplicated** (ADR-035) — the human clicks without reading the preview, a confirmation is replayed, or a proposal lapses between render and click. A wrong **write** is not recoverable the way a wrong answer is, and merge has no undo, so this is the risk the propose→confirm design buys down rather than eliminates | 2 | 3 | 6 | The confirmation carries **only the `proposalId`**, so the executed action is byte-for-byte what was rendered; an `idempotencyKey` plus consuming the proposal bounds a replay; every action declares its undo and `destroys: true` actions are not offered at all; the preview sentence and diff are backend-rendered from the service's own validate path, never narrated; no auto-apply at any confidence. **Checkpoint:** B-2's live pass — **done in B-2b**: the live pass confirmed a repeated idempotency key replays one row, a consumed proposal cannot be executed again, confirming a superseded proposal cannot duplicate the name (`CONFLICT` from the index), and the card stops offering a lapsed offer instead of failing under a button that cannot work; the browser pass confirmed the write lands and the undo removes it. **Residual, stated rather than fixed:** re-proposing with the other `kind` leaves the first proposal live until its TTL — the card only ever shows the newest, and the live pass proved a stale confirmation is refused rather than duplicated. **Still open:** the Phase 5.1 security review |
 
 | **R-30** | **The routing rung is an AI call on the refusal path, and a wrong route is an *offered write*** (ADR-036). Its cost and its consent surface scale with **unmatched questions**, not with entries, so a Household that asks many questions the cues cannot route pays per question and every one of them asks the residency question again. The failure that matters is not cost but precision: a model that proposes `ADD_TAG` for *"what did I spend on tags"* turns a refusal into a plausible wrong action, which is R-29's shape with a new cause | 3 | 3 | 9 | The rung sits **after** the deterministic cues, so with it off, unconfigured or consent-refused the assistant is byte-for-byte today's behaviour — and `ROUTE` is one config value to disable, which is the whole reason it is last in the chain. Its output is a member of a compiled-in union or a refusal (never a method, id, amount or date), every write stays propose→confirm (ADR-035), the preview is backend-rendered, cost and latency are logged (persisting them is §8.8's open gap, inherited), and the gate is a **precision floor on the multilingual fixture set**, not a coverage number. ⚠️ Named residuals: on a deployment with no model configured the "any language" claim is simply not made, and a non-consenting Household keeps the Serbian/English vocabulary (Q-9, Q-16); and a routed **command** costs **two** calls (the answer refuses as a command so the card appears, then the propose re-routes), which a short-lived memo keyed on household + question + locale would halve — left out deliberately rather than invented. **C-1/C-2 shipped the rung** (dark by default, 13/13 live against `DEEPSEEK_GLOBAL`, and the closed registry held against a real model: *"loesche alle meine Transaktionen"* → `NOT_AN_ACTION`) | **C-3 done, C-5 done**: the committed fixture set (**27** questions, 5 languages, 11 intents + 11 actions + **5 traps**) measured **routing precision 25/25** with **traps 5/5** — no invented capability in German, Spanish, Croatian or English — against the floor of **≥ 90 % precision and 5/5 traps**, at **1 451–1 602 micros** for the whole set. ⚠️ One of the 25 is a genuinely ambiguous sentence (*"what are my biggest expenses?"*) whose fixture now declares **both** correct members, in both languages it appears in — C-3 had declared the Spanish one and left the English twin strict, which one run exposed as an inconsistency in the instrument rather than a model error; the floor therefore rests on the **24** fixtures that discriminate, and the concession is written into the fixture itself. ⚠️ **C-3's end-to-end 15/23 (65 %) was wrong twice**: the five traps, which are *supposed* to refuse, sat in the denominator, and the German `UNRUNNABLE:categoryId` refusal was attributed to *values* when it is **entity vocabulary**. Corrected: **19/22 = 86.4 %**, unmoved by C-5 — whose live run instead found a fourth defect, a routed `ADD_TRANSACTION` whose `text` had dropped the numeral, the amount's only carrier (ADR-001/003 keep it in the user's own words). The three remaining positives are `ALREADY_SET` and that entity gap, which is **C-4**. Re-checked whenever a provider or model changes (R-11) |
+
+| **R-31** | **Reading a receipt on the node is slow enough to look broken** (ADR-037). Measured on this repository's machine (3 CPU cores, no GPU, `qwen2.5vl:3b`): one 46 KB receipt photograph did not finish inside 5 minutes, and a 768 px downscale took **4 m 18 s**. The documented budget is 20 s, so with the shipped default every local read is a timeout — the feature exists and is unusable, which is worse than absent if the UI does not say so | 4 | 3 | 12 | The screen reports the **reason** rather than spinning (4.1.6), `AI_OCR_TIMEOUT_MS` lets a local deployment size the budget to its hardware, the route is `LOCAL`-first so a slow read never becomes a cloud transfer, and the cloud EEA path is now genuinely configurable (`AI_OCR_PRIMARY=OPENAI_EU` + `AI_OCR_MODEL`, ADR-038's `CLOUD_OCR` consent) for anyone who wants a receipt in seconds. ⚠️ **Named residual**: the compiled-in local model is a *quality* default, not a *latency* one, and production sizing (GPU, more cores, or an EEA endpoint) is a deployment decision this task does not make for the operator |
+| **R-32** | **A cloud OCR route that is configured but unnamed looks live and fails at the first receipt.** `supportsOcr: true` with no model is precisely how OCR was dead in every deployment (ADR-037's context), and the same shape is reachable again by naming `AI_OCR_PRIMARY=OPENAI_EU` and forgetting `AI_OCR_MODEL` | 2 | 2 | 4 | `assembleAi` now asks the constructed adapter `supports(task)` before writing a route, so the task is **skipped with an actionable reason** in the boot log, the seam stays `UNCONFIGURED_OCR`, and `aiEgress` does not disclose a transfer that cannot happen. Asserted in `ai-providers.spec.ts` for both the cloud and the text-only-endpoint cases |
 
 ### Top five by exposure
 1. **R-01 onboarding cold-start (20)** — the single biggest threat, and the one the plan spends the most disproportionate effort on.

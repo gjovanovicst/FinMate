@@ -21,11 +21,16 @@ import {
   canPost,
   capturedLabel,
   confidenceBadge,
+  // Aliased: the component exposes the *signal-derived* report under the plain name, and the two must
+  // not be confused at a call site (`extractReport(outcome)` is the decision, `extractReport()` is it).
+  extractReport as extractReportFor,
   postHintKey,
   reconciliationLabelKey,
   toneForState,
   variantForRounding,
   varianceLabelKey,
+  type ExtractOutcome,
+  type ExtractReport,
 } from './receipts.view';
 
 /**
@@ -104,6 +109,38 @@ import {
 
         <section class="items" aria-labelledby="receipts-items">
           <h2 class="items__title" id="receipts-items">{{ i18n.t('receipts.items.title') }}</h2>
+
+          <!-- Reading the photo is offered first, because it is the only way lines appear without
+               typing — and it is a normal, cancellable request rather than a promise that always
+               succeeds: a deployment with no reader answers with a reason (ADR-037). -->
+          <div class="items__tools">
+            <button
+              type="button"
+              class="items__recognise"
+              [disabled]="busy()"
+              (click)="recognise()"
+            >
+              {{ busy() ? i18n.t('receipts.items.recognising') : i18n.t('receipts.items.recognise') }}
+            </button>
+          </div>
+
+          @if (extractReport(); as report) {
+            <p class="items__report items__report--{{ report.tone }}" role="status">
+              {{ i18n.t(report.messageKey, { count: extractOutcome()?.itemsWritten ?? 0 }) }}
+              @if (extractOutcome(); as outcome) {
+                @if (outcome.extracted && outcome.linesWithoutAmount > 0) {
+                  <span class="items__report-note">
+                    {{ i18n.t('receipts.extract.skippedLines', { count: outcome.linesWithoutAmount }) }}
+                  </span>
+                }
+                @if (report.showCode && outcome.reason) {
+                  <code class="items__report-code">
+                    {{ i18n.t('receipts.extract.code') }}: {{ outcome.reason }}
+                  </code>
+                }
+              }
+            </p>
+          }
 
           @if (r.items.length === 0) {
             <p class="muted small">{{ i18n.t('receipts.items.empty') }}</p>
@@ -493,6 +530,43 @@ import {
       margin: 0;
       font-size: var(--text-lg);
     }
+    .items__tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+    }
+    .items__recognise {
+      /* The house floor, same as every other control (4.3.1e): min-inline-size, never a fixed width,
+         so a longer translation grows the button instead of clipping it. */
+      min-block-size: var(--control-size);
+      padding-inline: var(--space-3);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      background: var(--color-surface);
+      color: var(--color-text);
+      cursor: pointer;
+    }
+    .items__recognise:disabled {
+      cursor: progress;
+    }
+    /* The reader's answer, and it never looks like a failure when it is a missing provider: the
+       code below it is what a person quotes when they ask the operator why. */
+    .items__report {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-1);
+      margin: 0;
+      font-size: var(--text-sm);
+    }
+    .items__report--warn {
+      color: var(--color-warning);
+    }
+    .items__report-note,
+    .items__report-code {
+      color: var(--color-text-subtle);
+      font-size: var(--text-xs);
+      overflow-wrap: anywhere;
+    }
     .items__table {
       display: flex;
       flex-direction: column;
@@ -704,6 +778,19 @@ export class ReceiptDetailComponent {
   readonly draftAmount = signal('');
   readonly draftCategoryId = signal('');
   readonly addProblem = signal<TranslationKey | null>(null);
+
+  /**
+   * The last `extractReceipt` answer, or `null` before one is asked for (ADR-037).
+   *
+   * It is the *server's* answer rather than a client guess, and it is kept after the re-read because a
+   * refusal writes nothing: the reason is the only thing there is to show.
+   */
+  readonly extractOutcome = signal<ExtractOutcome | null>(null);
+
+  readonly extractReport = computed<ExtractReport | null>(() => {
+    const outcome = this.extractOutcome();
+    return outcome === null ? null : extractReportFor(outcome);
+  });
 
   readonly expenseCategories = computed(() =>
     this.categories().filter((category) => category.kind === 'EXPENSE'),
@@ -977,6 +1064,47 @@ export class ReceiptDetailComponent {
   }
 
   /**
+   * `extractReceipt` — read the photograph with the OCR seam and write its lines as items (ADR-037).
+   *
+   * The one write on this screen that is **not** a refusal when it changes nothing. `extracted: false`
+   * carries a reason — `AI_UNAVAILABLE:no-provider-configured` on a deployment with no reader,
+   * `AI_ERROR:…` when the reader ran and failed — and both are states of the feature rather than
+   * errors of the request (docs/04 §9's degradation ladder), so they are rendered as the answer and
+   * the manual rows stay the fallback. Only a transport or GraphQL failure reaches `actionError`.
+   *
+   * A successful read still re-reads the receipt, like every other mutation here: the items the API
+   * wrote are the ones shown, and the confidence badges come from the stored values rather than from a
+   * client estimate (docs/02 §4.11).
+   */
+  async recognise(): Promise<void> {
+    const current = this.receipt();
+    if (current === null || this.busy()) return;
+
+    this.busy.set(true);
+    this.actionError.set(null);
+    this.notice.set(null);
+    this.extractOutcome.set(null);
+
+    try {
+      const data = await this.graphql.query<{ extractReceipt: ExtractOutcome }>(EXTRACT, {
+        receiptId: current.id,
+      });
+      this.extractOutcome.set(data.extractReceipt);
+    } catch {
+      this.actionError.set('receipts.error.extract');
+      this.busy.set(false);
+      return;
+    }
+
+    try {
+      await this.refresh();
+    } catch {
+      // Deliberately silent; see `mutate`'s doc — the reader's answer is worth showing either way.
+    }
+    this.busy.set(false);
+  }
+
+  /**
    * `ADJUST_TOTAL` — the field holds the **absolute new total**, never a delta.
    *
    * The SDL says so in as many words: `Money` is non-negative (ADR-003), so a delta could never
@@ -1194,6 +1322,24 @@ const RECONCILE = /* GraphQL */ `
         categoryId
         needsReview
       }
+    }
+  }
+`;
+
+/**
+ * `extractReceipt` — the only mutation on this screen whose *failure* is a value (ADR-037).
+ *
+ * `reason` is selected deliberately: it is what tells a deployment with no reader
+ * (`AI_UNAVAILABLE:…`) from a reader that failed (`AI_ERROR:…`), and the screen shows it.
+ */
+const EXTRACT = /* GraphQL */ `
+  mutation ExtractReceipt($receiptId: String!) {
+    extractReceipt(receiptId: $receiptId) {
+      extracted
+      itemsWritten
+      reason
+      linesWithoutAmount
+      currencyMismatch
     }
   }
 `;

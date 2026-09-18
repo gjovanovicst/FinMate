@@ -14,6 +14,8 @@
     "dev:infra:reset": "docker compose --env-file .env -f infra/docker/compose.dev.yml down -v && pnpm dev:infra",
     "dev:infra:logs": "docker compose --env-file .env -f infra/docker/compose.dev.yml logs -f",
     "dev:infra:ps": "docker compose --env-file .env -f infra/docker/compose.dev.yml ps",
+    "dev:ai": "docker compose --env-file .env -f infra/docker/compose.dev.yml --profile ai up -d ollama && docker compose --env-file .env -f infra/docker/compose.dev.yml exec -T ollama ollama pull ${AI_OCR_MODEL:-qwen2.5vl:3b}",
+    "dev:ai:down": "docker compose --env-file .env -f infra/docker/compose.dev.yml --profile ai stop ollama",
     "build": "nx run-many -t build",
     "bundle:budget": "nx run web:build && node apps/web/tools/bundle-budget.mjs",
     "icons:generate": "node apps/web/tools/generate-icons.mjs",

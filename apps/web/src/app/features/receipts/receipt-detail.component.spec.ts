@@ -80,6 +80,16 @@ interface Mounted {
   readonly client: { readonly query: ReturnType<typeof vi.fn> };
   /** Every `reconcileReceipt` call's variables, in order. */
   readonly reconciles: Record<string, unknown>[];
+  /** Every `extractReceipt` call's variables, in order. */
+  readonly extracts: Record<string, unknown>[];
+}
+
+/** What `extractReceipt` answers, as ADR-037's screen has to handle it. */
+interface ExtractFixture {
+  readonly extracted: boolean;
+  readonly itemsWritten: number;
+  readonly reason: string | null;
+  readonly linesWithoutAmount: number;
 }
 
 /** The Receipt as the mock serves it — loose on the wire shapes, strict on the fields the screen reads. */
@@ -97,9 +107,15 @@ interface ReceiptFixture {
 }
 
 async function mount(
-  options: { readonly receipt?: ReceiptFixture; readonly failCommit?: boolean } = {},
+  options: {
+    readonly receipt?: ReceiptFixture;
+    readonly failCommit?: boolean;
+    /** What the reader answers. The default is the shipped deployment: no provider configured. */
+    readonly extract?: ExtractFixture;
+  } = {},
 ): Promise<Mounted> {
   const reconciles: Record<string, unknown>[] = [];
+  const extracts: Record<string, unknown>[] = [];
   // Mutable so a successful commit is reflected by the next read: the server would return the link,
   // and a mock that kept returning `transactionId: null` would test a state the API cannot produce.
   let receipt: ReceiptFixture = options.receipt ?? MISMATCH;
@@ -133,6 +149,35 @@ async function mount(
           commitReceipt: { id: 'r1', transactionId: 'tx-9', reconciliation: 'MATCHED' },
         });
       }
+      if (query.includes('mutation ExtractReceipt')) {
+        extracts.push(variables ?? {});
+        const answer = options.extract ?? {
+          extracted: false,
+          itemsWritten: 0,
+          reason: 'AI_UNAVAILABLE:no-provider-configured',
+          linesWithoutAmount: 0,
+        };
+        if (answer.extracted) {
+          // The server wrote lines, so the next read has to show them: a count on screen with no rows
+          // under it is exactly the lie this screen would tell if the refresh were skipped.
+          receipt = {
+            ...receipt,
+            items: [
+              ...receipt.items,
+              {
+                id: 'i9',
+                lineNo: 5,
+                rawText: 'Kafa',
+                amount: { amountMinor: '18000', currency: 'RSD' },
+                categoryId: 'c1',
+                confidence: 0.88,
+                needsReview: false,
+              },
+            ],
+          };
+        }
+        return Promise.resolve({ extractReceipt: answer });
+      }
       if (query.includes('mutation AddItem')) return Promise.resolve({ addReceiptItem: { id: 'r1' } });
       if (query.includes('mutation UpdateItem')) {
         return Promise.resolve({ updateReceiptItem: { id: 'r1' } });
@@ -163,7 +208,7 @@ async function mount(
   const fixture = TestBed.createComponent(ReceiptDetailComponent);
   setSignalInput(fixture.componentInstance, 'id', 'r1');
   await settle(fixture);
-  return { fixture, client, reconciles };
+  return { fixture, client, reconciles, extracts };
 }
 
 async function settle(fixture: Fixture): Promise<void> {
@@ -429,5 +474,47 @@ describe('ReceiptDetailComponent (mounted)', () => {
       String(entry[0]).includes('mutation UpdateItem'),
     );
     expect(call?.[1]).toEqual({ input: { receiptItemId: 'i1', categoryId: 'c2' } });
+  });
+});
+
+describe('ReceiptDetailComponent reads the photograph (ADR-037)', () => {
+  it('asks the server to read the photo, and reports a missing reader as a state, not an error', async () => {
+    // The shipped deployment: `extractReceipt` answers `AI_UNAVAILABLE:no-provider-configured`. Before
+    // this screen called it at all, a person saw an empty list and no explanation — the defect that
+    // produced this task. The copy and the machine code are both asserted, because the code is what an
+    // operator acts on and the sentence is what the reader sees.
+    const { fixture, client } = await mount();
+
+    button(fixture, 'Read the photo').click();
+    await settle(fixture);
+
+    const call = client.query.mock.calls.find((entry) =>
+      String(entry[0]).includes('mutation ExtractReceipt'),
+    );
+    expect(call?.[1]).toEqual({ receiptId: 'r1' });
+
+    const rendered = text(fixture);
+    expect(rendered).toContain('no receipt reader configured');
+    expect(rendered).toContain('AI_UNAVAILABLE:no-provider-configured');
+    // The manual path is still there, and it is what the copy points at.
+    expect(rendered).toContain('+ Add a line');
+  });
+
+  it('shows the lines a successful read wrote, and how many were left out', async () => {
+    const { fixture, extracts } = await mount({
+      extract: { extracted: true, itemsWritten: 2, reason: null, linesWithoutAmount: 1 },
+    });
+
+    button(fixture, 'Read the photo').click();
+    await settle(fixture);
+
+    const rendered = text(fixture);
+    expect(rendered).toContain('Lines read from the photo: 2');
+    expect(rendered).toContain('left out: 1');
+    // The row the server wrote is on screen: the count and the table cannot disagree.
+    expect(rendered).toContain('Kafa');
+    expect(extracts).toEqual([{ receiptId: 'r1' }]);
+    // A reader that answered leaves no machine code to explain away.
+    expect(rendered).not.toContain('Reader answer');
   });
 });

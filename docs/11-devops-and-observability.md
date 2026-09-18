@@ -128,6 +128,7 @@ giving one prefixed terminal per app so a NestJS stack trace sits beside an Angu
 | `minio` | `minio/minio` | 9000 / 9001 | `miniodata` | `mc ready local` | Attachment blobs (`storage_key`) |
 | `mailhog` | `mailhog/mailhog` | 1025 / 8025 | — | TCP 8025 | Dev SMTP sink for `EMAIL` |
 | `otel-collector` · `prometheus` · `grafana` · `loki` · `tempo` | upstream | 4317/4318, 9090, 3030, 3100, 3200 | per-service | — | `profile: obs` (§8) |
+| `ollama` | `ollama/ollama` | 11434 (127.0.0.1) | `ollamadata` | `ollama list` | `profile: ai` — the local vision model for Receipt OCR (ADR-037, §2.5) |
 
 `web → api → {postgres, redis, minio, mailhog}`; `worker → {postgres, redis, minio}`; `api` and `worker`
 export OTLP to the collector, which feeds Prometheus, Loki and Tempo, read by Grafana. Observability is
@@ -189,6 +190,59 @@ flaky tests. **Safety guard:** the fixture refuses to run outside `development`/
 
 That last row is the real onboarding test — it is the product's core loop ([F-09](01-product-requirements.md)).
 If a new engineer cannot execute it in hour one, the environment is broken, not the engineer.
+
+### 2.5 The local vision sidecar (ADR-037)
+
+An OCR read is the one task whose *payload is an image*, so the default is a model **on this node** — and
+until 4.1.6 nothing ran one: `OCR` was routed, the seam was built, and every call answered
+`AI_UNAVAILABLE:no-provider-configured` because `LOCAL_AI_BASE_URL` had no default and no deployment ever
+set it. This section is the two commands that change that.
+
+```bash
+pnpm dev:ai      # docker compose --profile ai up -d ollama && ollama pull ${AI_OCR_MODEL:-qwen2.5vl:3b}
+pnpm dev:ai:down # stop it; the downloaded model stays in the ollamadata volume
+```
+
+Then set `LOCAL_AI_BASE_URL=http://localhost:11434` in `.env` (**no `/v1`** — the adapter appends
+`/v1/chat/completions`, and a base URL that already carries `/v1` produces `/v1/v1/chat/completions`, a
+404 the log reports as `AI_ERROR:PROVIDER_UNAVAILABLE:NON_RETRYABLE_HTTP`). `AI_OCR_PRIMARY` already defaults to
+`LOCAL`, and the local adapter carries its own vision model (`qwen2.5vl:3b`, `LOCAL_DEFAULT_OCR_MODEL`), so
+`extractReceipt` starts writing lines with **no key and no egress**. `AI_OCR_MODEL` overrides that model —
+which is how a deployment picks a bigger local one or an EEA vision endpoint, and it is **blank by design**:
+a cloud OCR route without it is unrouted rather than defaulted to a vendor's model (ADR-037).
+
+**What it costs, measured rather than assumed.** The sidecar is ~1.5 GB of image and ~3.2 GB of model on
+disk (the volume survives `dev:ai:down`), and the documented per-call budget is **20 s**
+([04 §9](04-categorization-and-ai-engine.md)). On this repository's own machine — 3 cores, no GPU,
+`qwen2.5vl:3b` — the measurement is recorded in the table below, and the honest reading is that a CPU-only
+laptop is the slow end of usable:
+
+| Input | Model | Wall clock | Result |
+|---|---|---|---|
+| A captured receipt, full size (`46 KB` JPEG) | `qwen2.5vl:3b`, CPU | **> 5 min**, aborted | did not finish |
+| The same photo, downscaled to 768 px | `qwen2.5vl:3b`, CPU | **4 m 18 s** | read the Cyrillic lines correctly, **every amount as a decimal** (`"236.00"`) |
+| The same photo, downscaled to 512 px | `qwen2.5vl:3b`, CPU | **> 10 min**, aborted | 1 272 tokens generated at 3.4 tok/s and still going — a small model that rambles instead of answering |
+| The same photo, 768 px | `moondream` (1.8B), CPU | 40 s | an **empty** string: fast and useless for line extraction |
+| Through the API (`extractReceipt`, full-size photo, 20 s budget) | `qwen2.5vl:3b`, CPU | 0.1 s | `AI_ERROR:…:TIMEOUT` — the shipped budget cannot be met on CPU |
+| Through the API, budget raised to 300 s | `qwen2.5vl:3b`, CPU | **236.9 s** | `{extracted: true, itemsWritten: 0, linesWithoutAmount: 22}` — the pipeline worked and the model's amounts were refused (the prompt now names that wrong answer; see [15](15-implementation-gotchas.md)) |
+
+**The honest reading: local CPU OCR is wired and is not usable on this hardware.** A receipt read costs
+minutes, a 3B model needs strict output discipline to terminate at all, and a small captioning model
+answers nothing. That is why the cloud EEA path exists and why `AI_OCR_TIMEOUT_MS` is a key: a deployment
+with a GPU (or a bigger node) sets its own budget, and one without should route `OCR` to an EEA vision
+endpoint rather than promise a local read it cannot deliver. ⚠️ **Residual, named:** the sharpened amount
+contract is a prompt change, and a live end-to-end run that *writes* lines from a local model has not been
+observed on this machine — the read that completed wrote zero amounts, and the later runs were aborted by
+the tooling's own 10-minute ceiling. The verifiable state is the one above, plus `ocr.spec.ts` pinning the
+prompt and `ai-providers.spec.ts` pinning the wiring.
+
+⚠️ **What this does not do.** It does not make OCR fast, and it does not remove the 20 s budget: a
+deployment that wants a receipt read in a second wants an EEA vision endpoint instead (§2.5's
+`AI_OCR_PRIMARY=OPENAI_EU` + `AI_OCR_MODEL` + `OPENAI_EU_BASE_URL`), which needs `CLOUD_OCR` consent
+per Household ([ADR-038](14-decisions-and-risks.md), [08 §6.5](08-security-privacy-and-compliance.md)).
+**Production runs the same container** on the node's private network — this is a Compose stack
+([ADR-013](14-decisions-and-risks.md)), so "the sidecar" is a service in the deployment file, not a
+separate installation path, and the port is not published beyond the node.
 
 ---
 

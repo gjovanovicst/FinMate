@@ -998,6 +998,39 @@ F-05/F-06 and I-10: the path where a mistake costs the user money.
   the edit carried, and the snapshot must be complete **for those fields**. Asserted in
   `sync.service.spec.ts`, which is how it was caught.
 
+- **An adapter's capability *flag* is not a capability: a factory serves a task by listing a model for
+  it.** `createOpenAiProvider` set `supportsOcr: true` and `assembleAi` never passed an `OCR` model, so
+  `supports('OCR')` was `false` on every cloud endpoint and `LOCAL` was the only one that could ever read
+  a receipt — while no deployment ran a local model. The symptom is the worst kind: everything *looks*
+  configured (a key, an EEA host, `AI_OCR_PRIMARY=OPENAI_EU`), `aiEgress` is happy, and `extractReceipt`
+  still answers `AI_UNAVAILABLE:no-provider-configured` forever. `assembleAi` now asks the constructed
+  provider `supports(task)` **before** it writes a route, so an unsupported task is a logged skip with a
+  reason an operator can act on and the seam stays the honest `UNCONFIGURED_*` twin (ADR-037). When a task
+  "cannot be configured no matter what", check the model map before you check the config.
+
+- **`LOCAL_AI_BASE_URL` is a host, not an endpoint path.** The local adapter appends
+  `/v1/chat/completions`, so `http://localhost:11434/v1` produces `http://localhost:11434/v1/v1/chat/completions`
+  and Ollama answers **404** — which the seam reports as `AI_ERROR:PROVIDER_UNAVAILABLE:NON_RETRYABLE_HTTP`
+  in **0.1 s**. The tell is the speed: a real local vision model takes minutes, so an instant refusal is a
+  URL or a model-name problem, never a slow model. Set `http://localhost:11434`.
+
+- **A model that ignores the amount contract loses the amount, and that is the correct behaviour.** The
+  first successful local read of a real receipt returned `{extracted: true, itemsWritten: 0,
+  linesWithoutAmount: 22}`: every printed line was transcribed and **every** amount came back as a decimal
+  (`"236.00"`), which `minorUnitsString` refuses because it accepts a non-negative **integer** string only.
+  Converting a decimal to minor units would be this codebase doing the arithmetic ADR-001/003 forbid the
+  model to do, so the line is counted as unreadable instead — and the screen says so. The fix is a prompt
+  that names the wrong answer (`"236.00" is wrong`), not a lenient parser; see `ocr.spec.ts`, which now
+  pins the negative example.
+
+- **A vision model on a CPU-only node needs minutes per receipt, and the shipped budget is 20 seconds.**
+  Measured here (3 cores, no GPU, `qwen2.5vl:3b`): a 46 KB receipt photograph did not finish in 5 minutes;
+  downscaled to 768 px it took **4 m 18 s**; `moondream` (1.8B) answered in 40 s with an **empty** string.
+  With `TASK_TIMEOUTS_MS.OCR = 20_000` every local read is a guaranteed `AI_ERROR:…:TIMEOUT`, i.e. the
+  feature is wired and never once succeeds — which is why `AI_OCR_TIMEOUT_MS` exists (ADR-037, docs/11
+  §2.5). Do not "fix" a local reader by removing the cap: raise it deliberately, or move the route to an
+  EEA vision endpoint, and never let a slow read become a silent cloud transfer.
+
 ## 8. Taxonomy: categories, keywords, merchants
 
 The tables hold platform content beside the Household’s own rows, which is where most of these come from.
