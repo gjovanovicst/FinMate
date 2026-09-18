@@ -277,6 +277,20 @@ export const en = {
   'assistant.action.openGoals': 'Open the goals',
   'assistant.action.undoneTag': 'Undone — the tag “{name}” was removed.',
   'assistant.action.openTags': 'Open the tags',
+  'assistant.action.undoneRule': 'Undone — the rule “{name}” was removed.',
+  'assistant.action.openRules': 'Open the rules',
+  // B-5's refusals. The first is the one that keeps a **wrong** proposal off the card: a correction has
+  // no name, so the action can only use the most recent one and says so instead of guessing.
+  'assistant.action.needCorrection':
+    'I can only build a rule from your most recent correction — say “zapamti ovu ispravku”.',
+  'assistant.action.noCorrection':
+    'There is no correction to learn from yet. Correct a transaction first, then ask me again.',
+  'assistant.action.noRule':
+    'That correction has nothing to key a rule on — a rule needs a merchant, a person or a distinctive word.',
+  'assistant.action.alreadyLearned':
+    'That correction already produced a rule, so there is nothing new to save — edit that rule on the rules screen.',
+  'assistant.action.shadowed':
+    'A rule you already have covers that, so a new one would never fire. Edit the rule that wins instead.',
   'assistant.action.uncategorised': 'no category yet',
   'assistant.action.lineReview': 'goes to the review queue',
   'assistant.action.needText': 'Tell me what to record — for example, “dodaj trošak kafa 180”.',

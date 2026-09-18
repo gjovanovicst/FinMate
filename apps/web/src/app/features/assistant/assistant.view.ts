@@ -392,6 +392,7 @@ export const ASSISTANT_ACTIONS = [
   'SET_BUDGET',
   'ADD_GOAL',
   'ADD_TAG',
+  'CREATE_RULE_FROM_CORRECTION',
 ] as const;
 export type AssistantActionName = (typeof ASSISTANT_ACTIONS)[number];
 
@@ -563,6 +564,9 @@ export function actionRefusalKey(reason: string | null | undefined): Translation
       // which is a refusal rather than a Household-wide limit, because a typo would otherwise become a
       // budget over every Category (R-29's wrong write).
       if (missing.includes('categoryId')) return 'assistant.action.needBudgetCategory';
+      // B-5: the phrase named a *correction*, which this build cannot look up — a correction has no
+      // name, only the entry it was made on, so the action can only use the most recent one.
+      if (missing.includes('correctionId')) return 'assistant.action.needCorrection';
       return 'assistant.action.notRunnable';
     }
     // The budget exists and this action does not overwrite: the undo for that would have to restore the
@@ -578,6 +582,16 @@ export function actionRefusalKey(reason: string | null | undefined): Translation
       return 'assistant.action.ambiguousAmount';
     case 'MULTIPLE_ROWS':
       return 'assistant.action.multipleRows';
+    // B-5's four, each naming the thing the reader can do instead — including the two that are about a
+    // rule they already have, where "I cannot do that" alone would leave them retrying.
+    case 'NO_CORRECTION':
+      return 'assistant.action.noCorrection';
+    case 'NO_RULE':
+      return 'assistant.action.noRule';
+    case 'ALREADY_LEARNED':
+      return 'assistant.action.alreadyLearned';
+    case 'SHADOWED':
+      return 'assistant.action.shadowed';
     default:
       return null;
   }
@@ -688,6 +702,8 @@ export function undoneKey(action: string): TranslationKey {
       return 'assistant.action.undoneGoal';
     case 'ADD_TAG':
       return 'assistant.action.undoneTag';
+    case 'CREATE_RULE_FROM_CORRECTION':
+      return 'assistant.action.undoneRule';
     default:
       return 'assistant.action.undone';
   }
@@ -718,6 +734,9 @@ export function resultLink(result: ActionResult): ResultLink {
       return { route: ['/goals'], labelKey: 'assistant.action.openGoals' };
     case 'ADD_TAG':
       return { route: ['/tags'], labelKey: 'assistant.action.openTags' };
+    case 'CREATE_RULE_FROM_CORRECTION':
+      // `/rules` is a list with no per-row route, so this opens the screen that lists them.
+      return { route: ['/rules'], labelKey: 'assistant.action.openRules' };
     default:
       return { route: ['/categories'], labelKey: 'assistant.action.openCategories' };
   }

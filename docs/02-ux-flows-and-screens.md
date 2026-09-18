@@ -992,6 +992,14 @@ infinity.
 >   to `/tags` and its undo is `deleteTag`, the mutation that screen calls. ⚠️ A refused duplicate says
 >   **"something with that name already exists"** and names no noun: the `CONFLICT` error carries no action,
 >   and the sentence used to say *category* even for a Tag, sending the reader to the wrong screen.
+> - **A rule proposal shows the correction it learned from** (B-5), because that is the one part of it the
+>   reader did not say: *"zapamti ovu ispravku"* is a reference, so the card names the entry and the
+>   Category the correction changed, and marks that row *chosen for you* — the visible-guess rule the
+>   account picker already follows. Below it come the rule's own **clauses**: the condition it will match
+>   and the Category it will set, rendered from the document that is about to be saved, with anything the
+>   card cannot read shown verbatim as stored rather than guessed at. **No figure appears** — a rule holds
+>   no amount — and **no control**, because nothing here is a value the reader supplied. The undo is
+>   `deleteRule` and the link goes to `/rules`.
 >
 > ⚠️ **Not the same thing as F-30's *Primeni*.** The savings proposal's button is still unbuilt and still
 > its own product decision (docs/06 §8.8): applying *that* means deciding what "apply" does to a Budget

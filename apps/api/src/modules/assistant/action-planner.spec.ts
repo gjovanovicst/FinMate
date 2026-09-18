@@ -174,6 +174,39 @@ describe('planAction (docs/06 §8.16)', () => {
     expect(planAction('koliko sam potrošio na tag Odmor')).toBeNull();
   });
 
+  it('plans the correction action from the correction word, in both languages', () => {
+    // The object is the **correction** — this action's input — so the phrase can put the word for the
+    // rule wherever it reads naturally, and there is no trailing text to refuse.
+    expect(planAction('zapamti ovu ispravku')?.action).toBe('CREATE_RULE_FROM_CORRECTION');
+    expect(planAction('napravi pravilo od te ispravke')?.action).toBe('CREATE_RULE_FROM_CORRECTION');
+    expect(planAction('pretvori ispravku u pravilo')?.action).toBe('CREATE_RULE_FROM_CORRECTION');
+    expect(planAction('create a rule from that correction')?.action).toBe('CREATE_RULE_FROM_CORRECTION');
+    // Nothing is captured: the correction comes from the database, not from the question.
+    expect(planAction('zapamti ovu ispravku')?.slots['correctionId']).toBeUndefined();
+    // A phrase that tries to **name** one lands in the slot, so the caller can refuse it rather than
+    // silently deriving from a different correction than the reader meant (see the service). The
+    // leading connector is gone — `cleanName` strips it — which is why the slot carries `Lidl`.
+    expect(planAction('zapamti ispravku za Lidl')?.slots['correctionId']).toBe('Lidl');
+  });
+
+  it('does not plan the correction action from a word that only looks like one', () => {
+    // ⚠️ `dodaj`/`add` are deliberately not this action's imperatives: *"dodaj pravilo Gorivo"* is a
+    // request to write a rule **by hand**, which nothing here can do, and matching it would propose a
+    // rule derived from whatever the last correction happened to be — the wrong proposal R-29 is about.
+    expect(planAction('dodaj pravilo Gorivo')).toBeNull();
+    expect(planAction('add rule Groceries')).toBeNull();
+    // A question is not a command: no imperative before the object, and `napravim` is not `napravi`.
+    expect(planAction('koja ispravka je bila za Lidl')).toBeNull();
+    expect(planAction('kako da napravim pravilo')).toBeNull();
+    expect(planAction('what does that rule do')).toBeNull();
+  });
+
+  it('leaves a question that names a correction **and** a Category to the Category', () => {
+    // Declared last for exactly this: the more specific action gets the question, because a plan walks
+    // the registry in order and `kategorija` is far stronger evidence of intent than `pravilo`.
+    expect(planAction('napravi pravilo za kategoriju Gorivo')?.action).toBe('ADD_CATEGORY');
+  });
+
   it('does not guess an action from a bare noun phrase', () => {
     // "nova kategorija" *is* a request shape — Serbian drops the verb — so it plans and then refuses
     // for want of a name, which asks the user rather than writing something nobody specified.

@@ -236,6 +236,7 @@ enum AssistantAction {
   ADD_GOAL
   ADD_TAG
   ADD_TRANSACTION
+  CREATE_RULE_FROM_CORRECTION
   SET_BUDGET
 }
 
@@ -295,8 +296,11 @@ Which slot of a proposal a diff row is. Stable across languages; `field` is the 
 """
 enum AssistantActionSlot {
   accountId
+  actions
   amountMinor
   categoryId
+  conditions
+  correctionId
   kind
   name
   parentId

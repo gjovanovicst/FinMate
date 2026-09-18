@@ -4114,6 +4114,82 @@ category action (*"A category with that name already exists"*, `assistant.action
 from the error code alone — and the error carries no action, so a refused **Tag** was announced as a
 category the reader would then go looking for. It now names no noun. The browser pass asserts it.
 
+**`CREATE_RULE_FROM_CORRECTION` (task B-5, 2026-09-18).** *"zapamti ovu ispravku"*, *"napravi pravilo od
+te ispravke"*, *"create a rule from that correction"*. ADR-010's confirmation — *"corrections become rules,
+proposed by the backend and confirmed by the user"* — reached by a question instead of by the checkbox
+`/transactions` renders. It is the last write in the registry and the only one whose **input already
+exists**: the other five take something the question invents or names, and this one takes a **Correction**
+the database already holds and derives the rule from it.
+
+**A correction has no name, so "that correction" is a deictic reference and the design has to say what it
+means.** Three consequences, and each is a decision rather than an implementation detail:
+
+| Decision | Why |
+|---|---|
+| It means the Household's **most recent** Correction (`CorrectionsService.latest`, ordered by `created_at` then the UUIDv7 `id`) | A Correction is a field change on an entry; it has no name to match a question against. There is no `conversationId` (docs/16 A-6), so "this one" can only mean the newest — and the card **shows which one it used** (the entry's text and the Category it was corrected to), so a wrong pick is visible before anyone confirms. |
+| The row is flagged **`defaulted`** — *chosen for you* | That is exactly what happened: the question said "this one" and the backend chose. It is the same visible-guess rule as a transaction's preselected Account, and it is why `correctionId` is a declared slot rather than a private `arg`. |
+| A phrase that tries to **name** a different correction is refused (`UNRUNNABLE:correctionId`), never ignored | *"zapamti ispravku za Lidl"* cannot be honoured: this build has no way to look a Correction up by what the user typed. Deriving from a different correction than the one named is the wrong write R-29 is about. The slot exists so the builder can **see** the phrase and refuse it. |
+
+**The preview is a document, not a value, which is what makes this action's card different.** A Rule is
+`{ conditions, actions }`, so the diff gained three members: `correctionId` (which Correction), and
+`conditions`/`actions` (the rule's own halves). The rows are rendered **from the document that will be
+saved** — `rule-preview.ts`, a pure function — rather than from the trigger that produced it, because a
+second copy of the trigger → condition mapping is how a card starts describing a rule nobody is writing.
+Two properties of that renderer are deliberate:
+
+- **A clause it cannot resolve is shown as stored** (`asStored`, the JSON verbatim), not printed as a
+  uuid. That covers an id with no name, an amount or calendar predicate, a `regex`, `addTagIds`, and any
+  composite that is not a flat `all` (`any`, `none`, nesting) — the same choice `/rules` makes with
+  `readabilityOf`. **One unreadable clause makes the whole half as-stored**: three clauses shown and a
+  fourth hidden would describe a *narrower* rule than the one about to be written.
+- **Conditions come before actions**, because that is the order a rule is read in on `/rules` too.
+
+⚠️ **The residual, named rather than hidden:** `/rules` renders the *stored* rule on the client through
+`rules.view.ts` and a resolve map it builds from the Household's entity queries, while this card renders a
+*proposal* on the server. They are two renderers for one concept. The card cannot reuse the client one
+without fetching Merchants, Counterparties and Categories onto a screen already at 58 % of its bundle
+budget, and the card's contract is a server-rendered diff (ADR-035 decision 8) — but the duplication is
+real, and a `/rules`-style renderer shared by both is the honest refactor when someone needs it.
+
+**The four refusals are the write's own gates, mirrored** — the B-4c lesson, applied where the write has
+four gates rather than one:
+
+| The write | The refusal |
+|---|---|
+| `correctionSubject` answers `null` (no corrected-to Category) | `NO_RULE` |
+| `synthesise` yields nothing (no entity, no distinctive token) | `NO_RULE` |
+| The `ShadowCheck` says an existing rule would win (the proposal would never fire) | `SHADOWED` |
+| `createRuleFromCorrection` throws `CONFLICT` (this correction already produced a rule) | `ALREADY_LEARNED` |
+
+`ALREADY_LEARNED` is refused here rather than left to the write for a specific reason: the error the write
+raises is a GraphQL `CONFLICT`, and the card renders that code as *"something with that name already
+exists"* — which is about a taken **name**, not about a correction that already taught a rule. A refusal
+with its own reason is both honest and actionable.
+
+**Execute re-reads, and lets the service decide.** The executor loads the Correction again by id, resolves
+the subject as the mutation does, and calls `CorrectionsService.createRuleFromCorrection` with
+`acceptProposal: true` and **no overrides** — so the write re-synthesises and re-runs the shadowing check
+itself. Passing the previewed rule as `overrides` would have been the tempting shortcut and the wrong one:
+`overrides` means *the user authored this*, which **skips** the shadowing refusal (corrections.service).
+The proposal's job was to describe the write; the service's is to perform it. The undo is `deleteRule` (a
+soft delete — `RulesService.remove`), correct because the write refuses to run twice for one correction;
+the result link goes to `/rules`.
+
+**The registry position is load-bearing.** `planAction` walks `ASSISTANT_ACTIONS` in order and takes the
+first action whose object word occurs in the question, so this member is declared **last**: its words
+(`ispravka`, `korekcija`, `correction`) are the weakest evidence of intent, and *"napravi pravilo za
+kategoriju Gorivo"* is a Category request. Its imperative list is the **remembering** verbs only —
+`napravi`, `zapamti`, `sačuvaj`, `pretvori`, and English `create`/`save`/`remember`/`convert` — and
+`dodaj`/`add` are deliberately **absent**, because *"dodaj pravilo Gorivo"* is a request to write a rule by
+hand, which nothing here can do; matching it would offer a rule derived from whatever the last correction
+happened to be.
+
+**Named, not fixed:** there is no picker for a *different* correction (the slot is shown, not changeable),
+and a Cyrillic description's distinctive token reaches the card **folded** (`Пекара` → `pekara`), because
+that is what the rule stores and what `contains` compares — the same string `/rules` shows. And
+`ADD_RECURRING_RULE`, the one action docs/16 B.3's union sketch names that is still unbuilt, remains
+unbuilt.
+
 **The transaction card (task B-3b, 2026-09-18).** `lines` is what the card draws: each row's text, its
 amount **through `fm-money`**, the Category the pipeline chose, the day it will be filed under, and — when
 the confidence gate will file it — that it goes to the review queue. The sentence stays above it, so the
@@ -4234,6 +4310,27 @@ total**, lint 9/9, typecheck 9/9, `api:evals` green (54/58, 93.10 %), `web:build
 `.artifacts/visual-audit/b4b-goal-*.png`): the card with its target in `fm-money` and its missing deadline,
 0 horizontal overflow at 320/768/1280 px, axe **0 critical / 0 serious**, the confirm landing on `/goals`,
 the undo removing it, and the probe's goal deleted so the demo is as it was found.
+
+**B-5 verified**: `rule-preview.spec.ts` **9** (the merchant/counterparty/token rules `synthesiseRule`
+really produces, and every document it cannot: an unresolvable id, an amount predicate, `any`/`none`,
+nesting, `addTagIds` — each as stored rather than as a guess), `action-planner.spec.ts` 21,
+`assistant-actions.spec.ts` 12, `assistant-rule.integration.spec.ts` **9** against a real Postgres (the
+correction row and the rule's clauses on the card, the write going through `createRuleFromCorrection` with
+`origin: LEARNED` and `source_correction_id` set, `ALREADY_LEARNED` / `NO_RULE` / `SHADOWED` /
+`NO_CORRECTION` / `UNRUNNABLE:correctionId` each refused by name, and the replayed idempotency key), plus
+the client's `assistant.view.spec.ts` 44 and `assistant.component.spec.ts` 44. API **1140**, web **918**,
+**2871 total**, lint 9/9, typecheck 9/9, `api:evals` green (54/58, 93.10 %), `web:build` +
+`bundle:budget` ok (Assistant 161.4 KB / 280 KB). **Live 24/24** (`/tmp/verify-b5.mjs`): a real
+Transaction corrected through `correctTransaction`, the card's three rows with the correction flagged and
+no money anywhere, the rule stored `LEARNED` and linked, **and all four refusals** — including `SHADOWED`
+proven live by a second correction whose token the first rule already covered. **Browser 21/21**
+(Playwright on `:4200`, Serbian locale, screenshots `.artifacts/visual-audit/b5-rule-*.png`): the card
+with its referent and flag, no figure and no control, 0 horizontal overflow at 320/768/1280 px, axe
+**0 critical / 0 serious**, the keyboard confirm, the link to `/rules` with the rule on that screen, the
+duplicate refused with its own sentence, the undo naming a rule, and no uncaught page error. ⚠️ **A
+Correction cannot be deleted through the API**, so both passes' rows were removed out of band
+(`DELETE FROM corrections WHERE id IN (…)`) and the demo left with the two it started with — recorded in
+[15](15-implementation-gotchas.md), because the next task to touch this path will hit it.
 
 **B-4c verified**: `action-planner.spec.ts` 18, `assistant-actions.spec.ts` 10,
 `assistant-tag.integration.spec.ts` **5** against a real Postgres — one name row and nothing filled, the

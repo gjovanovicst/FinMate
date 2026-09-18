@@ -276,6 +276,18 @@ export const srLatn: Record<keyof typeof en, string> = {
   'assistant.action.openGoals': 'Otvori ciljeve',
   'assistant.action.undoneTag': 'Opozvano — oznaka „{name}” je uklonjena.',
   'assistant.action.openTags': 'Otvori oznake',
+  'assistant.action.undoneRule': 'Opozvano — pravilo „{name}” je uklonjeno.',
+  'assistant.action.openRules': 'Otvori pravila',
+  'assistant.action.needCorrection':
+    'Pravilo mogu da napravim samo od tvoje poslednje ispravke — reci „zapamti ovu ispravku”.',
+  'assistant.action.noCorrection':
+    'Još nema ispravke iz koje bih učio. Prvo ispravi neku transakciju, pa me pitaj ponovo.',
+  'assistant.action.noRule':
+    'Ta ispravka nema na čemu da zasnuje pravilo — potreban je prodavac, osoba ili prepoznatljiva reč.',
+  'assistant.action.alreadyLearned':
+    'Ta ispravka je već dala pravilo, pa nema šta novo da se sačuva — izmeni to pravilo na ekranu pravila.',
+  'assistant.action.shadowed':
+    'Pravilo koje već imaš pokriva to, pa novo nikada ne bi važilo. Izmeni pravilo koje pobeđuje.',
   'assistant.action.uncategorised': 'još bez kategorije',
   'assistant.action.lineReview': 'ide na pregled',
   'assistant.action.needText': 'Reci mi šta da zabeležim — na primer: „dodaj trošak kafa 180”.',

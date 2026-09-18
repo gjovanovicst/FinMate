@@ -234,6 +234,16 @@ Everything here has cost time at least once, and most of it fails in a way that 
   a *daily* quota, so clearing it grants the Household extra narrations for the rest of the day — harmless
   in dev, but it is a state change, not just a cache clear.
 
+- **A Correction is append-only, so a live probe that records one changes the demo permanently — there
+  is no API to remove it.** `corrections` is the learning signal (docs/04 §8), so `CorrectionsService`
+  offers no delete and `corrections` has no soft-delete column; a probe that drives the correction → rule
+  path (B-5's `createRuleFromCorrection`, F-09's *Zapamti za buduće*) leaves rows behind that also enter
+  the weekly calibration re-fit. The rule and the Transaction clean up fine (`deleteRule`,
+  `deleteTransaction`), the Correction does not: clear the probe's rows out of band
+  (`DELETE FROM corrections WHERE id IN (…)` — the ids the probe printed) and check with
+  `SELECT count(*) FILTER (WHERE t.description LIKE 'Probni %')`. Better still, drive such a path against
+  a Household of its own.
+
 ## 2. Prisma and the database
 
 Prisma 7 plus a tenancy extension plus hand-written SQL means the driver is not the only thing deciding what a query does.
@@ -302,6 +312,14 @@ Prisma 7 plus a tenancy extension plus hand-written SQL means the driver is not 
   `404`/`410` soft-delete happened (verified live: register → delete → register returns the **same** id).
   The partial `push_subscriptions_live_idx` is on `deleted_at IS NULL` for the same reason — the row
   exists, it is just not live.
+
+- **JSONB does not preserve key order, so two "equal" documents are not equal as strings.** A rule's
+  `conditions` goes into `jsonb` and comes back with its keys re-ordered (`{op, field, value}` for a
+  document written `{field, op, value}`), so a probe or spec that asserts
+  `JSON.stringify(stored) === JSON.stringify(expected)` fails on a rule that is byte-for-byte the one the
+  card showed. Compare the fields, or use `toEqual` — which is order-insensitive and is what the
+  integration suite does. Found by B-5's live probe, on the one assertion that had been written as a
+  string comparison.
 
 ## 3. Tenancy and the guard
 
@@ -1631,6 +1649,13 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   to know *what* is being talked about; if it is not, the sentence has to stay general or the payload has to
   carry the noun (task B-4c).
 
+- **Angular's `TestBed` can only be configured once per test, so a table-driven case needs a reset
+  between iterations.** The client specs' `mount()` helper calls `TestBed.configureTestingModule`, which
+  is fine once per `it` — calling it twice fails as *"Cannot configure the test module when the test
+  module has already been instantiated"*, which reads like a harness bug rather than a missing
+  `TestBed.resetTestingModule()`. Loop over cases with that reset at the top of each iteration (B-5's
+  refusal-copy test does), or split them into separate `it`s.
+
 ## 10. Cross-cutting rules of the codebase
 
 - **A live check that measures the wrong element lies in both directions.** Three times in 4.3.1 a
@@ -1889,6 +1914,16 @@ Short, and load-bearing.
   branch.
 
 ---
+
+- **`anchorFor` takes the *first* object token, so listing two object words for one action can capture
+  the phrase's own words as the slot's value.** The planner hands everything after that token to the
+  action's slot, and B-5's first cue list carried both `ispravka` (the Correction — this action's input)
+  and `pravilo`/`rule` (what it makes). *"napravi pravilo od ispravke"* then anchored on `pravilo` and
+  captured `"od ispravke"` as the correction to resolve — so the most natural phrasing would have been
+  refused, and *"napravi pravilo za Lidl"* would have read as a named correction. The fix is to list only
+  the word for the action's **input**, because that is the token whose position is predictable; the word
+  for the output belongs to the rest of the sentence. Found by writing the cue list down and reading the
+  phrasings back, before any test existed for them (task B-5).
 
 - **A proposal stored in Redis is JSON, and money is a `bigint`.** `JSON.stringify` throws
   `Do not know how to serialize a BigInt`, so an `ActionPreviewLine` cannot hold a `Money` — the stored

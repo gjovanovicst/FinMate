@@ -1315,6 +1315,16 @@ const UNDO_OPERATIONS: Readonly<
     `,
     variables: (id) => ({ id }),
   },
+  // `deleteRule` — a soft delete, and correct because the action only ever creates: the write refuses
+  // to run twice for one correction, so the rule this action wrote is the only row its undo touches.
+  CREATE_RULE_FROM_CORRECTION: {
+    document: /* GraphQL */ `
+      mutation AssistantUndoRule($id: ID!) {
+        deleteRule(id: $id)
+      }
+    `,
+    variables: (id) => ({ id }),
+  },
   // `deleteSavingGoal` — correct because the action only ever creates.
   ADD_GOAL: {
     document: /* GraphQL */ `

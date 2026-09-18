@@ -534,6 +534,39 @@ const TAG_RESULT = {
   replayed: false,
 };
 
+/**
+ * A rule proposal, as the API really sends one (B-5).
+ *
+ * ⚠️ The strings are the **server's own** — `copy.rule` for the sentence, `rulePreviewRows` for the
+ * clauses — because a fixture written from this screen's vocabulary is how B-4c shipped a Serbian card
+ * that said `Novi tag` while every screen said `oznaka` (docs/15). The rows carry no `afterMoney`: a rule
+ * holds no amount, so nothing here may reach `fm-money`.
+ */
+const RULE_PROPOSAL = {
+  proposed: true,
+  reason: null,
+  proposalId: 'proposal-rule',
+  action: 'CREATE_RULE_FROM_CORRECTION',
+  preview: {
+    sentence: 'Novo pravilo „Naučeno: lidl → Hrana” iz te ispravke.',
+    diff: [
+      { slot: 'correctionId', field: 'ispravka', before: null, after: '„Lidl 2000” → Hrana', afterValue: 'corr-1', afterMoney: null, defaulted: true },
+      { slot: 'conditions', field: 'tekst unosa', before: null, after: 'sadrži „lidl”', afterValue: 'lidl', afterMoney: null, defaulted: false },
+      { slot: 'actions', field: 'kategorija', before: null, after: 'Hrana', afterValue: 'cat-1', afterMoney: null, defaulted: false },
+    ],
+  },
+  expiresAt: '2026-09-20T10:10:00.000Z',
+};
+
+const RULE_RESULT = {
+  action: 'CREATE_RULE_FROM_CORRECTION',
+  createdId: 'rule-1',
+  createdLabel: 'Naučeno: lidl → Hrana',
+  undo: 'SOFT_DELETE',
+  sentence: 'Novo pravilo „Naučeno: lidl → Hrana” iz te ispravke.',
+  replayed: false,
+};
+
 /** The picker's options — including an archived Account, which must not be offered. */
 const ACCOUNTS = {
   accounts: {
@@ -557,6 +590,7 @@ function writeResponder(over: Partial<Record<'answer' | 'propose' | 'execute' | 
     if (query.includes('mutation AssistantUndoBudget')) return { deleteBudget: true };
     if (query.includes('mutation AssistantUndoGoal')) return { deleteSavingGoal: { id: 'goal-1' } };
     if (query.includes('mutation AssistantUndoTag')) return { deleteTag: true };
+    if (query.includes('mutation AssistantUndoRule')) return { deleteRule: true };
     return { assistantAnswer: over.answer ?? REFUSAL };
   };
 }
@@ -964,6 +998,76 @@ describe('the assistant write path (B-2b)', () => {
     expect((call?.[1] as Record<string, unknown>)['id']).toBe('tag-1');
     // …and the sentence names a tag, not a category: "no longer among your categories" would be a lie.
     expect(textOf(fixture)).toContain('tag “Odmor” was removed');
+  });
+
+  it('renders a rule with the correction it used, and no figure anywhere', async () => {
+    const { fixture } = await mount(writeResponder({ propose: RULE_PROPOSAL }));
+    await askAndSettle(fixture, 'zapamti ovu ispravku');
+
+    const text = textOf(fixture);
+    expect(text).toContain('Naučeno: lidl → Hrana');
+    // The referent, made visible: which correction the backend picked, in the reader's own words.
+    expect(text).toContain('Lidl 2000');
+    // …and flagged, because the question said "this one" rather than naming it.
+    expect(text).toContain('chosen for you');
+    // The rule's own clauses, as stored.
+    expect(text).toContain('sadrži');
+    // A rule holds no amount, so no row may be drawn as money — `afterMoney` is null on every row.
+    expect(fixture.nativeElement.querySelector('.act__row fm-money')).toBeNull();
+    // Nothing here is editable: there is no slot the card may offer to change.
+    expect(fixture.nativeElement.querySelector('.act__select')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.act__kind')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.act__undo')).toBeNull();
+  });
+
+  it('undoes a confirmed rule through deleteRule, and links to the rules screen', async () => {
+    const { fixture, client } = await mount(
+      writeResponder({ propose: RULE_PROPOSAL, execute: RULE_RESULT }),
+    );
+    await askAndSettle(fixture, 'zapamti ovu ispravku');
+    (fixture.nativeElement.querySelector('.act__confirm') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const link = fixture.nativeElement.querySelector('.act--done a') as HTMLAnchorElement;
+    expect(link?.getAttribute('href')).toBe('/rules');
+
+    (fixture.nativeElement.querySelector('.act__undo') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // The same mutation `/rules` calls, and a **soft** delete: F-31 has to be able to explain history.
+    const call = client.query.mock.calls.find((entry) =>
+      String(entry[0]).includes('mutation AssistantUndoRule'),
+    );
+    expect((call?.[1] as Record<string, unknown>)['id']).toBe('rule-1');
+    expect(textOf(fixture)).toContain('rule “Naučeno: lidl → Hrana” was removed');
+  });
+
+  it('says what to do instead for each of the rule action\'s refusals', async () => {
+    for (const [reason, expected] of [
+      ['NO_CORRECTION', 'no correction to learn from yet'],
+      ['NO_RULE', 'nothing to key a rule on'],
+      ['ALREADY_LEARNED', 'already produced a rule'],
+      ['SHADOWED', 'would never fire'],
+      ['UNRUNNABLE:correctionId', 'most recent correction'],
+    ] as const) {
+      // ⚠️ `mount` configures a TestBed, and Angular's harness only lets that happen **once per test** —
+      // so a table of cases lives in one `it` only if the module is reset between iterations. (Doing it
+      // without this fails as "Cannot configure the test module when the test module has already been
+      // instantiated", which reads like a harness bug rather than a missing reset.)
+      TestBed.resetTestingModule();
+      const { fixture } = await mount(
+        writeResponder({
+          propose: { proposed: false, reason, proposalId: null, action: 'CREATE_RULE_FROM_CORRECTION', preview: null, expiresAt: null },
+        }),
+      );
+      await askAndSettle(fixture, 'zapamti ovu ispravku');
+
+      expect(textOf(fixture), reason).toContain(expected);
+      // A refusal is not a card: nothing to confirm, and no button that cannot work.
+      expect(fixture.nativeElement.querySelector('.act'), reason).toBeNull();
+    }
   });
 
   it('offers no account control, and asks for no accounts, when the question named the account', async () => {

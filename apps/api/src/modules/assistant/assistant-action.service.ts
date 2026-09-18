@@ -59,6 +59,8 @@ import { BudgetPeriodEnum } from '../budgeting/budget.model';
 import { GoalsService } from '../goals/goals.service';
 import { TagsService } from '../taxonomy/tags.service';
 import { ClassificationService, type FragmentResult } from '../classification/classification.service';
+import { CorrectionsService, type CorrectionRow } from '../classification/corrections.service';
+import type { CorrectionSubject } from '../classification/rule-synthesis';
 import { CaptureCommitRejected, TransactionsService } from '../ledger/transactions.service';
 import { TransactionKind, TransactionStatus } from '../ledger/transaction.model';
 import { CategoriesService } from '../taxonomy/categories.service';
@@ -66,6 +68,7 @@ import { CategoryKind } from '../taxonomy/category.model';
 import { ACTION_TEMPLATES, type ActionSlotName, type AssistantAction } from './assistant-actions';
 import { ACTION_NAME_MAX_LENGTH, cleanName, resolveEntityIn } from './action-planner';
 import { categoryEntities } from './planner-entities';
+import { rulePreviewRows, type RulePreviewNames } from './rule-preview';
 import {
   PendingActionStore,
   PROPOSAL_TTL_SECONDS,
@@ -137,6 +140,7 @@ const COPY = {
       period: 'period',
       target: 'target',
       deadline: 'deadline',
+      correction: 'correction',
     },
     sentence: (name: string, kind: string, parent: string): string =>
       `New category “${name}” (${kind}, ${parent})`,
@@ -145,6 +149,23 @@ const COPY = {
     budgetPeriod: 'this month',
     goal: (name: string, target: string): string => `New saving goal “${name}” — ${target}`,
     tag: (name: string): string => `New tag “${name}”`,
+    rule: (name: string): string => `New rule “${name}” from that correction.`,
+    // The referent, made visible: the entry's own text and the Category it was corrected to.
+    correctionFrom: (text: string, category: string): string => `“${text}” → ${category}`,
+    // The words a rule's clauses are rendered with (`rule-preview.ts`), so the card says `merchant is
+    // Lidl` in the same language as the sentence above it.
+    ruleClauses: {
+      field: {
+        text: 'entry text',
+        description: 'description',
+        merchant: 'merchant',
+        counterparty: 'person',
+        category: 'category',
+      },
+      op: { contains: 'contains', notContains: 'does not contain', equals: 'is', startsWith: 'starts with' },
+      asStored: 'shown as stored',
+      cleared: 'cleared',
+    },
     noDeadline: 'no deadline yet',
     allCategories: 'all categories',
     // Built by joining parts rather than by referring to the sibling key: a template that reads
@@ -178,6 +199,7 @@ const COPY = {
       period: 'period',
       target: 'cilj',
       deadline: 'rok',
+      correction: 'ispravka',
     },
     sentence: (name: string, kind: string, parent: string): string =>
       `Nova kategorija „${name}” (${kind}, ${parent})`,
@@ -191,6 +213,20 @@ const COPY = {
     // links to. The cue list accepts both (`tag` *and* `oznaka`) — that is about what a *question* says,
     // which is not the glossary (docs/03).
     tag: (name: string): string => `Nova oznaka „${name}”`,
+    rule: (name: string): string => `Novo pravilo „${name}” iz te ispravke.`,
+    correctionFrom: (text: string, category: string): string => `„${text}” → ${category}`,
+    ruleClauses: {
+      field: {
+        text: 'tekst unosa',
+        description: 'opis',
+        merchant: 'prodavac',
+        counterparty: 'osoba',
+        category: 'kategorija',
+      },
+      op: { contains: 'sadrži', notContains: 'ne sadrži', equals: 'je', startsWith: 'počinje sa' },
+      asStored: 'prikazano kako je sačuvano',
+      cleared: 'uklonjeno',
+    },
     noDeadline: 'još bez roka',
     allCategories: 'sve kategorije',
     transaction: (
@@ -224,6 +260,10 @@ export class AssistantActionService {
     private readonly goals: GoalsService,
     private readonly tags: TagsService,
     private readonly classification: ClassificationService,
+    // The learning loop, reached by question (B-5): the correction, the rule it synthesises and the
+    // conflict check all come from the services `correctTransaction`/`createRuleFromCorrection` use, so
+    // the card and `/transactions` cannot propose different rules for one correction.
+    private readonly corrections: CorrectionsService,
     private readonly transactions: TransactionsService,
     private readonly accounts: AccountsService,
     private readonly prisma: PrismaService,
@@ -674,6 +714,84 @@ export class AssistantActionService {
         },
       };
     },
+
+    /**
+     * A Rule derived from the Household's **most recent Correction** (B-5).
+     *
+     * Four refusals, and each one is a *mirror of a gate the write itself has* — the B-4c lesson, which
+     * is that a propose-time check copied from the wrong place offers a button that cannot work:
+     *
+     * | The write | The refusal here |
+     * |---|---|
+     * | `correctionSubject` returns `null` for a correction with no corrected-to Category | `NO_RULE` |
+     * | `createRuleFromCorrection` throws when synthesis yields nothing | `NO_RULE` |
+     * | it throws `RuleShadowedError` when an existing rule would win | `SHADOWED` |
+     * | it throws `CONFLICT` when this correction already produced a rule | `ALREADY_LEARNED` |
+     *
+     * The last one is refused rather than left to the write on purpose: the error the write raises is a
+     * GraphQL `CONFLICT`, and the card renders that code as *"something with that name already exists"*,
+     * which is not what happened. A refusal with its own reason is both honest and actionable.
+     */
+    CREATE_RULE_FROM_CORRECTION: async ({ householdId, slots, locale }) => {
+      // A phrase after the object word — *"napravi pravilo od ispravke za Lidl"* — asks this action to
+      // pick a correction **by name**, which this build cannot do: a Correction has no name, only the
+      // entry it was made on. Refused rather than ignored, because deriving from a different correction
+      // than the one the reader named is exactly the wrong write R-29 is about.
+      if ((slots['correctionId'] ?? '').trim().length > 0) {
+        return { proposed: false, reason: 'UNRUNNABLE:correctionId' };
+      }
+
+      const correction = await this.corrections.latest(householdId);
+      if (correction === null) return { proposed: false, reason: 'NO_CORRECTION' };
+      // One correction, one rule (ADR-010): the write refuses a second, so the card must not offer one.
+      if (correction.rule_created_id !== null) return { proposed: false, reason: 'ALREADY_LEARNED' };
+
+      const subject = await this.correctionSubject(householdId, correction);
+      if (subject === null) return { proposed: false, reason: 'NO_RULE' };
+
+      const synthesis = await this.corrections.synthesise(householdId, subject);
+      if (synthesis === null) return { proposed: false, reason: 'NO_RULE' };
+      if (synthesis.check.shadowed) return { proposed: false, reason: 'SHADOWED' };
+
+      const copy = copyFor(locale);
+      const proposal = synthesis.synthesis.proposal;
+      return {
+        // The question states nothing: the correction is an **arg**, because the backend derived it.
+        slots: {},
+        args: { correctionId: correction.id },
+        preview: {
+          sentence: copy.rule(proposal.name),
+          diff: [
+            {
+              slot: 'correctionId',
+              field: copy.fields.correction,
+              before: null,
+              // Which correction this came from, in the reader's own words. It is the one thing the
+              // question referred to **deictically** — "that correction" — so the card has to make the
+              // referent visible. Flagged `defaulted`, which is exactly what happened: the question said
+              // "this one" and the backend chose.
+              after: copy.correctionFrom(subject.description, subject.categoryName),
+              afterValue: correction.id,
+              defaulted: true,
+            },
+            // The rule's own clauses, rendered from the **document that will be saved** rather than from
+            // the trigger that produced it, so the card cannot describe a different rule than the write
+            // (rule-preview.ts).
+            ...rulePreviewRows(proposal, this.rulePreviewNames(subject), copy.ruleClauses).map((row) => ({
+              slot: row.slot,
+              field: row.field,
+              before: null,
+              after: row.after,
+              afterValue: row.afterValue,
+              // A statement, not a default: these are what the rule *is*, and the card offers no control
+              // for any of them (`defaultedSlots` holds only `correctionId`, which is the one thing the
+              // backend picked).
+              defaulted: false,
+            })),
+          ],
+        },
+      };
+    },
   };
 
   // -------------------------------------------------------------------------------------------
@@ -769,6 +887,34 @@ export class AssistantActionService {
         label: created.name,
         // Built from the **returned** goal, not from the proposal.
         sentence: copy.goal(created.name, formatMoney({ amountMinor: created.targetMinor, currency: created.currency as CurrencyCode }, copy.locale)),
+      };
+    },
+
+    CREATE_RULE_FROM_CORRECTION: async (proposal) => {
+      const correctionId = (proposal.args ?? {})['correctionId'];
+      if (correctionId === undefined) {
+        // A proposal written by a build that stored something else is not one this build can execute.
+        throw new ApiError('INTERNAL', 'That proposal is incomplete and was not applied.');
+      }
+
+      // Both are re-read **now**: a proposal can sit in the store for ten minutes, and the write has to
+      // act on the correction as it is at this moment. `createRuleFromCorrection` re-synthesises and
+      // re-runs the shadowing check itself, which is why the executor does not replay the rule the card
+      // showed — the proposal's job was to *describe* the write, and the service's is to perform it.
+      const correction = await this.corrections.require(proposal.householdId, correctionId);
+      const subject = await this.correctionSubject(proposal.householdId, correction);
+      const outcome = await this.corrections.createRuleFromCorrection(
+        proposal.householdId,
+        correction,
+        subject,
+        { acceptProposal: true, overrides: null },
+      );
+
+      return {
+        id: outcome.rule.id,
+        label: outcome.rule.name,
+        // Built from the **returned** rule, not from the proposal (ADR-035 decision 8).
+        sentence: copyFor(proposal.locale).rule(outcome.rule.name),
       };
     },
 
@@ -984,6 +1130,50 @@ export class AssistantActionService {
     const categories = await this.categories.list(householdId);
     const found = categories.find((category) => category.id === categoryId);
     return found === undefined ? null : { name: found.name };
+  }
+
+  /**
+   * The correction's **subject**, resolved exactly as `createRuleFromCorrection` resolves it.
+   *
+   * The resolver does this inline for the mutation; this is the same two steps — the entry's text and
+   * entities from the ledger, and the corrected-to Category from the correction's own `to_value` — done
+   * through the same `TransactionsService.correctionSubject`, so the card and the write cannot disagree
+   * about what the rule would key on. `null` is a real answer: a correction on an amount or a merchant
+   * has no corrected-to Category, and ADR-010's synthesis has nothing to propose for one.
+   */
+  private async correctionSubject(
+    householdId: string,
+    correction: CorrectionRow,
+  ): Promise<CorrectionSubject | null> {
+    if (correction.transaction_id === null) return null;
+    return this.transactions.correctionSubject(
+      householdId,
+      correction.transaction_id,
+      correction.to_value,
+    );
+  }
+
+  /**
+   * The names a rule's clause ids resolve to, taken from the **subject**.
+   *
+   * A correction produces a rule whose conditions name the Merchant or Counterparty the subject already
+   * resolved and whose action names the Category it was corrected to — so the subject's own ids are the
+   * document's ids, and no extra read is needed. An id the document names that is *not* here makes
+   * `rule-preview` render that half as stored, which is the honest outcome rather than a uuid at a
+   * reader.
+   */
+  private rulePreviewNames(subject: CorrectionSubject): RulePreviewNames {
+    return {
+      category: { [subject.categoryId]: subject.categoryName },
+      merchant:
+        subject.merchantId === null || subject.merchantName === null
+          ? {}
+          : { [subject.merchantId]: subject.merchantName },
+      counterparty:
+        subject.counterpartyId === null || subject.counterpartyName === null
+          ? {}
+          : { [subject.counterpartyId]: subject.counterpartyName },
+    };
   }
 
   /**

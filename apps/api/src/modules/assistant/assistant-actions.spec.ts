@@ -46,6 +46,7 @@ describe('the action registry (ADR-035)', () => {
       'upsertBudget',
       'createSavingGoal',
       'createTag',
+      'createRuleFromCorrection',
     ]);
   });
 
@@ -95,6 +96,32 @@ describe('the action registry (ADR-035)', () => {
     expect(template.destroys).toBe(false);
   });
 
+  it('declares the rule action as one whose input is already in the database', () => {
+    const template = ACTION_TEMPLATES.CREATE_RULE_FROM_CORRECTION;
+    expect(template.mutation).toBe('createRuleFromCorrection');
+    // ⚠️ **No required slot**, and this is the action's whole difference from the five before it: the
+    // correction already exists and the rule is derived from it, so the question only has to say *which
+    // kind of thing* it wants. A required slot here would refuse the ordinary request.
+    expect(template.requiredSlots).toEqual([]);
+    // The one thing the preview fills is **which** correction — the question said "this one" — so the
+    // card flags that row `chosen for you` rather than pretending the reader named it.
+    expect(template.defaultedSlots).toEqual(['correctionId']);
+    // `deleteRule`, a **soft** delete (`RulesService.remove`), and honest as an undo because
+    // `createRuleFromCorrection` refuses to run twice for one correction.
+    expect(template.undo).toBe('SOFT_DELETE');
+    expect(template.destroys).toBe(false);
+    // `correctTransaction` carries no role guard, so this mirrors the screen beside it — no stricter.
+    expect(template.role).toBe('MEMBER');
+  });
+
+  it('declares the correction action **last**, because a plan walks the registry in order', () => {
+    // Load-bearing, not cosmetic: `planAction` takes the first action whose object word occurs in the
+    // question, so an action declared earlier wins a question that mentions two vocabularies. The rule
+    // action's words (`pravilo`, `ispravka`) are the weakest evidence of intent, so every more specific
+    // action must get its chance first — *"dodaj pravilo za kategoriju Gorivo"* is a Category request.
+    expect(ASSISTANT_ACTIONS[ASSISTANT_ACTIONS.length - 1]).toBe('CREATE_RULE_FROM_CORRECTION');
+  });
+
   it('declares the capture path for ADD_TRANSACTION, with the slot it actually needs', () => {
     const template = ACTION_TEMPLATES.ADD_TRANSACTION;
     expect(template.mutation).toBe('captureCommit');
@@ -139,6 +166,11 @@ describe('the action registry (ADR-035)', () => {
       'period',
       'targetMinor',
       'targetDate',
+      // B-5's two **preview-only** members: a Rule is a document, so its rows name the rule's own halves
+      // (`conditions`, `actions`) rather than a slot a question could state. They are part of the card's
+      // vocabulary, which is what this enum is.
+      'conditions',
+      'actions',
     ].sort();
     expect(Object.keys(AssistantActionSlotEnum).sort()).toEqual(slots);
     expect(Object.values(ASSISTANT_ACTION_SLOT_ENUM_MIRROR).sort()).toEqual(slots);
@@ -150,7 +182,16 @@ describe('the action registry (ADR-035)', () => {
     for (const action of ASSISTANT_ACTIONS) {
       const template = ACTION_TEMPLATES[action];
       for (const slot of [...template.requiredSlots, ...template.defaultedSlots]) {
-        expect(['name', 'text', 'kind', 'parentId', 'accountId']).toContain(slot);
+        expect([
+          'name',
+          'text',
+          'kind',
+          'parentId',
+          'accountId',
+          // The one declared slot a *question may state* and the builder then **refuses** — it is how the
+          // action sees a phrase it cannot honour instead of silently dropping it (`ActionSlotName`).
+          'correctionId',
+        ]).toContain(slot);
       }
       // A required slot is never also a defaulted one: "the question must say it" and "the proposal
       // fills it" are different claims about the same field.

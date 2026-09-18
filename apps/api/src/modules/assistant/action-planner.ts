@@ -173,6 +173,51 @@ const CUES: Readonly<Record<AssistantAction, ActionCues>> = Object.freeze({
     slot: 'text',
     amountAnchor: true,
   },
+  /**
+   * A Rule derived from a Correction (B-5).
+   *
+   * ⚠️ **Its imperatives are the *remembering* verbs only** — `napravi`, `zapamti`, `sačuvaj`, and their
+   * English counterparts — and `dodaj`/`add` are deliberately **absent**. *"dodaj pravilo Gorivo"* is a
+   * request to write a rule by hand, which no action here can do; matching it would propose a rule
+   * derived from whatever the last correction happened to be, which is precisely the wrong proposal R-29
+   * is about. `create` stays, because *"create a rule from that correction"* is the same request as
+   * *"napravi pravilo od te ispravke"*.
+   *
+   * ⚠️ **The object is the word for the *correction*, never the word for the *rule*.** This is not a
+   * detail of taste: `anchorFor` takes the **first** object token and hands everything after it to the
+   * slot, so listing `pravilo` would make the most natural request — *"napravi pravilo od ispravke"* —
+   * anchor on `pravilo` and capture `"od ispravke"` as the thing to resolve, which is a refusal of the
+   * ordinary phrasing. The same list would also swallow *"napravi pravilo za Lidl"* as a named
+   * correction. The correction is what this action's input **is**, so it is what the object names, and
+   * the rule word is left to the rest of the sentence where it belongs.
+   *
+   * A question that merely mentions a correction is not a command — *"koja ispravka je bila za Lidl"*
+   * has no imperative before the object — and `napravim` is absent on purpose, so *"kako da napravim
+   * pravilo"* stays a question.
+   */
+  CREATE_RULE_FROM_CORRECTION: {
+    imperatives: [
+      'napravi', 'napravite', 'napraviti',
+      'kreiraj', 'kreirajte', 'kreirati',
+      'zapamti', 'zapamtite', 'zapamtiti',
+      'sacuvaj', 'sacuvajte', 'sacuvati',
+      'pretvori', 'pretvorite', 'pretvoriti',
+      'create', 'save', 'remember', 'convert',
+    ],
+    leadAdjectives: [],
+    // Folded forms: `ispravku` → `ispravku`, `sačuvaj` → `sacuvaj` (docs/15's cue-list entry).
+    objects: [
+      'ispravka', 'ispravke', 'ispravku', 'ispravkom', 'ispravci',
+      'korekcija', 'korekcije', 'korekciju',
+      'correction', 'corrections',
+    ],
+    // Whatever follows the object is **which correction**, and this build can only use the latest one —
+    // so the builder refuses a phrase rather than ignoring it. The slot exists to be seen (see
+    // `ActionSlotName.correctionId`).
+    slot: 'correctionId',
+    // A rule holds no amount; *"napravi pravilo 500"* is not this action.
+    amountAnchor: false,
+  },
 });
 
 function tokenise(question: string): readonly RawToken[] {

@@ -236,6 +236,7 @@ export enum AssistantActionEnum {
   SET_BUDGET = 'SET_BUDGET',
   ADD_GOAL = 'ADD_GOAL',
   ADD_TAG = 'ADD_TAG',
+  CREATE_RULE_FROM_CORRECTION = 'CREATE_RULE_FROM_CORRECTION',
 }
 
 /**
@@ -255,6 +256,7 @@ export const ASSISTANT_ACTION_ENUM_MIRROR: Readonly<
   SET_BUDGET: AssistantActionEnum.SET_BUDGET,
   ADD_GOAL: AssistantActionEnum.ADD_GOAL,
   ADD_TAG: AssistantActionEnum.ADD_TAG,
+  CREATE_RULE_FROM_CORRECTION: AssistantActionEnum.CREATE_RULE_FROM_CORRECTION,
 };
 
 registerEnumType(AssistantActionEnum, {
@@ -286,6 +288,10 @@ export enum AssistantActionSlotEnum {
   period = 'period',
   targetMinor = 'targetMinor',
   targetDate = 'targetDate',
+  // B-5's three: the correction the rule is derived from, and the rule's own two halves.
+  correctionId = 'correctionId',
+  conditions = 'conditions',
+  actions = 'actions',
 }
 
 /** {@link ASSISTANT_ACTION_ENUM_MIRROR}'s twin for the slots — same failure, same guard. */
@@ -302,6 +308,9 @@ export const ASSISTANT_ACTION_SLOT_ENUM_MIRROR: Readonly<
   period: AssistantActionSlotEnum.period,
   targetMinor: AssistantActionSlotEnum.targetMinor,
   targetDate: AssistantActionSlotEnum.targetDate,
+  correctionId: AssistantActionSlotEnum.correctionId,
+  conditions: AssistantActionSlotEnum.conditions,
+  actions: AssistantActionSlotEnum.actions,
 };
 
 registerEnumType(AssistantActionSlotEnum, {

@@ -158,6 +158,26 @@ export class CorrectionsService {
   }
 
   /**
+   * The Household's **most recent** correction — the row `"zapamti ovu ispravku"` means (B-5).
+   *
+   * A correction has no name to match on, so a question can only refer to one **deictically**, and the
+   * only defensible reading of "this correction" without a conversation context (docs/16's A-6) is the
+   * newest. Ordered by `created_at` **and then `id`**: two corrections recorded in the same instant are
+   * otherwise an arbitrary pick, and `id` is a UUIDv7, so the tie-break is still time order rather than
+   * whatever the planner felt like. The caller shows which row it used and refuses a phrase that tries
+   * to name a different one (see `assistant-action.service.ts`).
+   */
+  async latest(householdId: string): Promise<CorrectionRow | null> {
+    const rows = await this.prisma.client.corrections.findMany({
+      where: { household_id: householdId },
+      select: CORRECTION_SELECT,
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      take: 1,
+    });
+    return rows[0] ?? null;
+  }
+
+  /**
    * How many corrections already sent `merchantId` to `categoryId`.
    *
    * docs/04 §8.2's threshold input: the third correction of one Merchant to one Category is a

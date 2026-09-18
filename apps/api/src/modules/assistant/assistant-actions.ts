@@ -28,10 +28,9 @@
 /**
  * The closed set of writes the assistant may **propose**.
  *
- * Two members, each added by the task that built its executor: docs/16's B.4–B.5 still name five more
- * (`ADD_TAG`, `ADD_GOAL`, `SET_BUDGET`, `ADD_RECURRING_RULE`, `CREATE_RULE_FROM_CORRECTION`), and a
- * template with no executor would be a trap — `ASSISTANT_ACTIONS` being closed is what makes that
- * impossible to add by accident.
+ * Six members, each added by the task that built its executor. docs/16's B.4–B.5 name one more that is
+ * *not* built (`ADD_RECURRING_RULE`), and a template with no executor would be a trap — the closed
+ * union is what makes that impossible to add by accident.
  */
 export const ASSISTANT_ACTIONS = [
   'ADD_CATEGORY',
@@ -39,6 +38,11 @@ export const ASSISTANT_ACTIONS = [
   'SET_BUDGET',
   'ADD_GOAL',
   'ADD_TAG',
+  // **Last, and the position is load-bearing.** `planAction` walks this list and takes the first
+  // action whose object word occurs in the question, so a member declared earlier wins a question that
+  // mentions two vocabularies. This one's objects (`ispravka`, `pravilo`) are the weakest evidence of
+  // what a question means, so they are consulted only after every more specific action has declined.
+  'CREATE_RULE_FROM_CORRECTION',
 ] as const;
 
 export type AssistantAction = (typeof ASSISTANT_ACTIONS)[number];
@@ -67,7 +71,24 @@ export type ActionSlotName =
   // speaks of a `targetMinor` and a `targetDate`, and a second word for the same concept is how the two
   // sides start describing one goal differently.
   | 'targetMinor'
-  | 'targetDate';
+  | 'targetDate'
+  /**
+   * The **correction** a rule is derived from (B-5) — an id the *backend* resolves, never one a
+   * question supplies.
+   *
+   * It is a slot rather than only an `arg` for one reason: the planner captures whatever the question
+   * said after the object word, and this action must **see** it to refuse it. A question that names a
+   * correction (*"napravi pravilo od ispravke za Lidl"*) is asking for something this build cannot
+   * resolve — corrections have no name to match on — and silently ignoring the phrase would be the
+   * wrong proposal R-29 is about. The card flags the resolved row *chosen for you*, which is exactly
+   * what happened: the question said "that correction" and the backend picked one (docs/06 §8.16).
+   */
+  | 'correctionId'
+  // The two **preview-only** members (B-5): a Rule is a document, not a single value, so its diff rows
+  // name the rule's parts rather than a slot a question could ever state. They exist because `slot` is
+  // how the card identifies a row, and "which rule clause is this" is a real question for the renderer.
+  | 'conditions'
+  | 'actions';
 
 /** How thoroughly an action can be undone. `NONE` is why `destroys` exists (ADR-035 decision 7). */
 export type ActionUndo = 'SOFT_DELETE' | 'UNDO_CAPTURE' | 'NONE';
@@ -192,6 +213,33 @@ export const ACTION_TEMPLATES: Readonly<Record<AssistantAction, ActionTemplate>>
     role: 'MEMBER',
     // `undoCapture`: docs/02 §3's undo toast, the same call it makes, all-or-nothing and per id.
     undo: 'UNDO_CAPTURE',
+    destroys: false,
+  },
+  /**
+   * A **Rule** derived from a Correction — ADR-010's confirmation, reached by a question (B-5).
+   *
+   * ⚠️ **Nothing has to be stated, and that is the whole difference from the four before it.** The
+   * other actions take something the user invents or names in the question; this one's input already
+   * exists in the database — it is the Household's most recent Correction — and the rule is derived
+   * from *that*. So `requiredSlots` is empty and the question only has to say *"zapamti ovu ispravku"*.
+   *
+   * The one thing the preview fills is **which** correction, and it is declared here so the card can
+   * mark the row *chosen for you*: the question said "this one" and the backend chose the latest. A
+   * phrase that tries to name one is refused by the builder rather than ignored (the slot above).
+   *
+   * The undo is `deleteRule`, a **soft** delete (rules.service), and it is honest for the same reason
+   * `ADD_CATEGORY`'s is: `createRuleFromCorrection` refuses to run twice for one correction, so the row
+   * this action wrote is the only row its undo can touch.
+   */
+  CREATE_RULE_FROM_CORRECTION: {
+    mutation: 'createRuleFromCorrection',
+    requiredSlots: [],
+    defaultedSlots: ['correctionId'],
+    // `correctTransaction` carries no role guard, and this action is the same learning loop one step
+    // further — the assistant must be neither stricter nor looser than the screen beside it. If a guard
+    // is added there, this is where it is mirrored (see the ⚠️ in docs/06 §8.16 about `VIEWER`).
+    role: 'MEMBER',
+    undo: 'SOFT_DELETE',
     destroys: false,
   },
 });

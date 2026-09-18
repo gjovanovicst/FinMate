@@ -404,6 +404,18 @@ describe('the assistant write path (docs/06 §8.16)', () => {
     // An unrecognised slot still says the request cannot be built, rather than inventing which part.
     expect(actionRefusalKey('UNRUNNABLE:kind')).toBe('assistant.action.notRunnable');
     expect(actionRefusalKey('UNRUNNABLE:name,kind')).toBe('assistant.action.needName');
+    // B-5: the phrase named a correction and this build can only use the most recent one — a sentence of
+    // its own, because "I need one more detail" would invite a detail that cannot help.
+    expect(actionRefusalKey('UNRUNNABLE:correctionId')).toBe('assistant.action.needCorrection');
+  });
+
+  it('phrases each of the rule action\'s four refusals, and each names a way forward', () => {
+    // The two about the correction itself, and the two about a rule that already exists. A refusal that
+    // only said "I cannot do that" would leave the reader retyping the same sentence.
+    expect(actionRefusalKey('NO_CORRECTION')).toBe('assistant.action.noCorrection');
+    expect(actionRefusalKey('NO_RULE')).toBe('assistant.action.noRule');
+    expect(actionRefusalKey('ALREADY_LEARNED')).toBe('assistant.action.alreadyLearned');
+    expect(actionRefusalKey('SHADOWED')).toBe('assistant.action.shadowed');
   });
 
   it('keeps a diff row whose value is money, and emits it as Money', () => {
@@ -481,10 +493,15 @@ describe('the assistant write path (docs/06 §8.16)', () => {
     // card must offer it (the closed registry is what says *how*, and `UNDO_OPERATIONS` is keyed the same
     // way).
     expect(undoPlan(result({ action: 'ADD_TAG' }))).toEqual({ action: 'ADD_TAG', id: 'c1' });
+    // A Rule is soft-deleted by `deleteRule`, which is the mutation `/rules` calls.
+    expect(undoPlan(result({ action: 'CREATE_RULE_FROM_CORRECTION' }))).toEqual({
+      action: 'CREATE_RULE_FROM_CORRECTION',
+      id: 'c1',
+    });
     // A client one release behind a server that added an action: no control, rather than a call to
-    // whatever the fall-through happened to name. The next one the registry gains is docs/16's B-5, so
-    // that is the honest stand-in for an action this build has never heard of.
-    expect(undoPlan(result({ action: 'CREATE_RULE_FROM_CORRECTION' as AssistantActionName }))).toBeNull();
+    // whatever the fall-through happened to name. `ADD_RECURRING_RULE` is the one action docs/16's B.3
+    // names that this build has never heard of — the honest stand-in for "a server that is ahead".
+    expect(undoPlan(result({ action: 'ADD_RECURRING_RULE' as AssistantActionName }))).toBeNull();
   });
 
   it('names the operation that actually ran when it says something was undone', () => {
@@ -495,6 +512,8 @@ describe('the assistant write path (docs/06 §8.16)', () => {
     expect(undoneKey('SET_BUDGET')).toBe('assistant.action.undoneBudget');
     expect(undoneKey('ADD_GOAL')).toBe('assistant.action.undoneGoal');
     expect(undoneKey('ADD_TAG')).toBe('assistant.action.undoneTag');
+    // "no longer among your categories" over a removed *rule* would be a lie about what changed.
+    expect(undoneKey('CREATE_RULE_FROM_CORRECTION')).toBe('assistant.action.undoneRule');
   });
 
   it('links to the row that was written, not to a list the reader has to search', () => {
@@ -522,6 +541,11 @@ describe('the assistant write path (docs/06 §8.16)', () => {
     expect(resultLink(result({ action: 'ADD_TAG' }))).toEqual({
       route: ['/tags'],
       labelKey: 'assistant.action.openTags',
+    });
+    // A Rule has no per-row route either, so it opens `/rules`.
+    expect(resultLink(result({ action: 'CREATE_RULE_FROM_CORRECTION' }))).toEqual({
+      route: ['/rules'],
+      labelKey: 'assistant.action.openRules',
     });
   });
 
