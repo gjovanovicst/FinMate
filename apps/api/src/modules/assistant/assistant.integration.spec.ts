@@ -354,6 +354,33 @@ describe('the assistant (integration)', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('refuses a **command** as a question, so the client can offer the card (B-4a)', async () => {
+    scriptNarrations(['You spent a lot.']);
+
+    // *"postavi budžet za gorivo na 7000"* names a Category the spend planner can scope, so without this
+    // it came back as a **figure** — and the client, which offers a proposal card only after a refusal,
+    // never showed the budget. Found by a browser pass: every test had asked the proposal endpoint
+    // directly, so nothing exercised the ordering between the two paths.
+    const command = await ask('postavi budžet za gorivo na 7000');
+
+    expect(command.answered).toBe(false);
+    expect(command.reason).toBe('ACTION_REQUEST');
+    // A command was never answered by a template, so the intent must not claim one.
+    expect(command.intent).toBe('NO_TEMPLATE_MATCH');
+    // No chips: the card below the refusal **is** the answer to a command, and suggestions beside it
+    // would invite the reader to ask something else instead.
+    expect(command.suggestions).toEqual([]);
+    // Still decided before the narrator, for the same reason every refusal is.
+    expect(calls).toHaveLength(0);
+
+    // …and a question that merely names the same Category is not refused for *being a command*. This is
+    // the boundary the check has to keep: an imperative is what makes a command, not a noun. (Which
+    // template answers it — and whether this Household's data can support one — is the read planner's
+    // business, asserted by the battery and the specs beside this one.)
+    const question = await ask('koliko sam potrošio na gorivo ovog meseca');
+    expect(question.reason).not.toBe('ACTION_REQUEST');
+  });
+
   it('resolves scope through the tree’s INCLUDE keywords but never through an EXCLUDE one (A-5)', async () => {
     // The keyword rows are the capture path's vocabulary. `EXCLUDE` means *this word does not belong
     // here* (docs/04 §5.4 blocks `ulje` from fuel), so it must not attract a question — the filter lives

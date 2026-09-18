@@ -17,7 +17,9 @@
 
 import { foldForMatching } from '@finmate/nlp';
 
+import { normaliseForMatching } from '../../common/text/normalise';
 import { ACTION_TEMPLATES, type ActionSlotName, type AssistantAction } from './assistant-actions';
+import { matchEntity, type NamedEntity } from './query-planner';
 
 /** A word, with both spellings: the one to match on and the one to keep. */
 interface RawToken {
@@ -83,6 +85,26 @@ const CUES: Readonly<Record<AssistantAction, ActionCues>> = Object.freeze({
     objects: ['kategorija', 'kategoriju', 'kategorije', 'kategorijom', 'category', 'categories'],
     slot: 'name',
     // A category name is not a number, and a bare *"dodaj 500"* must not create one called `500`.
+    amountAnchor: false,
+  },
+  /**
+   * A budget is **named** by what it limits, so this action's object is a word and its text carries the
+   * amount — see `planAction`, which tries every action's object rung before any amount rung, so
+   * *"dodaj budžet za hranu 20000"* is a budget and *"dodaj kafu 180"* is an entry.
+   */
+  SET_BUDGET: {
+    imperatives: [
+      'dodaj', 'dodajte', 'dodati',
+      'postavi', 'postavite', 'postaviti',
+      'podesi', 'podesite', 'podesiti',
+      'promeni', 'promenite', 'promeniti',
+      'ogranici', 'ogranicite', 'ograniciti',
+      'set', 'change', 'update', 'configure', 'limit',
+    ],
+    leadAdjectives: [],
+    // Folded forms, and `budžet` folds to `budzet` (docs/15's cue-list entry).
+    objects: ['budzet', 'budzeta', 'budzetu', 'budzetom', 'limit', 'limita', 'limitu', 'budget', 'budgets'],
+    slot: 'text',
     amountAnchor: false,
   },
   ADD_TRANSACTION: {
@@ -153,39 +175,51 @@ export function planAction(question: string): {
   const tokens = tokenise(question);
   if (tokens.length === 0) return null;
 
-  for (const action of Object.keys(CUES) as readonly AssistantAction[]) {
-    const cues = CUES[action];
-    // The **first** object token, so a name that happens to be the word itself survives:
-    // `dodaj kategoriju Kategorija` must propose `Kategorija`, not an empty name. Searching from the
-    // right would swallow it.
-    const objectAt = tokens.findIndex((token) => cues.objects.includes(token.folded));
-    const anchor =
-      objectAt >= 0 && hasImperativeBefore(tokens, cues, objectAt)
-        ? { at: objectAt, on: 'object' }
-        : // The object rung is tried first, so *"unesi trošak kafa 180"* proposes `kafa 180` and not
-          // both words; the amount rung exists for the phrasing that names no object at all.
-          amountAnchorFor(tokens, cues);
-    if (anchor === null) continue;
+  // **Every action's object rung is tried before any action's amount rung**, and that ordering is the
+  // rule rather than the declaration order of `CUES`. A word naming *what is being configured*
+  // (`kategorija`, `budžet`, `trošak`) is far stronger evidence than an imperative followed by a
+  // number, and without the passes *"dodaj budžet za hranu 20000"* would match the entry action's
+  // amount rung first — proposing a Transaction whose description is the word *budžet*.
+  for (const on of ['object', 'amount'] as const) {
+    for (const action of Object.keys(CUES) as readonly AssistantAction[]) {
+      const cues = CUES[action];
+      const anchor = anchorFor(tokens, cues, on);
+      if (anchor === null) continue;
 
-    const text = cleanName(
-      tokens.slice(anchor.at + 1).map((token) => token.raw).join(' '),
-    );
-    if (text.length === 0) {
-      // "dodaj kategoriju" with no name: the intent is unmistakable but the proposal is not
-      // buildable. Returning the action with no text lets the caller refuse with a *reason*
-      // (`UNRUNNABLE:name`) instead of silently treating the question as a read — the same
-      // distinction `missingSlots` draws on the read side.
-      return { action, slots: {}, matchedOn: [`action:${action}`, `slot:${cues.slot} missing`] };
+      const text = cleanName(tokens.slice(anchor.at + 1).map((token) => token.raw).join(' '));
+      if (text.length === 0) {
+        // "dodaj kategoriju" with no name: the intent is unmistakable but the proposal is not
+        // buildable. Returning the action with no text lets the caller refuse with a *reason*
+        // (`UNRUNNABLE:name`) instead of silently treating the question as a read — the same
+        // distinction `missingSlots` draws on the read side.
+        return { action, slots: {}, matchedOn: [`action:${action}`, `slot:${cues.slot} missing`] };
+      }
+
+      return {
+        action,
+        slots: { [cues.slot]: text },
+        matchedOn: [`action:${action}`, `slot:${cues.slot}`, `anchor:${anchor.on}`],
+      };
     }
-
-    return {
-      action,
-      slots: { [cues.slot]: text },
-      matchedOn: [`action:${action}`, `slot:${cues.slot}`, `anchor:${anchor.on}`],
-    };
   }
 
   return null;
+}
+
+/** One anchor for one action, on one rung — or `null` when that action does not match there. */
+function anchorFor(
+  tokens: readonly RawToken[],
+  cues: ActionCues,
+  on: 'object' | 'amount',
+): { readonly at: number; readonly on: 'object' | 'amount' } | null {
+  if (on === 'amount') return amountAnchorFor(tokens, cues);
+
+  // The **first** object token, so a name that happens to be the word itself survives:
+  // `dodaj kategoriju Kategorija` must propose `Kategorija`, not an empty name. Searching from the
+  // right would swallow it.
+  const objectAt = tokens.findIndex((token) => cues.objects.includes(token.folded));
+  if (objectAt < 0) return null;
+  return hasImperativeBefore(tokens, cues, objectAt) ? { at: objectAt, on: 'object' } : null;
 }
 
 /** A verb *before* the object is what makes it an imperative rather than a mention. */
@@ -218,6 +252,31 @@ function amountAnchorFor(
   const rest = tokens.slice(imperativeAt + 1);
   if (!rest.some((token) => /\d/u.test(token.raw))) return null;
   return { at: imperativeAt, on: 'amount' };
+}
+
+/**
+ * One entity named inside a short phrase — the **write** side's use of the read side's ladder.
+ *
+ * A budget's target is a Category the user names (*"postavi budžet za hranu na 20000"*), and it has to
+ * resolve exactly as it would in a question, or the assistant would budget one Category and answer
+ * about another. The rungs, the scoring and the tie-break are therefore the same function the read
+ * planner calls — with the same name/breadcrumb/`INCLUDE`-keyword vocabulary (`planner-entities.ts`),
+ * because a Category is named by all three in both directions.
+ *
+ * `null` is the honest answer, and it is the caller's to refuse on: a phrase that names nothing is not
+ * the same as a phrase that names something unresolvable, and only the caller can tell.
+ */
+export function resolveEntityIn(
+  phrase: string,
+  entities: readonly NamedEntity[],
+): NamedEntity | null {
+  if (phrase.trim().length === 0) return null;
+  return matchEntity(
+    normaliseForMatching(phrase),
+    entities,
+    (entity) => [entity.name, ...(entity.path === undefined ? [] : [entity.path])],
+    (entity) => entity.keywords ?? [],
+  );
 }
 
 /** The name bound the service enforces, exported so the planner's refusal and the service agree. */

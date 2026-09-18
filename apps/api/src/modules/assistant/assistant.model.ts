@@ -233,6 +233,7 @@ export function toAssistantAnswerModel(view: AssistantAnswerView): AssistantAnsw
 export enum AssistantActionEnum {
   ADD_CATEGORY = 'ADD_CATEGORY',
   ADD_TRANSACTION = 'ADD_TRANSACTION',
+  SET_BUDGET = 'SET_BUDGET',
 }
 
 /**
@@ -249,6 +250,7 @@ export const ASSISTANT_ACTION_ENUM_MIRROR: Readonly<
 > = {
   ADD_CATEGORY: AssistantActionEnum.ADD_CATEGORY,
   ADD_TRANSACTION: AssistantActionEnum.ADD_TRANSACTION,
+  SET_BUDGET: AssistantActionEnum.SET_BUDGET,
 };
 
 registerEnumType(AssistantActionEnum, {
@@ -275,6 +277,9 @@ export enum AssistantActionSlotEnum {
   kind = 'kind',
   parentId = 'parentId',
   accountId = 'accountId',
+  categoryId = 'categoryId',
+  amountMinor = 'amountMinor',
+  period = 'period',
 }
 
 /** {@link ASSISTANT_ACTION_ENUM_MIRROR}'s twin for the slots — same failure, same guard. */
@@ -286,6 +291,9 @@ export const ASSISTANT_ACTION_SLOT_ENUM_MIRROR: Readonly<
   kind: AssistantActionSlotEnum.kind,
   parentId: AssistantActionSlotEnum.parentId,
   accountId: AssistantActionSlotEnum.accountId,
+  categoryId: AssistantActionSlotEnum.categoryId,
+  amountMinor: AssistantActionSlotEnum.amountMinor,
+  period: AssistantActionSlotEnum.period,
 };
 
 registerEnumType(AssistantActionSlotEnum, {
@@ -319,6 +327,15 @@ export class ActionDiffEntryModel {
       'Null for a free-text slot.',
   })
   afterValue?: string | null;
+
+  @Field(() => MoneyScalar, {
+    nullable: true,
+    description:
+      'The value as **Money**, when the value is an amount (a budget\'s limit, a goal\'s target). A ' +
+      'row with this set is rendered by the client\'s money component; a row without it is rendered ' +
+      'as its label (ADR-003).',
+  })
+  afterMoney?: Money | null;
 
   @Field(() => Boolean, {
     description:
@@ -456,10 +473,23 @@ export function toActionProposalModel(view: {
         ? null
         : {
             sentence: view.preview.sentence,
-            diff: [...view.preview.diff],
             // `?? []` rather than a spread: a proposal stored by the build that had no lines is still
             // a proposal this build must be able to render, and a non-nullable field with `undefined`
             // in it is a 500 (docs/15).
+            // `afterMoney` is converted back to `Money` here for the same reason a line's amount is:
+            // the store is JSON, and a `bigint` cannot be one.
+            diff: view.preview.diff.map((entry) => ({
+              slot: entry.slot,
+              field: entry.field,
+              before: entry.before,
+              after: entry.after,
+              afterValue: entry.afterValue ?? null,
+              afterMoney:
+                entry.afterMoney == null
+                  ? null
+                  : money(BigInt(entry.afterMoney.amountMinor), entry.afterMoney.currency),
+              defaulted: entry.defaulted,
+            })),
             lines: (view.preview.lines ?? []).map((line) => ({
               label: line.label,
               // The store is JSON, so the amount travels as a string (a `bigint` would make

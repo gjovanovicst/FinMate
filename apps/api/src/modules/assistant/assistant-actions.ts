@@ -33,7 +33,7 @@
  * template with no executor would be a trap — `ASSISTANT_ACTIONS` being closed is what makes that
  * impossible to add by accident.
  */
-export const ASSISTANT_ACTIONS = ['ADD_CATEGORY', 'ADD_TRANSACTION'] as const;
+export const ASSISTANT_ACTIONS = ['ADD_CATEGORY', 'ADD_TRANSACTION', 'SET_BUDGET'] as const;
 
 export type AssistantAction = (typeof ASSISTANT_ACTIONS)[number];
 
@@ -45,7 +45,18 @@ export type AssistantAction = (typeof ASSISTANT_ACTIONS)[number];
  * ADR-035 decision 5 adds that kind here first. Sharing the union would let a read template ask for a
  * slot nothing resolves, and vice versa.
  */
-export type ActionSlotName = 'name' | 'text' | 'kind' | 'parentId' | 'accountId';
+export type ActionSlotName =
+  | 'name'
+  | 'text'
+  | 'kind'
+  | 'parentId'
+  | 'accountId'
+  // The **resolved** slots (B-4a): a Category id that comes from the Household's own tree and an
+  // amount that comes from the parser. Neither is inventable, which is why the registry declares them
+  // only where the builder fills them (ADR-035 decision 5).
+  | 'categoryId'
+  | 'amountMinor'
+  | 'period';
 
 /** How thoroughly an action can be undone. `NONE` is why `destroys` exists (ADR-035 decision 7). */
 export type ActionUndo = 'SOFT_DELETE' | 'UNDO_CAPTURE' | 'NONE';
@@ -110,6 +121,27 @@ export const ACTION_TEMPLATES: Readonly<Record<AssistantAction, ActionTemplate>>
    * inherit is the screen's editing surface: the proposal carries **one** row, and a text that parses
    * to more than one is refused rather than half-shown (see `assistant-action.service.ts`).
    */
+  /**
+   * A spending limit for one Category (B-4a).
+   *
+   * ⚠️ **It sets a budget where none exists and refuses to overwrite one**, which is narrower than
+   * `upsertBudget` itself. The reason is the undo: overwriting would have to *restore* the previous
+   * amount to be reversible, and this build has no operation for that — `deleteBudget` would destroy
+   * the budget the user already had. ADR-035 decision 7 says an action whose undo does not exist is not
+   * offered, so v1 offers the creation and refuses the change, naming `/budgets` in the refusal.
+   */
+  SET_BUDGET: {
+    mutation: 'upsertBudget',
+    requiredSlots: ['text'],
+    // Nothing is filled rather than stated: the Category and the amount both come out of the text, and
+    // the period is a fixed part of what this action means (see the service).
+    defaultedSlots: [],
+    role: 'MEMBER',
+    // `deleteBudget` — correct **because** the action refuses to overwrite: the row it created is the
+    // only row its undo touches.
+    undo: 'SOFT_DELETE',
+    destroys: false,
+  },
   ADD_TRANSACTION: {
     mutation: 'captureCommit',
     requiredSlots: ['text'],

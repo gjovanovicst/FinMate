@@ -53,6 +53,15 @@ export interface ActionDiffEntry {
   readonly before: string | null;
   readonly after: string | null;
   /**
+   * The same value as {@link after}, when that value **is money**.
+   *
+   * A budget's limit and a goal's target are amounts, and an amount the client prints from a string is a
+   * figure no money component ever sees (ADR-003). A row with this set is drawn with `fm-money`; a row
+   * without it is drawn as its label. Stored as minor units plus a currency, for the same JSON reason
+   * {@link ActionPreviewLine} is.
+   */
+  readonly afterMoney?: { readonly amountMinor: string; readonly currency: CurrencyCode } | null;
+  /**
    * `after` in the machine's own vocabulary, when the slot has one — `EXPENSE`/`INCOME` for `kind`.
    *
    * A label is not a value either: the card offers a control that re-proposes with the **chosen**

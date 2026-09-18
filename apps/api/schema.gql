@@ -53,6 +53,11 @@ type ActionDiffEntryModel {
   after: String
 
   """
+  The value as **Money**, when the value is an amount (a budget's limit, a goal's target). A row with this set is rendered by the client's money component; a row without it is rendered as its label (ADR-003).
+  """
+  afterMoney: Money
+
+  """
   The same value in the machine's own vocabulary where the slot has one (`EXPENSE`/`INCOME` for `kind`), because a localized label cannot tell a card which option is currently proposed. Null for a free-text slot.
   """
   afterValue: String
@@ -229,6 +234,7 @@ A registered assistant action. Closed: the registry has no unregistered member (
 enum AssistantAction {
   ADD_CATEGORY
   ADD_TRANSACTION
+  SET_BUDGET
 }
 
 """
@@ -287,9 +293,12 @@ Which slot of a proposal a diff row is. Stable across languages; `field` is the 
 """
 enum AssistantActionSlot {
   accountId
+  amountMinor
+  categoryId
   kind
   name
   parentId
+  period
   text
 }
 

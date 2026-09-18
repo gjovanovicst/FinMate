@@ -41,22 +41,28 @@ import {
   DEFAULT_TIME_ZONE,
   formatMoney,
   money,
+  monthPeriod,
   todayIn,
   uuidv7,
   type CurrencyCode,
   type Money,
 } from '@finmate/domain';
 
+import { extractFragment } from '@finmate/nlp';
+
 import { ApiError } from '../../common/filters/all-exceptions.filter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountsService } from '../accounts/accounts.service';
+import { BudgetsService } from '../budgeting/budgets.service';
+import { BudgetPeriodEnum } from '../budgeting/budget.model';
 import { ClassificationService, type FragmentResult } from '../classification/classification.service';
 import { CaptureCommitRejected, TransactionsService } from '../ledger/transactions.service';
 import { TransactionKind, TransactionStatus } from '../ledger/transaction.model';
 import { CategoriesService } from '../taxonomy/categories.service';
 import { CategoryKind } from '../taxonomy/category.model';
 import { ACTION_TEMPLATES, type ActionSlotName, type AssistantAction } from './assistant-actions';
-import { ACTION_NAME_MAX_LENGTH } from './action-planner';
+import { ACTION_NAME_MAX_LENGTH, resolveEntityIn } from './action-planner';
+import { categoryEntities } from './planner-entities';
 import {
   PendingActionStore,
   PROPOSAL_TTL_SECONDS,
@@ -118,9 +124,21 @@ const COPY = {
     kind: { EXPENSE: 'expense', INCOME: 'income' },
     topLevel: 'top level',
     noCategory: 'no category',
-    fields: { name: 'name', kind: 'kind', parent: 'parent', amount: 'amount', account: 'account' },
+    fields: {
+      name: 'name',
+      kind: 'kind',
+      parent: 'parent',
+      amount: 'amount',
+      account: 'account',
+      category: 'category',
+      period: 'period',
+    },
     sentence: (name: string, kind: string, parent: string): string =>
       `New category “${name}” (${kind}, ${parent})`,
+    budget: (category: string, amount: string, period: string): string =>
+      `Monthly budget for ${category}: ${amount} (${period})`,
+    budgetPeriod: 'this month',
+    allCategories: 'all categories',
     // Built by joining parts rather than by referring to the sibling key: a template that reads
     // `COPY.en.…` from inside `COPY`'s own literal is a circular inference TypeScript refuses.
     transaction: (
@@ -142,9 +160,21 @@ const COPY = {
     kind: { EXPENSE: 'rashod', INCOME: 'prihod' },
     topLevel: 'bez nadređene',
     noCategory: 'bez kategorije',
-    fields: { name: 'naziv', kind: 'vrsta', parent: 'nadređena', amount: 'iznos', account: 'račun' },
+    fields: {
+      name: 'naziv',
+      kind: 'vrsta',
+      parent: 'nadređena',
+      amount: 'iznos',
+      account: 'račun',
+      category: 'kategorija',
+      period: 'period',
+    },
     sentence: (name: string, kind: string, parent: string): string =>
       `Nova kategorija „${name}” (${kind}, ${parent})`,
+    budget: (category: string, amount: string, period: string): string =>
+      `Mesečni budžet za ${category}: ${amount} (${period})`,
+    budgetPeriod: 'ovaj mesec',
+    allCategories: 'sve kategorije',
     transaction: (
       label: string,
       amount: string,
@@ -172,6 +202,7 @@ export class AssistantActionService {
 
   constructor(
     private readonly categories: CategoriesService,
+    private readonly budgets: BudgetsService,
     private readonly classification: ClassificationService,
     private readonly transactions: TransactionsService,
     private readonly accounts: AccountsService,
@@ -320,6 +351,108 @@ export class AssistantActionService {
       };
     },
 
+    SET_BUDGET: async ({ householdId, slots, locale }) => {
+      const text = this.requireText(slots['text']);
+
+      const household = await this.prisma.client.households.findFirst({ where: { id: householdId } });
+      if (household === null) throw new ApiError('NOT_FOUND', 'Household not found.');
+      const currency = household.ledger_currency as CurrencyCode;
+      const today = todayIn(household.iana_timezone || DEFAULT_TIME_ZONE, new Date());
+
+      // The parser the capture path uses, on the phrase rather than on a whole entry: it finds the
+      // amount, reports **every** reading of `1.200`, and leaves the remaining words as the
+      // description — which is what names the Category.
+      const fragment = extractFragment(text, { currency, today });
+      if (fragment.amountMinor === null) return { proposed: false, reason: 'NO_AMOUNT' };
+      const readings = new Set(fragment.candidates.map((candidate) => candidate.amountMinor));
+      if (readings.size > 1) return { proposed: false, reason: 'AMBIGUOUS_AMOUNT' };
+
+      // The same ladder, the same vocabulary and the same breadcrumbs a **question** resolves a
+      // Category with, so a budget and the answer beside it cannot scope different Categories.
+      const resolved = resolveEntityIn(
+        fragment.description,
+        categoryEntities(await this.categories.list(householdId)),
+      );
+      if (resolved === null) {
+        // Deliberately a refusal and not a Household-wide budget: a typo in a Category name would
+        // otherwise become a limit over every Category, which is the wrong write R-29 is about. A
+        // whole-Household budget is set on `/budgets`, where the choice is explicit.
+        return { proposed: false, reason: 'UNRUNNABLE:categoryId' };
+      }
+
+      const period = BudgetPeriodEnum.MONTHLY;
+      const periodStart = monthPeriod(today).start;
+      const existing = (await this.budgets.list(householdId)).find(
+        (budget) =>
+          budget.categoryId === resolved.id &&
+          budget.period === BudgetPeriodEnum.MONTHLY &&
+          budget.periodStart === periodStart,
+      );
+
+      const amount = this.readAmount(fragment.amountMinor.toString(), currency);
+      if (amount === null) return { proposed: false, reason: 'NO_AMOUNT' };
+      if (existing !== undefined) {
+        // See `ACTION_TEMPLATES.SET_BUDGET`: overwriting has no honest undo in this build, so the
+        // proposal refuses rather than offering a button whose undo would delete the old budget.
+        return { proposed: false, reason: 'ALREADY_SET' };
+      }
+
+      const copy = copyFor(locale);
+      const kind = resolved.kind === 'INCOME' ? 'INCOME' : 'EXPENSE';
+      return {
+        // The Category is a slot the action **resolved**, not one it filled: nothing about it is a
+        // default, and the card must not offer to change a name the user typed.
+        slots: { text, ...(resolved.kind === undefined ? {} : { kind }) },
+        args: {
+          categoryId: resolved.id,
+          amountMinor: fragment.amountMinor.toString(),
+          currency,
+          period,
+          periodStart,
+        },
+        preview: {
+          sentence: copy.budget(
+            resolved.name,
+            formatMoney(amount, copy.locale),
+            copy.budgetPeriod,
+          ),
+          diff: [
+            {
+              slot: 'categoryId',
+              field: copy.fields.category,
+              before: null,
+              after: resolved.name,
+              afterValue: resolved.id,
+              defaulted: false,
+            },
+            {
+              slot: 'amountMinor',
+              field: copy.fields.amount,
+              before: null,
+              // The label is the amount as a string **for a reader who never opens the card's own
+              // renderer** — the value that matters is `afterMoney`, which the client draws with
+              // `fm-money` (ADR-003).
+              after: formatMoney(amount, copy.locale),
+              afterValue: fragment.amountMinor.toString(),
+              afterMoney: { amountMinor: fragment.amountMinor.toString(), currency },
+              defaulted: false,
+            },
+            {
+              slot: 'period',
+              field: copy.fields.period,
+              before: null,
+              after: copy.budgetPeriod,
+              afterValue: null,
+              // A **fixed** part of what this action means, deliberately not `defaulted`: the action
+              // sets the monthly budget, so the card says so instead of offering a period it cannot
+              // change. Weekly or yearly budgets are not reachable from here.
+              defaulted: false,
+            },
+          ],
+        },
+      };
+    },
+
     ADD_TRANSACTION: async ({ householdId, slots, locale }) => {
       const text = this.requireText(slots['text']);
 
@@ -458,6 +591,36 @@ export class AssistantActionService {
           },
           proposal.locale,
         ).sentence,
+      };
+    },
+
+    SET_BUDGET: async (proposal) => {
+      const args = proposal.args ?? {};
+      const categoryId = args['categoryId'];
+      const amountMinor = args['amountMinor'];
+      if (categoryId === undefined || amountMinor === undefined) {
+        // A proposal written by a build that stored something else is not one this build can execute,
+        // and guessing at an amount would be the worst possible reading of that.
+        throw new ApiError('INTERNAL', 'That proposal is incomplete and was not applied.');
+      }
+
+      const created = await this.budgets.upsert(proposal.householdId, {
+        categoryId,
+        period: (args['period'] as BudgetPeriodEnum | undefined) ?? BudgetPeriodEnum.MONTHLY,
+        amountMinor: BigInt(amountMinor),
+        ...(args['periodStart'] === undefined ? {} : { periodStart: args['periodStart'] }),
+      });
+
+      const copy = copyFor(proposal.locale);
+      return {
+        id: created.id,
+        label: created.categoryName ?? copy.allCategories,
+        // Built from the **returned** budget, not from the proposal: the row is what happened.
+        sentence: copy.budget(
+          created.categoryName ?? copy.allCategories,
+          formatMoney(created.amount, copy.locale),
+          copy.budgetPeriod,
+        ),
       };
     },
 

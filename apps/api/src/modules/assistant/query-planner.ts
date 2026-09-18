@@ -834,7 +834,7 @@ function resolveIntent(folded: string, cues: IntentCues): AssistantIntent {
  * widen the aggregate the user asked for. Ties (including two identically named entities) fall back to
  * the id, so resolution is deterministic rather than dependent on row order.
  */
-function matchEntity(
+export function matchEntity(
   folded: string,
   entities: readonly NamedEntity[],
   namesOf: (entity: NamedEntity) => readonly string[],

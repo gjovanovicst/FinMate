@@ -302,7 +302,12 @@ import {
                   @for (row of actionDiffRows(proposal.preview); track row.slot) {
                     <li class="act__row">
                       <span class="act__field">{{ row.field }}</span>
-                      <span class="act__value">{{ row.after }}</span>
+                      @if (row.afterMoney; as amount) {
+                        <!-- An amount reaches the page through the only money renderer there is. -->
+                        <fm-money class="act__value" [amount]="amount" />
+                      } @else {
+                        <span class="act__value">{{ row.after }}</span>
+                      }
                       @if (row.defaulted) {
                         <span class="act__flag">{{ i18n.t('assistant.action.defaulted') }}</span>
                       }
@@ -1206,7 +1211,7 @@ const ACCOUNTS_QUERY = /* GraphQL */ `
  * call a model, and `captureParse` is a Mutation for exactly that reason. The document keyword is the
  * client's whole contribution to that distinction — the transport is the same POST either way.
  */
-const PROPOSE_ACTION = /* GraphQL */ `
+export const PROPOSE_ACTION = /* GraphQL */ `
   mutation AssistantProposeAction(
     $question: String!
     $kind: CategoryKind
@@ -1226,6 +1231,9 @@ const PROPOSE_ACTION = /* GraphQL */ `
           before
           after
           afterValue
+          # Money is a SCALAR again: a diff row whose value is an amount (a budget's limit) is drawn by
+          # fm-money, and a field the query does not select is a field the card cannot see (docs/15).
+          afterMoney
           defaulted
         }
         lines {
@@ -1283,6 +1291,16 @@ const UNDO_OPERATIONS: Readonly<
     document: /* GraphQL */ `
       mutation AssistantUndoAddCategory($id: ID!) {
         deleteCategory(id: $id)
+      }
+    `,
+    variables: (id) => ({ id }),
+  },
+  // `deleteBudget`, and it is correct **because** the action refuses to overwrite an existing budget:
+  // the row this undo removes is the row the action created.
+  SET_BUDGET: {
+    document: /* GraphQL */ `
+      mutation AssistantUndoBudget($id: ID!) {
+        deleteBudget(id: $id)
       }
     `,
     variables: (id) => ({ id }),

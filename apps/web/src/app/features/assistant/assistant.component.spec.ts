@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GraphQLRequestError, GraphqlClient } from '../../core/graphql/graphql.client';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
-import { AssistantComponent } from './assistant.component';
+import { AssistantComponent, PROPOSE_ACTION } from './assistant.component';
 
 initAngularTesting();
 
@@ -445,6 +445,39 @@ const TRANSACTION_RESULT = {
   replayed: false,
 };
 
+const BUDGET_PROPOSAL = {
+  proposed: true,
+  reason: null,
+  proposalId: 'proposal-budget',
+  action: 'SET_BUDGET',
+  preview: {
+    sentence: 'Mesečni budžet za Hranu: 20.000,00 RSD (ovaj mesec)',
+    diff: [
+      { slot: 'categoryId', field: 'kategorija', before: null, after: 'Hrana', afterValue: 'cat-1', afterMoney: null, defaulted: false },
+      {
+        slot: 'amountMinor',
+        field: 'iznos',
+        before: null,
+        after: '20.000,00 RSD',
+        afterValue: '2000000',
+        afterMoney: { amountMinor: '2000000', currency: 'RSD' },
+        defaulted: false,
+      },
+      { slot: 'period', field: 'period', before: null, after: 'ovaj mesec', afterValue: null, afterMoney: null, defaulted: false },
+    ],
+  },
+  expiresAt: '2026-09-20T10:10:00.000Z',
+};
+
+const BUDGET_RESULT = {
+  action: 'SET_BUDGET',
+  createdId: 'budget-1',
+  createdLabel: 'Hrana',
+  undo: 'SOFT_DELETE',
+  sentence: 'Mesečni budžet za Hranu: 20.000,00 RSD (ovaj mesec)',
+  replayed: false,
+};
+
 /** The picker's options — including an archived Account, which must not be offered. */
 const ACCOUNTS = {
   accounts: {
@@ -465,6 +498,7 @@ function writeResponder(over: Partial<Record<'answer' | 'propose' | 'execute' | 
     if (query.includes('mutation AssistantExecuteAction')) return { assistantExecuteAction: over.execute ?? RESULT };
     if (query.includes('mutation AssistantUndoAddCategory')) return { deleteCategory: true };
     if (query.includes('mutation AssistantUndoCapture')) return { undoCapture: 1 };
+    if (query.includes('mutation AssistantUndoBudget')) return { deleteBudget: true };
     return { assistantAnswer: over.answer ?? REFUSAL };
   };
 }
@@ -481,6 +515,39 @@ async function askAndSettle(
 }
 
 describe('the assistant write path (B-2b)', () => {
+  it('asks the API for every field the card reads, because a fixture cannot notice a missing one', () => {
+    // ⚠️ Found by a browser pass, twice over: the unit tests feed a **fixture** to the component, so a
+    // field the real document never selects renders `undefined` in production while every test passes.
+    // That is how `afterMoney` shipped unselected — the budget card drew the server's label string
+    // instead of `fm-money`, which no unit test could see (docs/15).
+    for (const field of [
+      'proposed',
+      'reason',
+      'proposalId',
+      'action',
+      'preview',
+      'sentence',
+      'diff',
+      'slot',
+      'field',
+      'before',
+      'after',
+      'afterValue',
+      'afterMoney',
+      'defaulted',
+      'lines',
+      'label',
+      'amount',
+      'category',
+      'occurredOn',
+      'needsReview',
+      'expiresAt',
+    ]) {
+      expect(PROPOSE_ACTION, field).toContain(field);
+    }
+  });
+
+
   it('offers no write when the ledger answered the question', async () => {
     // The ordering, and the reason it is not merely a preference: a question the ledger can answer must
     // never be turned into an offer to change something (docs/06 §8.16).
@@ -705,6 +772,57 @@ describe('the assistant write path (B-2b)', () => {
     expect((call?.[1] as Record<string, unknown>)['transactionIds']).toEqual(['tx-1']);
     // …and the sentence names what was removed from where.
     expect(textOf(fixture)).toContain('removed from your transactions');
+  });
+
+  it('renders a budget proposal with its amount through fm-money, and no amount control', async () => {
+    const { fixture } = await mount(writeResponder({ propose: BUDGET_PROPOSAL }));
+    await askAndSettle(fixture, 'postavi budžet za hranu na 20000');
+
+    const text = textOf(fixture);
+    expect(text).toContain('Hrana');
+    expect(text).toContain('ovaj mesec');
+    // The limit is a figure, so it reaches the page through the money component — not as the string the
+    // server also sends for the sentence.
+    const money = fixture.nativeElement.querySelector('.act__row fm-money');
+    expect(money).not.toBeNull();
+    // Nothing here is the app's guess, so nothing is flagged and no picker is offered.
+    expect(fixture.nativeElement.querySelector('.act__flag')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.act__select')).toBeNull();
+  });
+
+  it('undoes a confirmed budget through deleteBudget, and links to the budgets screen', async () => {
+    const { fixture, client } = await mount(
+      writeResponder({ propose: BUDGET_PROPOSAL, execute: BUDGET_RESULT }),
+    );
+    await askAndSettle(fixture, 'postavi budžet za hranu na 20000');
+    (fixture.nativeElement.querySelector('.act__confirm') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const link = fixture.nativeElement.querySelector('.act--done a') as HTMLAnchorElement;
+    expect(link?.getAttribute('href')).toBe('/budgets');
+
+    (fixture.nativeElement.querySelector('.act__undo') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const call = client.query.mock.calls.find((entry) =>
+      String(entry[0]).includes('mutation AssistantUndoBudget'),
+    );
+    expect((call?.[1] as Record<string, unknown>)['id']).toBe('budget-1');
+    expect(textOf(fixture)).toContain('budget for “Hrana” was removed');
+  });
+
+  it('says the budget already exists instead of offering to overwrite it', async () => {
+    const { fixture } = await mount(
+      writeResponder({
+        propose: { proposed: false, reason: 'ALREADY_SET', proposalId: null, action: 'SET_BUDGET', preview: null, expiresAt: null },
+      }),
+    );
+    await askAndSettle(fixture, 'promeni budžet za hranu na 25000');
+
+    expect(textOf(fixture)).toContain('already have a budget for that category');
+    expect(fixture.nativeElement.querySelector('.act')).toBeNull();
   });
 
   it('offers no account control, and asks for no accounts, when the question named the account', async () => {

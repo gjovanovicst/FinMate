@@ -300,6 +300,12 @@ export function renderRefusal(reason: string): string {
   if (reason === 'NO_TEMPLATE_MATCH') {
     return 'I cannot answer that from your ledger. Try one of the questions below.';
   }
+  if (reason === 'ACTION_REQUEST') {
+    // The refusal a **command** gets (B-4a): it is not a question, and the card under this sentence is
+    // the answer to it. English-only like every other refusal here — A-7 owns that breach (§5.14) —
+    // while the card itself is rendered in the Household's language.
+    return 'That is something I can do rather than answer — confirm it below.';
+  }
   if (reason === 'NEEDS_TWO_PERIODS') {
     return 'Comparing two periods needs both of them, which is not built yet.';
   }

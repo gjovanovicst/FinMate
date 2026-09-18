@@ -4025,6 +4025,45 @@ and matching one here would turn every unanswerable question containing a number
 The assistant needs an imperative; `dodaj kafu 180` and `dodaj trošak kafa 180` are the two shapes it
 takes.
 
+**`SET_BUDGET`, and the two things it had to decide (task B-4a, 2026-09-18).** The third action sets a
+spending limit: *"postavi budžet za hranu na 20000"*, *"dodaj budžet za gorivo 8000"*, *"postavi limit za
+benzin na 9000"*. Two decisions shaped it, and neither is a detail.
+
+**1 · The slots are *resolved*, not invented — by the ladder that answers questions.** The Category comes
+out of the phrase through `resolveEntityIn`, which is `matchEntity` — the same rungs, the same scoring,
+the same name/breadcrumb/`INCLUDE`-keyword vocabulary the read planner uses, now shared through
+`planner-entities.ts`. The amount comes from `extractFragment`, the capture path's own reader, so `1.200`
+is refused as `AMBIGUOUS_AMOUNT` rather than guessed. The consequence is the property that matters and is
+asserted live: **the budget scopes exactly the Category the answer beside it names**.
+
+| Decision | Why |
+|---|---|
+| The action **creates and refuses to overwrite** | ⚠️ The undo is what forces this. `upsertBudget` would happily change an existing limit, but no operation in this build *restores* the previous amount — `deleteBudget` would destroy the budget the user already had. ADR-035 decision 7 says an action whose undo does not exist is not offered, so v1 offers the creation, refuses the change with `ALREADY_SET`, and names `/budgets` in the refusal. The trigger to revisit is a restore-shaped undo, which is its own task. |
+| A phrase naming no Category the tree can resolve is a **refusal** (`UNRUNNABLE:categoryId`) | A Household-wide budget exists (`categoryId: null`, the one that drives safe-to-spend) and is deliberately **not** reachable here: a typo in a Category name would otherwise become a limit over every Category, which is R-29's wrong write. `/budgets` sets it explicitly. |
+| The period is a **fixed** part of the action, not a default | It sets the monthly budget. Marking it `defaulted` would promise a control the card does not have; saying it in the sentence and the diff is honest about what the action means. Weekly/yearly limits are not reachable from here. |
+| `afterMoney` on a diff row | A limit is an amount, and an amount the client prints from a string is a figure no money component ever sees (ADR-003). A row with `afterMoney` is drawn by `fm-money`; the string in `after` stays for the sentence. |
+| The object word **beats another action's amount rung** | `planAction` now tries *every* action's object rung before *any* amount rung. Without that, *"dodaj budžet za hranu 20000"* matched `ADD_TRANSACTION`'s verb-plus-number rung (its imperative `dodaj` plus the amount) and proposed an entry whose description was the word *budžet*. The rule is stated in the code rather than left to the declaration order of the cue table. |
+
+**2 · A command is not a question — and that is a fix to B-2b's ordering, not a reversal of it.** B-2b
+made the client ask `assistantAnswer` first and offer a card only on a refusal, so that a question the
+ledger *can* answer is never turned into an offer to write. But *"postavi budžet za gorivo na 7000"*
+names a Category the spend planner can scope, so it came back as **a spend figure** — and the budget card
+never appeared at all. Found by the browser pass; every API test had asked the proposal endpoint directly,
+so nothing exercised the ordering between the two paths. `AssistantService.answer` now consults
+`planAction` first and refuses with `reason: 'ACTION_REQUEST'` when the question is an unmistakable
+command, with **no** suggestion chips (the card below it *is* the answer). The card still appears only on
+a refusal — what narrowed is what a refusal *is*: there is no question in a command. The battery is
+unaffected (54/58, same share), which is the gate that would have caught an over-eager cue list.
+
+⚠️ **A named residual, measured, not fixed: the matcher's tie-break picks the *longest* name that shares a
+stem, and a junk Category can win.** The demo Household carries a leftover probe Category named
+`Test Hrana P1`, and *"hranu"* resolves to **it** rather than to `Hrana` — the stem rung scores both
+equally and the longer name breaks the tie. That is pre-existing behaviour that affects **reads too** (a
+spend question scoped by *"hranu"* uses the same Category), it is consistent between the two paths (which
+is why the live probe asserts *consistency* rather than a name), and the demo data is left alone rather
+than tidied. The refinement — prefer a match whose every name token is present over one only partially
+matched — changes the battery-gated read path and belongs in its own task ([15](15-implementation-gotchas.md)).
+
 **The transaction card (task B-3b, 2026-09-18).** `lines` is what the card draws: each row's text, its
 amount **through `fm-money`**, the Category the pipeline chose, the day it will be filed under, and — when
 the confidence gate will file it — that it goes to the review queue. The sentence stays above it, so the
@@ -4110,6 +4149,29 @@ toggle, which is what keeps the control on the card), a named account wins over 
 an account from another Household is refused before a button is offered. Both integration suites build
 the service **from `AssistantModule`**, with only the store overridden, so a missing module import is a
 boot failure rather than a surprise.
+
+**B-4a verified**: `action-planner.spec.ts` 16 (the budget cues, and the two-pass rung rule against the
+case that motivated it), `assistant-actions.spec.ts` 8, `assistant-budget.integration.spec.ts` **9** against
+a real Postgres — the Category resolved through the tree's own vocabulary, the amount as `Money` on the
+wire, the row written through the same `upsertBudget` `/budgets` calls, the existing budget **refused and
+left untouched**, the three refusals by name, and the replayed idempotency key — plus
+`assistant.integration.spec.ts` 26 (a command refused as `ACTION_REQUEST` with no chips, and a question
+naming the same Category *not* refused for being a command). API **1101**, web **910**, **2824 total**,
+lint 9/9, typecheck 9/9, `api:evals` green (battery 54/58, share 93.10 %), `web:build` + `bundle:budget`
+ok. **Live 16/16** (`/tmp/verify-b4a.mjs`): the proposal's shape, the row it writes, the read/write
+consistency check (the budget's Category id equals the one the answer names), the refusal to overwrite
+with the existing amount unchanged, the three refusals, the rung precedence both ways, and the probe's own
+budget removed. **Browser 16/16** (Playwright on `:4200`): the card with its three fields and the limit in
+`fm-money`, the Category and period named, nothing flagged as a guess, 0 horizontal overflow at
+320/768/1280 px, axe **0 critical / 0 serious**, the confirm landing on `/budgets`, the second ask refused
+with the command sentence *and* the exists sentence, no proposal card offered for it, the budget visible on
+`/budgets`, no page error. The probe's budget was deleted; the demo's own is untouched.
+
+⚠️ **A second finding from the same pass, and the same class as B-3a's enum:** the card's GraphQL document
+never selected `afterMoney`, so the budget card drew the server's **label string** instead of `fm-money`
+while every unit test passed — the fixtures supplied the field the real query did not ask for. The field is
+selected now, `PROPOSE_ACTION` is exported, and a spec asserts the document asks for **every field the card
+reads**, which is the guard a fixture cannot be.
 
 **B-3b verified**: `assistant.view.spec.ts` 41 and `assistant.component.spec.ts` 33 — `previewLines`
 reading `undefined` as none (a proposal stored before the field existed), `accountRow` refusing a row with

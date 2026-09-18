@@ -1717,6 +1717,15 @@ Short, and load-bearing.
   (docs/06 §5.14 and docs/09). ⚠️ Do not solve it by dropping a ⚠️ or a named gap — the file's value is
   that the uncomfortable half survives compression.
 
+  **It was truncated a third time on 2026-09-18**, by B-4a: the assistant row had grown to **4 486 bytes**
+  and the file to **66 370**, so the loader cut the tail again. That task did the compression it had been
+  deferring — the assistant row is now a **pointer** to docs/06 §8.9–§8.16 and docs/10 §5.9, the
+  `Web screens` row names its 20 routes and hands every per-screen deviation to docs/02, and the
+  `Phase 3 alerts`, `Offline store` and `Shell header` rows were cut to what ADR-028/ADR-025 and docs/07
+  already own — taking the file to **57 224 bytes** with nothing removed but restatement. **The rule this
+  keeps proving: a build-state row is a pointer, and the sentence you are tempted to add to it belongs in
+  the doc that owns the fact.**
+
 - **`deleteDB` hangs in a `fake-indexeddb` spec, so the test times out with no error worth reading.**
   `idb`'s `deleteDB` waits for every open connection to close, and a connection only closes on a
   `versionchange` event — which `idb` reports through the `blocking` callback the store has to opt into.
@@ -1851,6 +1860,33 @@ Short, and load-bearing.
   union, write the mirror as a `Record` keyed by that union — the same argument ADR-035 decision 3 makes
   for the action registry itself — and remember that neither `tsc` nor a unit test will notice a drift
   that only serialisation reaches (task B-3a).
+
+---
+
+- **A hand-written GraphQL document is a second contract, and a fixture cannot notice a missing field.**
+  The card's query selected `diff { slot field before after afterValue defaulted }` while the view read
+  `afterMoney` — so a budget's limit was drawn from the server's **label string** instead of going through
+  `fm-money`, in production, with every unit test green: the component specs feed a fixture, and the
+  fixture had the field the query never asked for. The browser pass caught it, and it is the same shape as
+  B-3a's enum mirror (a value the schema had and the client could not see). Two guards now, because the
+  lesson generalises: the document is exported from the component and a spec asserts it selects **every
+  field the view reads**, and any new field is added to both the document and that list in the same commit.
+  A mock that *supplies* a field is not evidence that the query *requests* it — only a request against the
+  real schema is (tasks B-3a, B-4a).
+
+---
+
+- **A name rung that prefers the longest match can scope the wrong Category, because a longer name is not
+  always the more specific one.** `matchEntityScored` breaks a score tie by name length, which is right
+  for `Hrana / Supermarket` beating `Hrana` — and wrong when the longer name is a *junk* row that merely
+  contains the word typed. Measured on the demo Household: it carries an old probe Category named
+  `Test Hrana P1`, and *"hranu"* resolves to **that**, not to `Hrana`, because both match on the stem rung
+  (score 300) and the longer name wins the tie. It is not an assistant bug and not a write-path one: the
+  same resolution scopes a **spend question**, and the two paths agree — which is exactly why the fix is
+  not obvious and belongs with the read planner's battery. The refinement to reach for is preferring a
+  match whose **every** name token occurs in the phrase over one only partially matched, and it must be
+  measured against the 58-question battery before it lands. Recorded with the evidence in docs/06 §8.16
+  rather than patched here (task B-4a).
 
 ---
 

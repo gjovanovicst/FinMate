@@ -386,7 +386,7 @@ export interface AssistantAccount {
 }
 
 /** The assistant's closed action set, mirroring the API's `AssistantAction`. */
-export const ASSISTANT_ACTIONS = ['ADD_CATEGORY', 'ADD_TRANSACTION'] as const;
+export const ASSISTANT_ACTIONS = ['ADD_CATEGORY', 'ADD_TRANSACTION', 'SET_BUDGET'] as const;
 export type AssistantActionName = (typeof ASSISTANT_ACTIONS)[number];
 
 /**
@@ -396,7 +396,15 @@ export type AssistantActionName = (typeof ASSISTANT_ACTIONS)[number];
  * in the Household's language (`naziv`/`name`), so the card cannot use it to decide which row a control
  * belongs to. It identifies rows by slot and renders them with the label.
  */
-export type ActionSlotName = 'name' | 'kind' | 'parentId';
+export type ActionSlotName =
+  | 'name'
+  | 'text'
+  | 'kind'
+  | 'parentId'
+  | 'accountId'
+  | 'categoryId'
+  | 'amountMinor'
+  | 'period';
 
 export interface ActionDiffEntry {
   readonly slot: string;
@@ -405,6 +413,14 @@ export interface ActionDiffEntry {
   readonly after: string | null;
   /** `after` in the machine's own vocabulary (`EXPENSE`/`INCOME` for `kind`), or `null`. */
   readonly afterValue?: string | null;
+  /**
+   * The same value as Money, when the value **is** an amount.
+   *
+   * A budget's limit and a goal's target are figures, and a figure this client prints from a string is
+   * one no money component ever sees (ADR-003). A row with this is drawn with `fm-money`; the label in
+   * `after` stays for the sentence's sake.
+   */
+  readonly afterMoney?: MoneyWire | null;
   readonly defaulted: boolean;
 }
 
@@ -535,8 +551,16 @@ export function actionRefusalKey(reason: string | null | undefined): Translation
       if (missing.includes('name')) return 'assistant.action.needName';
       if (missing.includes('accountId')) return 'assistant.action.needAccount';
       if (missing.includes('text')) return 'assistant.action.needText';
+      // A budget needs the Category it limits, and the phrase named none the tree could resolve —
+      // which is a refusal rather than a Household-wide limit, because a typo would otherwise become a
+      // budget over every Category (R-29's wrong write).
+      if (missing.includes('categoryId')) return 'assistant.action.needBudgetCategory';
       return 'assistant.action.notRunnable';
     }
+    // The budget exists and this action does not overwrite: the undo for that would have to restore the
+    // previous amount, which is not an operation this build has.
+    case 'ALREADY_SET':
+      return 'assistant.action.budgetExists';
     // `ADD_TRANSACTION`'s three: the text the pipeline could not turn into a row, a text that reads as
     // several, and an amount the parser itself refuses to decide. Each names what the reader can do
     // instead, because "I cannot do that" alone would leave them retyping the same sentence.
@@ -559,7 +583,9 @@ export function actionRefusalKey(reason: string | null | undefined): Translation
  * nothing" are different statements and only the second belongs on a confirmation card.
  */
 export function actionDiffRows(preview: ActionPreview | null | undefined): readonly ActionDiffEntry[] {
-  return (preview?.diff ?? []).filter((entry) => entry.after !== null);
+  return (preview?.diff ?? []).filter(
+    (entry) => entry.after !== null || entry.afterMoney != null,
+  );
 }
 
 /**
@@ -645,9 +671,14 @@ export function undoPlan(result: ActionResult): UndoPlan | null {
  * about where the money went.
  */
 export function undoneKey(action: string): TranslationKey {
-  return action === 'ADD_TRANSACTION'
-    ? 'assistant.action.undoneTransaction'
-    : 'assistant.action.undone';
+  switch (action) {
+    case 'ADD_TRANSACTION':
+      return 'assistant.action.undoneTransaction';
+    case 'SET_BUDGET':
+      return 'assistant.action.undoneBudget';
+    default:
+      return 'assistant.action.undone';
+  }
 }
 
 /** Where the result card's link goes and what it says: the row that was written, not a generic list. */
@@ -664,9 +695,15 @@ export interface ResultLink {
  * created rather than on a list they then have to search.
  */
 export function resultLink(result: ActionResult): ResultLink {
-  return result.action === 'ADD_TRANSACTION'
-    ? { route: ['/transactions', result.createdId], labelKey: 'assistant.action.openTransaction' }
-    : { route: ['/categories'], labelKey: 'assistant.action.openCategories' };
+  switch (result.action) {
+    case 'ADD_TRANSACTION':
+      return { route: ['/transactions', result.createdId], labelKey: 'assistant.action.openTransaction' };
+    case 'SET_BUDGET':
+      // No per-budget route exists, so this opens the screen that lists them.
+      return { route: ['/budgets'], labelKey: 'assistant.action.openBudgets' };
+    default:
+      return { route: ['/categories'], labelKey: 'assistant.action.openCategories' };
+  }
 }
 
 /**

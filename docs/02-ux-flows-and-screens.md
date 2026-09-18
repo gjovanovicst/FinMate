@@ -965,6 +965,17 @@ infinity.
 >   the sentence naming which list the row left and the link going to the row itself (`/transactions/:id`
 >   where a per-row route exists). A lapsed offer says so instead of failing under a button that cannot
 >   work.
+> - **A command is refused as a question, not answered** (B-4a). *"postavi budžet za gorivo na 7000"*
+>   names a Category the spend planner can scope, so without this it came back as a *figure* and — because
+>   the card appears only after a refusal (B-2b's ordering) — the budget was never offered. The read path
+>   now consults the action planner first and refuses with *"That is something I can do rather than answer
+>   — confirm it below."*, with **no** suggestion chips: the card is the answer to a command. A question
+>   that merely names the same Category is unaffected.
+> - **A budget proposal shows its limit through `fm-money`** (B-4a): the Category it resolved, the amount,
+>   and the month, with **no** control — nothing here is the app's guess, and the action sets the monthly
+>   budget rather than asking which period. Asking for a Category that already has one this month is
+>   refused with a link to `/budgets`, because this build cannot restore the amount an overwrite would
+>   replace.
 > - **A transaction proposal draws its rows** (B-3b): each row's text, its amount through `fm-money`,
 >   the Category the pipeline chose, the day it will be filed under, and — when the confidence gate will
 >   file it — that it goes to the review queue. The **account** the proposal filled is a `<select>` of

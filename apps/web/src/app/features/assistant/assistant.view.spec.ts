@@ -405,6 +405,36 @@ describe('the assistant write path (docs/06 §8.16)', () => {
     expect(actionRefusalKey('UNRUNNABLE:name,kind')).toBe('assistant.action.needName');
   });
 
+  it('keeps a diff row whose value is money, and emits it as Money', () => {
+    // A budget's limit has no label worth printing — `after` is there for the sentence's sake — and the
+    // row must survive the filter so the card can draw it with `fm-money` (ADR-003).
+    const rows = actionDiffRows(
+      preview([
+        {
+          slot: 'amountMinor',
+          field: 'iznos',
+          before: null,
+          after: '20.000,00 RSD',
+          afterValue: '2000000',
+          afterMoney: { amountMinor: '2000000', currency: 'RSD' },
+          defaulted: false,
+        },
+        {
+          slot: 'categoryId',
+          field: 'kategorija',
+          before: null,
+          after: 'Hrana',
+          afterValue: 'cat-1',
+          afterMoney: null,
+          defaulted: false,
+        },
+      ]),
+    );
+
+    expect(rows.map((row) => row.slot)).toEqual(['amountMinor', 'categoryId']);
+    expect(rows[0]?.afterMoney).toEqual({ amountMinor: '2000000', currency: 'RSD' });
+  });
+
   it('drops a diff row that becomes nothing, instead of printing an empty field', () => {
     const rows = actionDiffRows(
       preview([
@@ -456,6 +486,7 @@ describe('the assistant write path (docs/06 §8.16)', () => {
     // money went.
     expect(undoneKey('ADD_CATEGORY')).toBe('assistant.action.undone');
     expect(undoneKey('ADD_TRANSACTION')).toBe('assistant.action.undoneTransaction');
+    expect(undoneKey('SET_BUDGET')).toBe('assistant.action.undoneBudget');
   });
 
   it('links to the row that was written, not to a list the reader has to search', () => {
@@ -469,6 +500,20 @@ describe('the assistant write path (docs/06 §8.16)', () => {
       route: ['/transactions', 'c1'],
       labelKey: 'assistant.action.openTransaction',
     });
+    // A budget has no per-row route, so it opens the screen that lists them.
+    expect(resultLink(result({ action: 'SET_BUDGET' }))).toEqual({
+      route: ['/budgets'],
+      labelKey: 'assistant.action.openBudgets',
+    });
+  });
+
+  it('phrases the two budget refusals, and neither is a dead end', () => {
+    // The Category is missing from the phrase: the card asks for one, because the whole-Household
+    // budget is a deliberate choice made on `/budgets`, not a fallback for a word the tree lacks.
+    expect(actionRefusalKey('UNRUNNABLE:categoryId')).toBe('assistant.action.needBudgetCategory');
+    // The budget exists and this action does not overwrite it — the undo for that would have to restore
+    // the previous amount, which is not an operation this build has.
+    expect(actionRefusalKey('ALREADY_SET')).toBe('assistant.action.budgetExists');
   });
 
   it('reads the rows a proposal will write, and reads none as none', () => {

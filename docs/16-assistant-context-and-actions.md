@@ -357,7 +357,9 @@ One commit per row, per the working agreement. Part A rows are independent of Pa
 | B-2b | the proposal card on `/assistant` (preview, diff, **confirm**, the `kind` toggle, the undo affordance) | B-2a | the same action, reachable by a person — the half B-2a deliberately leaves — **done** ([06 §8.16](06-api-specification.md), [02 §4.16](02-ux-flows-and-screens.md)) |
 | B-3a | `ADD_TRANSACTION` server-side: the registry entry, the transaction cues, propose-via-`parse`, execute-via-`captureCommit`, the structured preview lines, `assistantProposeAction` becomes a `Mutation` | B-2 | the highest-value action, on the method `/capture` already calls — **done**, live 18/18 ([06 §8.16](06-api-specification.md)) |
 | B-3b | the transaction card: the preview rows with their amounts through `fm-money`, the Category and day, the review note, the **account picker**, and the per-action result half (`undoCapture`, the row's own link) | B-3a | the same action, reachable and correctable by a person — **done**, browser 19/19 ([02 §4.16](02-ux-flows-and-screens.md), [06 §8.16](06-api-specification.md)) |
-| B-4 | `SET_BUDGET`, `ADD_GOAL`, `ADD_TAG` | B-2 | "configure", as asked |
+| B-4a | `SET_BUDGET` — resolved slots (a Category from the tree, an amount from the parser), `afterMoney` on the card, and the **command refusal** the ordering needed | B-3 | "configure", as asked — **done**, live 16/16 + browser 16/16 ([06 §8.16](06-api-specification.md)) |
+| B-4b | `ADD_GOAL` — a name and a target, reusing the resolved-slot and money-row machinery | B-4a | saving goals by question |
+| B-4c | `ADD_TAG` — a name, the simplest of the three | B-4a | labels by question |
 | B-5 | `CREATE_RULE_FROM_CORRECTION` | B-2 | ADR-010's confirmation, reached by question |
 
 **The A-series is nearly done: A-1, A-2, A-3, A-4a, A-4c, A-5, A-9, A-10, A-12 and A-13a have shipped**

@@ -266,6 +266,12 @@ export const srLatn: Record<keyof typeof en, string> = {
   'assistant.action.notRunnable': 'Treba mi još jedan podatak da bih to ponudio.',
   'assistant.action.undoneTransaction': 'Opozvano — „{name}” je uklonjeno iz tvojih transakcija.',
   'assistant.action.openTransaction': 'Otvori unos',
+  'assistant.action.undoneBudget': 'Opozvano — budžet za „{name}” je uklonjen.',
+  'assistant.action.openBudgets': 'Otvori budžete',
+  'assistant.action.needBudgetCategory':
+    'Reci mi za koju je kategoriju budžet — na primer: „postavi budžet za hranu na 20000”.',
+  'assistant.action.budgetExists':
+    'Već imaš budžet za tu kategoriju ovog meseca, i neću ga ovde prepisati — izmeni ga na ekranu budžeta.',
   'assistant.action.uncategorised': 'još bez kategorije',
   'assistant.action.lineReview': 'ide na pregled',
   'assistant.action.needText': 'Reci mi šta da zabeležim — na primer: „dodaj trošak kafa 180”.',

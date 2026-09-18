@@ -40,7 +40,7 @@ describe('the action registry (ADR-035)', () => {
     // dispatches and `captureCommit` is the one `/capture`'s Confirm dispatches; an action naming
     // anything else would be the assistant reaching somewhere a screen cannot, which is exactly what
     // ADR-035 decision 3 forbids.
-    expect(registeredMutations()).toEqual(['createCategory', 'captureCommit']);
+    expect(registeredMutations()).toEqual(['createCategory', 'captureCommit', 'upsertBudget']);
   });
 
   it('requires a name and fills only what it says it fills', () => {
@@ -49,6 +49,21 @@ describe('the action registry (ADR-035)', () => {
     // `MEMBER`, because that is what the UI allows: `createCategory` carries no role guard, so the
     // assistant must not invent a stricter one. `VIEWER` is refused by the resolver's rank check.
     expect(ACTION_TEMPLATES.ADD_CATEGORY.role).toBe('MEMBER');
+  });
+
+  it('declares the budget action as a creation, with the undo that makes that true', () => {
+    const template = ACTION_TEMPLATES.SET_BUDGET;
+    expect(template.mutation).toBe('upsertBudget');
+    // The **text**, because the Category and the amount both come out of it — and neither is a slot a
+    // caller may supply: an id must come from the database (ADR-035 decision 5).
+    expect(template.requiredSlots).toEqual(['text']);
+    expect(template.defaultedSlots).toEqual([]);
+    // `deleteBudget`, and this is the load-bearing pair: the action **refuses to overwrite** an existing
+    // budget (asserted against a real database in `assistant-budget.integration.spec.ts`), which is what
+    // makes deleting the right undo. If it ever overwrites, this assertion must fail with it — otherwise
+    // the undo would destroy a budget the user already had.
+    expect(template.undo).toBe('SOFT_DELETE');
+    expect(template.destroys).toBe(false);
   });
 
   it('declares the capture path for ADD_TRANSACTION, with the slot it actually needs', () => {
@@ -84,7 +99,10 @@ describe('the action registry (ADR-035)', () => {
     // and nothing can change that, so the diff row documents a **fixed** value rather than a filled
     // default — which is exactly why it is neither required nor defaulted, and why adding a parent
     // picker would start by declaring it.
-    const slots = [...declared, 'parentId'].sort();
+    // …and the three slots no template *declares* but a preview **resolves** or reads: `parentId` is a
+    // fixed value on the category card, and `categoryId`/`amountMinor`/`period` are what `SET_BUDGET`
+    // derives from its text (B-4a). They are part of the card's vocabulary, which is what the enum is.
+    const slots = [...declared, 'parentId', 'categoryId', 'amountMinor', 'period'].sort();
     expect(Object.keys(AssistantActionSlotEnum).sort()).toEqual(slots);
     expect(Object.values(ASSISTANT_ACTION_SLOT_ENUM_MIRROR).sort()).toEqual(slots);
   });

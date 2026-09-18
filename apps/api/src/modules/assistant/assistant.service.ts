@@ -17,6 +17,15 @@ import type { AssistantIntent } from './assistant-intents';
 import { FactAssemblyService, type AssistantFactsView, type ProvenanceView } from './fact-assembly.service';
 import { renderRefusal, renderTemplateAnswer, type TemplateAnswerInput } from './narration-template';
 import { validateNarration, type NumericPayload } from './numeric-validator';
+import {
+  accountEntities,
+  categoryEntities,
+  goalEntities,
+  merchantEntities,
+  recurringEntities,
+  tagEntities,
+} from './planner-entities';
+import { planAction } from './action-planner';
 import { planQuestion, type PlannerContext, type Plan } from './query-planner';
 
 /**
@@ -193,26 +202,54 @@ export class AssistantService {
     );
     const assembled = await this.facts.assemble(householdId, plan, { today });
 
+    // **A command is not a question** (B-4a).
+    //
+    // The action planner is consulted here, before the read templates are allowed to answer.
+    // *"postavi budžet za gorivo na 7000"* names a Category the spend planner can scope, so it came
+    // back as a **spend figure** — and the client, which only offers a proposal card after a refusal
+    // (B-2b's ordering), therefore never showed the budget at all. Found by the browser pass: every
+    // API test had asked the proposal endpoint directly, so nothing exercised the ordering.
+    //
+    // This does not reverse that ordering. The card still appears only on a refusal; what changes is
+    // what a refusal *is* — an unmistakable request to change something is refused **as a question**,
+    // because there is no question in it. The action planner's cue list is what decides that, and it is
+    // the same list the proposal uses, so the two cannot disagree about what counts as a command.
+    const claimedByAction = planAction(question);
+
     // A refusal is decided **before** the narrator is reached: docs/06 §8.5 forbids a figure for a
     // question the ledger cannot answer, and the way to guarantee that is to have none to narrate.
-    if (plan.intent === 'NO_TEMPLATE_MATCH' || !assembled.available) {
-      const reason = plan.intent === 'NO_TEMPLATE_MATCH' ? 'NO_TEMPLATE_MATCH' : (assembled.reason ?? 'UNAVAILABLE');
+    if (
+      claimedByAction !== null ||
+      plan.intent === 'NO_TEMPLATE_MATCH' ||
+      !assembled.available
+    ) {
+      const reason =
+        claimedByAction !== null
+          ? 'ACTION_REQUEST'
+          : plan.intent === 'NO_TEMPLATE_MATCH'
+            ? 'NO_TEMPLATE_MATCH'
+            : (assembled.reason ?? 'UNAVAILABLE');
       return {
         id: uuidv7(),
         question,
-        intent: plan.intent,
+        // A command was never answered by a template, whatever the planner routed — saying otherwise
+        // would put a template's name on a refusal.
+        intent: claimedByAction === null ? plan.intent : 'NO_TEMPLATE_MATCH',
         answered: false,
         answerText: renderRefusal(reason),
         facts: assembled.facts,
         provenance: assembled.provenance,
         drillThrough: null,
+        // No chips for a command: the card below the refusal **is** the answer to it, and six
+        // suggestions beside it would invite the reader to ask something else instead.
+        //
         // ⚠️ From the **plan**, not a local list. A second copy of this decision lived here until A-4c,
         // and it silently discarded the planner's entity-aware suggestions: the planner resolved the
         // Category a question named and offered a question the Household can actually have answered,
         // and the service replaced it with the six canonical strings. The planner is the only layer that
         // knows this Household's vocabulary, so it is the only layer that can decide what is answerable
         // — `planner-gate.spec.ts` asserts every one of its suggestions routes and is runnable.
-        suggestions: plan.suggestions ?? [],
+        suggestions: claimedByAction === null ? (plan.suggestions ?? []) : [],
         narrationMode: 'TEMPLATE_FALLBACK',
         latencyMs: Date.now() - startedAt,
         costMicros: null,
@@ -362,34 +399,15 @@ export class AssistantService {
     return {
       today,
       currency,
-      categories: categories.map((category) => ({
-        id: category.id,
-        name: category.name,
-        path: category.path.join(' / '),
-        owned: true,
-        // The tree's own vocabulary, which the capture path classifies with. `INCLUDE` only: an
-        // `EXCLUDE` keyword means *this word does not belong here* (docs/04 §5.4), so it must not
-        // attract a question. Both facts come from the same `list()` call — no second read.
-        keywords: category.keywords
-          .filter((keyword) => keyword.polarity === 'INCLUDE')
-          .map((keyword) => keyword.keyword),
-        kind: category.kind,
-      })),
-      // `merchants` is the one list with shared rows in it (docs/08's global allow-list), and the
-      // Household's own copy of a seeded name is the row its Transactions point at.
-      merchants: merchants.items.map((merchant) => ({
-        id: merchant.id,
-        name: merchant.name,
-        owned: !merchant.isGlobal,
-      })),
-      accounts: accounts.items.map((account) => ({ id: account.id, name: account.name, owned: true })),
-      tags: tags.map((tag) => ({ id: tag.id, name: tag.name, owned: true })),
-      goals: goals.map((goal) => ({ id: goal.id, name: goal.name, owned: true })),
-      recurringRules: recurringRules.map((rule) => ({
-        id: rule.id,
-        name: rule.description,
-        owned: true,
-      })),
+      // The adapters live in `planner-entities.ts`, shared with the **write** planner: a budget for
+      // *"hranu"* must resolve the same Category an answer about *"hranu"* does, and a second mapping is
+      // how those two start disagreeing.
+      categories: categoryEntities(categories),
+      merchants: merchantEntities(merchants.items),
+      accounts: accountEntities(accounts.items),
+      tags: tagEntities(tags),
+      goals: goalEntities(goals),
+      recurringRules: recurringEntities(recurringRules),
     };
   }
 

@@ -121,6 +121,30 @@ describe('planAction (docs/06 §8.16)', () => {
     expect(planAction('napravi mi pregled potrošnje po kategorijama')).toBeNull();
   });
 
+  it('plans SET_BUDGET from a named object, keeping the Category and the amount in its text', () => {
+    const plan = planAction('postavi budžet za hranu na 20000');
+    expect(plan?.action).toBe('SET_BUDGET');
+    // `cleanName` strips the leading connector, so the text is the phrase minus `za` — the builder does
+    // not care which side of the amount the words are on, and the parser reads both.
+    expect(plan?.slots['text']).toBe('hranu na 20000');
+    expect(plan?.matchedOn).toContain('anchor:object');
+    // `dodaj` is an imperative of two actions, so the object word is what decides.
+    expect(planAction('dodaj budžet za hranu 20000')?.action).toBe('SET_BUDGET');
+  });
+
+  it('tries every object word before any amount, which is the rule and not the declaration order', () => {
+    // *"dodaj budžet za hranu 20000"* carries an imperative (`dodaj`) **and** a number, so the entry
+    // action's amount rung matches it too — and without the passes it won, proposing a Transaction whose
+    // description was the word `budžet`. A word naming what is being configured is stronger evidence
+    // than a verb followed by a number.
+    expect(planAction('dodaj budžet za hranu 20000')?.action).toBe('SET_BUDGET');
+    expect(planAction('postavi limit za gorivo 8000')?.action).toBe('SET_BUDGET');
+    // …while a verb and a number with no object word is still an entry.
+    expect(planAction('dodaj kafu 180')?.action).toBe('ADD_TRANSACTION');
+    expect(planAction('unesi trošak kafa 180')?.action).toBe('ADD_TRANSACTION');
+    expect(planAction('dodaj kategoriju Putovanja')?.action).toBe('ADD_CATEGORY');
+  });
+
   it('does not guess an action from a bare noun phrase', () => {
     // "nova kategorija" *is* a request shape — Serbian drops the verb — so it plans and then refuses
     // for want of a name, which asks the user rather than writing something nobody specified.
