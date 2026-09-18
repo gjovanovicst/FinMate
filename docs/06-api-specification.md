@@ -4256,6 +4256,14 @@ would need the store to track a lineage the design deliberately does not have.
 until `/capture` next reads the category list. The staleness is bounded by that screen's own mount, and a
 missing picker entry is not a wrong write — unlike R-27(a2), which this deliberately does not repeat.
 
+> **And the cue list is no longer the only way in.** [ADR-036](14-decisions-and-risks.md#adr-036--a-model-may-route-a-question-to-the-closed-registry-it-may-never-name-a-method)
+> records a **routing rung** that sits *after* these cues: a question the cues cannot match may be routed by
+> a model to one member of the compiled-in `ASSISTANT_ACTIONS`/`ASSISTANT_INTENTS` unions — and to nothing
+> else. It is consent-gated per Household and EEA-or-local (ADR-032, ADR-007), it ships dark until the
+> battery's precision floor passes, and with it off the behaviour here is unchanged. The reason it exists is
+> arithmetic: hand-written cues cost **actions × languages**, which is why the owner's "any language, many
+> actions" direction is unreachable without it ([16 Part C](16-assistant-context-and-actions.md)).
+
 **A cue list is a heuristic, and B-2b measured it before rendering anything.** The action planner runs
 *before* the read planner, so a word in its vocabulary is a word that means the action wherever it
 appears. Listing the attributive adjectives `nova`/`novu`/`novi`/`novo`/`new` as verbs planned

@@ -305,7 +305,7 @@ implementation**) are out of scope for v1 precisely because their undo does not 
 
 | Never | Why |
 |---|---|
-| Free-form tool/function calling; a model-chosen method name | ADR-017's closed registry; rule 10's no-vendor-SDK rule |
+| Free-form tool/function calling; a model-chosen method name | ADR-017's closed registry; rule 10's no-vendor-SDK rule. ⚠️ **Amended by [ADR-036](14-decisions-and-risks.md#adr-036--a-model-may-route-a-question-to-the-closed-registry-it-may-never-name-a-method)**, which allows a model to choose one member of a **compiled-in** union (after the cues miss and only with consent) and still forbids a method, URL, query, id, amount or date from it |
 | A model-supplied **number** | ADR-001/ADR-017 — amounts come from `parseAmount`, dates from a parser, ids from the database |
 | Auto-apply, at any confidence | ADR-009's gates classify a *categorisation*; a write is not a classification, and "the assistant changed my budget by itself" is unrecoverable trust damage |
 | Destructive actions in v1 | no undo for merge; delete needs its own policy |
@@ -386,8 +386,34 @@ and flag (docs/06 §8.16).
 
 Text-to-SQL or a generic "run this query" escape hatch · vendor function-calling (rule 10) ·
 model-named methods · model-computed money · auto-apply without a confirmation · destructive actions ·
+a model that supplies an amount, a date or an id (ADR-036 lets it choose an *action* and nothing else) ·
 a conversation store · LLM narration of a *write* · the *Primeni* button on F-30's savings proposal by
 this route (it is its own unmade product decision, [06 §8.8](06-api-specification.md)).
+
+---
+
+## Part C — Understanding any language
+
+**Owner decision (2026-09-18): routing first, then action breadth; scope is *understanding only*.** The
+reason for that order is arithmetic rather than taste: with N actions and L languages the current
+hand-written cue lists cost **N × L**, so every action added before the router multiplies the language work
+it later has to undo. [ADR-036](14-decisions-and-risks.md#adr-036--a-model-may-route-a-question-to-the-closed-registry-it-may-never-name-a-method)
+records the decision and its constraints; this part is how it gets built.
+
+| # | Slice | Needs | What it buys |
+|---|---|---|---|
+| C-1 | the `ROUTE` purpose end to end: config, the consent purpose, the `packages/ai` adapter and an injected `AI_ROUTER` seam that answers a registry member or `null` — **inert without a provider**, like `NARRATOR` | ADR-036; Q-4 (which providers, still open) for anything to be configured at all | the capability exists and is provable in isolation, with the planner untouched — so "is the model even reachable, consented and bounded" is answered before any routing changes |
+| C-2 | the planner integration: cues **first**, the rung only when they miss; accept a registry member or refuse; cost, latency and the chosen member recorded on the decision row | C-1; the battery as it stands (the with-rung measurement is C-3's) | a non-Serbian/English question stops being a dead end, without changing one byte of today's behaviour for the languages the cues cover |
+| C-3 | **the measurement that gates it**: the multilingual fixture set, the battery run **off and on**, and a floor on **precision** as well as coverage; plus the per-language value formats in `packages/nlp` (numbers, relative days, currency words) | C-2; **Q-16** — which languages are guaranteed | the claim "any language" becomes a number with a bar (R-30), and the *data* half of a foreign-language input (the amount, the date) is as right as the *intent* half |
+| C-4 | action breadth, now language-free: the ready-now shortlist — Assign a Merchant's default Category, Contribute to a goal, Tag a Transaction, Add a Merchant/Counterparty, Rename a Category/Tag, move a Transaction to another Account | C-2 (so a new action needs no new word list); ADR-035's undo rule per action | the "lots of app actions" half of the owner's request, at the marginal cost of one registry entry per action instead of one entry per action per language |
+
+**What Part C deliberately does not build**, and it is the same list ADR-036 rejects: a model-named
+method, a model-supplied value, a translation of the app's own copy, and anything auto-applied.
+
+**The honest split to keep in view:** `ROUTE` fixes *words-as-intent*; `C-3`'s `packages/nlp` work fixes
+*words-as-data*. A routed `ADD_TRANSACTION` in a language whose numbers we cannot parse extracts the right
+action and the wrong amount — which is why C-3 carries both halves rather than treating the parser as
+somebody else's problem.
 
 ---
 
@@ -400,12 +426,14 @@ this route (it is its own unmade product decision, [06 §8.8](06-api-specificati
 | Q-13 | Is the coverage bar a gate, or a trend? | Product owner | Both: a hard bar on the battery (no regressions, zero 500s), a trend on real questions |
 | Q-14 | Is `ADD_CATEGORY` the right first action? | Product owner | Yes — no money, no ledger effect, soft-delete undo |
 | Q-15 | Is there any confirmation-free fast path? | Product owner | No in v1; revisit only with usage data |
+| **Q-16** | **Which languages must the assistant guarantee at launch?** (ADR-036 makes any language possible; a fixture set can only cover the ones we name) | Product owner | Serbian and English measured; anything else the model handles is offered unmeasured |
 
 ## Related documents
 
 - [06 §8](06-api-specification.md) — the assistant contract and its known gaps
 - [14](14-decisions-and-risks.md) — ADR-017 (the constrained planner), ADR-009 (gates), ADR-010
-  (corrections→rules), ADR-019 (i18n), ADR-021 (the inert embedding rung), ADR-032 (consent), and Q-11/Q-12
+  (corrections→rules), ADR-019 (i18n), ADR-021 (the inert embedding rung), ADR-032 (consent),
+  **ADR-036** (a model may route to the closed registry, never name a method), and Q-11/Q-12/Q-16
 - [02 §4.16](02-ux-flows-and-screens.md) — the `/assistant` screen
 - [04](04-categorization-and-ai-engine.md) — the pipeline the `ADD_TRANSACTION` action reuses
 - [15](15-implementation-gotchas.md) — read before touching any of it

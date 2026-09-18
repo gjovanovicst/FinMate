@@ -125,6 +125,14 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   an email. The four auth screens now share one style block and one password constant. **Live 17/17**
   with Mailhog, including the link working while signed in and the demo password restored.
   ⚠️ Named, not closed: `email_verified_at` is **read by nothing**, and there is **no re-send** (docs/09).
+- **ADR-036 opens the assistant's language chapter** (owner's requirement, 2026-09-18: any language, many
+  more app actions). Today neither is reachable — understanding is a hand-written Serbian/English word list
+  over a Serbian-shaped fold, so N actions would cost N × languages. The ADR allows a **routing rung**: a
+  model may pick one member of the **compiled-in** registry **after** the cues miss, consent-gated and
+  EEA-or-local, never a method/URL/id/amount/date, shipping dark until a precision floor passes. With it off
+  the assistant is byte-for-byte today's behaviour — ⚠️ which is the honest limit: declining AI keeps the
+  Serbian/English vocabulary (Q-9, Q-16), and *words-as-data* (numbers, dates, currencies) stays
+  Serbian-shaped until C-3. Plan: [16 Part C](docs/16-assistant-context-and-actions.md); risk: **R-30**.
 - **Next**: the **human visual pass** (the new control rhythm, 4.3.1c's pinned capture bar, the nested-`<main>`
   landmarks, and whether the install sheet should be a bottom sheet rather than a panel), then 4.3.3 and
   4.3.4b's Lighthouse job.

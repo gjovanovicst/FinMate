@@ -2272,6 +2272,115 @@ precondition, for a mechanism whose entries live for minutes; the trigger to mov
 to an irreversible one. **(f) Keep the assistant read-only** — the owner's Q-11 answer rejected it, and the
 propose→confirm pattern is already proven three times in this codebase.
 
+### ADR-036 — A model may *route* a question to the closed registry; it may never name a method
+**Status:** Accepted
+
+**Context.** The owner's requirement (2026-09-18) is that the assistant work **in any language**, and that
+the app's action surface grow to *many* actions. Today neither is reachable, and the reason is structural
+rather than a missing feature: the assistant's understanding is a **hand-written word list** — the write
+cues in `action-planner.ts` (`CUES`) and the read cues beside the intent templates — compared against
+`foldForMatching`'s output, which is itself **Serbian-shaped** (transliteration, `đ`→`d`, `x`→`ks`). Adding
+a language means editing those lists; supporting *any* language means the lists cannot be the mechanism. The
+cost is multiplicative — **N actions × L languages** — so the growth path the owner asked for is
+unreachable in exactly the way the current design is good.
+
+Two things already in the codebase make a bounded model call the right answer rather than a rewrite:
+
+1. **The registries are closed and compiled in.** `ASSISTANT_INTENTS` and `ASSISTANT_ACTIONS` are
+   `as const` unions with `Record`-keyed templates and executors, so "the model decided something nobody
+   wrote" is a **compile error**, not a runtime surprise (ADR-017's argument, which ADR-035 decision 3
+   applies to writes).
+2. **Everything that matters is already resolved outside the model.** Ids come from the database, amounts
+   from `parseAmount` (ADR-003), dates from the calendar, the preview sentence and diff from the backend's
+   own builders, and every write needs a human click (ADR-035). The model would choose *which* registered
+   action a sentence means — nothing else.
+
+The constraint this amends, stated so it is not quietly reversed: [16](16-assistant-context-and-actions.md)
+B.5 forbids *"free-form tool/function calling; a model-chosen method name"*, and ADR-035's decision 3 leans
+on it (*"letting a model name a method … would put the method choice inside the model"*). That prohibition
+is about the model reaching **something nobody wrote**. Choosing one member of a compiled-in registry is a
+different act, and this ADR draws that line rather than deleting it.
+
+**Decision.**
+
+1. **A routing rung, always *after* the deterministic cues and never before them.** The order stays
+   *fold → cues → model* (ADR-002's spirit applied to comprehension): the model is asked **only when no
+   cue matched**, which is the path that today ends in a refusal. Serbian and English behaviour is therefore
+   unchanged by construction, and the rung's blast radius is one measurable bucket. *(Constraint — this is
+   the sentence to preserve if the rung is ever "simplified".)*
+2. **The rung's output is a registry member plus free text, and nothing else.** It may answer
+   `{ intent | action, slots: { <ActionSlotName>: text } }` where the action/intent is one of the closed
+   unions. It may **never** supply a method name, URL, GraphQL document, SQL, an id, an amount or a date —
+   those keep their existing owners (database, `parseAmount`, the calendar). A value outside the union is a
+   **refusal**, never a fallback to something nearby.
+3. **It is one new AI purpose, `ROUTE`, and it inherits every rail already built.** Per-Household consent
+   through ADR-032 (`aiConsents`, asked on **every** call by the router's injected gate), EEA-or-local
+   egress only (ADR-007, ADR-031 — an `_EU` endpoint must name an EEA host), redaction before egress, and
+   the provider reached through `packages/ai` (rule 10). ⚠️ **Cost and latency are returned and logged,
+   not persisted** — the gap [06 §8.8](06-api-specification.md) already records for narration, which the
+   rung inherits rather than pretending a row exists.
+   ⚠️ **The consequence is explicit: a Household that has not consented, or a deployment with no configured
+   endpoint, keeps the deterministic Serbian/English path.** This ADR does not make the assistant
+   language-agnostic; it makes it *able to be*, on a deployment and for a Household where the model is both
+   configured and allowed.
+4. **A model-routed write is still only a proposal** (ADR-035 unchanged, not amended). The rung changes
+   which action is proposed; it does not change what proposing or executing means, and the preview stays
+   backend-rendered.
+5. **It ships dark and is measured before it is switched on.** The 58-question battery runs with the rung
+   **off** (today's gate, unchanged) and with it **on**, plus a new **multilingual fixture set** — the same
+   canonical questions in each language the product claims — with its own floor for both *coverage* and
+   *precision*. A rung that answers more and proposes wrong is not shippable: the failure mode here is an
+   offered write (R-29), not a wrong figure.
+6. **Understanding only, which is the owner's explicit scope decision (2026-09-18).** The rung never writes
+   the answer, the card sentence or any user-facing copy: the app's wording stays ADR-019's catalogue
+   (English primary, Serbian derived). Answering *in* an arbitrary language is a separate, unmade decision.
+7. **The deterministic path stays the default and the fallback.** With the rung disabled, absent, refused by
+   consent, or unavailable, the assistant behaves exactly as it does today — including its refusals, which
+   are actionable because they name what the planner *can* route.
+
+**Consequences.**
+- ✅ **One language problem instead of N × L.** Every action added after this is understood in every language
+  the configured model handles, with no new word lists — which is the growth path the owner asked for.
+- ✅ **The failure mode is bounded by construction.** The model chooses from a compiled-in set, ids and money
+  keep their existing owners, and every write is a proposal a human confirms — so a bad route costs an
+  offered action, never a wrong figure or an unconfirmed write.
+- ✅ **The blast radius is a bucket that today produces nothing.** Asking only after the cues miss means the
+  rung can only improve the refusal path, and can be disabled with one config value — the reversal cost is
+  deliberately small because it sits last in the chain.
+- ⚠️ **It is an AI call on the question path**, so its cost scales with *unmatched questions* rather than
+  entries, and every such question now carries a consent question and a residency question. On a deployment
+  where the model is unconfigured it is inert, and the language claim is then not made at all.
+- ⚠️ **"Any language" remains two workstreams, and this ADR is only one of them.** The rung solves
+  *words-as-intent*. **Words-as-data stay Serbian-shaped**: `packages/nlp` knows `danas`/`juče`, `dinara`,
+  and `1.200,50` — per-language number, date and currency vocabularies are deterministic work with no AI in
+  them, and without that work a routed `ADD_TRANSACTION` in another language extracts the right *action* and
+  the wrong *amount*.
+- ⚠️ **A non-consenting Household gets a different product**, not a degraded one: refusing AI means the
+  deterministic vocabulary, so a Croatian-only speaker is answered in Serbian/English or not at all. That is
+  consistent with Q-9's commitment and is recorded there.
+- ⚠️ **Route precision is the new thing to watch.** Coverage is easy to buy; a model that proposes
+  `ADD_TAG` for *"what did I spend on tags"* is R-29's shape. The battery's precision floor, not the
+  coverage number, is the gate.
+- ⚠️ **The rung adds a second place where a question's text leaves the process** (narration is the first).
+  The redaction and consent machinery is shared, which is the argument for a new *purpose* on the existing
+  rails rather than a second pipe.
+
+**Alternatives rejected.** **(a) Hand-written cue lists per language** — the current design, kept as the
+deterministic *first* rung but rejected as the growth path: it is N × L maintenance, and the fold and the
+word lists are shaped for Serbian morphology, so they cannot serve languages they were not written for.
+**(b) Vendor function/tool calling** — rule 10 forbids the vendor SDK, and a method name inside the model is
+exactly what B.5 refuses; the distinction this ADR draws is *choosing an action we wrote* versus *calling
+something nobody wrote*. **(c) Letting the model supply values** (amounts, dates, ids, names) — already
+forbidden (ADR-001, ADR-017) and not reopened: the rung returns free text, and the resolvers keep authority.
+**(d) Multilingual embeddings as the router** — the `EMBEDDINGS` seam exists and is inert (ADR-021), and a
+cosine score is cheaper than a generation and needs no consent for *generation*; rejected as the **first**
+choice because similarity to an intent *description* is a weaker signal than a constrained classification,
+and the slot-extraction work is identical either way. **Retained as the second rung to measure** if `ROUTE`
+proves too costly, in the same position in the chain. **(e) Auto-apply a model-routed write** — ADR-035
+decision 4, not relitigated. **(f) Machine-translating the answers now** — out of the owner's chosen scope
+(understanding only); deferred, with the note that any generated wording would still have to pass ADR-017's
+numeric validator.
+
 ---
 
 ## Part 2 — Risk register
@@ -2318,6 +2427,8 @@ owner and a checkpoint in [09](09-implementation-plan.md).
 
 | **R-29** | **A confirmed assistant write is wrong or duplicated** (ADR-035) — the human clicks without reading the preview, a confirmation is replayed, or a proposal lapses between render and click. A wrong **write** is not recoverable the way a wrong answer is, and merge has no undo, so this is the risk the propose→confirm design buys down rather than eliminates | 2 | 3 | 6 | The confirmation carries **only the `proposalId`**, so the executed action is byte-for-byte what was rendered; an `idempotencyKey` plus consuming the proposal bounds a replay; every action declares its undo and `destroys: true` actions are not offered at all; the preview sentence and diff are backend-rendered from the service's own validate path, never narrated; no auto-apply at any confidence. **Checkpoint:** B-2's live pass — **done in B-2b**: the live pass confirmed a repeated idempotency key replays one row, a consumed proposal cannot be executed again, confirming a superseded proposal cannot duplicate the name (`CONFLICT` from the index), and the card stops offering a lapsed offer instead of failing under a button that cannot work; the browser pass confirmed the write lands and the undo removes it. **Residual, stated rather than fixed:** re-proposing with the other `kind` leaves the first proposal live until its TTL — the card only ever shows the newest, and the live pass proved a stale confirmation is refused rather than duplicated. **Still open:** the Phase 5.1 security review |
 
+| **R-30** | **The routing rung is an AI call on the refusal path, and a wrong route is an *offered write*** (ADR-036). Its cost and its consent surface scale with **unmatched questions**, not with entries, so a Household that asks many questions the cues cannot route pays per question and every one of them asks the residency question again. The failure that matters is not cost but precision: a model that proposes `ADD_TAG` for *"what did I spend on tags"* turns a refusal into a plausible wrong action, which is R-29's shape with a new cause | 3 | 3 | 9 | The rung sits **after** the deterministic cues, so with it off, unconfigured or consent-refused the assistant is byte-for-byte today's behaviour — and `ROUTE` is one config value to disable, which is the whole reason it is last in the chain. Its output is a member of a compiled-in union or a refusal (never a method, id, amount or date), every write stays propose→confirm (ADR-035), the preview is backend-rendered, cost and latency are logged (persisting them is §8.8's open gap, inherited), and the gate is a **precision floor on the multilingual fixture set**, not a coverage number. ⚠️ Named residual: on a deployment with no model configured the "any language" claim is simply not made, and a non-consenting Household keeps the Serbian/English vocabulary (Q-9, Q-16) | **C-3** (the measurement increment) before the rung is switched on; re-checked whenever a provider or model changes (R-11) |
+
 ### Top five by exposure
 1. **R-01 onboarding cold-start (20)** — the single biggest threat, and the one the plan spends the most disproportionate effort on.
 2. **R-12 retention (16)** — a working product that people stop using is still a failed product.
@@ -2346,10 +2457,11 @@ recommendation, an owner and a deadline; leaving them open past the deadline is 
 | Q-6 | **How is the golden evaluation dataset sourced and consented?** | Start with hand-authored + synthetic Serbian fixtures; add anonymised consented real corrections with explicit opt-in | Eng lead + legal | Phase 2.1 |
 | Q-7 | **Where is production hosted, and does Serbian/EU data residency matter to target users?** | An EU region (close latency, adequate legal posture); revisit if enterprise or public-sector interest appears | Eng lead | Phase 5 |
 | Q-8 | **Is the free tier generous enough to seed word of mouth while protecting margin?** | Validate the quotas in [12](12-monetization-and-pricing.md) against beta usage before launch, not after | Product owner | Phase 5.6 |
-| Q-9 | **How much of the app must work if the user declines AI entirely?** | Everything except AI parse/classify/narrate/OCR — rules, manual entry, budgets, analytics, alerts all remain fully functional. This is a product commitment, not a fallback | Product owner | Phase 1 |
+| Q-9 | **How much of the app must work if the user declines AI entirely?** | Everything except AI parse/classify/narrate/OCR — rules, manual entry, budgets, analytics, alerts all remain fully functional. This is a product commitment, not a fallback. ⚠️ **ADR-036 adds one clause**: declining AI also means intent recognition stays the deterministic Serbian/English vocabulary, so *language-agnostic understanding* is an AI feature and not a fallback | Product owner | Phase 1 |
 | Q-10 | **Is a designer available for the correction and onboarding UX?** | Strongly recommended. These two surfaces determine retention more than any other part of the product, and they are the least tolerant of engineering-led design | Product owner | Phase 0 |
 | Q-11 | ~~**May the assistant propose writes to the ledger, and is every write confirmed?**~~ **RESOLVED (2026-09-17) → [ADR-035](#adr-035--the-assistant-may-propose-a-write-only-a-humans-click-executes-it).** The owner answered both halves: yes to **proposing** through a closed action registry that names existing service methods, with **every** write confirmed by a click and **no** confidence-based fast path; and pending proposals live in **Redis** with a short TTL (ADR-004's existing dependency) | Product owner | **Closed** — B-1 (the ADR) is this decision's artefact |
 | Q-12 | **May the API record anything about a question it could not answer?** | Yes, minimally: the **unmatched folded token set**, with numerals and entity ids stripped — not the raw question. Raw-question logging needs its own purpose, retention and settings toggle, and is only justified if beta shows the token set is insufficient | Product owner + legal | Before A-7 |
+| **Q-16** | **Which languages must the assistant *guarantee* at launch?** (ADR-036 makes any language *possible*; the multilingual fixture set and its precision floor can only cover the languages we name, so an unnamed language is available but **unmeasured**) | **Serbian and English guaranteed and measured** — the two the product already speaks (ADR-019). Every other language the configured model handles is offered *without a claim*, and the UI says nothing about languages it cannot prove. Widen the guaranteed set when a market decision (Q-3) or beta data justifies the fixtures | Product owner | **C-3**, before the rung is switched on |
 
 ---
 
