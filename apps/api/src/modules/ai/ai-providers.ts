@@ -325,13 +325,13 @@ export function makeAiSeams(config: AppConfig, fetchImpl: FetchLike, gate: Conse
       calledTasks.push('OCR');
     }
     if (router.endpoints('ROUTE').length > 0) {
-      // ⚠️ The seam is built and **deliberately not added to `calledTasks`**: that list is about
-      // *callers*, and nothing injects `AI_ROUTER` yet (C-2 is the planner integration). Disclosing
-      // `ROUTE` now would ask a person to consent to a transfer no code path performs — the exact
-      // thing docs/08 §6.5 forbids — so the honest state is the `uncalled` log line below, which
-      // already says "routed but not called by this build". C-2 adds the call site and this entry
-      // together.
+      // The callers exist as of C-2: both `AssistantService` (the read planner's miss) and
+      // `AssistantActionService` (the write planner's miss) inject `AI_ROUTER` and ask it only after
+      // their cue lists have failed. So `ROUTE` enters the disclosure here, in the same branch that
+      // builds the seam those callers inject — the rule that a routed-but-uncalled task must not be
+      // disclosed (docs/08 §6.5) is what kept it out until now.
       questionRouter = new RoutedQuestionRouter(router);
+      calledTasks.push('ROUTE');
     }
   }
 

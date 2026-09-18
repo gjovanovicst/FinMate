@@ -374,6 +374,17 @@ export function resolveEntityIn(
 /** The name bound the service enforces, exported so the planner's refusal and the service agree. */
 export const ACTION_NAME_MAX_LENGTH = 80;
 
+/**
+ * Where a **routed** write's text belongs — the slot the cue path would have filled (ADR-036).
+ *
+ * `planAction` derives this from the matched cue list; a routed answer arrives as an action name and a
+ * free-text payload, so the mapping has to come from the same table or the two paths would put the same
+ * sentence in different slots. Exported rather than duplicated for exactly that reason.
+ */
+export function actionSlot(action: AssistantAction): ActionSlotName {
+  return CUES[action].slot;
+}
+
 /** A slot the proposal cannot be built without is a refusal, exactly as on the read side. */
 export function missingActionSlots(
   action: AssistantAction,

@@ -203,6 +203,16 @@ export function planQuestion(question: string, context: PlannerContext): Plan {
 function planQuestionCore(
   question: string,
   context: PlannerContext,
+  /**
+   * An intent ADR-036's routing rung chose, when the cue vocabulary matched nothing.
+   *
+   * Forcing it here rather than in a parallel function is the point: the period, the entities, the
+   * target and the template all resolve exactly as they do for a cued question, so a routed
+   * `SPEND_BY_CATEGORY` scopes the Category the user named in the same way a typed one does — and a
+   * routed intent whose required slots the question never stated still ends in the caller's existing
+   * refusal rather than in a guess.
+   */
+  forcedIntent?: AssistantIntent,
 ): { readonly plan: Plan; readonly resolved: ResolvedEntities } {
   const folded = normaliseForMatching(question);
   const period = resolvePeriod(folded, context.today);
@@ -247,7 +257,7 @@ function planQuestionCore(
   const limit = resolveLimit(folded);
   if (limit !== null) matchedOn.push(`limit:${limit}`);
 
-  const intent = resolveIntent(folded, {
+  const intent = forcedIntent ?? resolveIntent(folded, {
     // A **spend** question may only be scoped to an EXPENSE Category. `SPEND_BY_CATEGORY` declares
     // `kind: 'EXPENSE'`, so resolving an income Category (`Plata`, `Penzija`) used to answer `0,00 RSD`
     // — confidently, and to a different question. The direction is now evidence the router reads.
@@ -306,6 +316,21 @@ function planQuestionCore(
     plan: { intent, template: INTENT_TEMPLATES[intent], slots, matchedOn },
     resolved: { category, merchant, account, tag },
   };
+}
+
+/**
+ * Plan a question whose intent a model chose — ADR-036's rung, used by `AssistantService`.
+ *
+ * The cues have already missed by the time this is called, so `intent` is never `NO_TEMPLATE_MATCH`
+ * (the validator refuses that), and everything downstream is the ordinary path: the same slots, the
+ * same template, the same `missingSlots` refusal, the same numeric validator.
+ */
+export function planRoutedQuestion(
+  question: string,
+  context: PlannerContext,
+  intent: AssistantIntent,
+): Plan {
+  return planQuestionCore(question, context, intent).plan;
 }
 
 /** What the question's own words resolved to, whether or not a template used them. */

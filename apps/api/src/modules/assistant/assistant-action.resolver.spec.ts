@@ -16,35 +16,98 @@ function tenant(role: MemberRole): TenantContext {
   return { householdId: 'h1', userId: 'u1', role, requestId: 'action-resolver-spec' };
 }
 
-/** A resolver whose action service is a stub, plus a recorder so "was it reached" is assertable. */
-function resolverWith(propose?: AssistantActionService['propose']): {
+/**
+ * A resolver whose action service is a stub, plus recorders so both questions are assertable: *was a
+ * proposal built* (`calls`) and *was the routing rung consulted* (`routed`).
+ *
+ * The distinction matters after C-2. A question the cue vocabulary does not recognise now reaches the
+ * service — to ask ADR-036's rung, which is inert unless a deployment routes `ROUTE` — so "the service is
+ * never reached" stopped being the guarantee. What is still guaranteed, and what this records, is that no
+ * **proposal** is built and no action is offered.
+ */
+function resolverWith(
+  propose?: AssistantActionService['propose'],
+  routed: Awaited<ReturnType<AssistantActionService['routeQuestion']>> = null,
+): {
   resolver: AssistantResolver;
   calls: () => number;
+  routedCalls: () => number;
 } {
   let calls = 0;
+  let routedCalls = 0;
   const stub = {
     propose: async (...args: Parameters<AssistantActionService['propose']>) => {
       calls += 1;
-      if (propose === undefined) throw new Error('the service must not be reached');
+      if (propose === undefined) throw new Error('the service must not build a proposal');
       return propose(...args);
+    },
+    routeQuestion: async () => {
+      routedCalls += 1;
+      return routed;
     },
   };
   return {
     resolver: new AssistantResolver({} as AssistantService, stub as unknown as AssistantActionService),
     calls: () => calls,
+    routedCalls: () => routedCalls,
   };
 }
 
 describe('assistantProposeAction (ADR-035)', () => {
-  it('refuses a question that asks for nothing, without reaching the service', async () => {
-    const { resolver, calls } = resolverWith();
+  it('refuses a question that asks for nothing, without offering a write', async () => {
+    const { resolver, calls, routedCalls } = resolverWith();
 
     const result = await resolver.assistantProposeAction(tenant('MEMBER'), 'kolika mi je penzija');
 
     expect(result.proposed).toBe(false);
     expect(result.reason).toBe('NOT_AN_ACTION');
     expect(result.proposalId).toBeNull();
-    expect(calls()).toBe(0);
+    // The rung is consulted — that is C-2's whole point — and it answers `null` here, which is the
+    // ordinary state of a deployment that routes no `ROUTE` endpoint. No proposal is built either way.
+    expect(routedCalls()).toBe(1);
+    expect(calls()).toBe(0); // no proposal, whatever the rung was asked
+  });
+
+  it('proposes what the routing rung chose, when the cues matched nothing (ADR-036)', async () => {
+    // A sentence in a language the cue list does not cover. What the rung returns is the **same shape**
+    // `planAction` returns, so it flows through the identical missing-slot check and builder — which is
+    // what this asserts: a routed write is an ordinary write from here on.
+    const { resolver, calls, routedCalls } = resolverWith(
+      async (input) => ({
+        proposed: true,
+        proposalId: 'p-routed',
+        action: input.action,
+        preview: { sentence: 'routed', diff: [] },
+        expiresAt: new Date('2026-09-20T10:10:00Z').toISOString(),
+      }),
+      { action: 'ADD_TAG', slots: { name: 'Odmor' }, matchedOn: ['route:ADD_TAG'] },
+    );
+
+    const result = await resolver.assistantProposeAction(
+      tenant('MEMBER'),
+      'remember this as a label called Odmor',
+    );
+
+    expect(result.proposed).toBe(true);
+    expect(result.action).toBe('ADD_TAG');
+    expect(calls()).toBe(1);
+    expect(routedCalls()).toBe(1);
+  });
+
+  it('still refuses a routed write that named nothing, with the missing slot', async () => {
+    // The rung answered an action and no text — so the *same* `UNRUNNABLE:name` refusal a bare
+    // "dodaj tag" gets. A routed answer cannot skip the question the cue path would have asked.
+    const { resolver, calls } = resolverWith(undefined, {
+      action: 'ADD_TAG',
+      slots: {},
+      matchedOn: ['route:ADD_TAG'],
+    });
+
+    const result = await resolver.assistantProposeAction(tenant('MEMBER'), 'make me a label');
+
+    expect(result.proposed).toBe(false);
+    expect(result.reason).toBe('UNRUNNABLE:name');
+    expect(calls()).toBe(0); // no proposal, whatever the rung was asked
   });
 
   it('refuses an unmistakable request that does not say what to create', async () => {
@@ -56,7 +119,7 @@ describe('assistantProposeAction (ADR-035)', () => {
 
     expect(result.proposed).toBe(false);
     expect(result.reason).toBe('UNRUNNABLE:name');
-    expect(calls()).toBe(0);
+    expect(calls()).toBe(0); // no proposal, whatever the rung was asked
   });
 
   it('refuses a VIEWER — the first write path that does', async () => {
@@ -65,7 +128,7 @@ describe('assistantProposeAction (ADR-035)', () => {
     await expect(
       resolver.assistantProposeAction(tenant('VIEWER'), 'dodaj kategoriju Putovanja'),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
-    expect(calls()).toBe(0);
+    expect(calls()).toBe(0); // no proposal, whatever the rung was asked
   });
 
   it('proposes for a MEMBER, with the expiry as a Date for the DateTime scalar', async () => {

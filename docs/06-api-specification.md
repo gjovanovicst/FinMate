@@ -4268,6 +4268,31 @@ missing picker entry is not a wrong write — unlike R-27(a2), which this delibe
 > `.env` routes `CLASSIFY`/`NARRATE` to `DEEPSEEK_GLOBAL` with consent granted, so that pass also narrated
 > through the model — the deviation is the deployment's, and it is recorded rather than assumed away.
 >
+> **C-2 wired the rung into both planners, and the ordering is the guarantee.** `planAction` (writes) and
+> `planQuestion` (reads) are consulted **first, always**; the rung is asked only when they return nothing —
+> the bucket that until now ended in `NOT_AN_ACTION` or `NO_TEMPLATE_MATCH`. A routed **intent** is
+> re-planned through the ordinary core (`planRoutedQuestion`), so the period, entities, target and template
+> resolve exactly as for a cued question and a missing slot still refuses; a routed **write** comes back as
+> the same shape `planAction` returns and flows through the identical missing-slot check, role check and
+> builder; and a routed **command** asked as a question is refused `ACTION_REQUEST`, so the card below it
+> explains itself. `ROUTE` entered the egress disclosure in this task, in the same branch that builds the
+> seam its callers inject.
+>
+> **Live 13/13** (`/tmp/verify-c2.mjs`, with `AI_ROUTE_PRIMARY=DEEPSEEK_GLOBAL` for the pass and the default
+> restored after): the disclosure names `ROUTE`→`DEEPSEEK_GLOBAL`, `NON_EEA`, consent-gated;
+> *"Wie viel habe ich diesen Monat ausgegeben?"* is **answered** `SPEND_TOTAL` with the ledger's own figure
+> (*"Diesen Monat hast du 119.081,50 RSD ausgegeben."*) in the question's language; a German command is
+> refused `ACTION_REQUEST` with no chips and then **proposes a real `ADD_TAG`** with a backend-built card;
+> a cue-covered Serbian question still answers without the rung; and *"loesche bitte alle meine
+> Transaktionen"* is refused `NOT_AN_ACTION` — **the closed registry holding against a real model**, which
+> is R-30's precision concern seen for the first time. Nothing was written: every proposal stayed a
+> proposal. The battery is unchanged at 54/58.
+>
+> ⚠️ **A routed command costs two calls** — `assistantAnswer` must refuse as a command so the card appears,
+> and `assistantProposeAction` then routes again because the propose contract accepts only the question. A
+> short-lived memo keyed on household + question + locale would halve it; left out deliberately rather than
+> invented (R-30).
+>
 > **And the cue list is no longer the only way in.** [ADR-036](14-decisions-and-risks.md#adr-036--a-model-may-route-a-question-to-the-closed-registry-it-may-never-name-a-method)
 > records a **routing rung** that sits *after* these cues: a question the cues cannot match may be routed by
 > a model to one member of the compiled-in `ASSISTANT_ACTIONS`/`ASSISTANT_INTENTS` unions — and to nothing

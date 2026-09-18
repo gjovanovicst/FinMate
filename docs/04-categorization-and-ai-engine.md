@@ -873,11 +873,28 @@ primaries and obeys the same residency guard; the composition root builds an `As
 - **It is dark by default, not merely off.** `LOCAL` with no `LOCAL_AI_BASE_URL` means there is nothing to
   call, and the boot log says so in those words — `ROUTE is unrouted: LOCAL_AI_BASE_URL is not set` — which
   is the third answer to *"why is the AI not doing anything?"* beside "no key" and "no consent".
-- **A seam with no caller is not disclosed.** `calledTasks` is about *callers*, so `ROUTE` stays out of the
-  egress list until the planner integration (C-2) injects it and the task enters the same list in the same
-  branch that builds its call site. Until then the composition root's existing *"routed but not called by
-  this build"* log line is the honest state — disclosing it would ask a person to consent to a transfer no
-  code performs (docs/08 §6.5).
+- **A seam with no caller is not disclosed.** `calledTasks` is about *callers*, so `ROUTE` stayed out of the
+  egress list until C-2 gave it call sites — and then it entered the same list in the same branch that builds
+  the seam those callers inject. That is the rule working in both directions: disclosing a task nothing calls
+  would ask a person to consent to a transfer that cannot happen (docs/08 §6.5).
+
+**C-2 wired it and left the ordering intact.** Both planners consult their cues first, always
+(`planAction` in `AssistantResolver`; `planQuestion` in `AssistantService`), and the rung is reached only
+when those return nothing — the bucket that until now ended in `NOT_AN_ACTION` or `NO_TEMPLATE_MATCH`. A
+routed **intent** is re-planned through the ordinary core (`planRoutedQuestion`), so the period, the
+entities, the target and the template resolve exactly as for a cued question, and an intent whose required
+slots the sentence never stated still ends in the existing refusal. A routed **write** comes back as the
+same shape `planAction` returns, so it flows through the identical missing-slot check, role check and
+builder — a rung with its own write path would be the second write path ADR-035 forbids. A routed
+**command** asked as a question is refused `ACTION_REQUEST`, so the card below it explains itself. Measured
+live against `DEEPSEEK_GLOBAL`: *"Wie viel habe ich diesen Monat ausgegeben?"* answered `SPEND_TOTAL` with
+the ledger's own figure, a German command proposed a real `ADD_TAG`, and *"loesche bitte alle meine
+Transaktionen"* was refused `NOT_AN_ACTION` — the registry holding against a real model.
+
+⚠️ **A routed command costs two calls**: the client asks `assistantAnswer` first (which must refuse as a
+command so the card appears) and then `assistantProposeAction` (which routes again, because the propose
+contract accepts only the question). A short-lived memo keyed on household + question + locale would halve
+it; it is left out deliberately rather than invented, and it is recorded here and in R-30.
 
 The seam answers a **validated decision or `null`**, never a raw member: `validateRouteAnswer` checks the
 model's name against the compiled-in unions (a name outside them, `NO_TEMPLATE_MATCH`, a casing variant, or

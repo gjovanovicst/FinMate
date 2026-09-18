@@ -1682,6 +1682,15 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   `TestBed.resetTestingModule()`. Loop over cases with that reset at the top of each iteration (B-5's
   refusal-copy test does), or split them into separate `it`s.
 
+- **A scripted seam in an integration spec has to be cleared in an `afterEach`, or a later test reads as
+  the earlier one's state.** `assistant.integration.spec.ts` scripts its narrator by assigning to module-scope
+  `let`s at the top of each test that needs one, and that works only because every such test resets them.
+  C-2 added a scripted **router** and set `routeAvailable = true` in its own tests without clearing it, so
+  the next three tests — which assert *today's* refusals — saw a routed answer instead: a question that
+  should have been refused came back `ACTION_REQUEST` with no chips, which looks exactly like a product bug
+  in the service rather than leaked test state. The fix is one `afterEach`, and the lesson is that a seam
+  which is *off by default* in production is the one most likely to leak in a suite.
+
 ## 10. Cross-cutting rules of the codebase
 
 - **A live check that measures the wrong element lies in both directions.** Three times in 4.3.1 a

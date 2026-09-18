@@ -35,7 +35,7 @@
  * @module apps/api/src/modules/assistant
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import {
   DEFAULT_TIME_ZONE,
@@ -66,7 +66,9 @@ import { TransactionKind, TransactionStatus } from '../ledger/transaction.model'
 import { CategoriesService } from '../taxonomy/categories.service';
 import { CategoryKind } from '../taxonomy/category.model';
 import { ACTION_TEMPLATES, type ActionSlotName, type AssistantAction } from './assistant-actions';
-import { ACTION_NAME_MAX_LENGTH, cleanName, resolveEntityIn } from './action-planner';
+import { ACTION_NAME_MAX_LENGTH, actionSlot, cleanName, resolveEntityIn } from './action-planner';
+import { AI_ROUTER } from '../ai/ai-tokens';
+import type { AssistantRouter } from './assistant-router';
 import { categoryEntities } from './planner-entities';
 import { rulePreviewRows, type RulePreviewNames } from './rule-preview';
 import {
@@ -268,7 +270,51 @@ export class AssistantActionService {
     private readonly accounts: AccountsService,
     private readonly prisma: PrismaService,
     private readonly store: PendingActionStore,
+    // ADR-036's rung. Injected unconditionally and inert unless a deployment configures
+    // `AI_ROUTE_PRIMARY` and the Household consents, so no feature flag is needed here — the seam's own
+    // `available` is the switch.
+    @Inject(AI_ROUTER) private readonly questionRouter: AssistantRouter,
   ) {}
+
+  /**
+   * The write side of ADR-036's rung: ask the model which registered action a sentence means, **only**
+   * when the deterministic cues matched nothing.
+   *
+   * The caller decides when to call it (`AssistantResolver` calls the cue planner first, always), so the
+   * ordering rule lives in one place and this method cannot be reached on the ordinary path. What comes
+   * back is the **same shape `planAction` returns**, so a routed write flows through the identical
+   * missing-slot check, role check and builder — a rung that needed its own path would be a second write
+   * path, which is the thing ADR-035 exists to prevent.
+   *
+   * `null` covers every way the rung can decline: no endpoint, no consent, a provider failure, a member
+   * outside the registry, or an answer that names a **question** rather than a write. The caller's
+   * response to all of them is the refusal it already had.
+   */
+  async routeQuestion(
+    question: string,
+    locale: string | undefined,
+  ): Promise<{
+    readonly action: AssistantAction;
+    readonly slots: Readonly<Partial<Record<ActionSlotName, string>>>;
+    readonly matchedOn: readonly string[];
+  } | null> {
+    if (!this.questionRouter.available) return null;
+
+    const outcome = await this.questionRouter.route({ question, locale: locale ?? '' });
+    if (outcome.decision === null || outcome.decision.kind !== 'ACTION') return null;
+
+    const { action, text } = outcome.decision;
+    // The text goes into the slot the **cue list** would have filled for this action, so both paths
+    // agree about what a `text` slot means (see `actionSlot`). No text is not a failure here: the
+    // resolver's `missingActionSlots` turns that into the same `UNRUNNABLE:<slot>` refusal a bare
+    // *"dodaj tag"* gets, which is the sentence that asks the reader for it.
+    const slot = actionSlot(action);
+    return {
+      action,
+      slots: text === null ? {} : { [slot]: text },
+      matchedOn: [`route:${action}`],
+    };
+  }
 
   /**
    * Build and store a proposal.

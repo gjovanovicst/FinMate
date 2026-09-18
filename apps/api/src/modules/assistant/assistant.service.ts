@@ -26,6 +26,9 @@ import {
   tagEntities,
 } from './planner-entities';
 import { planAction } from './action-planner';
+import { planRoutedQuestion } from './query-planner';
+import { AI_ROUTER } from '../ai/ai-tokens';
+import { UNCONFIGURED_ROUTER, type AssistantRouter } from './assistant-router';
 import { planQuestion, type PlannerContext, type Plan } from './query-planner';
 
 /**
@@ -169,6 +172,9 @@ export class AssistantService {
     // the assistant needs no import edge to reach it.
     private readonly rateLimit: RateLimitService,
     @Inject(NARRATOR) private readonly narrator: AssistantNarrator,
+    // ADR-036's rung. Inert unless a deployment routes `ROUTE` and the Household consents, so injecting
+    // it unconditionally costs nothing on the answer path — `available` is checked before any call.
+    @Inject(AI_ROUTER) private readonly questionRouter: AssistantRouter = UNCONFIGURED_ROUTER,
     @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -194,12 +200,43 @@ export class AssistantService {
 
     const locale = this.resolveLocale(request.locale);
     const today = todayIn(household.iana_timezone || DEFAULT_TIME_ZONE);
-    const plan = planQuestion(
-      question,
-      // The currency is what lets the planner read a savings target out of the question the same way
-      // the capture path reads an amount (ADR-003): `20.000` is twenty thousand RSD, not 20.
-      await this.plannerContext(householdId, today, household.ledger_currency as CurrencyCode),
+    // The currency is what lets the planner read a savings target out of the question the same way the
+    // capture path reads an amount (ADR-003): `20.000` is twenty thousand RSD, not 20.
+    const context = await this.plannerContext(
+      householdId,
+      today,
+      household.ledger_currency as CurrencyCode,
     );
+    let plan = planQuestion(question, context);
+
+    // **The routing rung, and only after the cues have missed** (ADR-036 decision 1). Two things are
+    // checked before it is asked, and both matter:
+    //
+    // - `claimedByAction !== null` — a command the cue list recognised needs no model, and asking one
+    //   would let the rung disagree with the proposal the card is about to build from the same cues.
+    // - `plan.intent !== 'NO_TEMPLATE_MATCH'` — a question the templates routed is already answered,
+    //   locally and free.
+    //
+    // So the rung is reached exactly on the questions that today end in a refusal, which is what makes
+    // its blast radius one measurable bucket (`planQuestionRouted`) and its cost proportional to
+    // *unanswered* questions rather than to questions.
+    const claimedByAction = planAction(question);
+    let routedAction = false;
+    if (claimedByAction === null && plan.intent === 'NO_TEMPLATE_MATCH' && this.questionRouter.available) {
+      const outcome = await this.questionRouter.route({ question, locale });
+      if (outcome.decision?.kind === 'ACTION') {
+        // The card below the refusal **is** the answer to a command (B-2b's ordering), so this is the
+        // same refusal a cued command gets — the sentence that tells the reader to confirm it.
+        routedAction = true;
+      } else if (outcome.decision?.kind === 'INTENT') {
+        // Plan again with the model's intent through the **ordinary** core: the period, the entities,
+        // the target and the template resolve as they would for a cued question, and an intent whose
+        // required slots the question never stated still ends in the existing refusal rather than a
+        // guess.
+        plan = planRoutedQuestion(question, context, outcome.decision.intent);
+      }
+    }
+
     const assembled = await this.facts.assemble(householdId, plan, { today });
 
     // **A command is not a question** (B-4a).
@@ -213,18 +250,14 @@ export class AssistantService {
     // This does not reverse that ordering. The card still appears only on a refusal; what changes is
     // what a refusal *is* — an unmistakable request to change something is refused **as a question**,
     // because there is no question in it. The action planner's cue list is what decides that, and it is
-    // the same list the proposal uses, so the two cannot disagree about what counts as a command.
-    const claimedByAction = planAction(question);
-
+    // the same list the proposal uses, so the two cannot disagree about what counts as a command. The
+    // rung above extends the same treatment to a command in a language the cues do not cover.
+    //
     // A refusal is decided **before** the narrator is reached: docs/06 §8.5 forbids a figure for a
     // question the ledger cannot answer, and the way to guarantee that is to have none to narrate.
-    if (
-      claimedByAction !== null ||
-      plan.intent === 'NO_TEMPLATE_MATCH' ||
-      !assembled.available
-    ) {
+    if (claimedByAction !== null || routedAction || plan.intent === 'NO_TEMPLATE_MATCH' || !assembled.available) {
       const reason =
-        claimedByAction !== null
+        claimedByAction !== null || routedAction
           ? 'ACTION_REQUEST'
           : plan.intent === 'NO_TEMPLATE_MATCH'
             ? 'NO_TEMPLATE_MATCH'
@@ -234,7 +267,7 @@ export class AssistantService {
         question,
         // A command was never answered by a template, whatever the planner routed — saying otherwise
         // would put a template's name on a refusal.
-        intent: claimedByAction === null ? plan.intent : 'NO_TEMPLATE_MATCH',
+        intent: claimedByAction === null && !routedAction ? plan.intent : 'NO_TEMPLATE_MATCH',
         answered: false,
         answerText: renderRefusal(reason),
         facts: assembled.facts,
@@ -249,7 +282,7 @@ export class AssistantService {
         // and the service replaced it with the six canonical strings. The planner is the only layer that
         // knows this Household's vocabulary, so it is the only layer that can decide what is answerable
         // — `planner-gate.spec.ts` asserts every one of its suggestions routes and is runnable.
-        suggestions: claimedByAction === null ? (plan.suggestions ?? []) : [],
+        suggestions: claimedByAction === null && !routedAction ? (plan.suggestions ?? []) : [],
         narrationMode: 'TEMPLATE_FALLBACK',
         latencyMs: Date.now() - startedAt,
         costMicros: null,

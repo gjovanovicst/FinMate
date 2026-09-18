@@ -150,10 +150,10 @@ describe('assembleAi — a usable endpoint produces the real seams', () => {
     expect(seams.questionRouter).not.toBe(UNCONFIGURED_ROUTER);
     expect(seams.questionRouter.available).toBe(true);
     // `PARSE` is routed and no seam invokes it: a typed fragment is parsed by `packages/nlp`, on this
-    // node. The three that follow are the tasks with a caller (docs/08 §6.6's disclosure).
-    // ⚠️ **`ROUTE` is deliberately not in this list yet** (ADR-036 C-1): a seam with no call site is not
-    // egress a person can consent to, so it stays out of `calledTasks` until C-2 injects it.
-    expect(seams.calledTasks).toEqual(['CLASSIFY', 'NARRATE', 'OCR']);
+    // node. The four that follow are the tasks with a caller (docs/08 §6.6's disclosure) — `ROUTE`
+    // joined them in C-2, when both planners began injecting the seam, and it is listed here because
+    // *that* is the moment it became egress a person can consent to.
+    expect(seams.calledTasks).toEqual(['CLASSIFY', 'NARRATE', 'OCR', 'ROUTE']);
   });
 
   it('routes a task nothing calls, and keeps it out of the consent disclosure', () => {
@@ -171,12 +171,13 @@ describe('assembleAi — a usable endpoint produces the real seams', () => {
     const seams = makeAiSeams(config, stubFetch().fetch, { permits: () => true });
 
     expect(seams.assembly.routedTasks).toEqual(['PARSE', 'CLASSIFY', 'NARRATE', 'OCR', 'ROUTE']);
-    expect(seams.calledTasks).toEqual(['CLASSIFY', 'NARRATE', 'OCR']);
+    // `ROUTE` rides the local host here, so it is disclosed and needs no consent.
+    expect(seams.calledTasks).toEqual(['CLASSIFY', 'NARRATE', 'OCR', 'ROUTE']);
 
-    // Every routed task but `PARSE` rides the local host, so the only non-EEA rows the routing table
-    // could produce are the ones nothing calls — and the disclosure has none.
+    // Every routed task but `PARSE` rides the local host, so the only non-EEA row the routing table
+    // could produce is the one nothing calls — and the disclosure has none.
     const rows = toAiEgressModels(seams.assembly, seams.calledTasks);
-    expect(rows.map((row) => row.task)).toEqual(['CLASSIFY', 'NARRATE', 'OCR']);
+    expect(rows.map((row) => row.task)).toEqual(['CLASSIFY', 'NARRATE', 'OCR', 'ROUTE']);
     expect(rows.some((row) => row.requiresConsent)).toBe(false);
   });
 

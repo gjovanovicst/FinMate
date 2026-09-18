@@ -1,5 +1,5 @@
 import { Test, type TestingModule } from '@nestjs/testing';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { addMonths, monthPeriod, todayIn, uuidv7 } from '@finmate/domain';
 
@@ -16,6 +16,9 @@ import { LedgerModule } from '../ledger/ledger.module';
 import { RecurringModule } from '../recurring/recurring.module';
 import { TaxonomyModule } from '../taxonomy/taxonomy.module';
 import { NARRATOR, type AssistantNarrator, type NarrateOutcome, type NarrateRequest } from './assistant-narrator';
+import type { AssistantRouter, RouteOutcome } from './assistant-router';
+import type { RouteDecision } from './route-answer';
+import { AI_ROUTER } from '../ai/ai-tokens';
 import { AssistantService, factStrings, NARRATE_PER_DAY, NARRATE_PER_MINUTE } from './assistant.service';
 import { FactAssemblyService } from './fact-assembly.service';
 import { validateNarration } from './numeric-validator';
@@ -91,6 +94,28 @@ describe('the assistant (integration)', () => {
     },
   };
 
+  // ---- the scripted routing rung (ADR-036) -----------------------------------------------------
+
+  let routeCalls: string[] = [];
+  let routeScript: RouteDecision | null = null;
+  let routeAvailable = false;
+
+  const scriptedRouter: AssistantRouter = {
+    get available() {
+      return routeAvailable;
+    },
+    route: (request): Promise<RouteOutcome> => {
+      routeCalls.push(request.question);
+      return Promise.resolve({
+        decision: routeScript,
+        attempted: true,
+        reason: null,
+        latencyMs: 3,
+        costMicros: '11',
+      });
+    },
+  };
+
   /** A stub limiter: the real one needs Redis, and what matters here is how it is *used*. */
   let consumed: { scope: string; subject: string; limit: number; windowSeconds: number }[] = [];
   let deny = false;
@@ -111,6 +136,17 @@ describe('the assistant (integration)', () => {
     narratorAvailable = true;
   }
 
+  /**
+   * The rung is **off** unless a test turns it on, and this is what keeps one test's scripted route out
+   * of the next: the narrator's resets are per-test and predate it, and a leaked `routeAvailable` makes
+   * later refusals look like routed ones (which is exactly how this was found).
+   */
+  afterEach(() => {
+    routeCalls = [];
+    routeScript = null;
+    routeAvailable = false;
+  });
+
   beforeAll(async () => {
     moduleRef = await Test.createTestingModule({
       imports: [
@@ -127,6 +163,7 @@ describe('the assistant (integration)', () => {
         FactAssemblyService,
         AssistantService,
         { provide: NARRATOR, useValue: scripted },
+        { provide: AI_ROUTER, useValue: scriptedRouter },
         { provide: RateLimitService, useValue: limiter },
       ],
     }).compile();
@@ -334,6 +371,65 @@ describe('the assistant (integration)', () => {
   // ---------------------------------------------------------------------------------------------
   // Refusals: no figure, and no model call
   // ---------------------------------------------------------------------------------------------
+
+  it('asks the routing rung only when the cues missed, and never for a question they route', async () => {
+    // ADR-036 decision 1, and the assertion that keeps it honest: a question the cue vocabulary already
+    // routes must not become a paid call.
+    routeAvailable = true;
+    routeScript = { kind: 'INTENT', intent: 'SPEND_TOTAL' };
+
+    const answer = await ask('Koliko sam potrošio ovog meseca?');
+
+    expect(answer.answered).toBe(true);
+    expect(answer.intent).toBe('SPEND_TOTAL');
+    expect(routeCalls).toHaveLength(0);
+  });
+
+  it('answers a question in a language the cues cannot route, through the rung (ADR-036)', async () => {
+    // The capability C-1 built and left dark, now reachable: the model picks a member, and everything
+    // after that is the **ordinary** path — the same template, the same slots, the same facts. The intent
+    // is what the rung chose; the figures are still the ledger's.
+    scriptNarrations(['Sie haben diesen Monat 12.345,00 RSD ausgegeben.']);
+    routeAvailable = true;
+    routeScript = { kind: 'INTENT', intent: 'SPEND_TOTAL' };
+
+    const answer = await ask('Wie viel habe ich diesen Monat ausgegeben?');
+
+    expect(routeCalls).toEqual(['Wie viel habe ich diesen Monat ausgegeben?']);
+    expect(answer.answered).toBe(true);
+    expect(answer.intent).toBe('SPEND_TOTAL');
+    // The facts are assembled by the same code a cued question goes through, so the figure is the
+    // ledger's — never the model's (ADR-001/ADR-017).
+    expect(answer.facts.totals.length).toBeGreaterThan(0);
+  });
+
+  it('refuses a routed question whose slots the sentence never stated, rather than guessing', async () => {
+    // A routed `SPEND_BY_CATEGORY` with no Category named: the plan is built, and `facts.assemble`
+    // reports it unavailable. The answer is the same refusal a cued question with a missing slot gets —
+    // the rung buys the *intent*, not the data.
+    routeAvailable = true;
+    routeScript = { kind: 'INTENT', intent: 'SPEND_BY_CATEGORY' };
+
+    const answer = await ask('Was habe ich fuer Lebensmittel ausgegeben?');
+
+    expect(answer.answered).toBe(false);
+    expect(answer.reason).not.toBeNull();
+  });
+
+  it('refuses a routed **command** as a command, so the card below it can explain itself', async () => {
+    // A write in a language the cues do not cover. The client offers a proposal card only after a
+    // refusal (B-2b's ordering), so the refusal has to say what it is — `ACTION_REQUEST` is the sentence
+    // that tells the reader to confirm below, and `NO_TEMPLATE_MATCH` would send them hunting.
+    routeAvailable = true;
+    routeScript = { kind: 'ACTION', action: 'ADD_TAG', text: 'Odmor' };
+
+    const answer = await ask('please remember this as a label called Odmor');
+
+    expect(answer.answered).toBe(false);
+    expect(answer.reason).toBe('ACTION_REQUEST');
+    // …and no suggestions: the card is the answer, and chips beside it would invite a different question.
+    expect(answer.suggestions).toEqual([]);
+  });
 
   it('refuses a question outside the template set without inventing anything', async () => {
     scriptNarrations(['You spent a lot.']);

@@ -134,7 +134,11 @@ export class AssistantResolver {
     @Args('accountId', { type: () => ID, nullable: true }) accountId?: string,
     @Args('locale', { type: () => String, nullable: true }) locale?: string,
   ): Promise<AssistantActionProposalModel> {
-    const plan = planAction(question);
+    // **Cues first, always** (ADR-036 decision 1). The deterministic planner is what routes Serbian and
+    // English today, and asking a model before it would make every ordinary command a paid call with a
+    // worse guarantee. The rung is reached only when the cue vocabulary matched nothing — the bucket
+    // that until now ended in `NOT_AN_ACTION`.
+    const plan = planAction(question) ?? (await this.actions.routeQuestion(question, locale ?? undefined));
     if (plan === null) {
       return toActionProposalModel({ proposed: false, reason: 'NOT_AN_ACTION' });
     }
