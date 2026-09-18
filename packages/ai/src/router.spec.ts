@@ -31,7 +31,10 @@ const CHAIN_ROUTING: RoutingTable = {
   PARSE: { primary: 'LOCAL', fallback: 'DEEPSEEK_EU' },
   CLASSIFY: { primary: 'LOCAL', fallback: 'DEEPSEEK_EU' },
   NARRATE: { primary: 'LOCAL', fallback: 'DEEPSEEK_EU' },
-  OCR: { primary: 'LOCAL', fallback: 'DEEPSEEK_EU' },
+  // ⚠️ Text only. An **image** fallback to a cloud endpoint needs a consent gate even inside the EEA
+  // (ADR-038, docs/08 §6.5) — `validateRouting` refuses it without one, so a fixture that wants a
+  // cloud OCR chain installs a gate; these tests are about fallback mechanics and `CLASSIFY`.
+  OCR: { primary: 'LOCAL', fallback: null },
   EMBED: { primary: 'LOCAL', fallback: null },
 };
 import { AiRequestError, AiTransientError, AiUnavailableError } from './errors';
@@ -672,6 +675,72 @@ describe('the consent gate — the only way a non-EEA endpoint is reachable', ()
 
     expect(result.ok).toBe(true);
     expect(asked).toBe(0);
+  });
+
+  /**
+   * ADR-038: an **image** needs its own consent on every endpoint but `LOCAL`, EEA included.
+   *
+   * docs/08 §6.5's table makes `CLOUD_OCR` a written requirement for every OCR provider — *"consent-
+   * gated; most sensitive payload"* — while the router only asked for endpoints outside the EEA. The
+   * two cases below are the difference: an EEA host is now asked about too, and a `LOCAL` receipt does
+   * not pay for the question.
+   */
+  const EEA_OCR_ROUTING: RoutingTable = {
+    OCR: { primary: 'OPENAI_EU', fallback: null },
+  };
+
+  it('asks for consent before an image reaches even an EEA endpoint', async () => {
+    const stub = provider();
+    let asked = 0;
+    const router = new AiRouter({
+      routing: EEA_OCR_ROUTING,
+      providers: { OPENAI_EU: stub },
+      consent: {
+        permits: (task) => {
+          asked += 1;
+          expect(task).toBe('OCR');
+          return false;
+        },
+      },
+    });
+
+    const result = await router.invoke('OCR', { task: 'OCR' });
+
+    expect(asked).toBe(1);
+    expect(stub.calls).toEqual([]);
+    if (result.ok) throw new Error('expected a refusal');
+    expect(result.reason).toBe('CONSENT_DECLINED');
+    expect(result.failures[0]?.message).toContain('cloud OCR');
+  });
+
+  it('lets a consented image through to the provider check, and never asks for a LOCAL one', async () => {
+    const consented = provider();
+    const granted = new AiRouter({
+      routing: EEA_OCR_ROUTING,
+      providers: { OPENAI_EU: consented },
+      consent: { permits: () => true },
+    });
+
+    const allowed = await granted.invoke('OCR', { task: 'OCR' });
+    // Consent was granted, so the outcome is now about the *adapter* (this stub has no `ocr`), which
+    // is exactly what proves the consent step is no longer the blocker.
+    if (allowed.ok) throw new Error('a stub without an OCR method cannot succeed');
+    expect(allowed.failures.map((failure) => failure.reason)).toEqual(['TASK_NOT_SUPPORTED']);
+
+    const localAsked = { count: 0 };
+    const local = new AiRouter({
+      routing: { OCR: { primary: 'LOCAL', fallback: null } },
+      providers: { LOCAL: provider() },
+      consent: {
+        permits: () => {
+          localAsked.count += 1;
+          return true;
+        },
+      },
+    });
+    await local.invoke('OCR', { task: 'OCR' });
+
+    expect(localAsked.count).toBe(0);
   });
 
   it('reports a provider outage, not a refusal, when the EEA half of a chain also failed', async () => {

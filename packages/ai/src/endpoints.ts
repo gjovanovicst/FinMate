@@ -111,6 +111,21 @@ export function isLocalOnly(endpoint: string): boolean {
   return endpoint === 'LOCAL';
 }
 
+/**
+ * Tasks whose payload is an **image** rather than text.
+ *
+ * An image is the most sensitive payload this system holds: docs/08 §6.5 requires *"images deleted
+ * ≤ 30 days"* and makes the route **consent-gated on every provider, EU region included**, because an
+ * adequacy finding is not a permission. ADR-038 is the decision; this list is what the router and the
+ * routing validator both read, so the two cannot disagree about which tasks it covers.
+ */
+export const IMAGE_TASKS: readonly Task[] = Object.freeze(['OCR']);
+
+/** Does this task send an image off this node when it is routed anywhere but `LOCAL`? */
+export function isImageTask(task: Task): boolean {
+  return (IMAGE_TASKS as readonly string[]).includes(task);
+}
+
 /** A task's route: a primary endpoint, and the endpoint to fall through to, or `null`. */
 export interface TaskRoute {
   readonly primary: Endpoint;
@@ -200,6 +215,21 @@ export function assertAllowedRoute(task: Task, route: TaskRoute, consentRecorded
         );
       }
       continue;
+    }
+
+    // 2b. An **image** may leave this node only where a consent gate is installed (ADR-038). docs/08
+    //     §6.5 makes `CLOUD_OCR` a written requirement for every OCR provider *including an EEA one*,
+    //     so residency is necessary and not sufficient. `consentRecorded` means "a gate exists", as
+    //     above; the per-Household answer is asked on each call, never here.
+    if (isImageTask(task) && !isLocalOnly(endpoint) && !consentRecorded) {
+      throw new AiRoutingError(
+        'RESIDENCY_VIOLATION',
+        `${task} sends an image off this node, and docs/08 §6.5 requires the Household's recorded ` +
+          `consent for that on every provider — an EEA host included. With no consent gate ` +
+          `installed there is nothing to ask, so "${endpoint}" is refused (ADR-038).`,
+        task,
+        endpoint,
+      );
     }
 
     // 3. Every other task may reach LOCAL or an explicit `_EU` endpoint, and nothing else —

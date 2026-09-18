@@ -636,7 +636,7 @@ cycle and the verification date recorded in the RoPA (§8.11).
 | `PARSE` | EU region where offered | Zero retention, no training, no human review | DPA + SCCs if outside the EEA | **Default on**; lowest-sensitivity payload |
 | `CLASSIFY` | EU region (or `LOCAL`) | Same | DPA + SCCs | Resolved — `LOCAL` primary, `_EU` fallback ([04 §9](04-categorization-and-ai-engine.md#9-ai-provider-abstraction)) |
 | `NARRATE` | EU region preferred | Same | DPA + SCCs | Consent-gated |
-| `OCR` | EU region | Same, plus images deleted ≤ 30 days | DPA + SCCs | Consent-gated; most sensitive payload |
+| `OCR` | EU region | Same, plus images deleted ≤ 30 days | DPA + SCCs | Consent-gated **on every provider, EEA included** — `CLOUD_OCR` is asked per Household and enforced in the router since [ADR-038](14-decisions-and-risks.md); `LOCAL` is the default and needs no consent at all ([ADR-037](14-decisions-and-risks.md)) |
 | `EMBED` | **LOCAL, this node** | No egress | None needed | Default (`pgvector`, [04 §4](04-categorization-and-ai-engine.md#4-stage-3-entity-resolution)) |
 | `LOCAL` (any task) | This node | No egress | None | Always available as the opt-out path (§6.8) |
 
@@ -756,7 +756,11 @@ depended on a model (ADR-001, ADR-002).
 served by a sidecar runtime (Ollama / `llama.cpp`) on the same node, reachable only on the private Docker
 network; it performs `EMBED` by default and is primary or fallback for `PARSE`/`CLASSIFY` when a Household
 declines egress. A Household may choose **"process only on our servers"**, which sets `LOCAL` for every task
-and is the only configuration with genuinely zero egress. **Honest performance limit:** a 3–8B instruction
+and is the only configuration with genuinely zero egress. **OCR is part of this since 4.1.6**: the sidecar
+runs a vision model (`qwen2.5vl:3b` by default, docs/11 §2.5) so a Receipt photograph can be read without
+leaving the node — and the measurement is honest rather than flattering, because a 3B vision model on CPU
+needs *minutes* per receipt, which is why the cloud EEA path exists and why `AI_OCR_TIMEOUT_MS` is
+configurable ([ADR-037](14-decisions-and-risks.md)). **Honest performance limit:** a 3–8B instruction
 model, Q4-quantised, on the CPU of a single node ([ADR-013](14-decisions-and-risks.md)) will not meet the
 ≤ 2 s p95 AI-entry target for every input — expect ~1–3 s for short fragments and worse on a busy host.
 Therefore `PARSE` (≤ 1.5 s budget, short output) and `EMBED` are realistic on `LOCAL`; `CLASSIFY` on `LOCAL`

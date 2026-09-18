@@ -14,11 +14,13 @@ import {
   DEFAULT_ROUTING,
   EEA_ENDPOINT_SUFFIX,
   ENDPOINTS,
+  IMAGE_TASKS,
   VALIDATED_DEFAULT_ROUTING,
   assertAllowedRoute,
   endpointsForTask,
   isAdmissible,
   isEeaOrLocal,
+  isImageTask,
   isNonEea,
   isKnownEndpoint,
   isLocalOnly,
@@ -131,15 +133,19 @@ describe('validateRouting — a valid table passes', () => {
     expect(() => validateRouting(localOnlyTable)).not.toThrow();
   });
 
-  it('accepts an EEA-only table with cloud primaries', () => {
+  it('accepts an EEA-only table with cloud primaries, given a gate for the image it routes', () => {
     const eeaOnly: RoutingTable = {
       PARSE: { primary: 'DEEPSEEK_EU', fallback: 'OPENAI_EU' },
       CLASSIFY: { primary: 'OPENAI_EU', fallback: 'DEEPSEEK_EU' },
       NARRATE: { primary: 'ANTHROPIC_EU', fallback: 'GEMINI_EU' },
+      // `GEMINI_EU` is EEA, so residency is satisfied — and an image needs `CLOUD_OCR` consent on top
+      // of that (ADR-038), which is what the `true` below stands for. Without it this table is refused,
+      // which the ADR-038 describe below asserts directly.
       OCR: { primary: 'GEMINI_EU', fallback: null },
       EMBED: { primary: 'LOCAL', fallback: null },
     };
-    expect(() => validateRouting(eeaOnly)).not.toThrow();
+    expect(() => validateRouting(eeaOnly, true)).not.toThrow();
+    expect(() => validateRouting(eeaOnly)).toThrow(AiRoutingError);
   });
 
   it('refuses an endpoint with the right suffix but no provider behind it', () => {
@@ -217,6 +223,36 @@ describe('validateRouting — the refusal, per sensitive task, on either slot', 
       }
     });
   }
+
+  /**
+   * ADR-038. docs/08 §6.5 makes cloud OCR consent-gated **in an EEA region too**, so residency is
+   * necessary and not sufficient for an image: without a consent gate there is nothing to ask, and the
+   * route is refused rather than shipped.
+   */
+  describe('an image needs a consent gate even on an EEA host (ADR-038)', () => {
+    const EEA_IMAGE: RoutingTable = { OCR: { primary: 'OPENAI_EU', fallback: null } };
+
+    it('refuses an EEA OCR route when no gate is installed, and accepts it with one', () => {
+      expect(() => validateRouting(EEA_IMAGE)).toThrow(/consent/);
+      expect(() => validateRouting(EEA_IMAGE, true)).not.toThrow();
+    });
+
+    it('refuses an EEA OCR fallback too, because a fallback is where images go when the first fails', () => {
+      const table: RoutingTable = { OCR: { primary: 'LOCAL', fallback: 'OPENAI_EU' } };
+      expect(() => validateRouting(table)).toThrow(/consent/);
+      expect(() => validateRouting(table, true)).not.toThrow();
+    });
+
+    it('leaves a LOCAL image route alone: nothing leaves the node, so there is nothing to ask', () => {
+      expect(() => validateRouting({ OCR: { primary: 'LOCAL', fallback: null } })).not.toThrow();
+    });
+
+    it('covers exactly the image tasks, and OCR is one of them', () => {
+      expect([...IMAGE_TASKS]).toEqual(['OCR']);
+      expect(isImageTask('OCR')).toBe(true);
+      expect(isImageTask('NARRATE')).toBe(false);
+    });
+  });
 
   it('refuses every non-EEA spelling on the union-like list for every sensitive task', () => {
     for (const task of SENSITIVE_TASKS) {

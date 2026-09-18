@@ -45,6 +45,8 @@ import {
 import {
   endpointsForTask,
   isEeaOrLocal,
+  isImageTask,
+  isLocalOnly,
   validateRouting,
   type Endpoint,
   type RoutingTable,
@@ -151,11 +153,15 @@ export interface RouterOptions {
 }
 
 /**
- * The question ADR-007 asks before a sensitive task may leave the EEA.
+ * The question ADR-007 asks before a sensitive task may leave the EEA — and the one ADR-038 asks
+ * before an **image** leaves the node at all.
  *
- * `permits` is called once per endpoint that is not `LOCAL` or `_EU`, with the task whose payload is
- * about to ship. Async because the honest answer in `apps/api` is a database read; boolean-returning
- * gates are accepted so a test can answer without a database.
+ * `permits` is called with the task whose payload is about to ship, for an endpoint that is not
+ * `LOCAL` or `_EU`, **and** for an image task (`{@link IMAGE_TASKS}`) on any endpoint but `LOCAL` —
+ * docs/08 §6.5 makes cloud OCR consent-gated in an EEA region too. The implementation resolves the
+ * consent kind from the task, so the router never has to know that `OCR` means `CLOUD_OCR`. Async
+ * because the honest answer in `apps/api` is a database read; boolean-returning gates are accepted so
+ * a test can answer without a database.
  *
  * A gate **must fail closed**: an implementation that cannot tell whose Household it is answering for
  * returns `false`. The router treats a throw as a refusal too, so a broken gate degrades to
@@ -238,17 +244,27 @@ export class AiRouter {
     for (const endpoint of this.endpoints(task)) {
       const provider = this.providers[endpoint];
 
-      // Residency before anything else: an endpoint outside the EEA is only reachable at all when
-      // the Household's own recorded consent admits it (docs/08 §6.6, ADR-031). This is the
-      // enforcement point — `validateRouting` only established that a gate *exists*.
-      if (!isEeaOrLocal(endpoint) && !(await consentGiven())) {
+      // Consent before anything else, and it answers **two** questions with one predicate:
+      //  - an endpoint outside the EEA is reachable only with the Household's recorded consent
+      //    (docs/08 §6.6, ADR-007, ADR-031) — this is the enforcement point, since `validateRouting`
+      //    only established that a gate *exists*;
+      //  - an **image** may leave this node only with its own recorded consent, whatever the host's
+      //    region, because docs/08 §6.5 makes `CLOUD_OCR` a requirement for every OCR provider
+      //    (ADR-038). The gate resolves the kind from the task, so `OCR` asks for `CLOUD_OCR` while
+      //    the text tasks keep asking for `AI_DATA_PROCESSING`.
+      const outsideEea = !isEeaOrLocal(endpoint);
+      const imageLeavesTheNode = !isLocalOnly(endpoint) && isImageTask(task);
+      if ((outsideEea || imageLeavesTheNode) && !(await consentGiven())) {
         failures.push(
           failure(
             endpoint,
             provider?.name ?? null,
             'CONSENT_DECLINED',
-            `${endpoint} is outside the EEA and this Household has no recorded consent for ` +
-              `${task}, so nothing was sent (docs/08 §6.6, ADR-007).`,
+            outsideEea
+              ? `${endpoint} is outside the EEA and this Household has no recorded consent for ` +
+                `${task}, so nothing was sent (docs/08 §6.6, ADR-007).`
+              : `${task} sends an image off this node and this Household has not consented to ` +
+                `cloud OCR, so nothing was sent (docs/08 §6.5, ADR-038).`,
           ),
         );
         continue;
