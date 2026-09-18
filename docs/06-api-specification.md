@@ -4256,6 +4256,18 @@ would need the store to track a lineage the design deliberately does not have.
 until `/capture` next reads the category list. The staleness is bounded by that screen's own mount, and a
 missing picker entry is not a wrong write — unlike R-27(a2), which this deliberately does not repeat.
 
+> **C-1 shipped the capability, and nothing calls it yet.** The `ROUTE` task exists end to end —
+> `packages/ai`'s task and adapter, the consent mapping (the existing text-egress kind, **not** a fifth
+> purpose), `AI_ROUTE_PRIMARY`, and an injected `AI_ROUTER` seam that answers a validated registry member or
+> `null` — and it is **dark**: `LOCAL` by default with no local model claimed, which the boot log states,
+> and *uncalled*, so it is deliberately absent from the egress disclosure until C-2 gives it a call site
+> (docs/04 §9). **Live 8/8** (`/tmp/verify-c1.mjs`): the disclosure lists exactly `CLASSIFY` and `NARRATE`
+> — this deployment's real non-EEA routes, both consent-gated — and no `ROUTE` row; a canonical question
+> still answers from the ledger; a command still proposes through the cue list; and a **German** question is
+> still refused with `NO_TEMPLATE_MATCH`, which is precisely the gap C-2 exists to close. The demo's
+> `.env` routes `CLASSIFY`/`NARRATE` to `DEEPSEEK_GLOBAL` with consent granted, so that pass also narrated
+> through the model — the deviation is the deployment's, and it is recorded rather than assumed away.
+>
 > **And the cue list is no longer the only way in.** [ADR-036](14-decisions-and-risks.md#adr-036--a-model-may-route-a-question-to-the-closed-registry-it-may-never-name-a-method)
 > records a **routing rung** that sits *after* these cues: a question the cues cannot match may be routed by
 > a model to one member of the compiled-in `ASSISTANT_ACTIONS`/`ASSISTANT_INTENTS` unions — and to nothing

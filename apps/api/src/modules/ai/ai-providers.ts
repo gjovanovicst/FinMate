@@ -64,9 +64,20 @@ import { RoutedAiClassifier, UNCONFIGURED_AI_CLASSIFIER, type AiClassifier } fro
 import { UNCONFIGURED_EMBEDDINGS, type EmbeddingProvider } from '../classification/embedding-provider';
 import { RoutedNarrator, UNCONFIGURED_NARRATOR, type AssistantNarrator } from '../assistant/assistant-narrator';
 import { RoutedOcrService, UNCONFIGURED_OCR, type OcrService } from '../receipts/ocr';
+import {
+  RoutedQuestionRouter,
+  UNCONFIGURED_ROUTER,
+  type AssistantRouter,
+} from '../assistant/assistant-router';
 
-/** The four tasks the platform routes, in docs/04 §9's order. `EMBED` is local-only by design. */
-export const ROUTED_TASKS = ['PARSE', 'CLASSIFY', 'NARRATE', 'OCR'] as const satisfies readonly Task[];
+/**
+ * The five tasks the platform routes, in docs/04 §9's order. `EMBED` is local-only by design.
+ *
+ * `ROUTE` is ADR-036's routing rung. It is in this list rather than beside the seams because a
+ * deployment configures it exactly like the others — and because leaving it out would make its
+ * *disclosure* impossible, which is the one thing about a new egress that must not be forgotten.
+ */
+export const ROUTED_TASKS = ['PARSE', 'CLASSIFY', 'NARRATE', 'OCR', 'ROUTE'] as const satisfies readonly Task[];
 
 /** Why a task ended up unrouted. Diagnostic only — never user-facing copy. */
 export interface SkippedRoute {
@@ -89,6 +100,7 @@ const PRIMARY_KEY = {
   CLASSIFY: 'AI_CLASSIFY_PRIMARY',
   NARRATE: 'AI_NARRATE_PRIMARY',
   OCR: 'AI_OCR_PRIMARY',
+  ROUTE: 'AI_ROUTE_PRIMARY',
 } as const satisfies Record<(typeof ROUTED_TASKS)[number], keyof AppConfig>;
 
 /**
@@ -253,6 +265,12 @@ export interface AiSeams {
   readonly classifier: AiClassifier;
   readonly narrator: AssistantNarrator;
   readonly ocr: OcrService;
+  /**
+   * ⚠️ The **seam**, not `router` above. `router` is `packages/ai`'s transport; this answers a
+   * validated decision or `null` (ADR-036). The names are one import apart on purpose so the two are
+   * hard to confuse, and the token is `AI_ROUTER`.
+   */
+  readonly questionRouter: AssistantRouter;
   readonly embeddings: EmbeddingProvider;
 }
 
@@ -290,6 +308,7 @@ export function makeAiSeams(config: AppConfig, fetchImpl: FetchLike, gate: Conse
   let classifier: AiClassifier = UNCONFIGURED_AI_CLASSIFIER;
   let narrator: AssistantNarrator = UNCONFIGURED_NARRATOR;
   let ocr: OcrService = UNCONFIGURED_OCR;
+  let questionRouter: AssistantRouter = UNCONFIGURED_ROUTER;
   const calledTasks: Task[] = [];
 
   if (router !== null) {
@@ -304,6 +323,15 @@ export function makeAiSeams(config: AppConfig, fetchImpl: FetchLike, gate: Conse
     if (router.endpoints('OCR').length > 0) {
       ocr = new RoutedOcrService(router);
       calledTasks.push('OCR');
+    }
+    if (router.endpoints('ROUTE').length > 0) {
+      // ⚠️ The seam is built and **deliberately not added to `calledTasks`**: that list is about
+      // *callers*, and nothing injects `AI_ROUTER` yet (C-2 is the planner integration). Disclosing
+      // `ROUTE` now would ask a person to consent to a transfer no code path performs — the exact
+      // thing docs/08 §6.5 forbids — so the honest state is the `uncalled` log line below, which
+      // already says "routed but not called by this build". C-2 adds the call site and this entry
+      // together.
+      questionRouter = new RoutedQuestionRouter(router);
     }
   }
 
@@ -326,6 +354,7 @@ export function makeAiSeams(config: AppConfig, fetchImpl: FetchLike, gate: Conse
     classifier,
     narrator,
     ocr,
+    questionRouter,
     embeddings: UNCONFIGURED_EMBEDDINGS,
   };
 }

@@ -75,6 +75,10 @@ export {
   type PromptRef,
   type ProviderName,
   type RedactedFragment,
+  // ADR-036's routing rung: the request carries the user's own capped sentence, and the answer is a
+  // member name this package deliberately does not know — membership is the caller's (`apps/api`) check.
+  type RouteAnswer,
+  type RouteInput,
   type RoutedProvider,
   type Task,
   type TaskCall,

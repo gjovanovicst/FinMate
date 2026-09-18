@@ -20,6 +20,16 @@ const BASE = {
 } as const;
 
 describe('AI routing residency', () => {
+  it('guards the routing rung with the same residency rule (ADR-036)', () => {
+    // Routing carries the user's own words, so it is a text task like the rest: a deployment cannot
+    // point it at a non-EEA host without that endpoint being the one consent-gated exception.
+    expect(loadConfig({ ...BASE }).AI_ROUTE_PRIMARY).toBe('LOCAL');
+    expect(() => loadConfig({ ...BASE, AI_ROUTE_PRIMARY: 'GROQ' })).toThrow(/not an EEA endpoint/);
+    expect(() => loadConfig({ ...BASE, AI_ROUTE_PRIMARY: 'DEEPSEEK_EU' })).toThrow(
+      /DEEPSEEK_EU_BASE_URL|EEA host/,
+    );
+  });
+
   it('accepts the defaults, which are LOCAL', () => {
     const config = loadConfig({ ...BASE });
 

@@ -109,6 +109,15 @@ export const envSchema = z
     // already documents.
     AI_NARRATE_PRIMARY: z.string().default('LOCAL'),
     AI_OCR_PRIMARY: z.string().default('LOCAL'),
+    /**
+     * ADR-036's routing rung: which registered intent or action a sentence means.
+     *
+     * `LOCAL` like the rest, and that is what makes the rung **dark** rather than merely off: with no
+     * local model running there is nothing to call, so enabling it is a deliberate act — a deployment
+     * names an endpoint *and* the Household records consent. Its payload is the user's own question and
+     * nothing else, so it is the same egress as the other text tasks (see `consentKindForTask`).
+     */
+    AI_ROUTE_PRIMARY: z.string().default('LOCAL'),
 
     /**
      * The EEA host each `*_EU` endpoint actually means (ADR-031).
@@ -192,6 +201,10 @@ export const envSchema = z
       'AI_CLASSIFY_PRIMARY',
       'AI_NARRATE_PRIMARY',
       'AI_OCR_PRIMARY',
+      // ADR-036: routing carries the user's own words, so it is subject to the same residency rule as
+      // the other text tasks — a config naming a non-EEA host here would be the same Chapter V
+      // transfer, one task later.
+      'AI_ROUTE_PRIMARY',
     ] as const) {
       const value = env[key];
       if (value !== 'LOCAL' && !value.endsWith('_EU') && value !== 'DEEPSEEK_GLOBAL') {

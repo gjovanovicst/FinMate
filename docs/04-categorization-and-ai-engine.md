@@ -866,6 +866,26 @@ non-EEA sentence printed twice, since `CLASSIFY` and `NARRATE` shared it and the
 region, not task. The task stays routed on purpose: removing it would make `AI_PARSE_PRIMARY` a dead config
 key again ([14](14-decisions-and-risks.md), ADR-032 decision 6).
 
+**The routing rung's seam is built and uncalled (C-1, ADR-036).** `AI_ROUTE_PRIMARY` joins the four task
+primaries and obeys the same residency guard; the composition root builds an `AssistantRouter` whenever
+`ROUTE` has a usable endpoint and provides it as `AI_ROUTER`. Two things are deliberate:
+
+- **It is dark by default, not merely off.** `LOCAL` with no `LOCAL_AI_BASE_URL` means there is nothing to
+  call, and the boot log says so in those words — `ROUTE is unrouted: LOCAL_AI_BASE_URL is not set` — which
+  is the third answer to *"why is the AI not doing anything?"* beside "no key" and "no consent".
+- **A seam with no caller is not disclosed.** `calledTasks` is about *callers*, so `ROUTE` stays out of the
+  egress list until the planner integration (C-2) injects it and the task enters the same list in the same
+  branch that builds its call site. Until then the composition root's existing *"routed but not called by
+  this build"* log line is the honest state — disclosing it would ask a person to consent to a transfer no
+  code performs (docs/08 §6.5).
+
+The seam answers a **validated decision or `null`**, never a raw member: `validateRouteAnswer` checks the
+model's name against the compiled-in unions (a name outside them, `NO_TEMPLATE_MATCH`, a casing variant, or
+over-long text all read as "nothing") so no caller can forget to. Its prompt names both JSON fields —
+`json_object` mode constrains syntax and not keys, and the caller's prompt is the only place those names
+exist (docs/15) — and it lists one line per registered member with a *meaning* rather than a word, which is
+what makes a language no cue list covers reachable at all.
+
 Cross-cutting requirements on every adapter:
 
 - **Timeouts** (2 s parse/classify, 8 s narrate, 20 s OCR) with one retry on transient failure only.

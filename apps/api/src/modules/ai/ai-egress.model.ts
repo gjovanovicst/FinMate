@@ -43,7 +43,7 @@ export class AiEgressModel {
 
   @Field(() => String, {
     description:
-      'Which task this row is about — `CLASSIFY`, `NARRATE` or `OCR`. A task the configuration routes but ' +
+      'Which task this row is about — `CLASSIFY`, `NARRATE`, `OCR` or `ROUTE`. A task the configuration routes but ' +
       'no code in this build calls is never listed, because it is not egress a person could consent to.',
   })
   task!: string;

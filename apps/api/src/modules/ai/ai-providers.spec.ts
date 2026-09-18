@@ -7,6 +7,7 @@ import { loadConfig } from '../../config/config';
 import { UNCONFIGURED_AI_CLASSIFIER } from '../classification/ai-classifier';
 import { UNCONFIGURED_EMBEDDINGS } from '../classification/embedding-provider';
 import { UNCONFIGURED_NARRATOR } from '../assistant/assistant-narrator';
+import { UNCONFIGURED_ROUTER } from '../assistant/assistant-router';
 import { UNCONFIGURED_OCR } from '../receipts/ocr';
 import { toAiEgressModels } from './ai-egress.model';
 import { assembleAi, makeAiSeams } from './ai-providers';
@@ -103,8 +104,15 @@ describe('assembleAi — inert when nothing is configured', () => {
     expect(assembly.routedTasks).toEqual([]);
     expect(assembly.routing).toEqual({});
     expect(assembly.providers).toEqual({});
-    // Every skip has a reason an operator can act on, not a bare "disabled".
-    expect(assembly.skipped.map((skip) => skip.task)).toEqual(['PARSE', 'CLASSIFY', 'NARRATE', 'OCR']);
+    // Every skip has a reason an operator can act on, not a bare "disabled". `ROUTE` is here from the
+    // start (ADR-036) — its `LOCAL` default is what keeps the rung dark rather than merely off.
+    expect(assembly.skipped.map((skip) => skip.task)).toEqual([
+      'PARSE',
+      'CLASSIFY',
+      'NARRATE',
+      'OCR',
+      'ROUTE',
+    ]);
     expect(assembly.skipped[0]?.reason).toContain('LOCAL_AI_BASE_URL');
   });
 
@@ -117,6 +125,8 @@ describe('assembleAi — inert when nothing is configured', () => {
     expect(seams.classifier).toBe(UNCONFIGURED_AI_CLASSIFIER);
     expect(seams.narrator).toBe(UNCONFIGURED_NARRATOR);
     expect(seams.ocr).toBe(UNCONFIGURED_OCR);
+    // ADR-036's rung is present as a seam and inert, so a caller can inject it unconditionally.
+    expect(seams.questionRouter).toBe(UNCONFIGURED_ROUTER);
     // Nothing is routed, so there is nothing a caller could reach and nothing to disclose.
     expect(seams.calledTasks).toEqual([]);
     // Rung 5 needs a model and a width, not a host (ADR-021); it stays inert even with a local host.
@@ -129,14 +139,20 @@ describe('assembleAi — a usable endpoint produces the real seams', () => {
     const config = loadConfig({ ...BASE_ENV, LOCAL_AI_BASE_URL: 'http://localhost:11434' });
     const seams = makeAiSeams(config, stubFetch().fetch, { permits: () => true });
 
-    expect(seams.assembly.routedTasks).toEqual(['PARSE', 'CLASSIFY', 'NARRATE', 'OCR']);
+    expect(seams.assembly.routedTasks).toEqual(['PARSE', 'CLASSIFY', 'NARRATE', 'OCR', 'ROUTE']);
     expect(Object.keys(seams.assembly.providers)).toEqual(['LOCAL']);
     expect(seams.router).not.toBeNull();
     expect(seams.classifier).not.toBe(UNCONFIGURED_AI_CLASSIFIER);
     expect(seams.narrator).not.toBe(UNCONFIGURED_NARRATOR);
     expect(seams.ocr).not.toBe(UNCONFIGURED_OCR);
+    // A routed `ROUTE` builds the real seam — its caller arrives in C-2, and the seam exists first so
+    // that integration is an injection rather than a feature.
+    expect(seams.questionRouter).not.toBe(UNCONFIGURED_ROUTER);
+    expect(seams.questionRouter.available).toBe(true);
     // `PARSE` is routed and no seam invokes it: a typed fragment is parsed by `packages/nlp`, on this
     // node. The three that follow are the tasks with a caller (docs/08 §6.6's disclosure).
+    // ⚠️ **`ROUTE` is deliberately not in this list yet** (ADR-036 C-1): a seam with no call site is not
+    // egress a person can consent to, so it stays out of `calledTasks` until C-2 injects it.
     expect(seams.calledTasks).toEqual(['CLASSIFY', 'NARRATE', 'OCR']);
   });
 
@@ -154,11 +170,11 @@ describe('assembleAi — a usable endpoint produces the real seams', () => {
     });
     const seams = makeAiSeams(config, stubFetch().fetch, { permits: () => true });
 
-    expect(seams.assembly.routedTasks).toEqual(['PARSE', 'CLASSIFY', 'NARRATE', 'OCR']);
+    expect(seams.assembly.routedTasks).toEqual(['PARSE', 'CLASSIFY', 'NARRATE', 'OCR', 'ROUTE']);
     expect(seams.calledTasks).toEqual(['CLASSIFY', 'NARRATE', 'OCR']);
 
-    // Every routed task but `PARSE` rides the local host, so the only non-EEA row the routing table
-    // could produce is the one nothing calls — and the disclosure has none.
+    // Every routed task but `PARSE` rides the local host, so the only non-EEA rows the routing table
+    // could produce are the ones nothing calls — and the disclosure has none.
     const rows = toAiEgressModels(seams.assembly, seams.calledTasks);
     expect(rows.map((row) => row.task)).toEqual(['CLASSIFY', 'NARRATE', 'OCR']);
     expect(rows.some((row) => row.requiresConsent)).toBe(false);

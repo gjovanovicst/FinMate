@@ -6,11 +6,12 @@ import { AI_CLASSIFIER, type AiClassifier } from '../classification/ai-classifie
 import { EMBEDDINGS, type EmbeddingProvider } from '../classification/embedding-provider';
 import { NARRATOR, type AssistantNarrator } from '../assistant/assistant-narrator';
 import { OCR, type OcrService } from '../receipts/ocr';
+import { type AssistantRouter } from '../assistant/assistant-router';
 import { ConsentModule } from '../consent/consent.module';
 import { ConsentsService } from '../consent/consents.service';
 import { AiEgressResolver } from './ai-egress.resolver';
 import { makeAiSeams, type AiSeams } from './ai-providers';
-import { AI_SEAMS } from './ai-tokens';
+import { AI_ROUTER, AI_SEAMS } from './ai-tokens';
 
 /**
  * The AI composition root — ADR-031 decision 6.
@@ -64,7 +65,14 @@ import { AI_SEAMS } from './ai-tokens';
       inject: [AI_SEAMS],
       useFactory: (seams: AiSeams): EmbeddingProvider => seams.embeddings,
     },
+    // ADR-036's rung. Inert (`UNCONFIGURED_ROUTER`) unless `AI_ROUTE_PRIMARY` names a usable endpoint,
+    // so this token is safe to inject anywhere and the assistant needs no feature flag to hold it.
+    {
+      provide: AI_ROUTER,
+      inject: [AI_SEAMS],
+      useFactory: (seams: AiSeams): AssistantRouter => seams.questionRouter,
+    },
   ],
-  exports: [AI_CLASSIFIER, NARRATOR, OCR, EMBEDDINGS, AI_SEAMS],
+  exports: [AI_CLASSIFIER, NARRATOR, OCR, EMBEDDINGS, AI_ROUTER, AI_SEAMS],
 })
 export class AiModule {}
