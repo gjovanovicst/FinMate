@@ -90,8 +90,8 @@ describe('the action registry (ADR-035)', () => {
     // No defaulted slot at all, and that is the decision: the colour `/tags` can set is not filled,
     // because the question never states one and a colour has no consequence to confirm.
     expect(template.defaultedSlots).toEqual([]);
-    // `deleteTag` — a hard delete that cascades assignments, correct as an undo because the row this
-    // action creates has none yet.
+    // `deleteTag` — assignments removed outright, the row soft-deleted (`TagsService.remove`), which is
+    // correct as an undo because the row this action creates has none of either yet.
     expect(template.undo).toBe('SOFT_DELETE');
     expect(template.destroys).toBe(false);
   });

@@ -1305,8 +1305,8 @@ const UNDO_OPERATIONS: Readonly<
     `,
     variables: (id) => ({ id }),
   },
-  // `deleteTag` — a hard delete that cascades its assignments, and correct here for exactly that
-  // reason: the row this action created has none.
+  // `deleteTag` — assignments removed outright, the row soft-deleted, and correct here for exactly that
+  // reason: the row this action created has neither.
   ADD_TAG: {
     document: /* GraphQL */ `
       mutation AssistantUndoTag($id: ID!) {

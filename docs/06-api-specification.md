@@ -4105,8 +4105,10 @@ Three smaller decisions:
 
 - **No colour.** `/tags` can set one; the question never states one, and unlike a goal's missing deadline a
   colour changes nothing the reader needs to weigh. So `defaultedSlots` is empty and the diff is one row.
-- **The undo is `deleteTag`** — a hard delete that cascades its assignments, which is correct *because* the
-  row this action creates has none yet.
+- **The undo is `deleteTag`** — which removes the Tag's assignments outright and soft-deletes the row
+  (`TagsService.remove`), correct *because* the row this action creates has neither yet. ⚠️ This said
+  "a hard delete" until a later review read the service; the undo's classification was right and the
+  stated mechanism was not.
 - **No Account, no Category, no amount** — the slot whitelist is `['name']`, so a client cannot inject one.
 
 ⚠️ **The card's `CONFLICT` sentence named a Category, and B-4c made that a lie.** The copy existed for the

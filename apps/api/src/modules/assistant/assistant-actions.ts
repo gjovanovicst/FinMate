@@ -191,8 +191,15 @@ export const ACTION_TEMPLATES: Readonly<Record<AssistantAction, ActionTemplate>>
   /**
    * A tag: a name and nothing else (B-4c).
    *
-   * `createTag` never overwrites and a Tag's delete is a **hard delete that cascades its assignments**
-   * (docs/03), which is correct as an undo precisely because the row this action created has none yet.
+   * `createTag` never overwrites, and `deleteTag` removes the Tag's **assignments** outright while
+   * soft-deleting the row itself (`TagsService.remove` — `deleted_at`, not a `DELETE`; docs/03 §3.4).
+   * Both halves are what make it an honest undo *here*: the row this action created has no assignments
+   * to lose, and nothing it touched existed before, so nothing has to be restored.
+   *
+   * ⚠️ Corrected after the fact: this comment said "hard delete" until a review pass read the service.
+   * The **decision** was right (the undo is `SOFT_DELETE`, the row leaves every list), the *mechanism*
+   * was not — and a reason that is wrong about the mechanism is the kind of thing the next reader
+   * relies on.
    */
   ADD_TAG: {
     mutation: 'createTag',

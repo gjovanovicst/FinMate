@@ -1068,6 +1068,16 @@ The tables hold platform content beside the Household’s own rows, which is whe
   equate, so `Путовања`/`Putovanja` works and `Rođendan`/`Rodjendan` does **not** — the fold maps `đ` → `d`
   and leaves the digraph `dj` alone, which is docs/04 §8.1.7's `đ`/`ђ` asymmetry (task B-4c).
 
+- **"Delete" in the taxonomy is two different operations, and a comment that describes the wrong one
+  reads as authoritative.** `TagsService.remove` **hard**-deletes the Tag's `transaction_tags` rows and
+  **soft**-deletes the Tag itself (`deleted_at`, docs/03 §3.4) — so a Tag vanishes from every list while
+  the row survives, and the assignments do not. A Category's delete is a different shape again
+  (reassign-then-soft-delete), and `files.purge` is a genuine hard delete where the soft one is the rule.
+  B-4c's registry comment, its spec comment, the client's undo comment and docs/06 all said "a hard delete
+  that cascades its assignments" — the *undo classification* was right (`SOFT_DELETE`) and the stated
+  *mechanism* was wrong, which is worse than saying nothing, because the next reader trusts it. Read the
+  service before describing what a delete does (found by a review pass, corrected in B-5's follow-up).
+
 ## 9. Web UI, templates and i18n
 
 - **A spec that uses `TestBed` needs BOTH `// @vitest-environment jsdom` as its first line AND
