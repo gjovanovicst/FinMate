@@ -1380,6 +1380,7 @@ type Query {
   # ---- assistant
   assistantAnswer(question: String!, locale: String): AssistantAnswerModel!      # 3.2.3
   assistantSuggestions: [String!]!                                    # 3.2.4, the starter chips
+  assistantActionExamples: [AssistantActionExampleModel!]!            # the "or do something" chips
   assistantProposeAction(question: String!, kind: CategoryKind, locale: String): AssistantActionProposalModel!   # B-2a, ADR-035
 
   # ---- search
@@ -1636,6 +1637,17 @@ until `transactions` accepts `merchantId`/`tagId` (§8.8).
 registry, so the screen's starter chips and a refusal's suggestions are the **same closed set**. Without
 it the client would hold a second copy of the planner's question list, and the first one to drift would
 send a user to a question the planner cannot route.
+
+`assistantActionExamples` is the **other half of the same invitation**: one example per write, from
+`ACTION_EXAMPLES` beside the action registry, so a reader learns the assistant can *do* things and not
+only answer them. Each entry carries the `action` as well as the sentence, and
+`assistant-actions.spec.ts` asserts that every example still **plans** to the action it names — the
+reason the list cannot live on the client, since a chip is a promise only the planner can keep. Two
+things are deliberate: `CREATE_RULE_FROM_CORRECTION` has **no** example (it derives from a Correction the
+reader made earlier, so a brand-new Household could only be refused — see §8.16), and the examples are
+**not** filtered by what the Household can currently build, so a fresh Household's `dodaj trošak kafa 180`
+chip answers with the `UNRUNNABLE:accountId` sentence rather than vanishing. Both are recorded in
+[02 §4.16](02-ux-flows-and-screens.md) as reviewable product choices.
 
 ### 4.5 Search
 

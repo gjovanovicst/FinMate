@@ -412,6 +412,30 @@ export class AssistantActionPreviewModel {
   lines!: ActionPreviewLineModel[];
 }
 
+/**
+ * One example of a write, as the assistant screen's starter chips render it (docs/02 §4.16).
+ *
+ * It carries the `action` as well as the sentence so the chip is *filed* under something a client can
+ * trust: a list of bare strings would let the screen group or label an example by guessing, and the
+ * enum is the same closed vocabulary `assistantProposeAction` answers with. The sentence is Serbian
+ * (like `SUGGESTED_QUESTIONS`) because the API has no i18n layer — docs/06 §5.14's recorded breach.
+ */
+@ObjectType({
+  description:
+    'An example request that proposes one registered action (docs/06 §8.16). Offered as starter chips ' +
+    'so a reader learns the assistant can **do** things, not only answer.',
+})
+export class AssistantActionExampleModel {
+  @Field(() => AssistantActionEnum, {
+    description:
+      'The action this example proposes. Asserted against the planner, so the chip cannot lie.',
+  })
+  action!: AssistantAction;
+
+  @Field(() => String, { description: 'The sentence to type, exactly as it would be typed by hand.' })
+  question!: string;
+}
+
 @ObjectType({
   description:
     'A proposed write awaiting a human click. `proposed: false` is a refusal, not an error: the ' +

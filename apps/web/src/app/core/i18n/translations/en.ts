@@ -217,13 +217,22 @@ export const en = {
 
   // ---- assistant (F-23) ----
   'assistant.title': 'Assistant',
-  'assistant.subtitle': 'Ask about your own ledger. Every figure is computed by the backend.',
-  'assistant.askLabel': 'Your question',
-  'assistant.placeholder': 'e.g. koliko sam potrošio na hranu ovog meseca?',
+  // ⚠️ The copy names **both** things the assistant does — answer and act — because the screen has to.
+  // A reader who is not told it can change something will never try, and an ordinary question field beside
+  // question-shaped chips says "answers only" louder than any label (docs/02 §4.16).
+  'assistant.subtitle':
+    'Ask about your own ledger — or tell me to do something, and I will show you exactly what I would change before anything happens. Every figure is computed by the backend.',
+  'assistant.askLabel': 'Your question or request',
+  'assistant.placeholder': 'e.g. “how much did I spend on food?” or “add a category Travel”',
   'assistant.ask': 'Ask',
   'assistant.asking': 'Asking…',
-  'assistant.starters': 'Try one of these',
+  'assistant.starters': 'Ask me something',
   'assistant.startersHint': 'The answer stays on this screen until you reload the page.',
+  // The second half of the invitation: the same chips mechanism, one example per write, sourced from the
+  // API's action registry so a chip cannot claim something the assistant cannot do.
+  'assistant.actions': 'Or tell me to do something',
+  'assistant.actionsHint':
+    'Nothing changes until you confirm — I show you the fields I would write first, and you can undo it afterwards.',
   'assistant.suggestions': 'Something else I can answer',
   'assistant.provenanceOne': 'based on 1 transaction, {period}',
   'assistant.provenanceMany': 'based on {count} transactions, {period}',

@@ -6,7 +6,8 @@ import {
   AssistantActionEnum,
   AssistantActionSlotEnum,
 } from './assistant.model';
-import { ACTION_TEMPLATES, ASSISTANT_ACTIONS, registeredMutations } from './assistant-actions';
+import { ACTION_EXAMPLES, ACTION_TEMPLATES, ASSISTANT_ACTIONS, registeredMutations } from './assistant-actions';
+import { planAction } from './action-planner';
 
 /**
  * The registry's own invariants — the write-side twin of `query-planner.spec.ts`'s "every intent has a
@@ -112,6 +113,25 @@ describe('the action registry (ADR-035)', () => {
     expect(template.destroys).toBe(false);
     // `correctTransaction` carries no role guard, so this mirrors the screen beside it — no stricter.
     expect(template.role).toBe('MEMBER');
+  });
+
+  it('offers starter examples that each plan to the action they are filed under', () => {
+    // ⚠️ This is the assertion that lets the client render a chip saying *"say this and I will do that"*.
+    // A chip is a promise, and the promise is only true while `planAction`'s cue vocabulary still routes
+    // the sentence to the same action — so a cue edit that breaks a chip fails here rather than on a
+    // screen nobody re-reads. It is also why `ACTION_EXAMPLES` is not a client-side constant.
+    for (const example of ACTION_EXAMPLES) {
+      expect(ASSISTANT_ACTIONS, example.question).toContain(example.action);
+      expect(planAction(example.question)?.action, example.question).toBe(example.action);
+    }
+    // The **rule** action is deliberately absent, and the reason is a first click: it derives from a
+    // Correction the reader made earlier, so on a Household that has corrected nothing the only honest
+    // answer is the `NO_CORRECTION` refusal. It is discovered in the moment it applies, not from a
+    // starter list — and it stays reachable by typing, which the cue list is unchanged for.
+    expect(ACTION_EXAMPLES.map((example) => example.action)).not.toContain('CREATE_RULE_FROM_CORRECTION');
+    // …and the list is not empty: a registry with no discoverable action would make the screen's
+    // "or tell me to do something" half vanish silently.
+    expect(ACTION_EXAMPLES.length).toBeGreaterThan(0);
   });
 
   it('declares the correction action **last**, because a plan walks the registry in order', () => {

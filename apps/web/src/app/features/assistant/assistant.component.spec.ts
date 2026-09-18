@@ -132,6 +132,64 @@ describe('the assistant screen', () => {
     expect(queries.some((query) => query.includes('assistantSuggestions'))).toBe(true);
   });
 
+  it('offers what the assistant can **do** as chips, and a click really proposes it', async () => {
+    const { fixture, client } = await mount((query) => {
+      if (query.includes('query AssistantSuggestions')) {
+        return { assistantSuggestions: ['Koliko sam potrošio ovog meseca?'] };
+      }
+      if (query.includes('query AssistantActionExamples')) {
+        return { assistantActionExamples: [{ action: 'ADD_TAG', question: 'dodaj tag Odmor' }] };
+      }
+      if (query.includes('mutation AssistantProposeAction')) {
+        return { assistantProposeAction: TAG_PROPOSAL };
+      }
+      return { assistantAnswer: REFUSAL };
+    });
+
+    // Both invitations, each with its own heading — the point of the change: a reader who is never told
+    // the app can change something will never try it.
+    const text = textOf(fixture);
+    expect(text).toContain('Ask me something');
+    expect(text).toContain('Or tell me to do something');
+    expect(text).toContain('Koliko sam potrošio ovog meseca?');
+    // …and the trust sentence, where the reader decides whether to press one.
+    expect(text).toContain('Nothing changes until you confirm');
+    expect(fixture.nativeElement.querySelector('.chip--action')).not.toBeNull();
+
+    // No type argument on `querySelectorAll`: `fixture.nativeElement` is untyped in this harness, and
+    // "untyped function calls may not accept type arguments" is a `typecheck` failure, not a test one.
+    const chip = [...fixture.nativeElement.querySelectorAll('.chip--action')].find(
+      (candidate: HTMLElement) => candidate.textContent.includes('dodaj tag Odmor'),
+    );
+    chip?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // A chip is a **shortcut, not a decoration**: the sentence goes through the same propose path a typed
+    // one does, and the card that comes back is the tag proposal.
+    const propose = client.query.mock.calls.find((entry) =>
+      String(entry[0]).includes('mutation AssistantProposeAction'),
+    );
+    expect((propose?.[1] as Record<string, unknown>)['question']).toBe('dodaj tag Odmor');
+    expect(fixture.nativeElement.querySelector('.act')).not.toBeNull();
+  });
+
+  it('keeps the question chips when the write examples cannot be fetched', async () => {
+    // Two independent invitations: one failing must not empty the other. This is also the older-server
+    // case — a response without the field leaves `actionExamples` empty rather than breaking the screen.
+    const { fixture } = await mount((query) => {
+      if (query.includes('query AssistantSuggestions')) {
+        return { assistantSuggestions: ['Koliko sam potrošio ovog meseca?'] };
+      }
+      if (query.includes('query AssistantActionExamples')) throw new Error('offline');
+      return { assistantAnswer: ANSWER };
+    });
+
+    expect(textOf(fixture)).toContain('Koliko sam potrošio ovog meseca?');
+    expect(textOf(fixture)).toContain('Ask me something');
+    expect(textOf(fixture)).not.toContain('Or tell me to do something');
+  });
+
   it('asks with the active language, so the sentence and the figures are grouped the same way', async () => {
     const { fixture, client } = await mount();
     await typeAndAsk(fixture, 'koliko sam potrošio ovog meseca');

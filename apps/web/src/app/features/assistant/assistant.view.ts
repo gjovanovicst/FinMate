@@ -379,6 +379,17 @@ export function fallbackNoteKey(answer: AssistantAnswer): TranslationKey | null 
  * Four fields and no more, for the same reason the offline taxonomy record carries four: a control that
  * lists accounts is not a reason to hold the Household's balances on this screen.
  */
+/**
+ * One example of a write, as `assistantActionExamples` returns it (docs/06 §8.16).
+ *
+ * The `action` is carried so the chip is *filed* under something, not merely a string that happens to
+ * propose a write — the screen groups and labels from it, and a test asserts the pair is honest.
+ */
+export interface AssistantActionExample {
+  readonly action: AssistantActionName;
+  readonly question: string;
+}
+
 export interface AssistantAccount {
   readonly id: string;
   readonly name: string;

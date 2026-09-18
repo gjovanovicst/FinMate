@@ -46,6 +46,7 @@ import {
   type ActionProposal,
   type ActionResult,
   type AnswerPhase,
+  type AssistantActionExample,
   type AssistantActionName,
   type AssistantAnswer,
   type AssistantFacts,
@@ -127,6 +128,12 @@ import {
       }
 
       @if (thread().length === 0) {
+        <!--
+          Two groups, deliberately, and they are the whole point of this block: one says what the
+          assistant can **answer**, the other what it can **do**. A question field beside
+          question-shaped chips teaches "answers only", so a reader who never scrolls past them never
+          learns the app can change something — which is what the write path exists for (docs/02 §4.16).
+        -->
         <section class="starters" aria-labelledby="assistant-starters">
           <h2 class="starters__title" id="assistant-starters">
             {{ i18n.t('assistant.starters') }}
@@ -142,6 +149,26 @@ import {
           </ul>
           <p class="muted">{{ i18n.t('assistant.startersHint') }}</p>
         </section>
+
+        @if (actionExamples().length > 0) {
+          <section class="starters" aria-labelledby="assistant-actions">
+            <h2 class="starters__title" id="assistant-actions">
+              {{ i18n.t('assistant.actions') }}
+            </h2>
+            <ul class="chips">
+              @for (example of actionExamples(); track example.question) {
+                <li>
+                  <button class="chip chip--action" type="button" (click)="useSuggestion(example.question)">
+                    {{ example.question }}
+                  </button>
+                </li>
+              }
+            </ul>
+            <!-- The trust sentence, where the reader decides whether to press one: an action is a
+                 proposal, and nothing is written until they confirm it. -->
+            <p class="muted">{{ i18n.t('assistant.actionsHint') }}</p>
+          </section>
+        }
       }
 
       @for (turn of thread(); track turn.id) {
@@ -490,6 +517,21 @@ import {
       .chip:hover {
         border-color: var(--color-accent);
       }
+      /*
+        An action chip carries a **verb**, so it is marked as the other mode rather than looking like one
+        more question: a dotted border and the accent colour, which reads as "this one writes" without
+        claiming a severity it does not have. Colour is never the only signal — the group has its own
+        heading and its own hint — so this is decoration on top of structure, not the structure.
+      */
+      .chip--action {
+        border-style: dashed;
+        border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+        color: var(--color-primary-text, inherit);
+      }
+      .chip--action:hover {
+        border-style: solid;
+        border-color: var(--color-accent);
+      }
       .turn {
         margin-block-start: var(--space-5);
       }
@@ -724,6 +766,15 @@ export class AssistantComponent {
   readonly error = signal<string | null>(null);
   /** The API's canonical answerable questions — one source, also used by a refusal's chips. */
   readonly starters = signal<readonly string[]>([]);
+  /**
+   * The API's canonical **writes by example** — one sentence per action, and each one is asserted to
+   * plan to the action it is filed under (docs/06 §8.16).
+   *
+   * From the API rather than a list here for the same reason the questions are: a chip is a promise
+   * ("say this and I will do that"), and only the planner can keep it. A hardcoded one would stop being
+   * true the first time a cue word changed.
+   */
+  readonly actionExamples = signal<readonly AssistantActionExample[]>([]);
   /**
    * The Household's live Accounts, loaded **only** when a proposal offers to change the one it filled.
    *
@@ -1118,17 +1169,31 @@ export class AssistantComponent {
     }
   }
 
+  /**
+   * Both invitations, in one place because they fail the same way.
+   *
+   * ⚠️ **Each is independent.** The two queries are awaited separately, so a failure of the examples —
+   * or of a server older than this screen, which answers without the field — leaves the *questions*
+   * on screen rather than emptying the whole block. Both failures are silent by design: an invitation
+   * is not part of the question path, and a chip that cannot be fetched is not an error the reader can
+   * do anything about.
+   */
   private async loadStarters(): Promise<void> {
     try {
       const result = await this.graphql.query<{ assistantSuggestions: readonly string[] }>(
         STARTERS_QUERY,
       );
-      this.starters.set(result.assistantSuggestions);
+      this.starters.set(result.assistantSuggestions ?? []);
     } catch {
-      // The starters are an invitation, not part of the question path: a failure here leaves the
-      // composer working and shows no chips, rather than blocking the screen with an error the user
-      // can do nothing about.
       this.starters.set([]);
+    }
+    try {
+      const result = await this.graphql.query<{
+        assistantActionExamples?: readonly AssistantActionExample[];
+      }>(ACTION_EXAMPLES_QUERY);
+      this.actionExamples.set(result.assistantActionExamples ?? []);
+    } catch {
+      this.actionExamples.set([]);
     }
   }
 }
@@ -1178,6 +1243,15 @@ const ASSISTANT_QUERY = /* GraphQL */ `
         transactionIds
         filter
       }
+    }
+  }
+`;
+
+const ACTION_EXAMPLES_QUERY = /* GraphQL */ `
+  query AssistantActionExamples {
+    assistantActionExamples {
+      action
+      question
     }
   }
 `;

@@ -4,13 +4,18 @@ import { CurrentHouseholdId, CurrentTenant } from '../../common/auth/current-ten
 import { ApiError } from '../../common/filters/all-exceptions.filter';
 import type { MemberRole, TenantContext } from '../../common/tenancy/tenant-context';
 import { CategoryKind } from '../taxonomy/category.model';
-import { ACTION_TEMPLATES, type ActionTemplate } from './assistant-actions';
+import {
+  ACTION_EXAMPLES,
+  ACTION_TEMPLATES,
+  type ActionTemplate,
+} from './assistant-actions';
 import { planAction, missingActionSlots } from './action-planner';
 import { AssistantActionService } from './assistant-action.service';
 import { SUGGESTED_QUESTIONS } from './assistant-intents';
 import { AssistantService } from './assistant.service';
 import { UuidScalar } from '../../graphql/scalars/uuid.scalar';
 import {
+  AssistantActionExampleModel,
   AssistantActionProposalModel,
   AssistantActionResultModel,
   AssistantAnswerModel,
@@ -78,6 +83,28 @@ export class AssistantResolver {
   })
   assistantSuggestions(): readonly string[] {
     return SUGGESTED_QUESTIONS.map((suggestion) => suggestion.question);
+  }
+
+  /**
+   * The **writes** a reader can ask for, by example — the other half of what the screen offers.
+   *
+   * `assistantSuggestions` answers *"what can you tell me?"*, and this answers *"what can you do?"*.
+   * Without it a reader has no way to learn that the assistant proposes changes at all: the composer is
+   * an ordinary question field, and every starter chip is a question (docs/02 §4.16). Each entry is a
+   * sentence that provably plans to the action it names — asserted in `assistant-actions.spec.ts`, which
+   * is why the list cannot be a client-side constant.
+   *
+   * No Household state is read, and it is a `Query`, because asking what can be done changes nothing.
+   */
+  @Query(() => [AssistantActionExampleModel], {
+    description:
+      'Example requests that propose a registered write, for the assistant screen’s starter chips.',
+  })
+  assistantActionExamples(): readonly AssistantActionExampleModel[] {
+    return ACTION_EXAMPLES.map((example) => ({
+      action: example.action,
+      question: example.question,
+    }));
   }
 
   /**

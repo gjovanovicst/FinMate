@@ -215,13 +215,18 @@ export const srLatn: Record<keyof typeof en, string> = {
 
   // ---- assistant (F-23) ----
   'assistant.title': 'Asistent',
-  'assistant.subtitle': 'Pitaj o svom knjigovodstvu. Svaki broj izračunava server.',
-  'assistant.askLabel': 'Tvoje pitanje',
-  'assistant.placeholder': 'npr. koliko sam potrošio na hranu ovog meseca?',
+  // ⚠️ Copy names **both** things the assistant does — answer and act (docs/02 §4.16).
+  'assistant.subtitle':
+    'Pitaj o svom knjigovodstvu — ili mi reci da nešto uradim, pa ću ti prvo pokazati šta bih tačno izmenio. Svaki broj izračunava server.',
+  'assistant.askLabel': 'Tvoje pitanje ili zahtev',
+  'assistant.placeholder': 'npr. „koliko sam potrošio na hranu?” ili „dodaj kategoriju Putovanja”',
   'assistant.ask': 'Pitaj',
   'assistant.asking': 'Pitam…',
-  'assistant.starters': 'Probaj nešto od ovoga',
+  'assistant.starters': 'Pitaj me nešto',
   'assistant.startersHint': 'Odgovor ostaje na ovom ekranu dok ne osvežiš stranicu.',
+  'assistant.actions': 'Ili mi reci da uradim nešto',
+  'assistant.actionsHint':
+    'Ništa se ne menja dok ne potvrdiš — prvo ti pokažem polja koja bih upisao, a posle možeš i da opozoveš.',
   'assistant.suggestions': 'Mogu da odgovorim i na ovo',
   'assistant.provenanceOne': 'na osnovu 1 transakcije, {period}',
   'assistant.provenanceMany': 'na osnovu {count} transakcija, {period}',

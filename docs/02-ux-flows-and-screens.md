@@ -1001,6 +1001,24 @@ infinity.
 >   no amount — and **no control**, because nothing here is a value the reader supplied. The undo is
 >   `deleteRule` and the link goes to `/rules`.
 >
+> **And the screen now says what it can _do_, not only what it can answer.** The empty state had one chip
+> group — six answerable questions — beside a question field, which together said "answers only"; a reader
+> who never tried a verb never learned that the assistant proposes writes at all, which is what the whole
+> write path exists for. It now shows **two** groups: *Pitaj me nešto* (the same closed question set) and
+> *Ili mi reci da uradim nešto* — one example per registered write, from `assistantActionExamples`, with
+> the trust sentence underneath ("nothing changes until you confirm — I show you the fields I would write
+> first, and you can undo it afterwards"). The subtitle, the field's label and its placeholder name both
+> modes too, so the message survives the first question. Action chips carry a dashed accent border: a
+> second signal on top of their own heading, never the only one.
+>
+> Three choices in that block are deliberate and reviewable: the examples appear **only on the empty
+> state** (the subtitle carries the message afterwards); `CREATE_RULE_FROM_CORRECTION` has **no** chip (it
+> derives from a Correction made earlier, so a fresh Household could only be refused — it is reached by
+> typing, and the cue list is unchanged); and the chips are **not filtered** by what the Household can
+> currently build, so a brand-new Household's *dodaj trošak kafa 180* chip answers with
+> `UNRUNNABLE:accountId` ("create an account first") rather than disappearing. All three are recorded in
+> docs/06 §4.4 with the alternative each was chosen over.
+>
 > ⚠️ **Not the same thing as F-30's *Primeni*.** The savings proposal's button is still unbuilt and still
 > its own product decision (docs/06 §8.8): applying *that* means deciding what "apply" does to a Budget
 > that already exists. This card applies a **registered action** with a declared undo and no money in it,

@@ -241,6 +241,19 @@ enum AssistantAction {
 }
 
 """
+An example request that proposes one registered action (docs/06 §8.16). Offered as starter chips so a reader learns the assistant can **do** things, not only answer.
+"""
+type AssistantActionExampleModel {
+  """
+  The action this example proposes. Asserted against the planner, so the chip cannot lie.
+  """
+  action: AssistantAction!
+
+  """The sentence to type, exactly as it would be typed by hand."""
+  question: String!
+}
+
+"""
 The backend-rendered proposal. Never narrated: a write confirmation is a numeral-bearing statement, so ADR-017 applies to it exactly as to an answer (ADR-035 decision 8).
 """
 type AssistantActionPreviewModel {
@@ -2234,6 +2247,11 @@ type Query {
   The Household alert rules, including the documented defaults once anything has run.
   """
   alerts: [AlertRuleModel!]!
+
+  """
+  Example requests that propose a registered write, for the assistant screen’s starter chips.
+  """
+  assistantActionExamples: [AssistantActionExampleModel!]!
 
   """
   Answer a question about this Household's own ledger. The backend computes the facts; the model only narrates them, and every numeral it writes must exist in `facts` (ADR-017).

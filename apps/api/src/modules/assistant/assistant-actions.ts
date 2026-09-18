@@ -251,6 +251,43 @@ export const ACTION_TEMPLATES: Readonly<Record<AssistantAction, ActionTemplate>>
   },
 });
 
+/**
+ * One example of each action, in the words a person would actually type — the assistant screen's
+ * **"or tell me to do something"** chips (docs/02 §4.16).
+ *
+ * ## Why this lives on the server, next to the registry
+ *
+ * A starter chip makes a claim: *say this and the app will offer that*. The claim is only true if the
+ * sentence still **plans** to the action it is filed under, and `planAction`'s cue vocabulary is what
+ * decides that — so a list hardcoded in the client would stop being true the first time a cue changed,
+ * silently, in the one place nobody would look (exactly the drift `INTENT_TEMPLATES` and this registry
+ * exist to prevent). `assistant-actions.spec.ts` asserts every entry below plans to its own action, so
+ * a cue edit that breaks a chip is a red test rather than a lie on a screen.
+ *
+ * ## What is deliberately **not** here
+ *
+ * `CREATE_RULE_FROM_CORRECTION` has no starter example. It derives a Rule from a Correction the reader
+ * made **earlier**, so on a Household that has not corrected anything yet the only honest answer is the
+ * `NO_CORRECTION` refusal — a chip whose first click fails is worse than no chip. That action is
+ * discovered in the moment it applies, right after a correction, not from an invitation list. (It stays
+ * reachable by typing: the cue list is unchanged.)
+ *
+ * The other five need nothing but the question: three create a name the user invented, one creates a
+ * row from a parsed fragment, and the budget example names a Category the seeded tree already has.
+ */
+export const ACTION_EXAMPLES: readonly {
+  readonly action: AssistantAction;
+  readonly question: string;
+}[] = [
+  // Ordered by how likely a reader is to want it, because the chips are read top to bottom: recording
+  // an entry is the product's one-line promise, and naming a Category is the next thing somebody wants.
+  { action: 'ADD_TRANSACTION', question: 'dodaj trošak kafa 180' },
+  { action: 'ADD_CATEGORY', question: 'dodaj kategoriju Putovanja' },
+  { action: 'SET_BUDGET', question: 'postavi budžet za hranu na 20000' },
+  { action: 'ADD_GOAL', question: 'napravi cilj Letovanje 200000' },
+  { action: 'ADD_TAG', question: 'dodaj tag Odmor' },
+];
+
 /** The next free action id, so a caller can assert the registry is closed rather than discover it. */
 export function registeredMutations(): readonly string[] {
   return ASSISTANT_ACTIONS.map((action) => ACTION_TEMPLATES[action].mutation);
