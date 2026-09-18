@@ -290,6 +290,16 @@ export interface OcrResult {
  * entire purpose is to treat providers symmetrically, ADR-007).
  */
 export interface AiProvider {
+  /**
+   * Can this adapter serve `task`? Optional, because a test double need not model capability at all;
+   * callers fall back to {@link supportsTask}, the presence check the router itself applies.
+   *
+   * An adapter that **claims** a capability without a model for it is the defect ADR-037 records: the
+   * route exists, the disclosure may name it, and the first real call fails. This method is where that
+   * question is answered precisely, so the composition root can ask it *before* a route exists.
+   */
+  supports?(task: Task): boolean;
+
   readonly name: ProviderName;
   parse(input: ParseInput): Promise<ParseProposal>;
   classify(input: ClassifyInput): Promise<ClassifyProposal>;

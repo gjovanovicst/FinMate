@@ -49,6 +49,7 @@ import {
   createLocalProvider,
   createOpenAiProvider,
   isKnownEndpoint,
+  supportsTask,
   AiRouter,
   type AiProvider,
   type Endpoint,
@@ -135,12 +136,43 @@ export function assembleAi(config: AppConfig, fetchImpl: FetchLike): AiAssembly 
     }
 
     const endpoint = configured as Endpoint;
-    providers[endpoint] ??= createProvider(endpoint, config, fetchImpl);
+    // The adapter answers the second half of "is this endpoint usable **for this task**". A factory
+    // serves a task by *listing a model for it* (docs/04 §9), and asking a text-only endpoint for OCR
+    // is exactly the "looks configured and fails on the first receipt" shape that paragraph warns
+    // about. It is asked here, before a route exists, so an unsupported task stays an honest
+    // `UNCONFIGURED_*` seam rather than a disclosed route that refuses at call time (ADR-037).
+    const provider = (providers[endpoint] ??= createProvider(endpoint, config, fetchImpl));
+    // The adapter's own `supports` is the precise answer (it knows its model map *and* its capability
+    // flags); `supportsTask` is the fallback for a provider that does not implement it, and it is the
+    // same predicate the router applies before a call — so a task skipped here is one the router would
+    // have refused, asked one step earlier, where the answer can still be a log line (ADR-037).
+    const supported = provider.supports?.(task) ?? supportsTask(provider, task);
+    if (!supported) {
+      skipped.push({ task, configured, reason: unsupportedReason(task, endpoint, config) });
+      continue;
+    }
+
     routing[task] = { primary: endpoint, fallback: null };
     routedTasks.push(task);
   }
 
   return { routing, providers, routedTasks, skipped };
+}
+
+/**
+ * Why a usable endpoint still cannot serve this task: its factory lists no model for it.
+ *
+ * The reason is written to be actionable where action is possible, and to say so where it is not — a
+ * deployment can set `AI_OCR_MODEL`, and no configuration makes a text-only endpoint read a photo.
+ */
+function unsupportedReason(task: Task, endpoint: Endpoint, config: AppConfig): string {
+  if (task === 'OCR') {
+    if (config.AI_OCR_MODEL === undefined && endpoint !== 'LOCAL') {
+      return `AI_OCR_MODEL is not set, and ${endpoint} has no OCR model of its own`;
+    }
+    return `${endpoint} serves no vision model, so OCR cannot route there (ADR-037)`;
+  }
+  return `the ${endpoint} adapter lists no model for ${task}`;
 }
 
 /** Why this endpoint cannot be used in this deployment, or `null` when it can. */
@@ -197,10 +229,30 @@ function baseUrlFor(endpoint: Endpoint, config: AppConfig): string | null {
 
 /** Construct the adapter for a usable endpoint. The key is read here and nowhere else. */
 function createProvider(endpoint: Endpoint, config: AppConfig, fetch: FetchLike): AiProvider {
+  /**
+   * One key, whichever endpoint serves OCR (ADR-037): it overrides `LOCAL`'s compiled-in
+   * `qwen2.5vl:3b`, and it is the *only* way a cloud adapter gets an OCR model at all.
+   *
+   * Passed to the two factories that can read an image, and deliberately not to DeepSeek's: its wire
+   * is text-only, so handing it a model name would be a capability claim nobody can honour — the
+   * `supports()` gate would refuse it anyway, and the boot log would then blame the model instead of
+   * the endpoint.
+   */
+  const ocrModel =
+    config.AI_OCR_MODEL === undefined ? {} : { models: { OCR: config.AI_OCR_MODEL } };
+  /**
+   * The OCR budget, which a CPU-bound local reader has to have raised (ADR-037, docs/11 §2.5). It is
+   * passed to both image-capable factories and nothing else: the other tasks keep docs/04 §9's own
+   * timeouts, because a slow *narration* is a different decision from a slow *receipt read*.
+   */
+  const ocrTimeout = { timeouts: { OCR: config.AI_OCR_TIMEOUT_MS } };
+
   switch (endpoint) {
     case 'LOCAL':
       return createLocalProvider({
         ...(config.LOCAL_AI_BASE_URL === undefined ? {} : { baseUrl: config.LOCAL_AI_BASE_URL }),
+        ...ocrModel,
+        ...ocrTimeout,
         fetch,
       });
     case 'DEEPSEEK_EU': {
@@ -223,6 +275,8 @@ function createProvider(endpoint: Endpoint, config: AppConfig, fetch: FetchLike)
       return createOpenAiProvider({
         ...(baseUrl === null ? {} : { baseUrl }),
         ...(config.OPENAI_API_KEY === undefined ? {} : { apiKey: config.OPENAI_API_KEY }),
+        ...ocrModel,
+        ...ocrTimeout,
         fetch,
       });
     }

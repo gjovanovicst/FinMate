@@ -194,7 +194,14 @@ export class OpenAiCompatibleProvider implements RoutedProvider {
     }
   }
 
-  /** True when this adapter has a model for the task. The router checks before calling it. */
+  /**
+   * True when this adapter has a model for the task.
+   *
+   * **Both halves matter**, and this is the precise answer to "can you serve it?": a factory may set
+   * `supportsOcr` and list no model — which is how `OPENAI_EU` advertised an OCR capability it could
+   * never honour, and how OCR was dead in every deployment (ADR-037). The composition root asks this
+   * method before it writes a route.
+   */
   supports(task: Task): boolean {
     if (this.config.models[task] === undefined) return false;
     if (task === 'OCR' && this.ocr === undefined) return false;

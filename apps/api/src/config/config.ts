@@ -109,6 +109,29 @@ export const envSchema = z
     // already documents.
     AI_NARRATE_PRIMARY: z.string().default('LOCAL'),
     AI_OCR_PRIMARY: z.string().default('LOCAL'),
+
+    /**
+     * The model that reads a receipt photograph — **no default, deliberately** (ADR-037).
+     *
+     * An adapter serves a task by *listing a model for it*, so without this key a cloud endpoint cannot
+     * serve `OCR` at all: the seam stays `UNCONFIGURED_OCR` and the boot log says why. `LOCAL` is the
+     * exception, and for the same reason it is the honest one — the sidecar's model is compiled in
+     * (`qwen2.5vl:3b`, the vision model docs/11 §2 tells you to run), so a local deployment needs no
+     * key. Naming a cloud endpoint here without a model must **not** fall back to a vendor's model
+     * name: that is the mistake ADR-031 found in `*_EU_BASE_URL`, one layer down.
+     */
+    AI_OCR_MODEL: optionalText,
+
+    /**
+     * How long one receipt read may take, in milliseconds. Default **20 000**, docs/04 §9's budget.
+     *
+     * It exists because the local path is CPU-bound, and the measurement is not flattering: on a
+     * 3-core machine with no GPU, `qwen2.5vl:3b` needs **minutes** for one receipt photograph
+     * (docs/11 §2.5), so a 20 s cap turns a working local reader into a permanent `AI_ERROR` — wired
+     * and never once successful. A deployment that chooses a local model sizes this to its own
+     * hardware; a deployment on an EEA vision endpoint leaves it at the documented default.
+     */
+    AI_OCR_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).default(20_000),
     /**
      * ADR-036's routing rung: which registered intent or action a sentence means.
      *

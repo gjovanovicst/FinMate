@@ -254,3 +254,163 @@ describe('the composition root reaches a socket only with consent', () => {
     expect(result.telemetry.model).toBe('deepseek-chat');
   });
 });
+
+/**
+ * OCR is the one task whose *adapter capability* is a configuration, and ADR-037 is why.
+ *
+ * A factory serves a task by listing a model for it, so before this task **no deployment could read a
+ * receipt**: `LOCAL` had a vision model but no runtime was wired, and a cloud endpoint had never been
+ * given one. Measured live on three real camera captures — `extractReceipt` answered
+ * `AI_UNAVAILABLE:no-provider-configured`, and `aiEgress` listed neither the task nor a destination.
+ *
+ * The properties below are the ones that make the fix honest rather than merely present: a cloud
+ * endpoint needs a model *named by an operator* (no default that picks a vendor — ADR-031's rule, one
+ * layer down), a text-only endpoint never gets one (DeepSeek's platform serves no vision model, so
+ * configuring it must be a logged skip rather than a first-receipt failure), and the model that ships
+ * is the model that was configured.
+ */
+describe('OCR is served only by a model somebody named (ADR-037)', () => {
+  interface OcrStub extends Stub {
+    readonly bodies: string[];
+  }
+
+  /** A recording `fetch` that answers like a vision model and keeps the request body. */
+  function ocrStub(): OcrStub {
+    const stub = stubFetch();
+    const bodies: string[] = [];
+    const fetchImpl: FetchLike = (url, init) => {
+      bodies.push(String(init.body ?? ''));
+      return stub.fetch(url, init);
+    };
+    return { ...stub, fetch: fetchImpl, bodies };
+  }
+
+  /** The classify-shaped stub body is not an OCR answer; this is. */
+  function ocrBody(): string {
+    return JSON.stringify({
+      model: 'stub-vision',
+      choices: [
+        {
+          message: {
+            role: 'assistant',
+            content: JSON.stringify({
+              lines: [{ text: 'Mleko 179,00', amountMinor: '17900' }],
+              totalMinor: '17900',
+              currency: 'RSD',
+              occurredOn: '2026-09-18',
+              merchantName: 'Maxi',
+              confidence: 0.91,
+            }),
+          },
+        },
+      ],
+      usage: { prompt_tokens: 900, completion_tokens: 40 },
+    });
+  }
+
+  /** A stub whose *response* is an OCR result, still recording what was sent. */
+  function ocrAnsweringStub(): OcrStub {
+    const bodies: string[] = [];
+    const urls: string[] = [];
+    const fetchImpl: FetchLike = (url, init) => {
+      urls.push(String(url));
+      bodies.push(String(init.body ?? ''));
+      return Promise.resolve({
+        status: 200,
+        text: () => Promise.resolve(ocrBody()),
+      } as unknown as Response);
+    };
+    return { fetch: fetchImpl, urls, authorizations: [], bodies };
+  }
+
+  const CLOUD = {
+    OPENAI_EU_BASE_URL: 'https://vision.eu.example.invalid/v1',
+    OPENAI_API_KEY: 'sk-test-not-a-real-key',
+  } as const;
+
+  it('is unrouted on a cloud endpoint until an operator names a model', () => {
+    const assembly = assembleAi(
+      loadConfig({ ...BASE_ENV, ...CLOUD, AI_OCR_PRIMARY: 'OPENAI_EU' }),
+      ocrStub().fetch,
+    );
+
+    expect(assembly.routedTasks).not.toContain('OCR');
+    // The reason has to say what to do, because there is something to do.
+    expect(assembly.skipped.find((entry) => entry.task === 'OCR')?.reason).toContain('AI_OCR_MODEL');
+  });
+
+  it('routes to OPENAI_EU once a model is named, and sends that model with the image', async () => {
+    const stub = ocrAnsweringStub();
+    const config = loadConfig({
+      ...BASE_ENV,
+      ...CLOUD,
+      AI_OCR_PRIMARY: 'OPENAI_EU',
+      AI_OCR_MODEL: 'gpt-4o-mini',
+    });
+    const seams = makeAiSeams(config, stub.fetch, { permits: () => true });
+
+    expect(seams.assembly.routing['OCR']).toEqual({ primary: 'OPENAI_EU', fallback: null });
+    expect(seams.ocr).not.toBe(UNCONFIGURED_OCR);
+    expect(seams.ocr.available).toBe(true);
+    // OCR is a caller now, so it is disclosed — the consent sheet can ask about the image.
+    expect(seams.calledTasks).toContain('OCR');
+
+    const outcome = await seams.ocr.read({
+      imageBase64: 'aGVsbG8=',
+      mimeType: 'image/jpeg',
+      locale: 'sr-Latn',
+    });
+
+    expect(outcome.ok).toBe(true);
+    const sent = JSON.parse(stub.bodies[0] ?? '{}') as { model?: string; messages?: unknown };
+    expect(sent.model).toBe('gpt-4o-mini');
+    // The image travels inline as a data URL: no third-party fetch, and nothing to leak by URL.
+    expect(JSON.stringify(sent.messages)).toContain('data:image/jpeg;base64,aGVsbG8=');
+  });
+
+  it('never routes OCR to a text-only endpoint, even with a key and a model named', () => {
+    // DeepSeek's platform serves no vision model. Naming one must be a logged skip, not a route that
+    // fails on the first receipt — the shape docs/04 §9 warns about.
+    const assembly = assembleAi(
+      loadConfig({
+        ...BASE_ENV,
+        AI_OCR_PRIMARY: 'DEEPSEEK_GLOBAL',
+        AI_OCR_MODEL: 'deepseek-vl',
+        // …and the endpoint's own task is routed, so the skip below is about OCR and not about the host.
+        AI_CLASSIFY_PRIMARY: 'DEEPSEEK_GLOBAL',
+        DEEPSEEK_API_KEY: 'sk-test-not-a-real-key',
+      }),
+      ocrStub().fetch,
+    );
+
+    expect(assembly.routedTasks).not.toContain('OCR');
+    expect(assembly.skipped.find((entry) => entry.task === 'OCR')?.reason).toContain('vision');
+    // …and the task it *can* serve still routes, so the skip is about the task and not the endpoint.
+    expect(assembly.routedTasks).toContain('CLASSIFY');
+  });
+
+  it('runs on LOCAL with no model key, and lets AI_OCR_MODEL replace the compiled-in one', async () => {
+    // The sidecar's vision model is part of the local deployment (docs/11 §2), so a local receipt works
+    // with no key at all; the key exists to *replace* it, which is the case asserted here.
+    const plain = assembleAi(
+      loadConfig({ ...BASE_ENV, LOCAL_AI_BASE_URL: 'http://localhost:11434' }),
+      ocrStub().fetch,
+    );
+    expect(plain.routedTasks).toContain('OCR');
+
+    const stub = ocrAnsweringStub();
+    const seams = makeAiSeams(
+      loadConfig({
+        ...BASE_ENV,
+        LOCAL_AI_BASE_URL: 'http://localhost:11434',
+        AI_OCR_MODEL: 'qwen2.5vl:7b',
+      }),
+      stub.fetch,
+      { permits: () => true },
+    );
+
+    await seams.ocr.read({ imageBase64: 'aGVsbG8=', mimeType: 'image/jpeg', locale: 'sr-Latn' });
+    const sent = JSON.parse(stub.bodies[0] ?? '{}') as { model?: string };
+    expect(sent.model).toBe('qwen2.5vl:7b');
+  });
+});
