@@ -4293,6 +4293,31 @@ missing picker entry is not a wrong write — unlike R-27(a2), which this delibe
 > short-lived memo keyed on household + question + locale would halve it; left out deliberately rather than
 > invented (R-30).
 >
+> **C-3 measured it, which is what turns "any language" into a claim with a bar** (ADR-036 decision 5,
+> docs/16 Part C). The fixture set is committed — `apps/api/src/evals/fixtures/route-questions.json`, 23
+> questions across five languages, deliberately **not** part of `pnpm test:evals` because it needs a provider
+> — and `route-fixtures.spec.ts` guards its shape with no provider at all: every expected member exists,
+> every declared language has questions, and the Serbian fixtures the **cues** must keep catching are asserted
+> through the real planners. The live run (`/tmp/measure-route.mjs`, with `AI_ROUTE_PRIMARY=DEEPSEEK_GLOBAL`;
+> the default was restored afterwards) reported:
+>
+> | Metric | Measured | Floor |
+> |---|---|---|
+> | Routing precision, on the fixtures the rung is responsible for | **21/21 = 100 %** | ≥ 90 % |
+> | **Traps** — a capability nobody wrote, in four languages | **5/5** | **5/5** (one invented member fails) |
+> | Cue-covered fixtures still caught by the cues, i.e. no paid call | 2/2 | 2/2 |
+> | End-to-end (a real answer or a real proposal) | 15/23 = 65 % | — (that is C-5's number) |
+> | Cost of the whole set, routing **and** narration | **1 446 micros (€0.0014)** | — |
+>
+> Two judgements are recorded rather than smoothed over. **One model disagreement**: *"¿Cuáles son mis
+> mayores gastos?"* routed to `TOP_CATEGORIES` where the fixture expected `LARGEST_TRANSACTIONS`; on review
+> the *fixture* was too strict — "my biggest expenses" is honestly either — so `alternatives` accepts both and
+> the concession is named here. **One routed-but-blocked**: the German *"Setze ein Budget …"* shows the rung
+> choosing `SET_BUDGET` correctly and the builder then refusing `UNRUNNABLE:categoryId`, because
+> `Lebensmittel` is not a Category this build can resolve. That is C-5's *values* gap exactly — and it is also
+> why a live measurement must grade by refusal **reason**: a refused write reports no action, so a correct
+> route and a wrong one are indistinguishable from the payload alone.
+>
 > **And the cue list is no longer the only way in.** [ADR-036](14-decisions-and-risks.md#adr-036--a-model-may-route-a-question-to-the-closed-registry-it-may-never-name-a-method)
 > records a **routing rung** that sits *after* these cues: a question the cues cannot match may be routed by
 > a model to one member of the compiled-in `ASSISTANT_ACTIONS`/`ASSISTANT_INTENTS` unions — and to nothing

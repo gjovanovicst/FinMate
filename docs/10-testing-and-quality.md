@@ -835,6 +835,30 @@ is why it was found live. **The context now carries those keywords**, and the ke
 **a fixture context that is materially simpler than the shipped seed is a hole in the gate**, not just a
 convenience.
 
+### 5.10 The multilingual routing battery is measured live, not in CI (ADR-036 C-3)
+
+`pnpm test:evals` is deterministic and provider-free, and it stays that way: ADR-036's routing rung is only
+consulted when a question's cues miss, and with no `ROUTE` endpoint configured (the default) it is inert — so
+the battery above measures today's product, not a model's mood.
+
+The routing rung therefore has **two** gates, and they are deliberately different instruments:
+
+| Instrument | Runs | Proves |
+|---|---|---|
+| `apps/api/src/evals/route-fixtures.spec.ts` | **CI**, no provider | the fixture set is a measuring instrument: every expected member exists in the compiled-in registry, every declared language has questions, the *guaranteed* languages are exactly those the product already speaks (Q-16's recommendation), every unclaimed language has at least one **trap** fixture, and the Serbian fixtures the cues must keep catching are asserted through the real planners |
+| `/tmp/measure-route.mjs` (the run recorded in [06 §8.16](06-api-specification.md)) | **live**, against a configured provider | routing precision, trap behaviour, cost — the numbers ADR-036's precision floor is set from |
+
+⚠️ **A live routing measurement has to grade by refusal *reason*, not by the payload.** A refused write
+reports no action, so `SET_BUDGET` refusing `UNRUNNABLE:categoryId` is a *correct route* and is
+indistinguishable, from the response alone, from a model that chose nothing. The measurement therefore
+records "routed-but-blocked" separately and prints the evidence; a set that counted those as misses would
+report a precision number that measures the fixture author's optimism rather than the model.
+
+⚠️ **And a fixture can be too strict.** The first live run's single "miss" (`¿Cuáles son mis mayores gastos?`
+→ `TOP_CATEGORIES`) is a defensible reading of an ambiguous sentence, so the fixture now accepts either
+member and the concession is named where the numbers are. Tightening it back would report a model error that
+is not one; leaving it unnamed would hide a judgement.
+
 ---
 
 ## 6. Adversarial and safety testing

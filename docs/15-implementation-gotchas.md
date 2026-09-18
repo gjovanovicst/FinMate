@@ -1691,6 +1691,15 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   in the service rather than leaked test state. The fix is one `afterEach`, and the lesson is that a seam
   which is *off by default* in production is the one most likely to leak in a suite.
 
+- **A refused write reports no action, so a live measurement cannot tell a correct route from no route.**
+  `assistantProposeAction` answers `{ proposed: false, reason }` with `action: null`, and the reason may come
+  from the action's *builder* — `SET_BUDGET`'s `UNRUNNABLE:categoryId`, `ALREADY_SET` — which is proof the
+  route was right and the data was not. Grading a routing measurement by "did it propose?" therefore reports
+  a precision number that is really measuring the fixture's data assumptions (ADR-036 C-3's first run
+  reported 87 % precision that way, and two of its three "misses" were correct routes). Grade by the refusal
+  reason, mark the fixtures the **cues** are supposed to catch so they are not scored as routed, and print
+  the evidence for every judgement.
+
 ## 10. Cross-cutting rules of the codebase
 
 - **A live check that measures the wrong element lies in both directions.** Three times in 4.3.1 a

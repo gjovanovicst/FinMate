@@ -404,16 +404,19 @@ records the decision and its constraints; this part is how it gets built.
 |---|---|---|---|
 | C-1 | the `ROUTE` **task** end to end: `packages/ai`'s task + adapter, the consent mapping (the existing text-egress kind, not a fifth purpose), config, and an injected `AI_ROUTER` seam that answers a registry member or `null` — **inert without a provider**, like `NARRATOR` | ADR-036; Q-4 (which providers, still open) for anything to be configured at all | the capability exists and is provable in isolation, with the planner untouched — so "is the model even reachable, consented and bounded" is answered before any routing changes — **done in C-1a + C-1b**, live 6/6 ([06 §8.16](06-api-specification.md)) |
 | C-2 | the planner integration: cues **first**, the rung only when they miss; accept a registry member or refuse; the routed intent re-planned through the ordinary core and the routed write through the ordinary builder; `ROUTE` enters the disclosure with its caller | C-1; the battery as it stands (the with-rung measurement is C-3's) | a non-Serbian/English question stops being a dead end, without changing one byte of today's behaviour for the languages the cues cover — **done in C-2**, live 13/13 ([06 §8.16](06-api-specification.md)) |
-| C-3 | **the measurement that gates it**: the multilingual fixture set, the battery run **off and on**, and a floor on **precision** as well as coverage; plus the per-language value formats in `packages/nlp` (numbers, relative days, currency words) | C-2; **Q-16** — which languages are guaranteed | the claim "any language" becomes a number with a bar (R-30), and the *data* half of a foreign-language input (the amount, the date) is as right as the *intent* half |
+| C-3 | **the measurement that gates it**: the multilingual fixture set, run **off and on**, with a floor on **precision** as well as coverage | C-2; **Q-16** — which languages are guaranteed | the claim "any language" becomes a number with a bar (R-30) — **done**: routing precision 21/21, traps 5/5, live ([06 §8.16](06-api-specification.md)) |
+| C-5 | the **per-language value formats** in `packages/nlp`: numbers (`1,200.50`), relative days, currency words | C-3 — which named the split by measuring it: routing is at 100 % while **end-to-end is 65 %**, and the gap is almost entirely *values* | a routed `ADD_TRANSACTION`/`SET_BUDGET` in a new language stops extracting the right action with the wrong amount — the half the rung cannot reach |
 | C-4 | action breadth, now language-free: the ready-now shortlist — Assign a Merchant's default Category, Contribute to a goal, Tag a Transaction, Add a Merchant/Counterparty, Rename a Category/Tag, move a Transaction to another Account | C-2 (so a new action needs no new word list); ADR-035's undo rule per action | the "lots of app actions" half of the owner's request, at the marginal cost of one registry entry per action instead of one entry per action per language |
 
 **What Part C deliberately does not build**, and it is the same list ADR-036 rejects: a model-named
 method, a model-supplied value, a translation of the app's own copy, and anything auto-applied.
 
-**The honest split to keep in view:** `ROUTE` fixes *words-as-intent*; `C-3`'s `packages/nlp` work fixes
-*words-as-data*. A routed `ADD_TRANSACTION` in a language whose numbers we cannot parse extracts the right
-action and the wrong amount — which is why C-3 carries both halves rather than treating the parser as
-somebody else's problem.
+**The honest split, now measured rather than predicted** (C-3): routing precision is **21/21** on the
+fixtures the rung is responsible for, while **end-to-end is 15/23** — and the gap is *values*, not intent. A
+German question routes to `SPEND_BY_CATEGORY` perfectly and then cannot resolve `Lebensmittel` to a Category;
+a routed `SET_BUDGET` refuses `UNRUNNABLE:categoryId` for the same reason. That is why the parser half became
+its own row, **C-5**, instead of riding along with the measurement: the rung's job is done and the *data*
+layer's is not.
 
 ---
 

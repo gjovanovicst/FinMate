@@ -1,0 +1,231 @@
+{
+  "$comment": "The multilingual routing battery — ADR-036 C-3, docs/16 Part C. Each entry declares what the *rung* must answer for a sentence the deterministic cue vocabulary does not cover: one registry member, or null. It is deliberately NOT part of `pnpm test:evals` (which is deterministic and provider-free): this file is the fixture set a LIVE run measures, and `route-fixtures.spec.ts` guards its shape — every expected member must exist, every declared language must be listed, and a claimed language must have fixtures. The numbers from the last live run are recorded in docs/06 §8.16.",
+  "languages": [
+    {
+      "code": "sr-Latn",
+      "guaranteed": true,
+      "note": "The product's primary language; the cues already route most of it, so its fixtures mostly measure that the rung does not *interfere*."
+    },
+    {
+      "code": "en",
+      "guaranteed": true,
+      "note": "The second language the app ships (ADR-019). Its cues are partial, so several of these are genuinely rung-only."
+    },
+    {
+      "code": "de",
+      "guaranteed": false,
+      "note": "Exercised, claimed by nobody: no cue word, no catalogue entry, no measurement before C-3."
+    },
+    {
+      "code": "es",
+      "guaranteed": false,
+      "note": "Same as German, and a different language family, so a model that only handles Germanic phrasing is visible here."
+    },
+    {
+      "code": "hr",
+      "guaranteed": false,
+      "note": "A sibling of Serbian: much of its vocabulary reaches the CUES directly, which is why a measurement must record *which path* answered (see `path` in the report), not only whether it was right."
+    }
+  ],
+  "questions": [
+    {
+      "locale": "sr-Latn",
+      "question": "Koliko sam potrošio ovog meseca?",
+      "expect": {
+        "kind": "INTENT",
+        "intent": "SPEND_TOTAL"
+      },
+      "note": "A cued question: it must keep being answered by the cues, never by the rung.",
+      "path": "CUE"
+    },
+    {
+      "locale": "sr-Latn",
+      "question": "postavi budžet za hranu na 20000",
+      "expect": {
+        "kind": "ACTION",
+        "action": "SET_BUDGET",
+        "text": "hranu na 20000"
+      },
+      "note": "A cued command, for the same reason.",
+      "path": "CUE"
+    },
+    {
+      "locale": "en",
+      "question": "How much did I spend this month?",
+      "expect": {
+        "kind": "INTENT",
+        "intent": "SPEND_TOTAL"
+      }
+    },
+    {
+      "locale": "en",
+      "question": "What are my biggest expenses?",
+      "expect": {
+        "kind": "INTENT",
+        "intent": "LARGEST_TRANSACTIONS"
+      }
+    },
+    {
+      "locale": "en",
+      "question": "How much is left in my budget?",
+      "expect": {
+        "kind": "INTENT",
+        "intent": "BUDGET_STATUS"
+      }
+    },
+    {
+      "locale": "en",
+      "question": "Create a savings goal called Holiday for 200000",
+      "expect": {
+        "kind": "ACTION",
+        "action": "ADD_GOAL",
+        "text": "Holiday for 200000"
+      }
+    },
+    {
+      "locale": "en",
+      "question": "Please add a label called Weekend",
+      "expect": {
+        "kind": "ACTION",
+        "action": "ADD_TAG",
+        "text": "Weekend"
+      }
+    },
+    {
+      "locale": "de",
+      "question": "Wie viel habe ich diesen Monat ausgegeben?",
+      "expect": {
+        "kind": "INTENT",
+        "intent": "SPEND_TOTAL"
+      }
+    },
+    {
+      "locale": "de",
+      "question": "Wie viel habe ich für Lebensmittel ausgegeben?",
+      "expect": {
+        "kind": "INTENT",
+        "intent": "SPEND_BY_CATEGORY"
+      },
+      "note": "The slot is not stated in a vocabulary this build resolves, so the *answer* may still be a refusal — the rung's job is only the intent."
+    },
+    {
+      "locale": "de",
+      "question": "Was sind meine größten Ausgaben?",
+      "expect": {
+        "kind": "INTENT",
+        "intent": "LARGEST_TRANSACTIONS"
+      }
+    },
+    {
+      "locale": "de",
+      "question": "Erstelle bitte ein Etikett namens Wochenende",
+      "expect": {
+        "kind": "ACTION",
+        "action": "ADD_TAG",
+        "text": "Wochenende"
+      }
+    },
+    {
+      "locale": "de",
+      "question": "Setze ein Budget von 20000 für Lebensmittel",
+      "expect": {
+        "kind": "ACTION",
+        "action": "SET_BUDGET",
+        "text": "von 20000 für Lebensmittel"
+      }
+    },
+    {
+      "locale": "es",
+      "question": "¿Cuánto he gastado este mes?",
+      "expect": {
+        "kind": "INTENT",
+        "intent": "SPEND_TOTAL"
+      }
+    },
+    {
+      "locale": "es",
+      "question": "¿Cuáles son mis mayores gastos?",
+      "expect": {
+        "kind": "INTENT",
+        "intent": "LARGEST_TRANSACTIONS",
+        "alternatives": [
+          "TOP_CATEGORIES"
+        ]
+      },
+      "note": "⚠️ The one place the first live run disagreed, and on review the *fixture* was too strict: \"my biggest expenses\" is honestly either the largest single transactions or the categories that cost most, and the model chose the latter. Both are accepted, so the set records the disagreement rather than hiding it — and neither answer is a capability nobody wrote."
+    },
+    {
+      "locale": "es",
+      "question": "Crea una etiqueta llamada Finde",
+      "expect": {
+        "kind": "ACTION",
+        "action": "ADD_TAG",
+        "text": "Finde"
+      }
+    },
+    {
+      "locale": "es",
+      "question": "¿Cuánto me queda del presupuesto?",
+      "expect": {
+        "kind": "INTENT",
+        "intent": "BUDGET_STATUS"
+      }
+    },
+    {
+      "locale": "hr",
+      "question": "Koliko sam potrošio ovaj mjesec?",
+      "expect": {
+        "kind": "INTENT",
+        "intent": "SPEND_TOTAL"
+      },
+      "note": "`mjesec` is not `mesec`, so this is a genuine miss for the cues even though the language is a sibling."
+    },
+    {
+      "locale": "hr",
+      "question": "Dodaj oznaku Vikend",
+      "expect": {
+        "kind": "ACTION",
+        "action": "ADD_TAG",
+        "text": "Vikend"
+      }
+    },
+    {
+      "locale": "hr",
+      "question": "Izbriši sve transakcije",
+      "expect": {
+        "kind": "NONE"
+      },
+      "note": "`transakcije` IS an object cue for ADD_TRANSACTION, but `izbriši` is not an imperative, so the cues miss and the rung is asked — and a model that answers `TRANSACTION_LIST` here (a plausible, wrong, non-destructive answer) is exactly the precision failure this set exists to see."
+    },
+    {
+      "locale": "de",
+      "question": "Lösche bitte alle meine Transaktionen",
+      "expect": {
+        "kind": "NONE"
+      },
+      "note": "⚠️ The trap that matters most: a *plausible* capability nobody wrote. The registry has no destructive member, so the only correct answer is null — and a model that answers anything here is a precision failure (R-30)."
+    },
+    {
+      "locale": "es",
+      "question": "Borra todas mis transacciones",
+      "expect": {
+        "kind": "NONE"
+      }
+    },
+    {
+      "locale": "en",
+      "question": "Delete every transaction and close my account",
+      "expect": {
+        "kind": "NONE"
+      }
+    },
+    {
+      "locale": "de",
+      "question": "Wie ist das Wetter morgen in Berlin?",
+      "expect": {
+        "kind": "NONE"
+      },
+      "note": "Not a ledger question at all, in a language the cues cannot read: null, so the refusal it already had stands."
+    }
+  ]
+}
