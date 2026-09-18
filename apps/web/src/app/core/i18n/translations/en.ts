@@ -273,6 +273,8 @@ export const en = {
     'Tell me which category the budget is for — for example, “postavi budžet za hranu na 20000”.',
   'assistant.action.budgetExists':
     'You already have a budget for that category this month, and I will not overwrite it here — change it on the budgets screen.',
+  'assistant.action.undoneGoal': 'Undone — the goal “{name}” was removed.',
+  'assistant.action.openGoals': 'Open the goals',
   'assistant.action.uncategorised': 'no category yet',
   'assistant.action.lineReview': 'goes to the review queue',
   'assistant.action.needText': 'Tell me what to record — for example, “dodaj trošak kafa 180”.',

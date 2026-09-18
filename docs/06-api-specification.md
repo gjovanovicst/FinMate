@@ -4064,6 +4064,21 @@ is why the live probe asserts *consistency* rather than a name), and the demo da
 than tidied. The refinement — prefer a match whose every name token is present over one only partially
 matched — changes the battery-gated read path and belongs in its own task ([15](15-implementation-gotchas.md)).
 
+**`ADD_GOAL` (task B-4b, 2026-09-18).** *"napravi cilj Letovanje 200000"*, *"dodaj cilj Letovanje 200000"*,
+*"postavi cilj štednje 500000"*. This is the one action whose **name is not taken from an anchor**: the
+text is the name and the amount together, the parser removes the amount, and what is left is the name —
+`cleanName` (now shared with the category action) strips wrapping quotes, trailing punctuation and a
+leading connector, and **nothing folds it**, so `Rođendan` stays `Rođendan` and `Путовања` stays
+Cyrillic. The target is `extractFragment`'s reading, so `1.200` is refused as `AMBIGUOUS_AMOUNT`.
+
+Three things are deliberately narrower than `createSavingGoal` itself:
+
+| Decision | Why |
+|---|---|
+| **No target date**, and the card *says* so (`targetDate: "još bez roka"`, `defaulted: false`) | Relative dates have no parser ([16 B.3](16-assistant-context-and-actions.md)) — *"sledeći petak"* is not read anywhere in this build — so the action cannot honestly fill one. The diff row states the fact rather than offering a control the card cannot drive, and the integration spec asserts the consequence the reader will meet: `requiredPerMonthMinor` is `null` until `/goals` gets a deadline, because `GOAL_REQUIRED_MONTHLY` needs one to work anything out. |
+| **No Account** | `createSavingGoal` accepts one; a goal does not need it, and the card would have to offer a picker for a field the question never implies. `/goals` sets it. |
+| A target with **no name** is a refusal (`UNRUNNABLE:name`) | `"napravi cilj 200000"` has an amount and nothing to call it. That is the same distinction the category action draws: a missing slot is a question for the reader, while a name that is too long is a failure of a request they made. The shared `requireName` now takes the noun, so a goal is not told its *category* name is too long. |
+
 **The transaction card (task B-3b, 2026-09-18).** `lines` is what the card draws: each row's text, its
 amount **through `fm-money`**, the Category the pipeline chose, the day it will be filed under, and — when
 the confidence gate will file it — that it goes to the review queue. The sentence stays above it, so the
@@ -4172,6 +4187,17 @@ never selected `afterMoney`, so the budget card drew the server's **label string
 while every unit test passed — the fixtures supplied the field the real query did not ask for. The field is
 selected now, `PROPOSE_ACTION` is exported, and a spec asserts the document asks for **every field the card
 reads**, which is the guard a fixture cannot be.
+
+**B-4b verified**: `action-planner.spec.ts` 17, `assistant-actions.spec.ts` 9,
+`assistant-goal.integration.spec.ts` **7** against a real Postgres (the name and target out of one text,
+the amount as `Money` on the wire, the deadline stated and the monthly requirement consequently absent, a
+Cyrillic name kept Cyrillic, the three refusals by name, and the replayed key), plus the client's
+`assistant.view.spec.ts` 44 and `assistant.component.spec.ts` 38. API **1110**, web **912**, **2835
+total**, lint 9/9, typecheck 9/9, `api:evals` green (54/58, 93.10 %), `web:build` + `bundle:budget` ok.
+**Live 15/15** (`/tmp/verify-b4b.mjs`) and **browser 14/14** (Playwright on `:4200`, screenshots in
+`.artifacts/visual-audit/b4b-goal-*.png`): the card with its target in `fm-money` and its missing deadline,
+0 horizontal overflow at 320/768/1280 px, axe **0 critical / 0 serious**, the confirm landing on `/goals`,
+the undo removing it, and the probe's goal deleted so the demo is as it was found.
 
 **B-3b verified**: `assistant.view.spec.ts` 41 and `assistant.component.spec.ts` 33 — `previewLines`
 reading `undefined` as none (a proposal stored before the field existed), `accountRow` refusing a row with

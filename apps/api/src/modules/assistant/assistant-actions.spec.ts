@@ -40,7 +40,12 @@ describe('the action registry (ADR-035)', () => {
     // dispatches and `captureCommit` is the one `/capture`'s Confirm dispatches; an action naming
     // anything else would be the assistant reaching somewhere a screen cannot, which is exactly what
     // ADR-035 decision 3 forbids.
-    expect(registeredMutations()).toEqual(['createCategory', 'captureCommit', 'upsertBudget']);
+    expect(registeredMutations()).toEqual([
+      'createCategory',
+      'captureCommit',
+      'upsertBudget',
+      'createSavingGoal',
+    ]);
   });
 
   it('requires a name and fills only what it says it fills', () => {
@@ -62,6 +67,16 @@ describe('the action registry (ADR-035)', () => {
     // budget (asserted against a real database in `assistant-budget.integration.spec.ts`), which is what
     // makes deleting the right undo. If it ever overwrites, this assertion must fail with it — otherwise
     // the undo would destroy a budget the user already had.
+    expect(template.undo).toBe('SOFT_DELETE');
+    expect(template.destroys).toBe(false);
+  });
+
+  it('declares the goal action as a creation, with the name and the amount out of its text', () => {
+    const template = ACTION_TEMPLATES.ADD_GOAL;
+    expect(template.mutation).toBe('createSavingGoal');
+    expect(template.requiredSlots).toEqual(['text']);
+    expect(template.defaultedSlots).toEqual([]);
+    // `deleteSavingGoal`, and correct for the same reason the budget's is: this action only creates.
     expect(template.undo).toBe('SOFT_DELETE');
     expect(template.destroys).toBe(false);
   });
@@ -102,7 +117,15 @@ describe('the action registry (ADR-035)', () => {
     // …and the three slots no template *declares* but a preview **resolves** or reads: `parentId` is a
     // fixed value on the category card, and `categoryId`/`amountMinor`/`period` are what `SET_BUDGET`
     // derives from its text (B-4a). They are part of the card's vocabulary, which is what the enum is.
-    const slots = [...declared, 'parentId', 'categoryId', 'amountMinor', 'period'].sort();
+    const slots = [
+      ...declared,
+      'parentId',
+      'categoryId',
+      'amountMinor',
+      'period',
+      'targetMinor',
+      'targetDate',
+    ].sort();
     expect(Object.keys(AssistantActionSlotEnum).sort()).toEqual(slots);
     expect(Object.values(ASSISTANT_ACTION_SLOT_ENUM_MIRROR).sort()).toEqual(slots);
   });

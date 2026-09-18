@@ -386,7 +386,12 @@ export interface AssistantAccount {
 }
 
 /** The assistant's closed action set, mirroring the API's `AssistantAction`. */
-export const ASSISTANT_ACTIONS = ['ADD_CATEGORY', 'ADD_TRANSACTION', 'SET_BUDGET'] as const;
+export const ASSISTANT_ACTIONS = [
+  'ADD_CATEGORY',
+  'ADD_TRANSACTION',
+  'SET_BUDGET',
+  'ADD_GOAL',
+] as const;
 export type AssistantActionName = (typeof ASSISTANT_ACTIONS)[number];
 
 /**
@@ -404,7 +409,9 @@ export type ActionSlotName =
   | 'accountId'
   | 'categoryId'
   | 'amountMinor'
-  | 'period';
+  | 'period'
+  | 'targetMinor'
+  | 'targetDate';
 
 export interface ActionDiffEntry {
   readonly slot: string;
@@ -676,6 +683,8 @@ export function undoneKey(action: string): TranslationKey {
       return 'assistant.action.undoneTransaction';
     case 'SET_BUDGET':
       return 'assistant.action.undoneBudget';
+    case 'ADD_GOAL':
+      return 'assistant.action.undoneGoal';
     default:
       return 'assistant.action.undone';
   }
@@ -701,6 +710,9 @@ export function resultLink(result: ActionResult): ResultLink {
     case 'SET_BUDGET':
       // No per-budget route exists, so this opens the screen that lists them.
       return { route: ['/budgets'], labelKey: 'assistant.action.openBudgets' };
+    case 'ADD_GOAL':
+      // The same reason: `/goals` is a list, not a per-row route.
+      return { route: ['/goals'], labelKey: 'assistant.action.openGoals' };
     default:
       return { route: ['/categories'], labelKey: 'assistant.action.openCategories' };
   }

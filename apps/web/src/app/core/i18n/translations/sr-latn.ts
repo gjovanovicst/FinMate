@@ -272,6 +272,8 @@ export const srLatn: Record<keyof typeof en, string> = {
     'Reci mi za koju je kategoriju budžet — na primer: „postavi budžet za hranu na 20000”.',
   'assistant.action.budgetExists':
     'Već imaš budžet za tu kategoriju ovog meseca, i neću ga ovde prepisati — izmeni ga na ekranu budžeta.',
+  'assistant.action.undoneGoal': 'Opozvano — cilj „{name}” je uklonjen.',
+  'assistant.action.openGoals': 'Otvori ciljeve',
   'assistant.action.uncategorised': 'još bez kategorije',
   'assistant.action.lineReview': 'ide na pregled',
   'assistant.action.needText': 'Reci mi šta da zabeležim — na primer: „dodaj trošak kafa 180”.',

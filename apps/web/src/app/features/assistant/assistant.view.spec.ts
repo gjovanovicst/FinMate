@@ -487,6 +487,7 @@ describe('the assistant write path (docs/06 §8.16)', () => {
     expect(undoneKey('ADD_CATEGORY')).toBe('assistant.action.undone');
     expect(undoneKey('ADD_TRANSACTION')).toBe('assistant.action.undoneTransaction');
     expect(undoneKey('SET_BUDGET')).toBe('assistant.action.undoneBudget');
+    expect(undoneKey('ADD_GOAL')).toBe('assistant.action.undoneGoal');
   });
 
   it('links to the row that was written, not to a list the reader has to search', () => {
@@ -504,6 +505,10 @@ describe('the assistant write path (docs/06 §8.16)', () => {
     expect(resultLink(result({ action: 'SET_BUDGET' }))).toEqual({
       route: ['/budgets'],
       labelKey: 'assistant.action.openBudgets',
+    });
+    expect(resultLink(result({ action: 'ADD_GOAL' }))).toEqual({
+      route: ['/goals'],
+      labelKey: 'assistant.action.openGoals',
     });
   });
 

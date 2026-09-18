@@ -234,6 +234,7 @@ export enum AssistantActionEnum {
   ADD_CATEGORY = 'ADD_CATEGORY',
   ADD_TRANSACTION = 'ADD_TRANSACTION',
   SET_BUDGET = 'SET_BUDGET',
+  ADD_GOAL = 'ADD_GOAL',
 }
 
 /**
@@ -251,6 +252,7 @@ export const ASSISTANT_ACTION_ENUM_MIRROR: Readonly<
   ADD_CATEGORY: AssistantActionEnum.ADD_CATEGORY,
   ADD_TRANSACTION: AssistantActionEnum.ADD_TRANSACTION,
   SET_BUDGET: AssistantActionEnum.SET_BUDGET,
+  ADD_GOAL: AssistantActionEnum.ADD_GOAL,
 };
 
 registerEnumType(AssistantActionEnum, {
@@ -280,6 +282,8 @@ export enum AssistantActionSlotEnum {
   categoryId = 'categoryId',
   amountMinor = 'amountMinor',
   period = 'period',
+  targetMinor = 'targetMinor',
+  targetDate = 'targetDate',
 }
 
 /** {@link ASSISTANT_ACTION_ENUM_MIRROR}'s twin for the slots — same failure, same guard. */
@@ -294,6 +298,8 @@ export const ASSISTANT_ACTION_SLOT_ENUM_MIRROR: Readonly<
   categoryId: AssistantActionSlotEnum.categoryId,
   amountMinor: AssistantActionSlotEnum.amountMinor,
   period: AssistantActionSlotEnum.period,
+  targetMinor: AssistantActionSlotEnum.targetMinor,
+  targetDate: AssistantActionSlotEnum.targetDate,
 };
 
 registerEnumType(AssistantActionSlotEnum, {

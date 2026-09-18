@@ -478,6 +478,39 @@ const BUDGET_RESULT = {
   replayed: false,
 };
 
+const GOAL_PROPOSAL = {
+  proposed: true,
+  reason: null,
+  proposalId: 'proposal-goal',
+  action: 'ADD_GOAL',
+  preview: {
+    sentence: 'Novi cilj „Letovanje” — 200.000,00 RSD',
+    diff: [
+      { slot: 'name', field: 'naziv', before: null, after: 'Letovanje', afterValue: null, afterMoney: null, defaulted: false },
+      {
+        slot: 'targetMinor',
+        field: 'cilj',
+        before: null,
+        after: '200.000,00 RSD',
+        afterValue: '20000000',
+        afterMoney: { amountMinor: '20000000', currency: 'RSD' },
+        defaulted: false,
+      },
+      { slot: 'targetDate', field: 'rok', before: null, after: 'još bez roka', afterValue: null, afterMoney: null, defaulted: false },
+    ],
+  },
+  expiresAt: '2026-09-20T10:10:00.000Z',
+};
+
+const GOAL_RESULT = {
+  action: 'ADD_GOAL',
+  createdId: 'goal-1',
+  createdLabel: 'Letovanje',
+  undo: 'SOFT_DELETE',
+  sentence: 'Novi cilj „Letovanje” — 200.000,00 RSD',
+  replayed: false,
+};
+
 /** The picker's options — including an archived Account, which must not be offered. */
 const ACCOUNTS = {
   accounts: {
@@ -499,6 +532,7 @@ function writeResponder(over: Partial<Record<'answer' | 'propose' | 'execute' | 
     if (query.includes('mutation AssistantUndoAddCategory')) return { deleteCategory: true };
     if (query.includes('mutation AssistantUndoCapture')) return { undoCapture: 1 };
     if (query.includes('mutation AssistantUndoBudget')) return { deleteBudget: true };
+    if (query.includes('mutation AssistantUndoGoal')) return { deleteSavingGoal: { id: 'goal-1' } };
     return { assistantAnswer: over.answer ?? REFUSAL };
   };
 }
@@ -823,6 +857,46 @@ describe('the assistant write path (B-2b)', () => {
 
     expect(textOf(fixture)).toContain('already have a budget for that category');
     expect(fixture.nativeElement.querySelector('.act')).toBeNull();
+  });
+
+  it('renders a goal with its target through fm-money and its missing deadline stated', async () => {
+    const { fixture } = await mount(writeResponder({ propose: GOAL_PROPOSAL }));
+    await askAndSettle(fixture, 'napravi cilj Letovanje 200000');
+
+    const text = textOf(fixture);
+    expect(text).toContain('Letovanje');
+    // The card must not imply a deadline was set: relative dates have no parser, so this action leaves
+    // it empty and `GOAL_REQUIRED_MONTHLY` has nothing to work one out from. The row's label is the
+    // **server's** copy (this fixture is a Serbian response verbatim), which is the point of a
+    // backend-rendered diff — the client does not translate a value it did not choose.
+    expect(text).toContain('još bez roka');
+    expect(fixture.nativeElement.querySelector('.act__row fm-money')).not.toBeNull();
+    // Nothing here is the app's guess, so nothing is flagged and no control is offered.
+    expect(fixture.nativeElement.querySelector('.act__flag')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.act__select')).toBeNull();
+  });
+
+  it('undoes a confirmed goal through deleteSavingGoal, and links to the goals screen', async () => {
+    const { fixture, client } = await mount(
+      writeResponder({ propose: GOAL_PROPOSAL, execute: GOAL_RESULT }),
+    );
+    await askAndSettle(fixture, 'napravi cilj Letovanje 200000');
+    (fixture.nativeElement.querySelector('.act__confirm') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const link = fixture.nativeElement.querySelector('.act--done a') as HTMLAnchorElement;
+    expect(link?.getAttribute('href')).toBe('/goals');
+
+    (fixture.nativeElement.querySelector('.act__undo') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const call = client.query.mock.calls.find((entry) =>
+      String(entry[0]).includes('mutation AssistantUndoGoal'),
+    );
+    expect((call?.[1] as Record<string, unknown>)['id']).toBe('goal-1');
+    expect(textOf(fixture)).toContain('goal “Letovanje” was removed');
   });
 
   it('offers no account control, and asks for no accounts, when the question named the account', async () => {

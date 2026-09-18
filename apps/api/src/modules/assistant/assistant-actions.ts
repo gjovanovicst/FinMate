@@ -33,7 +33,12 @@
  * template with no executor would be a trap — `ASSISTANT_ACTIONS` being closed is what makes that
  * impossible to add by accident.
  */
-export const ASSISTANT_ACTIONS = ['ADD_CATEGORY', 'ADD_TRANSACTION', 'SET_BUDGET'] as const;
+export const ASSISTANT_ACTIONS = [
+  'ADD_CATEGORY',
+  'ADD_TRANSACTION',
+  'SET_BUDGET',
+  'ADD_GOAL',
+] as const;
 
 export type AssistantAction = (typeof ASSISTANT_ACTIONS)[number];
 
@@ -56,7 +61,12 @@ export type ActionSlotName =
   // only where the builder fills them (ADR-035 decision 5).
   | 'categoryId'
   | 'amountMinor'
-  | 'period';
+  | 'period'
+  // A goal's own two (B-4b), named as the **read** planner names them: `GOAL_REQUIRED_MONTHLY` already
+  // speaks of a `targetMinor` and a `targetDate`, and a second word for the same concept is how the two
+  // sides start describing one goal differently.
+  | 'targetMinor'
+  | 'targetDate';
 
 /** How thoroughly an action can be undone. `NONE` is why `destroys` exists (ADR-035 decision 7). */
 export type ActionUndo = 'SOFT_DELETE' | 'UNDO_CAPTURE' | 'NONE';
@@ -139,6 +149,20 @@ export const ACTION_TEMPLATES: Readonly<Record<AssistantAction, ActionTemplate>>
     role: 'MEMBER',
     // `deleteBudget` — correct **because** the action refuses to overwrite: the row it created is the
     // only row its undo touches.
+    undo: 'SOFT_DELETE',
+    destroys: false,
+  },
+  /**
+   * A saving goal: a name the user invents and a target amount (B-4b).
+   *
+   * The undo is honest for the same reason `ADD_CATEGORY`'s is: `createSavingGoal` never overwrites
+   * anything, so the soft delete removes exactly the row this action wrote.
+   */
+  ADD_GOAL: {
+    mutation: 'createSavingGoal',
+    requiredSlots: ['text'],
+    defaultedSlots: [],
+    role: 'MEMBER',
     undo: 'SOFT_DELETE',
     destroys: false,
   },

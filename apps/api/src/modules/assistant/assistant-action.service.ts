@@ -55,13 +55,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { BudgetsService } from '../budgeting/budgets.service';
 import { BudgetPeriodEnum } from '../budgeting/budget.model';
+import { GoalsService } from '../goals/goals.service';
 import { ClassificationService, type FragmentResult } from '../classification/classification.service';
 import { CaptureCommitRejected, TransactionsService } from '../ledger/transactions.service';
 import { TransactionKind, TransactionStatus } from '../ledger/transaction.model';
 import { CategoriesService } from '../taxonomy/categories.service';
 import { CategoryKind } from '../taxonomy/category.model';
 import { ACTION_TEMPLATES, type ActionSlotName, type AssistantAction } from './assistant-actions';
-import { ACTION_NAME_MAX_LENGTH, resolveEntityIn } from './action-planner';
+import { ACTION_NAME_MAX_LENGTH, cleanName, resolveEntityIn } from './action-planner';
 import { categoryEntities } from './planner-entities';
 import {
   PendingActionStore,
@@ -132,12 +133,16 @@ const COPY = {
       account: 'account',
       category: 'category',
       period: 'period',
+      target: 'target',
+      deadline: 'deadline',
     },
     sentence: (name: string, kind: string, parent: string): string =>
       `New category “${name}” (${kind}, ${parent})`,
     budget: (category: string, amount: string, period: string): string =>
       `Monthly budget for ${category}: ${amount} (${period})`,
     budgetPeriod: 'this month',
+    goal: (name: string, target: string): string => `New saving goal “${name}” — ${target}`,
+    noDeadline: 'no deadline yet',
     allCategories: 'all categories',
     // Built by joining parts rather than by referring to the sibling key: a template that reads
     // `COPY.en.…` from inside `COPY`'s own literal is a circular inference TypeScript refuses.
@@ -168,12 +173,16 @@ const COPY = {
       account: 'račun',
       category: 'kategorija',
       period: 'period',
+      target: 'cilj',
+      deadline: 'rok',
     },
     sentence: (name: string, kind: string, parent: string): string =>
       `Nova kategorija „${name}” (${kind}, ${parent})`,
     budget: (category: string, amount: string, period: string): string =>
       `Mesečni budžet za ${category}: ${amount} (${period})`,
     budgetPeriod: 'ovaj mesec',
+    goal: (name: string, target: string): string => `Novi cilj „${name}” — ${target}`,
+    noDeadline: 'još bez roka',
     allCategories: 'sve kategorije',
     transaction: (
       label: string,
@@ -203,6 +212,7 @@ export class AssistantActionService {
   constructor(
     private readonly categories: CategoriesService,
     private readonly budgets: BudgetsService,
+    private readonly goals: GoalsService,
     private readonly classification: ClassificationService,
     private readonly transactions: TransactionsService,
     private readonly accounts: AccountsService,
@@ -341,7 +351,7 @@ export class AssistantActionService {
     >
   > = {
     ADD_CATEGORY: async ({ householdId, slots, locale }) => {
-      const name = this.requireName(slots['name']);
+      const name = this.requireName(slots['name'], 'category');
       const kind = this.readKind(slots['kind']);
       await this.assertNameFree(householdId, name);
 
@@ -446,6 +456,76 @@ export class AssistantActionService {
               // A **fixed** part of what this action means, deliberately not `defaulted`: the action
               // sets the monthly budget, so the card says so instead of offering a period it cannot
               // change. Weekly or yearly budgets are not reachable from here.
+              defaulted: false,
+            },
+          ],
+        },
+      };
+    },
+
+    ADD_GOAL: async ({ householdId, slots, locale }) => {
+      const text = this.requireText(slots['text']);
+
+      const household = await this.prisma.client.households.findFirst({ where: { id: householdId } });
+      if (household === null) throw new ApiError('NOT_FOUND', 'Household not found.');
+      const currency = household.ledger_currency as CurrencyCode;
+      const today = todayIn(household.iana_timezone || DEFAULT_TIME_ZONE, new Date());
+
+      // The same reader the capture path uses: it finds the target, reports every reading of `1.200`,
+      // and leaves the **name** as the text around it — in the user's own characters, because a goal is
+      // called what they called it (`Rođendan`, not `rodendan`).
+      const fragment = extractFragment(text, { currency, today });
+      if (fragment.amountMinor === null) return { proposed: false, reason: 'NO_AMOUNT' };
+      const readings = new Set(fragment.candidates.map((candidate) => candidate.amountMinor));
+      if (readings.size > 1) return { proposed: false, reason: 'AMBIGUOUS_AMOUNT' };
+
+      // An amount with no name around it is a **refusal**, not a validation failure — the same
+      // distinction `UNRUNNABLE:name` draws for the category action, and the card turns it into "tell me
+      // what to call it" rather than an error banner.
+      const name = cleanName(fragment.description);
+      if (name.length === 0) return { proposed: false, reason: 'UNRUNNABLE:name' };
+      this.requireName(name, 'goal');
+
+      const target = this.readAmount(fragment.amountMinor.toString(), currency);
+      if (target === null) return { proposed: false, reason: 'NO_AMOUNT' };
+
+      const copy = copyFor(locale);
+      return {
+        slots: { text, name },
+        args: {
+          name,
+          targetMinor: fragment.amountMinor.toString(),
+          currency,
+        },
+        preview: {
+          sentence: copy.goal(name, formatMoney(target, copy.locale)),
+          diff: [
+            {
+              slot: 'name',
+              field: copy.fields.name,
+              before: null,
+              after: name,
+              afterValue: null,
+              defaulted: false,
+            },
+            {
+              slot: 'targetMinor',
+              field: copy.fields.target,
+              before: null,
+              after: formatMoney(target, copy.locale),
+              afterValue: fragment.amountMinor.toString(),
+              afterMoney: { amountMinor: fragment.amountMinor.toString(), currency },
+              defaulted: false,
+            },
+            {
+              slot: 'targetDate',
+              field: copy.fields.deadline,
+              before: null,
+              after: copy.noDeadline,
+              afterValue: null,
+              // **Stated**, not defaulted: the card must not offer a date it cannot parse. Relative dates
+              // have no parser (docs/16 B.3), so this action creates the goal without one and says so —
+              // `/goals` edits a deadline inline, and `GOAL_REQUIRED_MONTHLY` needs it to answer.
               defaulted: false,
             },
           ],
@@ -621,6 +701,30 @@ export class AssistantActionService {
           formatMoney(created.amount, copy.locale),
           copy.budgetPeriod,
         ),
+      };
+    },
+
+    ADD_GOAL: async (proposal) => {
+      const args = proposal.args ?? {};
+      const name = args['name'];
+      const targetMinor = args['targetMinor'];
+      if (name === undefined || targetMinor === undefined) {
+        throw new ApiError('INTERNAL', 'That proposal is incomplete and was not applied.');
+      }
+
+      // No `targetDate` and no `accountId`: this action creates a goal, and its card **says** the goal
+      // has no deadline rather than filling one it cannot read (docs/16 B.3).
+      const created = await this.goals.create(proposal.householdId, {
+        name,
+        targetMinor: BigInt(targetMinor),
+      });
+
+      const copy = copyFor(proposal.locale);
+      return {
+        id: created.id,
+        label: created.name,
+        // Built from the **returned** goal, not from the proposal.
+        sentence: copy.goal(created.name, formatMoney({ amountMinor: created.targetMinor, currency: created.currency as CurrencyCode }, copy.locale)),
       };
     },
 
@@ -818,15 +922,23 @@ export class AssistantActionService {
     return found === undefined ? null : { name: found.name };
   }
 
-  private requireName(raw: string | undefined): string {
+  /**
+   * The name bound every action's text slot shares, with the noun in the message so a goal is not told
+   * its *category* name is too long.
+   *
+   * Empty is **not** this method's business: the caller refuses with `UNRUNNABLE:name` instead, because
+   * "you did not say what to call it" is a question for the reader and "that is too long" is a failure of
+   * a request they made.
+   */
+  private requireName(raw: string | undefined, noun: 'category' | 'goal'): string {
     const name = (raw ?? '').trim();
     if (name.length === 0) {
-      throw new ApiError('VALIDATION_FAILED', 'A category name is required.');
+      throw new ApiError('VALIDATION_FAILED', `A ${noun} name is required.`);
     }
     if (name.length > ACTION_NAME_MAX_LENGTH) {
       throw new ApiError(
         'VALIDATION_FAILED',
-        `A category name can be at most ${ACTION_NAME_MAX_LENGTH} characters.`,
+        `A ${noun} name can be at most ${ACTION_NAME_MAX_LENGTH} characters.`,
       );
     }
     return name;

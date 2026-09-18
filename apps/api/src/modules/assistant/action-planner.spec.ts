@@ -145,6 +145,21 @@ describe('planAction (docs/06 §8.16)', () => {
     expect(planAction('dodaj kategoriju Putovanja')?.action).toBe('ADD_CATEGORY');
   });
 
+  it('plans ADD_GOAL from its own object word, keeping the whole text as its name and target', () => {
+    // The one action whose *name* is not after an anchor: the text is `Letovanje 200000`, and the builder
+    // takes the amount out and leaves the name — in the user's own characters.
+    const plan = planAction('napravi cilj Letovanje 200000');
+    expect(plan?.action).toBe('ADD_GOAL');
+    expect(plan?.slots['text']).toBe('Letovanje 200000');
+    expect(plan?.matchedOn).toContain('anchor:object');
+    // `dodaj` is shared with the entry action, and the object word decides — the same rule that keeps
+    // *"dodaj budžet …"* a budget.
+    expect(planAction('dodaj cilj Letovanje 200000')?.action).toBe('ADD_GOAL');
+    expect(planAction('postavi cilj štednje 500000')?.action).toBe('ADD_GOAL');
+    // …and a goal the question merely mentions is not a command.
+    expect(planAction('koliko sam uštedeo za letovanje')).toBeNull();
+  });
+
   it('does not guess an action from a bare noun phrase', () => {
     // "nova kategorija" *is* a request shape — Serbian drops the verb — so it plans and then refuses
     // for want of a name, which asks the user rather than writing something nobody specified.

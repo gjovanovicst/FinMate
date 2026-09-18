@@ -1305,6 +1305,17 @@ const UNDO_OPERATIONS: Readonly<
     `,
     variables: (id) => ({ id }),
   },
+  // `deleteSavingGoal` — correct because the action only ever creates.
+  ADD_GOAL: {
+    document: /* GraphQL */ `
+      mutation AssistantUndoGoal($id: String!) {
+        deleteSavingGoal(id: $id) {
+          id
+        }
+      }
+    `,
+    variables: (id) => ({ id }),
+  },
   // `undoCapture` takes a **list** — docs/02 §3's undo toast is all-or-nothing per call — and this
   // action writes one row, so the list has one id in it.
   ADD_TRANSACTION: {

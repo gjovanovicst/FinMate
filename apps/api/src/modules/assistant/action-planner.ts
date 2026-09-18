@@ -107,6 +107,25 @@ const CUES: Readonly<Record<AssistantAction, ActionCues>> = Object.freeze({
     slot: 'text',
     amountAnchor: false,
   },
+  /**
+   * A goal is **named** by the word for it, so this action joins `SET_BUDGET` on the object rung: the
+   * object word (not the verb) is what says a goal is being made, and the two-pass rule in `planAction`
+   * keeps *"dodaj cilj Letovanje 200000"* away from the entry action's amount rung.
+   */
+  ADD_GOAL: {
+    imperatives: [
+      'napravi', 'napravite', 'napraviti',
+      'dodaj', 'dodajte', 'dodati',
+      'postavi', 'postavite', 'postaviti',
+      'kreiraj', 'kreirajte', 'kreirati',
+      'set', 'create', 'add', 'new',
+    ],
+    leadAdjectives: [],
+    // Folded forms (`štednju` → `stednju`, docs/15's cue-list entry).
+    objects: ['cilj', 'cilja', 'cilju', 'ciljem', 'ciljeve', 'stednja', 'stednju', 'stednje', 'savings', 'goal', 'goals'],
+    slot: 'text',
+    amountAnchor: false,
+  },
   ADD_TRANSACTION: {
     imperatives: [
       'dodaj', 'dodajte', 'dodati',
@@ -141,8 +160,14 @@ function tokenise(question: string): readonly RawToken[] {
   }));
 }
 
-/** Strip the typography people wrap a name in, and any trailing sentence punctuation. */
-function cleanName(raw: string): string {
+/**
+ * Strip the typography people wrap a name in, and any trailing sentence punctuation.
+ *
+ * Exported for the goal builder (B-4b), which takes its name from what the parser left once the amount
+ * is removed — the same "text the user invented" the category action slices out after its anchor, so the
+ * two must be cleaned by the same rule rather than by two.
+ */
+export function cleanName(raw: string): string {
   return raw
     // Wrapping quotes, in the two scripts' usual shapes.
     .replace(/^[\s"'„“”«»([{]+/u, '')
