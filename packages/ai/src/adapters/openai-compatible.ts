@@ -66,6 +66,8 @@ import type {
   ParseInput,
   ParseProposal,
   ProviderName,
+  RouteAnswer,
+  RouteInput,
   RoutedProvider,
   Task,
 } from '../provider';
@@ -84,6 +86,7 @@ import {
   CLASSIFY_SCHEMA,
   OCR_SCHEMA,
   PARSE_SCHEMA,
+  ROUTE_SCHEMA,
   readContentJson,
   readModel,
   readUsage,
@@ -142,6 +145,9 @@ export const TASK_TIMEOUTS_MS: Readonly<Record<Task, number>> = Object.freeze({
   CLASSIFY: 2_000,
   NARRATE: 8_000,
   OCR: 20_000,
+  // The same budget as `CLASSIFY`, and for the same reason: a small JSON classification on a path
+  // where somebody is waiting for an answer (ADR-036's rung runs only after the cues have missed).
+  ROUTE: 2_000,
   EMBED: 2_000,
 });
 
@@ -214,6 +220,8 @@ export class OpenAiCompatibleProvider implements RoutedProvider {
         return (await this.callNarrate(input as NarrateInput)) as AdapterCall<T>;
       case 'OCR':
         return (await this.callOcr(input as OcrInput)) as AdapterCall<T>;
+      case 'ROUTE':
+        return (await this.callRoute(input as RouteInput)) as AdapterCall<T>;
       case 'EMBED':
         return (await this.callEmbed(input as readonly string[])) as AdapterCall<T>;
     }
@@ -326,6 +334,40 @@ export class OpenAiCompatibleProvider implements RoutedProvider {
     });
   }
 
+  /**
+   * The `ROUTE` call (ADR-036): the closed member list in `input.user`, the sentence as the payload.
+   *
+   * The question goes inside the untrusted span for the same reason narration's does — a Merchant or a
+   * person's name typed by the user reaches it verbatim (docs/08 §6.9) — and **the digits are not
+   * stripped**: the returned text becomes a slot the local parsers read, so redacting an amount would
+   * hand back an action with no amount in it (see `RouteInput`).
+   */
+  async callRoute(input: RouteInput): Promise<AdapterCall<RouteAnswer>> {
+    const question = asUntrusted(sanitiseText(input.question, MAX_EXTRACTED_TEXT_CHARS));
+    const user = `${input.user}\n\nQuestion:\n${question}`;
+
+    const call = await this.runTask<Record<string, unknown>>(
+      'ROUTE',
+      input,
+      user,
+      ROUTE_SCHEMA,
+      (body) => {
+        const parsed = readContentJson(body);
+        if (parsed === null) {
+          throw new AiRequestError(
+            'MALFORMED_RESPONSE',
+            'route response was not a JSON object; the structured-output contract was not met',
+            this.name,
+            null,
+          );
+        }
+        return parsed;
+      },
+    );
+
+    return { ...call, value: toRouteAnswer(call.value, this.name) };
+  }
+
   async callOcr(input: OcrInput): Promise<AdapterCall<OcrResult>> {
     const user = `${input.user}\n\n${asUntrusted('[receipt image attached]')}`;
     const imagePart: WireContentPart = {
@@ -404,7 +446,7 @@ export class OpenAiCompatibleProvider implements RoutedProvider {
    */
   private async runTask<T>(
     task: Task,
-    input: ParseInput | ClassifyInput | NarrateInput | OcrInput,
+    input: ParseInput | ClassifyInput | NarrateInput | OcrInput | RouteInput,
     user: string,
     schema: Readonly<Record<string, unknown>> | null,
     parse: (body: unknown) => T,
@@ -565,6 +607,39 @@ export function joinUrl(baseUrl: string, path: string): string {
   const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
   if (path.length === 0) return base;
   return path.startsWith('/') ? `${base}${path}` : `${base}/${path}`;
+}
+
+/**
+ * Shape-check the route answer. **Membership is not checked here** — the unions live in `apps/api`, and
+ * a copy of them in this package is the drift ADR-017's closed `Record` exists to prevent.
+ *
+ * A field of the wrong *type* is a malformed response rather than a refusal: "the model answered
+ * something the contract does not describe" is a provider problem, where "none of these members fits"
+ * is `route: null` — a legitimate answer the caller handles by falling back to the refusal it already
+ * had. Conflating the two would make a broken provider look like a hard question.
+ */
+function toRouteAnswer(raw: Record<string, unknown>, provider: ProviderName): RouteAnswer {
+  const route = raw['route'];
+  const text = raw['text'];
+  const badType =
+    (route !== null && route !== undefined && typeof route !== 'string') ||
+    (text !== null && text !== undefined && typeof text !== 'string');
+  if (badType) {
+    throw new AiRequestError(
+      'MALFORMED_RESPONSE',
+      'route response had a field of the wrong type; the structured-output contract was not met',
+      provider,
+      null,
+    );
+  }
+  const trimmedRoute = typeof route === 'string' ? route.trim() : '';
+  const trimmedText = typeof text === 'string' ? text.trim() : '';
+  return {
+    // Empty is absence: a provider that answers `""` means "nothing", and `null` is how this build
+    // says that everywhere else.
+    route: trimmedRoute.length === 0 ? null : trimmedRoute,
+    text: trimmedText.length === 0 ? null : trimmedText,
+  };
 }
 
 /**

@@ -2313,10 +2313,19 @@ different act, and this ADR draws that line rather than deleting it.
    unions. It may **never** supply a method name, URL, GraphQL document, SQL, an id, an amount or a date —
    those keep their existing owners (database, `parseAmount`, the calendar). A value outside the union is a
    **refusal**, never a fallback to something nearby.
-3. **It is one new AI purpose, `ROUTE`, and it inherits every rail already built.** Per-Household consent
+3. **It is one new AI *task*, `ROUTE`, and it inherits every rail already built — including the consent
+   that already exists for it.** ⚠️ It does **not** become a fifth consent *purpose*: the payload is the
+   user's own text and nothing else, so it is the same egress as `PARSE`/`CLASSIFY`/`NARRATE` and reuses
+   `AI_TEXT_EGRESS` (kind `AI_DATA_PROCESSING`). A new purpose would widen `consents.kind`'s CHECK in a
+   migration and force every Household to re-consent for a permission it has already given — churn, not
+   safety. The task is new; the permission is not. Per-Household consent
    through ADR-032 (`aiConsents`, asked on **every** call by the router's injected gate), EEA-or-local
-   egress only (ADR-007, ADR-031 — an `_EU` endpoint must name an EEA host), redaction before egress, and
-   the provider reached through `packages/ai` (rule 10). ⚠️ **Cost and latency are returned and logged,
+   egress only (ADR-007, ADR-031 — an `_EU` endpoint must name an EEA host), and the provider reached
+   through `packages/ai` (rule 10). ⚠️ **Its payload is the user's own capped question and nothing
+   else** — no ids, no Category or Merchant names, no figure from the database — and its **digits are
+   deliberately not redacted**, because the text it returns becomes a slot the local parsers read: a
+   stripped amount is an `ADD_TRANSACTION` with no amount in it. That is a narrowing of docs/08 §6.3 for
+   this one task, recorded in [04 §9](04-categorization-and-ai-engine.md) so nobody "fixes" it later. ⚠️ **Cost and latency are returned and logged,
    not persisted** — the gap [06 §8.8](06-api-specification.md) already records for narration, which the
    rung inherits rather than pretending a row exists.
    ⚠️ **The consequence is explicit: a Household that has not consented, or a deployment with no configured

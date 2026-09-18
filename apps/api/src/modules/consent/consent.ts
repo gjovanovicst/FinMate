@@ -111,6 +111,12 @@ export function consentKindForTask(task: Task): ConsentKind | null {
     case 'PARSE':
     case 'CLASSIFY':
     case 'NARRATE':
+    // `ROUTE` carries the user's own typed sentence and nothing else (ADR-036), so it is the **same
+    // egress** as the other text tasks and reuses `AI_TEXT_EGRESS`/`AI_DATA_PROCESSING` rather than
+    // becoming a fifth purpose. A new purpose would mean widening `consents.kind`'s CHECK in a
+    // migration and forcing every Household to re-consent — churn for a permission that is, word for
+    // word, the one they already gave. The task is new; the *permission* is not.
+    case 'ROUTE':
       return 'AI_DATA_PROCESSING';
     case 'OCR':
       return 'CLOUD_OCR';

@@ -367,6 +367,10 @@ async function callProvider<T>(
         value: (await provider.narrate(input as never)) as T,
         telemetry: unaccountedTelemetry(),
       };
+    case 'ROUTE':
+      // A provider with no `callTask` predates ADR-036 and cannot route; the router reports that as the
+      // typed failure the caller already degrades on, rather than inventing an answer.
+      throw new AiRequestError('TASK_NOT_SUPPORTED', 'no route method on this provider', provider.name, null);
     case 'OCR': {
       if (provider.ocr === undefined) throw new AiRequestError('TASK_NOT_SUPPORTED', 'no ocr', provider.name, null);
       return { value: (await provider.ocr(input as never)) as T, telemetry: unaccountedTelemetry() };

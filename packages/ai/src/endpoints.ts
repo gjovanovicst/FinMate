@@ -141,6 +141,10 @@ export const DEFAULT_ROUTING: RoutingTable = Object.freeze({
   CLASSIFY: { primary: 'LOCAL', fallback: null },
   NARRATE: { primary: 'LOCAL', fallback: null },
   OCR: { primary: 'LOCAL', fallback: null },
+  // ADR-036's routing rung defaults exactly like the rest: a local model, no fallback. That is what
+  // makes the rung *dark* rather than merely off — with no local model running there is nothing to
+  // call, and a deployment reaches a cloud endpoint only by naming it in config (and consenting).
+  ROUTE: { primary: 'LOCAL', fallback: null },
   EMBED: { primary: 'LOCAL', fallback: null },
 }) satisfies RoutingTable;
 

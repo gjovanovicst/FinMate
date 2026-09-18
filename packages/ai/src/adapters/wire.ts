@@ -111,6 +111,34 @@ export const PARSE_SCHEMA: Readonly<Record<string, unknown>> = Object.freeze({
   },
 });
 
+/**
+ * The `ROUTE` contract (ADR-036). Two nullable fields, and the caller rejects anything else.
+ *
+ * `additionalProperties: false` plus `required` is what makes "the model invented a third field" a
+ * schema violation rather than something the caller has to notice — the same defence `CLASSIFY_SCHEMA`
+ * uses. `route` is a plain string here because the member list is `apps/api`'s: the union travels in
+ * the prompt, and membership is validated where the unions live.
+ */
+export const ROUTE_SCHEMA: Readonly<Record<string, unknown>> = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  required: ['route', 'text'],
+  properties: {
+    route: {
+      type: ['string', 'null'],
+      description:
+        'Exactly one member name copied from the supplied list, or null when none of them is what ' +
+        'the sentence means. Never a method, URL or query.',
+    },
+    text: {
+      type: ['string', 'null'],
+      description:
+        'For a write: the words from the sentence that name or describe what it acts on, copied ' +
+        'verbatim. Null for a question, or when the sentence names nothing.',
+    },
+  },
+});
+
 /** The `OCR` contract. Line text and totals, never an item-level categorisation (§6.1). */
 export const OCR_SCHEMA: Readonly<Record<string, unknown>> = Object.freeze({
   type: 'object',

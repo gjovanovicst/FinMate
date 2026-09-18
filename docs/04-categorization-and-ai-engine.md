@@ -788,9 +788,9 @@ export interface AiProvider {
 
 Routing is declarative, per task, per household, with a platform default.
 
-**Residency rule (canonical, hard constraint).** `PARSE`, `CLASSIFY` and `NARRATE` carry the user's own
-free text; `OCR` carries an image of a receipt. Those four may only be routed to a **`LOCAL` model** or
-to a provider endpoint **inside an adequacy-covered region (EEA)**. The `_EU` suffix in the table below
+**Residency rule (canonical, hard constraint).** `PARSE`, `CLASSIFY`, `NARRATE` and `ROUTE` carry the
+user's own free text; `OCR` carries an image of a receipt. Those five may only be routed to a **`LOCAL`
+model** or to a provider endpoint **inside an adequacy-covered region (EEA)**. The `_EU` suffix in the table below
 is therefore mandatory, not a preference — an endpoint outside the EEA is a GDPR Chapter V transfer and
 requires the household's explicit, recorded consent ([08 §6](08-security-privacy-and-compliance.md)).
 A provider that cannot offer an EEA endpoint cannot serve those tasks at all. `EMBED` never leaves the
@@ -809,9 +809,23 @@ const routing: Record<Task, { primary: Endpoint; fallback: Endpoint | null }> = 
   NARRATE:  { primary: 'LOCAL',       fallback: null           },
   // The most sensitive payload in the system (an image). Local-first; cloud only on consent.
   OCR:      { primary: 'LOCAL',       fallback: null           },
+  // ADR-036's routing rung: which registered intent or action does a sentence mean? It carries the
+  // user's own words and **nothing else** — no ledger context, no ids, no figures from the database —
+  // and it answers with a member of a compiled-in union or `null`. Local-first and dark by default:
+  // with no local model running there is nothing to call, so enabling it is a deliberate act.
+  ROUTE:    { primary: 'LOCAL',       fallback: null           },
   EMBED:    { primary: 'LOCAL',       fallback: null           },
 };
 ```
+
+⚠️ **`ROUTE` narrows docs/08 §6.3's redaction in one specific way, deliberately.** Digits in its payload
+are **not** stripped, because the text a route returns becomes a slot the *local* parsers read
+(`parseAmount`, the calendar): redacting an amount would hand back an action with no amount in it, which
+silently breaks every `ADD_TRANSACTION` it touches. What protects this payload instead is that it carries
+nothing the Household did not type — no Category or Merchant names, no ids, no computed figure — that it
+is capped like narration's question, and that it is consent-gated and EEA-or-local like every other task.
+The per-task budget is 2 s, `CLASSIFY`'s, because it is a small JSON classification on a path where
+somebody is waiting (ADR-036).
 
 > **Why `CLASSIFY` primary is `LOCAL`, not `DEEPSEEK`.** An earlier draft of this document defaulted
 > `CLASSIFY` to a DeepSeek endpoint for cost. That sent household free text (merchant names, and

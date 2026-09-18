@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { AiRequestError } from '../errors';
-import type { ClassifyInput, OcrInput, ParseInput } from '../provider';
+import type { ClassifyInput, OcrInput, ParseInput, RouteInput } from '../provider';
 import { DETERMINISM_SEED, OpenAiCompatibleProvider, joinUrl } from './openai-compatible';
 import {
   DEEPSEEK_BASE_URL,
@@ -88,6 +88,20 @@ function ocrInput(overrides: Partial<OcrInput> = {}): OcrInput {
     locale: 'sr-Latn',
     imageBase64: 'aGVsbG8=',
     mimeType: 'image/jpeg',
+    ...overrides,
+  };
+}
+
+function routeInput(overrides: Partial<RouteInput> = {}): RouteInput {
+  return {
+    task: 'ROUTE',
+    baseUrl: BASE,
+    system: 'Ti biras akciju.',
+    user: 'Members:\nADD_TAG\nSPEND_TOTAL',
+    templateId: 'route.closed-registry',
+    version: '1',
+    locale: 'sr-Latn',
+    question: 'zapamti ovu ispravku',
     ...overrides,
   };
 }
@@ -459,6 +473,56 @@ describe('the response the adapter parses', () => {
   });
 });
 
+describe('the ROUTE call (ADR-036)', () => {
+  it('sends the closed list in the caller\'s prompt and the question inside the untrusted span', async () => {
+    const stub = stubFetch([{ body: chatCompletion({ route: 'ADD_TAG', text: 'Odmor' }) }]);
+    const provider = createDeepSeekProvider({ apiKey: 'k', fetch: stub.fetch });
+
+    const call = await provider.callRoute(routeInput());
+
+    expect(call.value).toEqual({ route: 'ADD_TAG', text: 'Odmor' });
+    const sent = JSON.stringify(stub.lastRequest.body);
+    // The member list travels because the **caller** rendered it — `packages/ai` must not know the
+    // registries, so it can neither add nor omit a member.
+    expect(sent).toContain('ADD_TAG');
+    expect(sent).toContain('zapamti ovu ispravku');
+    // ⚠️ **The field names are the caller's prompt**, not something this adapter injects: DeepSeek runs
+    // in `json_object` mode, which constrains syntax and not keys, so a prompt that never names `route`
+    // and `text` is how the first live provider made the classifier invent its own fields (docs/15).
+    // That assertion therefore lives with the prompt — `route-prompt.spec.ts` in `apps/api`.
+  });
+
+  it('answers null for "none of these" without inventing a member', async () => {
+    const stub = stubFetch([{ body: chatCompletion({ route: null, text: null }) }]);
+    const provider = createDeepSeekProvider({ apiKey: 'k', fetch: stub.fetch });
+
+    await expect(provider.callRoute(routeInput())).resolves.toMatchObject({
+      value: { route: null, text: null },
+    });
+  });
+
+  it('treats an empty string as absence, and a wrong type as a malformed response', async () => {
+    const empty = stubFetch([{ body: chatCompletion({ route: '  ', text: '' }) }]);
+    await expect(
+      createDeepSeekProvider({ apiKey: 'k', fetch: empty.fetch }).callRoute(routeInput()),
+    ).resolves.toMatchObject({ value: { route: null, text: null } });
+
+    // A field of the wrong type is a **provider** problem, not a hard question: the caller would
+    // otherwise have to tell "the model answered nonsense" from "none of the members fits".
+    const wrong = stubFetch([{ body: chatCompletion({ route: ['ADD_TAG'], text: 'Odmor' }) }]);
+    await expect(
+      createDeepSeekProvider({ apiKey: 'k', fetch: wrong.fetch }).callRoute(routeInput()),
+    ).rejects.toMatchObject({ code: 'MALFORMED_RESPONSE' });
+  });
+
+  it('reports a body that is not a JSON object as malformed', async () => {
+    const stub = stubFetch([{ body: JSON.stringify({ choices: [{ message: { content: 'not json' } }] }) }]);
+    await expect(
+      createDeepSeekProvider({ apiKey: 'k', fetch: stub.fetch }).callRoute(routeInput()),
+    ).rejects.toMatchObject({ code: 'MALFORMED_RESPONSE' });
+  });
+});
+
 describe('per-task budgets', () => {
   it('documents 2 s parse/classify, 8 s narrate, 20 s OCR', () => {
     expect(TASK_TIMEOUTS_MS.PARSE).toBe(2_000);
@@ -466,6 +530,9 @@ describe('per-task budgets', () => {
     expect(TASK_TIMEOUTS_MS.NARRATE).toBe(8_000);
     expect(TASK_TIMEOUTS_MS.OCR).toBe(20_000);
     expect(TASK_TIMEOUTS_MS.EMBED).toBe(2_000);
+    // ADR-036's routing rung: a small JSON classification on a path where somebody is waiting, so the
+    // same budget as CLASSIFY rather than a longer one.
+    expect(TASK_TIMEOUTS_MS.ROUTE).toBe(2_000);
   });
 
   it('fires a parse timeout inside its own 2 s budget, not at a default socket timeout', async () => {
@@ -512,7 +579,7 @@ describe('capability reporting', () => {
     // `TASK_NOT_SUPPORTED` on the first call instead, which the assistant renders as a template
     // answer. That is exactly how `NARRATE` was missing from both cloud factories until 2026-09-17.
     const unused = { post: () => Promise.reject(new Error('unused')) } as never;
-    const chat = ['PARSE', 'CLASSIFY', 'NARRATE'] as const;
+    const chat = ['PARSE', 'CLASSIFY', 'NARRATE', 'ROUTE'] as const;
 
     const deepseek = createDeepSeekProvider({ endpoint: 'DEEPSEEK_GLOBAL', fetch: unused });
     const openai = createOpenAiProvider({ baseUrl: 'https://eu.example/v1', fetch: unused });

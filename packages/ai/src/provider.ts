@@ -43,15 +43,19 @@
 /**
  * docs/04 §9's `Task`. The four sensitive tasks carry the Household's own free text or a Receipt
  * image and are residency-restricted; `EMBED` never leaves the process at all.
+ *
+ * `ROUTE` is the fifth, added by ADR-036: a sentence the deterministic cues could not match is sent to
+ * a model to find out **which registered intent or action it means**. It carries no ledger data at all,
+ * and what it may answer is a member of a compiled-in union — never a method, URL, id, amount or date.
  */
-export type Task = 'PARSE' | 'CLASSIFY' | 'NARRATE' | 'OCR' | 'EMBED';
+export type Task = 'PARSE' | 'CLASSIFY' | 'NARRATE' | 'OCR' | 'ROUTE' | 'EMBED';
 
 /**
  * Every task, in the order docs/04 §9 lists them. Exported so a caller iterating the routing table
  * (validation, health checks, the settings screen) cannot silently miss one, and so adding a `Task`
  * member without adding it here is a compile error rather than an omission.
  */
-export const TASKS: readonly Task[] = ['PARSE', 'CLASSIFY', 'NARRATE', 'OCR', 'EMBED'];
+export const TASKS: readonly Task[] = ['PARSE', 'CLASSIFY', 'NARRATE', 'OCR', 'ROUTE', 'EMBED'];
 
 /**
  * docs/04 §9's provider identity. This is the vendor, not the endpoint: `OPENAI` serves both
@@ -154,6 +158,42 @@ export interface NarrateInput extends TaskCall {
   readonly facts: readonly string[];
   /** `<= 280` chars (docs/08 §6.3). Never a general-purpose instruction (§6.11). */
   readonly question: string;
+}
+
+/**
+ * A routing request: *which* registered intent or action does this sentence mean? (ADR-036)
+ *
+ * ⚠️ **The user's own words are the entire payload.** There is no ledger context in a route request —
+ * no ids, no Category or Merchant names, no figure from the database — because the question *is* the
+ * input; the closed member lists travel in `user`, rendered by the caller that owns them.
+ *
+ * **Digits are deliberately not redacted**, which narrows docs/08 §6.3 for this one task and is
+ * recorded in ADR-036. The text a route returns becomes a slot the *local* parsers read (`parseAmount`,
+ * the calendar), so stripping an amount here would produce an action with no amount in it — a redaction
+ * that silently breaks every `ADD_TRANSACTION` it touches. What protects this payload instead is that
+ * it carries nothing the Household did not type, that it is capped by the caller (the same 280-char
+ * rule narration follows), and that it is consent-gated and EEA-or-local like every other task.
+ */
+export interface RouteInput extends TaskCall {
+  readonly task: 'ROUTE';
+  readonly locale: string;
+  /** The user's own words, capped by the caller. */
+  readonly question: string;
+}
+
+/**
+ * What a route request answers, shape-checked here and **membership-checked by the caller**.
+ *
+ * `route` is a string rather than a union on purpose: `packages/ai` must not know the intent or action
+ * registries (they are `apps/api`'s), and a union here would be a second copy of them — the drift
+ * ADR-017's closed `Record` exists to prevent. The caller rejects anything outside its unions, and
+ * `null` is the honest answer that says "none of these".
+ */
+export interface RouteAnswer {
+  /** The member name the sentence maps to, or `null` when none of them fits. Never a method. */
+  readonly route: string | null;
+  /** For a write: the words naming what it acts on, copied from the sentence. `null` for a question. */
+  readonly text: string | null;
 }
 
 export interface OcrInput extends TaskCall {

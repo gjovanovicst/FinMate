@@ -929,6 +929,22 @@ docs/04 is canonical for all of this. The recurring theme is that a second copy 
   flow the two agree, because the client echoes the kind the parser gave it, so only a row whose direction
   the user set — or an offline row carrying one — is affected.
 
+- **Adding a `Task` to `packages/ai` is not one edit, and two of the places it must land fail
+  *quietly*.** `Task` is a union with exhaustive `Record`s, so `tsc` catches `TASKS`,
+  `TASK_TIMEOUTS_MS` and `DEFAULT_ROUTING` — but the rest are `Partial<Record<Task, …>>` by design, and
+  a missing entry there is a **runtime** `TASK_NOT_SUPPORTED` on the first call instead of a build
+  failure. `ROUTE` (ADR-036) needed: the union and `TASKS`; a `callTask` case in
+  `openai-compatible.ts`; a case in `router.ts`'s fallback switch for providers with no `callTask`; and a
+  model in **each** factory's `models` map (`createDeepSeekProvider`, `createOpenAiProvider`,
+  `createLocalProvider` — the same class of omission that left `NARRATE` out of both cloud factories
+  until 2026-09-17). `openai-compatible.spec.ts`'s "gives every chat endpoint a model for each task"
+  list is the guard, so extend that list with the new task and the omission becomes a red test.
+
+- **A `json_object` prompt does not name its own fields, so the caller's prompt has to.** This bit the
+  classifier once (docs/15's prompt entry) and it applies to every new JSON task: the adapter's schema
+  constrains *syntax* for providers that enforce one, and DeepSeek does not, so `ROUTE`'s field names
+  (`route`, `text`) must appear in the prompt `apps/api` renders — asserted there, not here.
+
 ## 7. Capture and the commit path
 
 F-05/F-06 and I-10: the path where a mistake costs the user money.
