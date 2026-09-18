@@ -656,6 +656,23 @@ The rules the domain exists to keep (ADR-003, ADR-016, I-1, I-2).
   class to match the document renames the type on the wire and breaks every client query — the document
   is the shorthand, the generated schema is the contract.
 
+- **Every hand-written word list here is per language, and the app's primary language was missing from
+  all of them (C-5).** `INCOME_MARKERS`, `NEGATION_MARKERS`, `RELATIVE_DAY_OFFSETS` and the currency words
+  were Serbian-only while the app ships **English** first (ADR-019): `salary 85000` became an **expense**
+  (a wrong `kind`, so a wrong figure in every total), `coffee 3.50 today` left `today` in the description,
+  and `5 euros` carried **no currency** — on an RSD ledger, five euros silently became five dinars. None of
+  these throws: the parser has a plausible default for each one, which is why only an expectation per
+  language finds them (`packages/nlp/src/language-values.spec.ts`). ⚠️ **The two refund tables are not
+  interchangeable**: a *noun* for money coming back (`refund`, `erstattung`, `reembolso`) biases direction
+  to INCOME, while a *participle* that only says "it was returned" (`refunded`, `devuelto`) makes the sign
+  uncertain and must flag for confirmation instead.
+
+- **`CURRENCY_SUFFIX` matches raw text, so a diacritic has to be allowed in the *pattern* as well as absent
+  from the *set*.** The currency words are looked up folded, but the suffix regex runs first, before folding
+  — and the suffix is also stored verbatim for the description, so folding first would rewrite the user's
+  own word. `5 dólares` therefore failed both halves: `d[oó]lar(?:a|es)?` in the pattern *and* `dolares` in
+  `USD_WORDS`. When a value must be both matched and kept, check where the fold happens relative to the
+  match before adding the word.
 
 ---
 
@@ -1699,6 +1716,15 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   reported 87 % precision that way, and two of its three "misses" were correct routes). Grade by the refusal
   reason, mark the fixtures the **cues** are supposed to catch so they are not scored as routed, and print
   the evidence for every judgement.
+
+- **A routed action's payload is the user's own words, so a prompt that asks for "the words that name it"
+  produces an action that cannot run.** C-5's live run caught `ADD_TRANSACTION`'s model answer as
+  `text: "kafa"` — the numeral dropped, because a number is not a name and the instruction said names. The
+  builder then read the amount **out of that text** and refused `NO_AMOUNT`, so a correctly routed command
+  vanished. The amount is never sent as a number (ADR-001/003); it stays inside the sentence and is parsed
+  locally, which makes the text the *only* carrier and means the prompt has to say so explicitly — both in
+  the general rule and in that action's own description, because the per-action line is what a model
+  attends to. Pin both (`route-prompt.spec.ts`), since no type, lint or eval gate reads prompt prose.
 
 ## 10. Cross-cutting rules of the codebase
 

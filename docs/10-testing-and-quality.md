@@ -859,6 +859,21 @@ report a precision number that measures the fixture author's optimism rather tha
 member and the concession is named where the numbers are. Tightening it back would report a model error that
 is not one; leaving it unnamed would hide a judgement.
 
+⚠️ **And an ambiguity has to be declared in every language it appears in, or the instrument contradicts
+itself.** C-3 widened the Spanish fixture and left its **English twin** — *"What are my biggest expenses?"* —
+strict; C-5's run put the model on the other side of it and read as a precision miss. Both fixtures now
+declare both members, in the fixture's own `note` as well as in the numbers. The honest consequence is worth
+stating plainly: **24 of the 25 rung-responsible fixtures discriminate**, that one cannot, and the ≥90 %
+floor rests on the 24.
+
+**The values half of the same claim is provider-free, and it is `packages/nlp`'s second language gate.**
+`extract.ts` reads the amount, the date, the currency and the direction with hand-written tables, so a
+language the rung can route is a language whose *values* this package must read — otherwise the row is
+confidently wrong rather than refused. `packages/nlp/src/language-values.spec.ts` writes those expectations
+out **per language** (Serbian, English, German, Spanish, Croatian) rather than iterating the tables, because
+a test that iterated `RELATIVE_DAY_OFFSETS` would pass for an empty one. What it found, and the four defects
+it closes, are [04 §8.1.8](04-categorization-and-ai-engine.md).
+
 ---
 
 ## 6. Adversarial and safety testing

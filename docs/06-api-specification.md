@@ -4306,7 +4306,7 @@ missing picker entry is not a wrong write — unlike R-27(a2), which this delibe
 > | Routing precision, on the fixtures the rung is responsible for | **21/21 = 100 %** | ≥ 90 % |
 > | **Traps** — a capability nobody wrote, in four languages | **5/5** | **5/5** (one invented member fails) |
 > | Cue-covered fixtures still caught by the cues, i.e. no paid call | 2/2 | 2/2 |
-> | End-to-end (a real answer or a real proposal) | 15/23 = 65 % | — (that is C-5's number) |
+> | End-to-end (a real answer or a real proposal) | 15/23 = 65 % — ⚠️ **wrong denominator**: the five traps, which are *supposed* to refuse, were counted as positives. C-5 re-measured it correctly | — (that is C-5's number) |
 > | Cost of the whole set, routing **and** narration | **1 446 micros (€0.0014)** | — |
 >
 > Two judgements are recorded rather than smoothed over. **One model disagreement**: *"¿Cuáles son mis
@@ -4314,9 +4314,42 @@ missing picker entry is not a wrong write — unlike R-27(a2), which this delibe
 > the *fixture* was too strict — "my biggest expenses" is honestly either — so `alternatives` accepts both and
 > the concession is named here. **One routed-but-blocked**: the German *"Setze ein Budget …"* shows the rung
 > choosing `SET_BUDGET` correctly and the builder then refusing `UNRUNNABLE:categoryId`, because
-> `Lebensmittel` is not a Category this build can resolve. That is C-5's *values* gap exactly — and it is also
+> `Lebensmittel` is not a Category this build can resolve. ⚠️ **C-3 attributed that to C-5's *values* gap, and
+> the attribution was wrong** — a Category name a Serbian-named tree cannot resolve is **entity vocabulary**
+> (C-4's problem), while C-5's values defects were in `packages/nlp`'s word tables and this run could not see
+> them at all ([04 §8.1.8](04-categorization-and-ai-engine.md)). It is also
 > why a live measurement must grade by refusal **reason**: a refused write reports no action, so a correct
 > route and a wrong one are indistinguishable from the payload alone.
+>
+> **C-5 then closed the half the rung cannot reach — the values** (ADR-036, [04 §8.1.8](04-categorization-and-ai-engine.md)).
+> Routing a sentence buys the *intent* and nothing else: the amount, the date, the currency and the direction
+> are still read here by hand-written word tables, and every one of them was Serbian-only while the app ships
+> **English** first (ADR-019). Three parser defects were fixed — `salary 85000` recorded as an *expense*,
+> `today` left in the description, `5 euros` carrying **no currency** (five dinars on an RSD ledger) — plus one
+> prompt defect the live run found: a routed `ADD_TRANSACTION` dropped the numeral from its `text`, which is
+> the amount's only carrier, so a correctly routed command was refused `NO_AMOUNT`. Re-measured three times on
+> the same build:
+>
+> | Metric | Run B | Run C | Run D | Floor |
+> |---|---|---|---|---|
+> | Routing precision, rung-responsible fixtures | **24/25 = 96 %** | **25/25 = 100 %** | **25/25 = 100 %** | ≥ 90 % |
+> | **Traps** — a capability nobody wrote, in four languages | 5/5 | 5/5 | 5/5 | **5/5** |
+> | Cue-covered fixtures still caught by the cues, i.e. no paid call | 2/2 | 2/2 | 2/2 | 2/2 |
+> | End-to-end, **positive fixtures only** | **19/22 = 86.4 %** | **19/22 = 86.4 %** | **19/22 = 86.4 %** | — |
+> | Cost of the whole set, routing **and** narration | 1 602 micros | 1 509 micros | 1 451 micros | — |
+>
+> The runs differ in exactly one fixture, and only in run B: *"What are my biggest expenses?"* came back
+> `TOP_CATEGORIES` where the fixture named `LARGEST_TRANSACTIONS`. That is the **English twin of the Spanish
+> sentence C-3 had already declared ambiguous** — the same question, graded strictly in one language and
+> leniently in the other, which the run exposed as an inconsistency rather than a model error. C-5 declared
+> both members on both fixtures, and run D is that build. **This is not a widened metric**: a sentence that
+> two correct members answer cannot grade a unique choice, so the floor is carried by the **24** fixtures
+> where one answer really is right — and the concession is named in the fixture itself, not only here.
+>
+> The fixture file is now **27** questions (11 intents, 11 actions, 5 traps) over five languages, and
+> `route-fixtures.spec.ts` still guards its shape with no provider. The three unanswered positives are
+> `ALREADY_SET` (the demo Household already holds that budget) and the two German `Lebensmittel` refusals —
+> **entity vocabulary, not values**, which is C-4's row.
 >
 > **And the cue list is no longer the only way in.** [ADR-036](14-decisions-and-risks.md#adr-036--a-model-may-route-a-question-to-the-closed-registry-it-may-never-name-a-method)
 > records a **routing rung** that sits *after* these cues: a question the cues cannot match may be routed by

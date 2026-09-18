@@ -64,8 +64,23 @@ export interface TransactionFragment {
 /**
  * Words that bias direction to INCOME (docs/04 §3.1), stored folded. `primljen*` is included because
  * §3.1 names the phrase `rata kredita primljena`, not the lemma.
+ *
+ * ## One table per language, and the reason is a defect this list had (ADR-036 C-5)
+ *
+ * The direction vocabulary was Serbian-only while the app ships **English** as its primary language
+ * (ADR-019), so `salary 85000` was recorded as an **expense** — a wrong `kind` on a shipped language,
+ * which is a wrong figure in every total that follows. The same held for German, Spanish and Croatian.
+ * A language the assistant can *route* (C-2) but whose values this table cannot read is a language that
+ * produces confidently wrong rows, so the two halves have to arrive together.
+ *
+ * ⚠️ **The mapping rule for a refund**, because the two tables are easy to confuse: a **noun** for money
+ * coming back (`refundacija`, `refund`, `erstattung`, `reembolso`) biases direction to INCOME, while a
+ * **participle** that says only *"it was returned"* (`vraceno`, `refunded`, `devuelto`) makes the sign
+ * **uncertain** and belongs in {@link NEGATION_MARKERS} — the choice §3.1 makes for `vraceno` against
+ * `refundacija`.
  */
 export const INCOME_MARKERS: readonly string[] = Object.freeze([
+  // Serbian (the original list, unchanged)
   'plata',
   'penzija',
   'uplata',
@@ -78,16 +93,82 @@ export const INCOME_MARKERS: readonly string[] = Object.freeze([
   'povracaj',
   'povrat',
   'honorar',
+  // English
+  'salary',
+  'wage',
+  'wages',
+  'paycheck',
+  'pension',
+  'refund',
+  'refunds',
+  'reimbursement',
+  // German
+  'gehalt',
+  'lohn',
+  'rente',
+  'erstattung',
+  'ruckerstattung',
+  // Spanish
+  'sueldo',
+  'salario',
+  'nomina',
+  'jubilacion',
+  'reembolso',
+  'devolucion',
+  // Croatian (`plaća` folds to `placa`; Serbian says `plata`, so the two do not collide)
+  'placa',
 ]);
 
-/** Words that make the sign uncertain (docs/04 §3.1), stored folded. */
-export const NEGATION_MARKERS: readonly string[] = Object.freeze(['vraceno', 'storno', 'refund']);
+/**
+ * Words that make the sign uncertain (docs/04 §3.1), stored folded.
+ *
+ * The participle class — see the mapping rule above. A word here flags **for confirmation** rather than
+ * biasing a direction, which is the honest answer for a sentence that says the money moved without
+ * saying which way.
+ */
+export const NEGATION_MARKERS: readonly string[] = Object.freeze([
+  'vraceno',
+  'storno',
+  'refund',
+  'refunded',
+  'devuelto',
+  'erstattet',
+  'zuruckgegeben',
+]);
 
-/** Relative day words, folded, mapped to an offset from `today`. */
+/**
+ * Relative day words, folded, mapped to an offset from `today` — one entry per language the assistant
+ * can be asked in (ADR-036 C-5).
+ *
+ * ⚠️ **English was missing from this table too**, and it is a *shipped* language: `coffee 3.50 today`
+ * parsed the amount and left `today` in the description, so the row was filed under the Household's
+ * today *by accident* and its description read `coffee today`. The date happened to be right; the
+ * description did not, and a phrase like *"the day before yesterday"* would have been filed on the
+ * wrong day entirely.
+ *
+ * **Past days only, deliberately.** `sutra`/`tomorrow`/`morgen`/`mañana` are absent because a
+ * *future-dated* capture is a product question — does a typed fragment carry a date that has not
+ * happened? — and not a vocabulary gap to decide here. Named as a residual rather than half-added.
+ */
 const RELATIVE_DAY_OFFSETS: Readonly<Record<string, number>> = Object.freeze({
+  // Serbian
   danas: 0,
   juce: -1,
   prekjuce: -2,
+  // Croatian — the days differ from Serbian (`jučer`, not `juče`)
+  jucer: -1,
+  prekjucer: -2,
+  // English
+  today: 0,
+  yesterday: -1,
+  // German
+  heute: 0,
+  gestern: -1,
+  vorgestern: -2,
+  // Spanish
+  hoy: 0,
+  ayer: -1,
+  anteayer: -2,
 });
 
 /** Weekday names, folded, indexed from Monday = 0 (the ISO week). */
@@ -101,13 +182,33 @@ const WEEKDAY_INDEX: Readonly<Record<string, number>> = Object.freeze({
   nedelja: 6,
 });
 
+/**
+ * The currency words, folded, per language.
+ *
+ * ⚠️ **These were Serbian-shaped too**, so `5 euros` and `5 dollars` — the spellings an English or
+ * Spanish entry actually uses — were read as an amount with **no currency**, which means the Household's
+ * ledger currency was assumed. On an RSD ledger that turns five euros into five dinars, silently. The
+ * Serbian and German words already worked (`euro` is `euro` in both); the plurals did not.
+ *
+ * `CHF` is deliberately absent: no market this product targets uses it, and a currency word nobody asked
+ * for is an assumption the ledger would then carry.
+ */
 const RSD_WORDS = new Set(['din', 'dinar', 'dinara', 'dindzi', 'rsd']);
-const EUR_WORDS = new Set(['eur', 'euro', 'eura', 'evro', 'evra']);
-const USD_WORDS = new Set(['usd', 'dolar', 'dolara']);
+const EUR_WORDS = new Set(['eur', 'euro', 'euros', 'eura', 'evro', 'evra']);
+const USD_WORDS = new Set(['usd', 'dolar', 'dolara', 'dolares', 'dollar', 'dollars']);
 
-/** A currency written immediately after the amount: `2000din`, `2.000 rsd`, `1500 dindži`, `20€`. */
+/**
+ * A currency written immediately after the amount: `2000din`, `2.000 rsd`, `1500 dindži`, `20€`,
+ * `5 dólares`.
+ *
+ * ⚠️ **This runs on raw text, so a diacritic has to be allowed *here* as well as be absent from the
+ * word sets.** The sets hold folded forms (the match is folded by {@link currencyFor}), but the match
+ * itself happens before the fold — which is why `dólares` needs `[oó]` in the pattern and `dolares` in
+ * the set. The suffix is also stored verbatim for the description, so folding first would rewrite the
+ * reader's own word.
+ */
 const CURRENCY_SUFFIX =
-  /^\s*(€|\$|din(?:ar(?:a)?)?|dind[zž]i|rsd|eur(?:o|a)?|evr(?:o|a)?|usd|dolar(?:a)?)(?![\p{L}])/iu;
+  /^\s*(€|\$|din(?:ar(?:a)?)?|dind[zž]i|rsd|eur(?:os?|a)?|evr(?:o|a)?|usd|d[oó]lar(?:a|es)?|dollars?)(?![\p{L}])/iu;
 
 /**
  * A numeric token.

@@ -1,5 +1,5 @@
 {
-  "$comment": "The multilingual routing battery — ADR-036 C-3, docs/16 Part C. Each entry declares what the *rung* must answer for a sentence the deterministic cue vocabulary does not cover: one registry member, or null. It is deliberately NOT part of `pnpm test:evals` (which is deterministic and provider-free): this file is the fixture set a LIVE run measures, and `route-fixtures.spec.ts` guards its shape — every expected member must exist, every declared language must be listed, and a claimed language must have fixtures. The numbers from the last live run are recorded in docs/06 §8.16.",
+  "$comment": "The multilingual routing battery — ADR-036 C-3, docs/16 Part C. Each entry declares what the *rung* must answer for a sentence the deterministic cue vocabulary does not cover: one registry member, or null. It is deliberately NOT part of `pnpm test:evals` (which is deterministic and provider-free): this file is the fixture set a LIVE run measures, and `route-fixtures.spec.ts` guards its shape — every expected member must exist, every declared language must be listed, and a claimed language must have fixtures. The numbers from the last live run are recorded in docs/06 §8.16. C-5 added four value fixtures (de/es/en/hr) to the same set, because a routed action whose values this build cannot read is a confidently wrong row rather than a refusal.",
   "languages": [
     {
       "code": "sr-Latn",
@@ -62,8 +62,12 @@
       "question": "What are my biggest expenses?",
       "expect": {
         "kind": "INTENT",
-        "intent": "LARGEST_TRANSACTIONS"
-      }
+        "intent": "LARGEST_TRANSACTIONS",
+        "alternatives": [
+          "TOP_CATEGORIES"
+        ]
+      },
+      "note": "The English twin of the Spanish fixture below, and the C-5 live run caught the inconsistency: the same sentence was graded strictly here and leniently there. One ambiguous sentence cannot grade a unique member in one language and accept two in another, so both declare the same two — and the floor is then carried only by the fixtures where one answer really is correct (06 §8.16)."
     },
     {
       "locale": "en",
@@ -226,6 +230,46 @@
         "kind": "NONE"
       },
       "note": "Not a ledger question at all, in a language the cues cannot read: null, so the refusal it already had stands."
+    },
+    {
+      "locale": "de",
+      "question": "Kaffee 3,50 gestern",
+      "expect": {
+        "kind": "ACTION",
+        "action": "ADD_TRANSACTION",
+        "text": "Kaffee 3,50 gestern"
+      },
+      "note": "The **value** half of C-5: a German entry with a German relative day and a European amount. Before C-5 the day word stayed in the description."
+    },
+    {
+      "locale": "es",
+      "question": "café 5 euros ayer",
+      "expect": {
+        "kind": "ACTION",
+        "action": "ADD_TRANSACTION",
+        "text": "café 5 euros ayer"
+      },
+      "note": "A Spanish amount with a currency word and a relative day — the pair that used to be silent: no currency claimed, the day left in the description."
+    },
+    {
+      "locale": "en",
+      "question": "salary 85000 today",
+      "expect": {
+        "kind": "ACTION",
+        "action": "ADD_TRANSACTION",
+        "text": "salary 85000 today"
+      },
+      "note": "⚠️ A **direction** defect in a shipped language, found while building C-5: `salary` was not a direction marker, so this recorded an **expense**. The fixture pins the word; `language-values.spec.ts` pins the direction."
+    },
+    {
+      "locale": "hr",
+      "question": "kava 3,50 jučer",
+      "expect": {
+        "kind": "ACTION",
+        "action": "ADD_TRANSACTION",
+        "text": "kava 3,50 jučer"
+      },
+      "note": "Croatian's own day word (`jučer`, not Serbian `juče`)."
     }
   ]
 }

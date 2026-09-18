@@ -50,6 +50,20 @@ describe('the routing prompt (ADR-036)', () => {
     expect(system).toContain('de');
   });
 
+  it('tells the model to keep the amount inside the text it returns', () => {
+    // ⚠️ Measured, not assumed: the C-5 run showed the model dropping the numeral from `text` — because
+    // the prompt asked for "the words that name what it acts on" and a number is not a name — and the
+    // builder then refused `NO_AMOUNT`, since it reads the amount out of that very text. The amount is
+    // never sent *as* a number (ADR-001/003); it travels inside the user's own words.
+    const { system } = routePrompt({ locale: 'en' });
+    expect(system).toMatch(/keep any amount/i);
+    expect(system).toMatch(/reads the\s+amount out of this text/i);
+    // …and the per-action meaning says the same thing, because that is the line a model attends to.
+    expect(routeMembers().find((member) => member.name === 'ADD_TRANSACTION')?.description).toMatch(
+      /amount included/i,
+    );
+  });
+
   it('keeps the question out of the instructions', () => {
     // The adapter appends the question inside an untrusted span (docs/08 §6.9). Rendering it here too
     // would put untrusted text in the instruction half — the separation that exists to stop a merchant

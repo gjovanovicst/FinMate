@@ -85,12 +85,27 @@ const CYRILLIC_TO_LATIN: Record<string, string> = {
 | **Orthography** | Serbian has no letter `x`: it is a typographic variant of `ks`, so a **run** folds to one `ks` for matching only (`Maxi` ≡ `Maksi`, `taxi` ≡ `taksi`, `Univerexport` ≡ `Univereksport`, and `Cineplexx` ≡ `Cinepleks` — a doubled `xx` is brand styling, not a longer sound). The fold is symmetric, so a foreign brand spelling and the domestic one meet; the inflected `Maksiju` is *not* the same string and is the planner's case-ending rung, not this fold (task A-10, §8.1.7). |
 | **Thousands separator** | `.` and space are thousands: `2.000` → `2000`, `1 200` → `1200`. |
 | **Decimals** | `,` is decimal: `2,50` → `2.50`; `1250,50` → `1250.50`. |
-| **Currency-suffix forms** | `2000din`, `2.000 rsd`, `1500 dindži`, `20€` → amount + currency hint. |
+| **Currency-suffix forms** | `2000din`, `2.000 rsd`, `1500 dindži`, `20€`, `5 euros`, `5 dólares` → amount + currency hint. |
 | **Shorthand** | `2k` → `2000`, `1.5k` → `1500`. Rejected if it would be ambiguous in context. |
-| **Relative dates** | `juče`, `danas`, `prekjuče`, `prošli petak`, `1.9.`, `01.09.2026`, `1/9`. |
-| **Income markers** | `plata`, `penzija`, `uplata`, `primio`, `refundacija`, `povraćaj`, `povrat`, `honorar`, `rata kredita primljena` ⇒ bias `kind = INCOME`. |
+| **Relative dates** | `juče`/`jučer`, `danas`, `prekjuče`/`prekjučer`, `today`, `yesterday`, `heute`, `gestern`, `vorgestern`, `hoy`, `ayer`, `anteayer`, `prošli petak`, `1.9.`, `01.09.2026`, `1/9`. |
+| **Income markers** | `plata`/`plaća`, `penzija`, `uplata`, `primio`, `refundacija`, `povraćaj`, `povrat`, `honorar`, `salary`, `wage`, `pension`, `gehalt`, `lohn`, `rente`, `sueldo`, `salario`, `nómina`, `jubilación`, `erstattung`, `reembolso`, `devolución`, `rata kredita primljena` ⇒ bias `kind = INCOME`. |
 | **Expense markers** | default when no income marker and no counterparty-receipt semantics. |
-| **Negation/refund** | `vraćeno`, `storno`, `refund` ⇒ flag for user confirmation rather than guessing a sign. |
+| **Negation/refund** | `vraćeno`, `storno`, `refund`, `refunded`, `devuelto`, `erstattet` ⇒ flag for user confirmation rather than guessing a sign. |
+
+⚠️ **Every one of these tables is per language, and the reason is the defects this work found** (ADR-036
+C-5, §8.1.8). The vocabulary above was Serbian-only while the app ships **English** as its primary
+language and the assistant can now *route* five of them: `salary 85000` was recorded as an **expense**
+(a wrong `kind` is a wrong figure in every total that follows), `coffee 3.50 today` left `today` in the
+description, and `5 euros` claimed **no currency** — which on an RSD ledger silently becomes five dinars.
+The lesson is the same one ADR-036 makes for actions at the sentence level: **a language the assistant can
+understand but whose values this layer cannot read produces a confidently wrong row rather than a
+refusal**, and the two halves have to arrive together.
+
+**What is deliberately still Serbian-only, and named rather than half-done:** **weekday names and the
+`prošli <dan>` phrase** (the weekday table is only reachable through that Serbian connective, so adding
+German or English day names without their own phrase table would be vocabulary that can never match), and
+**future days** (`sutra`/`tomorrow`/`morgen`/`mañana`) — a future-dated capture is a product question, not
+a vocabulary gap. `CHF` is absent too: no market this product targets uses it.
 
 **Ambiguity policy:** if two amount interpretations are plausible (e.g. `1.200` vs `1.2`), the parser
 returns both with the higher-probability one first and the LLM/UX resolves it. It **never** silently
@@ -769,6 +784,82 @@ holds `maxi`, so the next onboarding visit writes `maksi` beside it — the same
 contradiction the opposite-polarity check cannot see. It is untidy, not a wrong answer (both rows fold to
 `maksi` and both match), it needs no release step, and the honest place to record it is here. This is the
 distinction to carry forward: **re-folding happens at match time; identity is the stored string.**
+
+---
+
+#### 8.1.8 The values were as language-bound as the sentences (task C-5)
+
+C-3 measured the routing rung and reported a number it could not explain away: routing precision **21/21**
+with end-to-end only **65 %**. It named the gap *values* and left it there. This task is the fix, and its
+first job was to make "values" countable, because it is **three tables and not one** — direction, relative
+days, currency — and every one of them was Serbian-only while the app ships **English** as its primary
+language (ADR-019).
+
+The division of labour is what makes this a real gap rather than a missing word: **the rung picks a member;
+this layer reads the amount, the date, the currency and the direction out of the same sentence with
+hand-written word lists.** So a language the rung can route (C-2) and this layer cannot read is a language
+that produces a *confidently wrong row* instead of a refusal — the failure ADR-036 names at the sentence
+level, one stage later.
+
+| # | Input | What this layer wrote | Found by |
+|---|---|---|---|
+| 1 | `salary 85000` | `kind = EXPENSE` — a wrong direction, so a wrong figure in every total, balance and budget that reads the row, on the app's **primary** language | the per-language expectation table (`packages/nlp/src/language-values.spec.ts`); the live run could not see it, because this Household's only failures were entity failures |
+| 2 | `coffee 3.50 today` | amount right, `today` left in the description; the date was right only because an absent date defaults to today, so *"the day before yesterday"* — which had no English entry either — would have been filed on the **wrong day** | same |
+| 3 | `5 euros`, `5 dólares` | amount right, **currency `null`**, so the Household's ledger currency was assumed: on an RSD ledger, five euros became **five dinars**, silently | same |
+| 4 | a routed `ADD_TRANSACTION` | the model copied *"kafa"* and dropped the numeral from `text`, because the prompt asked for *"the words from the sentence that name or describe what it acts on"* — and the builder reads the amount **out of that text**, so a correctly routed command was refused `NO_AMOUNT` | the **live** measurement |
+
+What changed:
+
+- `INCOME_MARKERS`, `NEGATION_MARKERS`, `RELATIVE_DAY_OFFSETS`, `EUR_WORDS`/`USD_WORDS` and
+  `CURRENCY_SUFFIX` are per language — English, German, Spanish and Croatian beside Serbian — and are stored
+  **folded** (`plaća` → `placa`, `Rückerstattung` → `ruckerstattung`), which is why Croatian `plaća` and
+  Serbian `plata` do not collide.
+- A **mapping rule** had to be written down, because the two refund tables are easy to confuse and the
+  difference is the user's answer: a **noun** for money coming back (`refundacija`, `refund`, `erstattung`,
+  `reembolso`) biases direction to `INCOME`, while a **participle** that says only *"it was returned"*
+  (`vraćeno`, `refunded`, `devuelto`) makes the sign **uncertain** and belongs in the negation table, which
+  asks instead of guessing.
+- `CURRENCY_SUFFIX` runs on **raw** text, before folding — the match happens first, and the suffix is stored
+  verbatim for the description — so `dólares` needs `[oó]` in the pattern *and* `dolares` in the folded set.
+  Folding first would rewrite the reader's own word (docs/15).
+- The routing prompt now says the entry must **keep its amount**, and `ADD_TRANSACTION`'s meaning says the
+  same thing, because that is the line a model attends to. The amount is never sent *as* a number
+  (ADR-001/003): it travels inside the user's own words and is parsed locally, which is why a `text` without
+  it is an **unrunnable action** and not a smaller payload.
+
+**Measured three times on the same build and the same Household** (`pnpm test:evals` is provider-free; this is
+the live rung, 27 fixtures over five languages):
+
+| Run | Routing precision | Traps | End-to-end | Cost |
+|---|---|---|---|---|
+| B | **24/25 (96 %)** | 5/5 | 19/22 (86.4 %) | 1 602 micros |
+| C | **25/25 (100 %)** | 5/5 | 19/22 (86.4 %) | 1 509 micros |
+| D | **25/25 (100 %)** | 5/5 | 19/22 (86.4 %) | 1 451 micros |
+
+The runs differ in exactly one fixture, and only in B: *"What are my biggest expenses?"* came back
+`TOP_CATEGORIES` where the fixture named `LARGEST_TRANSACTIONS`. That is the **English twin of the Spanish
+sentence C-3 had already declared ambiguous** — the same question, graded strictly in one language and
+leniently in the other, so what the run exposed was an inconsistency in the measuring instrument. C-5
+declared both members on both fixtures (run D). It is worth being explicit that this is **not** how a
+metric gets widened: a sentence two correct members answer cannot grade a unique choice, so the floor is
+carried by the **24** fixtures where one answer really is right, and the judgement is recorded in the
+fixture's own `note` — the place the next person will read it.
+
+**The 86.4 % is neither a routing gap nor a value gap.** All three unanswered positives are the same defect
+in different clothes: `postavi budžet za hranu na 20000` is refused `ALREADY_SET` (the demo Household
+already holds that budget) and both German `Lebensmittel` fixtures are refused `UNRUNNABLE:categoryId`,
+because that Household's tree is named in Serbian. That is **entity vocabulary across languages** — the
+subject of C-4, which registers how a user says *which* category — not the rung's and not this layer's. The
+two cue-covered Serbian fixtures are still answered by the cues (2/2), which is the property the rung must
+not break: it runs **after** the deterministic stages, never instead of them.
+
+**Deliberately not done, named rather than half-added** (the same list §3.1 carries): **weekday names and
+the `prošli <dan>` phrase** (the weekday table is reachable only through that Serbian connective, so an
+English *"last Friday"* would be vocabulary that can never match), **future days** (`sutra`/`tomorrow`/
+`morgen`/`mañana` — a future-dated capture is a product decision, not a vocabulary gap), and **`CHF`** (no
+market this product targets uses it). **Which languages are guaranteed** stays Q-16's: the corpus exercises
+five, marks `guaranteed` on **sr-Latn and en** only, and a language that is not guaranteed means the app is
+not claiming to read its values — the rung can still route it, and defects 1–3 are exactly what that costs.
 
 ---
 

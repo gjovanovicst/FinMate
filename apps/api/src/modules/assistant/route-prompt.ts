@@ -86,7 +86,12 @@ const INTENT_MEANINGS: Readonly<Record<AssistantIntent, string>> = {
 
 /** What each write does, in one line, plus what its `text` should contain. */
 const ACTION_MEANINGS: Readonly<Record<AssistantAction, string>> = {
-  ADD_TRANSACTION: 'record a purchase or income ("dodaj trošak kafa 180"); text = the entry without its amount',
+  ADD_TRANSACTION:
+    'record a purchase or income ("dodaj trošak kafa 180"); text = the whole entry, **amount included**',
+  // ⚠️ This said "the entry without its amount" until the C-5 measurement caught it: the model dropped
+  // the numeral, and the builder — which reads the amount out of exactly this text — then refused
+  // `NO_AMOUNT`. The amount is never sent *as a number* (ADR-001/003): it travels inside the user's own
+  // words and is parsed locally, so a text without it is a routed action that cannot be built.
   ADD_CATEGORY: 'create a category ("dodaj kategoriju Putovanja"); text = the name',
   SET_BUDGET: 'set a monthly spending limit ("postavi budžet za hranu na 20000"); text = the whole phrase, amount included',
   ADD_GOAL: 'create a savings goal ("napravi cilj Letovanje 200000"); text = the name and the target',
@@ -133,7 +138,8 @@ export function routePrompt(input: { readonly locale: string }): RoutePrompt {
     'Answer with a JSON object with exactly two fields:',
     '- "route": exactly one name copied from the list below, or null when none of them fits.',
     '- "text": for a create-style action, the words from the sentence that name or describe what it',
-    '  acts on, copied as the user wrote them. For a question, or when nothing is named, null.',
+    '  acts on, copied as the user wrote them. **Keep any amount in it** — the application reads the',
+    '  amount out of this text itself and never from you. For a question, or when nothing is named, null.',
     '',
     'Rules, most important first:',
     '- "route" must be one of the names in the list, spelled exactly. If nothing in the list is what the',

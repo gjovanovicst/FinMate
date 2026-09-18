@@ -404,19 +404,23 @@ records the decision and its constraints; this part is how it gets built.
 |---|---|---|---|
 | C-1 | the `ROUTE` **task** end to end: `packages/ai`'s task + adapter, the consent mapping (the existing text-egress kind, not a fifth purpose), config, and an injected `AI_ROUTER` seam that answers a registry member or `null` — **inert without a provider**, like `NARRATOR` | ADR-036; Q-4 (which providers, still open) for anything to be configured at all | the capability exists and is provable in isolation, with the planner untouched — so "is the model even reachable, consented and bounded" is answered before any routing changes — **done in C-1a + C-1b**, live 6/6 ([06 §8.16](06-api-specification.md)) |
 | C-2 | the planner integration: cues **first**, the rung only when they miss; accept a registry member or refuse; the routed intent re-planned through the ordinary core and the routed write through the ordinary builder; `ROUTE` enters the disclosure with its caller | C-1; the battery as it stands (the with-rung measurement is C-3's) | a non-Serbian/English question stops being a dead end, without changing one byte of today's behaviour for the languages the cues cover — **done in C-2**, live 13/13 ([06 §8.16](06-api-specification.md)) |
-| C-3 | **the measurement that gates it**: the multilingual fixture set, run **off and on**, with a floor on **precision** as well as coverage | C-2; **Q-16** — which languages are guaranteed | the claim "any language" becomes a number with a bar (R-30) — **done**: routing precision 21/21, traps 5/5, live ([06 §8.16](06-api-specification.md)) |
-| C-5 | the **per-language value formats** in `packages/nlp`: numbers (`1,200.50`), relative days, currency words | C-3 — which named the split by measuring it: routing is at 100 % while **end-to-end is 65 %**, and the gap is almost entirely *values* | a routed `ADD_TRANSACTION`/`SET_BUDGET` in a new language stops extracting the right action with the wrong amount — the half the rung cannot reach |
+| C-3 | **the measurement that gates it**: the multilingual fixture set, run **off and on**, with a floor on **precision** as well as coverage | C-2; **Q-16** — which languages are guaranteed | the claim "any language" becomes a number with a bar (R-30) — **done**: routing precision **21/21** on its own 23-question set, traps **5/5**, live; C-5 grew the set to 27 and re-measured **25/25** ([06 §8.16](06-api-specification.md)) |
+| C-5 | the **per-language value formats** in `packages/nlp`: numbers (`1,200.50`), relative days, currency words | C-3 — which named the split by measuring it | a routed `ADD_TRANSACTION`/`SET_BUDGET` in a new language stops extracting the right action with the wrong amount — the half the rung cannot reach — **done**: the four Serbian-only tables carry English, German, Spanish and Croatian; live routing **25/25** (24 of them discriminating — the 25th declares both correct members), traps **5/5**, end-to-end **19/22 (86.4 %)** ([04 §8.1.8](04-categorization-and-ai-engine.md), [06 §8.16](06-api-specification.md)) |
 | C-4 | action breadth, now language-free: the ready-now shortlist — Assign a Merchant's default Category, Contribute to a goal, Tag a Transaction, Add a Merchant/Counterparty, Rename a Category/Tag, move a Transaction to another Account | C-2 (so a new action needs no new word list); ADR-035's undo rule per action | the "lots of app actions" half of the owner's request, at the marginal cost of one registry entry per action instead of one entry per action per language |
 
 **What Part C deliberately does not build**, and it is the same list ADR-036 rejects: a model-named
 method, a model-supplied value, a translation of the app's own copy, and anything auto-applied.
 
-**The honest split, now measured rather than predicted** (C-3): routing precision is **21/21** on the
-fixtures the rung is responsible for, while **end-to-end is 15/23** — and the gap is *values*, not intent. A
-German question routes to `SPEND_BY_CATEGORY` perfectly and then cannot resolve `Lebensmittel` to a Category;
-a routed `SET_BUDGET` refuses `UNRUNNABLE:categoryId` for the same reason. That is why the parser half became
-its own row, **C-5**, instead of riding along with the measurement: the rung's job is done and the *data*
-layer's is not.
+**The honest split, now measured three times rather than predicted** (C-3, corrected in C-5): routing
+precision is **25 of the 25** fixtures the rung is responsible for — one ambiguous sentence flips between
+runs, and it declares both of its correct members, so the floor rests on the 24 that discriminate — with
+**5/5 traps** refused, and **end-to-end 19/22 (86.4 %)**. The **15/23 (65 %)** C-3 reported was wrong in two
+ways, and both are worth keeping: its denominator counted the five `NONE` traps, which are *supposed* to
+refuse, and it blamed *values* for failures that were entity resolution. The values were a real defect
+(§8.1.8 of [04](04-categorization-and-ai-engine.md)) and are fixed; what remains is the German
+`Lebensmittel` questions, refused `UNRUNNABLE:categoryId` because the Household's tree is named in Serbian —
+**entity vocabulary**, which is C-4's problem (registering how a user says *which* category), not the rung's
+and not the parser's.
 
 ---
 
