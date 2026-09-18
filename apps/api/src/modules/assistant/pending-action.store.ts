@@ -27,6 +27,8 @@
 
 import { Injectable } from '@nestjs/common';
 
+import type { CurrencyCode } from '@finmate/domain';
+
 import { RedisService } from '../../common/redis/redis.service';
 import type { ActionSlotName, AssistantAction } from './assistant-actions';
 
@@ -63,10 +65,37 @@ export interface ActionDiffEntry {
   readonly defaulted: boolean;
 }
 
+/**
+ * One thing the proposal will write, for an action that creates a *row* rather than a named entity.
+ *
+ * The amount is minor units as a **string plus its currency**, and it travels as data rather than
+ * inside the sentence for one reason: the client renders every figure through `fm-money` (ADR-003),
+ * and a pre-formatted "180,00 RSD" in a sentence is a number no money component ever sees. It is also
+ * why the shape is JSON-safe by construction — `Money.amountMinor` is a `bigint`, and `JSON.stringify`
+ * throws on one, so a proposal stored with a `Money` in it would fail at the Redis write (docs/15).
+ */
+export interface ActionPreviewLine {
+  /** The text the row will carry, as the parser read it. */
+  readonly label: string;
+  readonly amountMinor: string;
+  readonly currency: CurrencyCode;
+  /** The resolved Category's name, or `null` when nothing chose one (the row needs review). */
+  readonly category: string | null;
+  /** The calendar day the row will be filed under — the text's own date, or the Household's today. */
+  readonly occurredOn: string;
+  /** True when the row will be written `PENDING` and enter the review queue (I-8). */
+  readonly needsReview: boolean;
+}
+
 /** The backend-rendered proposal: a sentence and a diff. Never narrated (ADR-035 decision 8). */
 export interface ActionPreview {
   readonly sentence: string;
   readonly diff: readonly ActionDiffEntry[];
+  /**
+   * The rows the action will write, when it writes rows. Empty for an action that creates one named
+   * entity — `diff` is the whole story there.
+   */
+  readonly lines?: readonly ActionPreviewLine[];
 }
 
 export interface PendingActionProposal {
@@ -76,6 +105,23 @@ export interface PendingActionProposal {
   readonly userId: string;
   readonly action: AssistantAction;
   readonly slots: Readonly<Record<string, string>>;
+  /**
+   * The values the **backend** derived, which the executor needs and the card never edits.
+   *
+   * Kept apart from `slots` on purpose: a slot is something a question states or a card may offer to
+   * change (`kind`, `accountId`), while these are outputs of the parse — the amount, the resolved
+   * Category decision, the row's own idempotency key. Merging them would let a card's diff reach for a
+   * value, and a value's edit path reach for a slot. All strings, so the blob stays JSON.
+   */
+  readonly args?: Readonly<Record<string, string>>;
+  /**
+   * The language the card was rendered in.
+   *
+   * Stored, not re-derived: the confirmation sentence is built from the **returned row** at execute
+   * time, and it must come back in the language of the card the human actually read — a proposal
+   * confirmed from a tab whose language changed is still the sentence they saw.
+   */
+  readonly locale?: string;
   readonly preview: ActionPreview;
   readonly createdAt: string;
 }

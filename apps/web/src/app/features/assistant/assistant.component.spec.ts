@@ -410,7 +410,7 @@ const RESULT = {
 function writeResponder(over: Partial<Record<'answer' | 'propose' | 'execute' | 'undo', unknown>> = {}) {
   return (query: string, _variables?: Record<string, unknown>): unknown => {
     if (query.includes('query AssistantSuggestions')) return { assistantSuggestions: [] };
-    if (query.includes('query AssistantProposeAction')) return { assistantProposeAction: over.propose ?? PROPOSAL };
+    if (query.includes('mutation AssistantProposeAction')) return { assistantProposeAction: over.propose ?? PROPOSAL };
     if (query.includes('mutation AssistantExecuteAction')) return { assistantExecuteAction: over.execute ?? RESULT };
     if (query.includes('mutation AssistantUndoAddCategory')) return { deleteCategory: true };
     return { assistantAnswer: over.answer ?? REFUSAL };
@@ -436,7 +436,7 @@ describe('the assistant write path (B-2b)', () => {
     await askAndSettle(fixture, 'koliko sam potrošio ovog meseca');
 
     expect(
-      client.query.mock.calls.some((call) => String(call[0]).includes('query AssistantProposeAction')),
+      client.query.mock.calls.some((call) => String(call[0]).includes('mutation AssistantProposeAction')),
     ).toBe(false);
     expect(fixture.nativeElement.querySelector('.act')).toBeNull();
   });
@@ -510,7 +510,7 @@ describe('the assistant write path (B-2b)', () => {
   it('replaces the proposal and its key when the kind changes', async () => {
     const { fixture, client } = await mount((query, variables) => {
       if (query.includes('query AssistantSuggestions')) return { assistantSuggestions: [] };
-      if (query.includes('query AssistantProposeAction')) {
+      if (query.includes('mutation AssistantProposeAction')) {
         // The server re-proposes: a new id, and the diff now says INCOME.
         return variables?.['kind'] === 'INCOME'
           ? {
@@ -544,7 +544,7 @@ describe('the assistant write path (B-2b)', () => {
     fixture.detectChanges();
 
     const proposeCalls = client.query.mock.calls.filter((entry) =>
-      String(entry[0]).includes('query AssistantProposeAction'),
+      String(entry[0]).includes('mutation AssistantProposeAction'),
     );
     const variables = proposeCalls.at(-1)?.[1] as Record<string, unknown>;
     expect(variables['kind']).toBe('INCOME');
@@ -649,7 +649,7 @@ describe('the assistant write path (B-2b)', () => {
     // "something with those details already exists", which hides the only actionable word: the name.
     const { fixture } = await mount((query) => {
       if (query.includes('query AssistantSuggestions')) return { assistantSuggestions: [] };
-      if (query.includes('query AssistantProposeAction')) {
+      if (query.includes('mutation AssistantProposeAction')) {
         throw new GraphQLRequestError(
           [{ message: 'A category named "Hrana" already exists here.', code: 'CONFLICT', retryable: false }],
           200,
@@ -666,7 +666,7 @@ describe('the assistant write path (B-2b)', () => {
   it('reports a failed write as a write failure, not as the answer', async () => {
     const { fixture } = await mount((query) => {
       if (query.includes('query AssistantSuggestions')) return { assistantSuggestions: [] };
-      if (query.includes('query AssistantProposeAction')) return { assistantProposeAction: PROPOSAL };
+      if (query.includes('mutation AssistantProposeAction')) return { assistantProposeAction: PROPOSAL };
       if (query.includes('mutation AssistantExecuteAction')) {
         throw new GraphQLRequestError(
           [{ message: 'That action is no longer available.', code: 'NOT_FOUND', retryable: false }],
@@ -695,7 +695,7 @@ describe('the assistant write path (B-2b)', () => {
     // idempotency key is exactly the right thing to send again.
     const { fixture } = await mount((query) => {
       if (query.includes('query AssistantSuggestions')) return { assistantSuggestions: [] };
-      if (query.includes('query AssistantProposeAction')) return { assistantProposeAction: PROPOSAL };
+      if (query.includes('mutation AssistantProposeAction')) return { assistantProposeAction: PROPOSAL };
       if (query.includes('mutation AssistantExecuteAction')) {
         throw new GraphQLRequestError(
           [{ message: 'fetch failed', code: 'UNREACHABLE', retryable: true }],

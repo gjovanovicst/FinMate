@@ -70,6 +70,7 @@ describe('assistantProposeAction (ADR-035)', () => {
 
   it('proposes for a MEMBER, with the expiry as a Date for the DateTime scalar', async () => {
     const { resolver } = resolverWith(async () => ({
+      proposed: true as const,
       proposalId: 'p1',
       action: 'ADD_CATEGORY' as const,
       preview: { sentence: 'Nova kategorija „Putovanja” (rashod, bez nadređene)', diff: [] },
@@ -89,6 +90,7 @@ describe('assistantProposeAction (ADR-035)', () => {
     const { resolver } = resolverWith(async (input) => {
       seen = { ...input.slots };
       return {
+        proposed: true as const,
         proposalId: 'p2',
         action: 'ADD_CATEGORY' as const,
         preview: { sentence: 's', diff: [] },
@@ -99,5 +101,42 @@ describe('assistantProposeAction (ADR-035)', () => {
     await resolver.assistantProposeAction(tenant('MEMBER'), 'dodaj kategoriju Plata', 'INCOME' as never);
 
     expect(seen).toEqual({ name: 'Plata', kind: 'INCOME' });
+  });
+
+  it('passes an account through too, because the card offers to change the one it guessed', async () => {
+    // The same mechanism as `kind`, and the same reason: the account a capture goes to is
+    // preselected, and a preselection the user cannot correct is a silent guess (ADR-035 decision 5).
+    let seen: Record<string, string> | undefined;
+    const { resolver } = resolverWith(async (input) => {
+      seen = { ...input.slots };
+      return {
+        proposed: true as const,
+        proposalId: 'p3',
+        action: 'ADD_TRANSACTION' as const,
+        preview: { sentence: 's', diff: [] },
+        expiresAt: '2026-09-17T00:10:00.000Z',
+      };
+    });
+
+    await resolver.assistantProposeAction(
+      tenant('MEMBER'),
+      'dodaj trošak kafa 180',
+      undefined,
+      'acct-2',
+    );
+
+    expect(seen).toEqual({ text: 'kafa 180', accountId: 'acct-2' });
+  });
+
+  it('returns the service\'s own refusal as a refusal, not as an error', async () => {
+    // `NO_AMOUNT` and friends are decided where the pipeline runs, and they are refusals: the question
+    // asked for something the registry does, and the text could not become a row.
+    const { resolver } = resolverWith(async () => ({ proposed: false as const, reason: 'NO_AMOUNT' }));
+
+    const result = await resolver.assistantProposeAction(tenant('MEMBER'), 'dodaj trošak kafu');
+
+    expect(result.proposed).toBe(false);
+    expect(result.reason).toBe('NO_AMOUNT');
+    expect(result.proposalId).toBeNull();
   });
 });

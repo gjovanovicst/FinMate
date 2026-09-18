@@ -1,4 +1,4 @@
-import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 
 import { CurrentHouseholdId, CurrentTenant } from '../../common/auth/current-tenant.decorator';
 import { ApiError } from '../../common/filters/all-exceptions.filter';
@@ -91,15 +91,20 @@ export class AssistantResolver {
    * Real failures do throw: a name that is invalid, one that already exists, or a store that could not
    * hold the proposal.
    */
-  @Query(() => AssistantActionProposalModel, {
+  @Mutation(() => AssistantActionProposalModel, {
     description:
-      'Propose a write from a question (e.g. "dodaj kategoriju Putovanja"). Writes nothing; the ' +
-      'returned `proposalId` is the only argument the execute mutation accepts (ADR-035).',
+      'Propose a write from a question (e.g. "dodaj kategoriju Putovanja"). Changes nothing in the ' +
+      'ledger; the returned `proposalId` is the only argument the execute mutation accepts (ADR-035). ' +
+      'A **Mutation**, not a Query, and the reason is `ADD_TRANSACTION`: proposing one runs the ' +
+      'classification pipeline, which records a `classification_decisions` row and may call a model — ' +
+      '`captureParse` is a Mutation for exactly that reason. A Query that spends money is a lie about ' +
+      'itself, and the operation type must cover an operation at its worst, not its cheapest.',
   })
   async assistantProposeAction(
     @CurrentTenant() tenant: TenantContext,
     @Args('question', { type: () => String }) question: string,
     @Args('kind', { type: () => CategoryKind, nullable: true }) kind?: CategoryKind,
+    @Args('accountId', { type: () => ID, nullable: true }) accountId?: string,
     @Args('locale', { type: () => String, nullable: true }) locale?: string,
   ): Promise<AssistantActionProposalModel> {
     const plan = planAction(question);
@@ -119,22 +124,36 @@ export class AssistantResolver {
 
     assertCanPerform(tenant.role, ACTION_TEMPLATES[plan.action]);
 
-    const proposed = await this.actions.propose({
+    const outcome = await this.actions.propose({
       householdId: tenant.householdId,
       userId: tenant.userId,
       action: plan.action,
-      // `kind` is the card's one editable default; supplying it re-proposes rather than changing an
-      // existing proposal, which is what keeps the confirmation honest.
-      slots: { ...plan.slots, ...(kind === undefined || kind === null ? {} : { kind }) },
+      // These are the card's editable defaults, and supplying one **re-proposes** rather than changing
+      // an existing proposal — which is what keeps the confirmation honest: the id a person confirms
+      // always names the action they were shown. Which of them the action even has is the registry's
+      // business, and the service drops the rest.
+      slots: {
+        ...plan.slots,
+        ...(kind === undefined || kind === null ? {} : { kind }),
+        ...(accountId === undefined || accountId === null ? {} : { accountId }),
+      },
       ...(locale === undefined || locale === null ? {} : { locale }),
     });
 
+    if (!outcome.proposed) {
+      // A refusal is not an error: the question asked for nothing this registry does, or asked for
+      // something the pipeline could not build a row from (`NO_AMOUNT`, `AMBIGUOUS_AMOUNT`, …).
+      return toActionProposalModel({ proposed: false, reason: outcome.reason });
+    }
+
     return toActionProposalModel({
       proposed: true,
-      ...proposed,
+      proposalId: outcome.proposalId,
+      action: outcome.action,
+      preview: outcome.preview,
       // The service speaks ISO strings (it stores them); the wire type speaks `Date`, which
       // `@Field(() => Date)` renders as the `DateTime` scalar.
-      expiresAt: new Date(proposed.expiresAt),
+      expiresAt: new Date(outcome.expiresAt),
     });
   }
 

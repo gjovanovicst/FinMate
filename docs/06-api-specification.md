@@ -3993,6 +3993,38 @@ did not say what to create, which asks the user rather than writing something no
 that is empty, over 80 characters, or already taken **does** throw (`VALIDATION_FAILED` / `CONFLICT`),
 because those are failures of a request the user made, not refusals to answer a question.
 
+**`ADD_TRANSACTION`, and the one contract change it forced (task B-3a, 2026-09-18).** The second
+action reaches the capture path by a question — *"dodaj trošak kafa 180"*, *"unesi transakciju Lidl
+2000"*, *"dodaj kafu 180"* — and inherits the whole pipeline rather than re-implementing any of it:
+`ClassificationService.parse` at **propose** time (the audit row and the cost, `captureParse`'s own
+call), and `TransactionsService.captureCommit` at **execute** time, with `acceptedProposalId` pointing
+at the decision the card showed. So the pipeline runs once, the category the human approved is the
+category stored, `allowAi: false` states the same thing from the other side, I-3 is enforced where it
+always is, and a blocking row is written `PENDING` into the review queue exactly as `/capture` does.
+
+| Decision | Why |
+|---|---|
+| **`assistantProposeAction` is now a `Mutation`** | Proposing a transaction runs the classifier, which records a `classification_decisions` row and may call a model. `captureParse` is a Mutation for precisely that reason, and the operation type must cover an operation at its worst — a Query that spends money is a lie about itself. The client's only change is the document keyword. |
+| The card carries **`lines`** — structured rows, not prose | `label`, `amount` (the **`Money` scalar**), `category`, `occurredOn`, `needsReview`. The amount is minor units because the client renders every figure through `fm-money` (ADR-003); a pre-formatted *"180,00 RSD"* inside the sentence is a number no money component ever sees. The **sentence stays** and still carries the amount, because a value the store holds as a string (a `bigint` cannot be JSON) is what makes the confirmation readable on its own. |
+| The proposal stores **`args`**, apart from `slots` | A slot is something a question states or a card may change (`kind`, `accountId`); an arg is an output of the parse — the amount, the decision id, the row's own idempotency key. Merging them would let a card's diff reach for a value and a value's edit path reach for a slot. |
+| **One row**, and `MULTIPLE_ROWS` is a refusal | A batch needs per-row editing (categories, amounts, removals) that a confirmation card does not have, and showing only the first of three would be a card that misdescribes what the button does. The capture screen is the surface for more than one. |
+| `NO_AMOUNT`, `AMBIGUOUS_AMOUNT`, `UNRUNNABLE:accountId` | The first is the parser finding nothing to record. The second is `1.200`, which is 1200 **and** 1.2 — the capture screen refuses the whole batch until a human picks, and a card cannot ask, so it must not guess (ADR-003). The third is a Household with no account: a slot nothing on the card could fill. |
+| The **account** is filled and flagged `defaulted` | It is the account `/capture` preselects (newest live), which means the rule is duplicated — and a duplicated guess is only safe when it is *visible and changeable*, which is what the flag plus `assistantProposeAction`'s `accountId` argument make it. |
+| The **kind** is flagged `defaulted` only when the text stated none | `storno 5000` has no direction, so the proposal picks the capture path's default and offers the toggle. A `defaulted` flag records that the **question** never said — so it stays true after the toggle is used, or the choice would be one-way. |
+| `undo: 'UNDO_CAPTURE'` | `undoCapture([id])`, docs/02 §3's undo toast. The client's `undoPlan` refuses an undo it has no mutation for, so an action this client cannot take back offers no control. |
+
+⚠️ **The cue list is matched against *folded* tokens, and the fold maps `x` → `ks`** (A-10). The English
+object word therefore had to be written `ekspense`: `expense` matched nothing, and the rung fell through
+to the amount anchor, producing the text `expense coffee 180`. Found by a planner test that asserted the
+text of *"add expense coffee 180"* — a cue list that looks right and never fires is the quietest kind of
+broken (docs/15).
+
+⚠️ **Residual, stated rather than fixed:** the promised *"Lidl 2000"* shape — the fragment with no verb
+at all — is **not** an assistant action. A bare fragment is the capture screen's signature interaction,
+and matching one here would turn every unanswerable question containing a number into an offer to write.
+The assistant needs an imperative; `dodaj kafu 180` and `dodaj trošak kafa 180` are the two shapes it
+takes.
+
 **The card, and the ordering it needed (task B-2b, 2026-09-17).** `/assistant` renders the proposal
 after the answer, and **only after a refusal** — the client asks `assistantAnswer` first, and asks
 `assistantProposeAction` only when `answered: false`. The order is the second line of defence behind the
@@ -4050,6 +4082,18 @@ unreachable, and the duplicate rule the preview checks is the one the index enfo
 (`/tmp/verify-b2a.mjs`): propose → confirm → the Category is in the tree → a retry replays the same id →
 a different key is refused → a read question proposes nothing → a nameless request is refused with the
 slot → the probe row was removed again.
+
+**B-3a verified**: `action-planner.spec.ts` 14 (the transaction cues, the amount anchor, and the
+`ADD_CATEGORY`-wins-its-own-question precedence), `assistant-actions.spec.ts` 6, `assistant-action.resolver.spec.ts`
+7, `assistant-transaction.integration.spec.ts` **10** against a real Postgres — propose writes nothing, the
+write goes through `captureCommit` and **reuses the decision it showed** (asserted by counting
+`classification_decisions` across propose+execute: one, not two), a repeated idempotency key replays one
+row, `MULTIPLE_ROWS` / `NO_AMOUNT` / `AMBIGUOUS_AMOUNT` / `UNRUNNABLE:accountId` are refusals rather than
+errors, a stated direction is not flagged `defaulted` while an unstated one is (and stays so after the
+toggle, which is what keeps the control on the card), a named account wins over the preselected one, and
+an account from another Household is refused before a button is offered. Both integration suites build
+the service **from `AssistantModule`**, with only the store overridden, so a missing module import is a
+boot failure rather than a surprise.
 
 **B-2b verified**: `assistant.view.spec.ts` 36 and `assistant.component.spec.ts` 28 (the ordering, the
 confirm arguments, the key's stability across a repeat and its replacement on a re-propose, the toggle's

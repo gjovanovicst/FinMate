@@ -1814,6 +1814,46 @@ Short, and load-bearing.
 
 ---
 
+- **A cue list is matched against *folded* tokens, so a spelling that is right in the source can never
+  fire.** `planAction`'s vocabulary is compared with `foldForMatching`'s output, and A-10 changed that
+  fold to map `x` → `ks` — so the English object word `expense` is the token `ekspense` by the time the
+  list sees it. The cue list said `expense`, matched nothing, and the ADD_TRANSACTION rung silently fell
+  through to its amount anchor, producing the text `expense coffee 180` instead of `coffee 180`. Nothing
+  threw and nothing logged: a cue that never fires looks exactly like a question nobody asked that way.
+  Found by asserting the *text* a planner test got back rather than only the action it chose — so when
+  you add a word to any cue list, add what the fold produces, and assert the extraction and not just the
+  branch.
+
+---
+
+- **A proposal stored in Redis is JSON, and money is a `bigint`.** `JSON.stringify` throws
+  `Do not know how to serialize a BigInt`, so an `ActionPreviewLine` cannot hold a `Money` — the stored
+  shape carries `amountMinor` as a **string** plus its currency, and `toActionProposalModel` turns it back
+  into a `Money` for the `Money` scalar with `money(BigInt(…), currency)`. Two smaller consequences came
+  with it: the scalar refuses a negative, which is the right place for that check to live (ADR-003); and
+  a field added to `ActionPreview` must be **optional with a `?? []` at the edge**, because a proposal
+  written by the build before the field existed is still a proposal the new build has to render — a
+  non-nullable field fed `undefined` is a 500, and Redis keeps proposals for ten minutes across a
+  deploy (task B-3a).
+
+---
+
+- **A GraphQL enum that mirrors a closed TypeScript union drifts silently, and only a live call catches
+  it.** `AssistantActionEnum` and `AssistantActionSlotEnum` are hand-written mirrors of the registry's
+  `AssistantAction` and `ActionSlotName`. Adding `ADD_TRANSACTION` and `accountId` to the unions
+  compiled, typechecked, linted and passed every unit test — because the *model* fields are typed with
+  the **union**, not with the GraphQL enum, so nothing connects the two. The first real request answered
+  `Enum "AssistantAction" cannot represent value: "ADD_TRANSACTION"` and
+  `Enum "AssistantActionSlot" cannot represent value: "accountId"` as 500s. Two guards now, because one
+  is not enough: `Record<AssistantAction, AssistantActionEnum>` (and its slot twin) makes a **missing**
+  member a compile error, and `assistant-actions.spec.ts` asserts the mirror is the **identity** against
+  the registry, which catches a mis-mapped one. The general rule: when a wire format mirrors a closed
+  union, write the mirror as a `Record` keyed by that union — the same argument ADR-035 decision 3 makes
+  for the action registry itself — and remember that neither `tsc` nor a unit test will notice a drift
+  that only serialisation reaches (task B-3a).
+
+---
+
 ## Related
 
 - `docs/10-testing-and-quality.md` — what a change has to prove before it is done.

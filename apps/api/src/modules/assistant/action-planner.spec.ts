@@ -76,6 +76,51 @@ describe('planAction (docs/06 §8.16)', () => {
     expect(planAction('can you create a category Travel')?.slots['name']).toBe('Travel');
   });
 
+  it('plans ADD_TRANSACTION from a named object, taking the whole fragment as its text', () => {
+    // The text is what follows the object word, unedited — the pipeline reads it, not this planner.
+    expect(planAction('dodaj trošak kafa 180')?.action).toBe('ADD_TRANSACTION');
+    expect(planAction('dodaj trošak kafa 180')?.slots['text']).toBe('kafa 180');
+    expect(planAction('unesi transakciju Lidl 2000')?.slots['text']).toBe('Lidl 2000');
+    expect(planAction('zabeleži prihod plata 85000')?.slots['text']).toBe('plata 85000');
+    expect(planAction('add expense coffee 180')?.slots['text']).toBe('coffee 180');
+    expect(planAction('dodaj trošak kafa 180')?.matchedOn).toContain('anchor:object');
+  });
+
+  it('accepts an imperative plus a number, because that is how it is actually asked', () => {
+    // *"dodaj kafu 180"* names no object the list could hold — the words between the verb and the
+    // amount are the content. The rung is safe only because the action cannot be built without an
+    // amount: a text that yields none is refused one layer down.
+    expect(planAction('dodaj kafu 180')?.action).toBe('ADD_TRANSACTION');
+    expect(planAction('dodaj kafu 180')?.slots['text']).toBe('kafu 180');
+    expect(planAction('dodaj kafu 180')?.matchedOn).toContain('anchor:amount');
+  });
+
+  it('still lets the category action win its own question', () => {
+    // The registry is checked in declaration order and `ADD_CATEGORY` matches on its own object, so a
+    // number in the name cannot turn a category request into a transaction.
+    expect(planAction('dodaj kategoriju Putovanja')?.action).toBe('ADD_CATEGORY');
+    expect(planAction('dodaj kategoriju 500')?.action).toBe('ADD_CATEGORY');
+    expect(planAction('dodaj kategoriju 500')?.slots['name']).toBe('500');
+    // …and a bare number with the category word is still a *name* problem, not a transaction: the name
+    // is missing, which the caller refuses with `UNRUNNABLE:name`.
+    expect(planAction('dodaj 2 kategorije')?.action).toBe('ADD_CATEGORY');
+    expect(planAction('dodaj 2 kategorije')?.slots['name']).toBeUndefined();
+  });
+
+  it('does not offer a transaction for a bare fragment, or for a question with no amount', () => {
+    // `Lidl 2000` on its own is the **capture screen's** signature interaction, and the assistant is
+    // not a second one: without an imperative there is no request here, and an unanswerable question
+    // containing a number must not become an offer to write (the ordering docs/06 §8.16 records).
+    expect(planAction('Lidl 2000')).toBeNull();
+    expect(planAction('kafa 180')).toBeNull();
+    // …but a named object with no number *is* the action's shape, and the refusal belongs to the layer
+    // that can see it: the planner cannot know whether `kafu` carries an amount, and the pipeline
+    // answers `NO_AMOUNT` (asserted in `assistant-transaction.integration.spec.ts`).
+    expect(planAction('dodaj trošak kafu')?.action).toBe('ADD_TRANSACTION');
+    expect(planAction('dodaj trošak kafu')?.slots['text']).toBe('kafu');
+    expect(planAction('napravi mi pregled potrošnje po kategorijama')).toBeNull();
+  });
+
   it('does not guess an action from a bare noun phrase', () => {
     // "nova kategorija" *is* a request shape — Serbian drops the verb — so it plans and then refuses
     // for want of a name, which asks the user rather than writing something nobody specified.

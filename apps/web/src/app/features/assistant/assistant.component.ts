@@ -1019,12 +1019,21 @@ const STARTERS_QUERY = /* GraphQL */ `
 `;
 
 /**
- * Propose a write. A **query**, which is the API's own decision (docs/06 §8.16): asking what a change
- * would look like changes nothing, so a client that treats it as a mutation would be claiming otherwise.
+ * Propose a write.
+ *
+ * A **mutation**, which is the API's own decision and was a Query until `ADD_TRANSACTION` (docs/06
+ * §8.16): proposing a transaction runs the classification pipeline, which records an audit row and may
+ * call a model, and `captureParse` is a Mutation for exactly that reason. The document keyword is the
+ * client's whole contribution to that distinction — the transport is the same POST either way.
  */
 const PROPOSE_ACTION = /* GraphQL */ `
-  query AssistantProposeAction($question: String!, $kind: CategoryKind, $locale: String) {
-    assistantProposeAction(question: $question, kind: $kind, locale: $locale) {
+  mutation AssistantProposeAction(
+    $question: String!
+    $kind: CategoryKind
+    $accountId: ID
+    $locale: String
+  ) {
+    assistantProposeAction(question: $question, kind: $kind, accountId: $accountId, locale: $locale) {
       proposed
       reason
       proposalId
@@ -1038,6 +1047,15 @@ const PROPOSE_ACTION = /* GraphQL */ `
           after
           afterValue
           defaulted
+        }
+        lines {
+          label
+          # Money is a SCALAR: a selection set on it is a validation error (docs/15). No backticks
+          # here — this document is a template literal, and one would end it (AGENTS.md).
+          amount
+          category
+          occurredOn
+          needsReview
         }
       }
       expiresAt

@@ -54,6 +54,17 @@ interface ActionCues {
   readonly imperatives: readonly string[];
   readonly leadAdjectives: readonly string[];
   readonly objects: readonly string[];
+  /** Where the text after the anchor goes. Its own union, so a read template can never ask for it. */
+  readonly slot: ActionSlotName;
+  /**
+   * Whether an imperative followed by a **number** is enough, with no object word.
+   *
+   * *"dodaj kafu 180"* is how a person actually asks for this, and it names nothing the object list
+   * can list — the words between the verb and the amount are the *content*. The rung is safe only
+   * because the action cannot be built without an amount anyway: a text that yields none is refused,
+   * and *"dodaj kategoriju Putovanja"* carries no number at all (and matches its own action first).
+   */
+  readonly amountAnchor: boolean;
 }
 
 /**
@@ -70,6 +81,34 @@ const CUES: Readonly<Record<AssistantAction, ActionCues>> = Object.freeze({
     ],
     leadAdjectives: ['nova', 'novu', 'novi', 'novo', 'new'],
     objects: ['kategorija', 'kategoriju', 'kategorije', 'kategorijom', 'category', 'categories'],
+    slot: 'name',
+    // A category name is not a number, and a bare *"dodaj 500"* must not create one called `500`.
+    amountAnchor: false,
+  },
+  ADD_TRANSACTION: {
+    imperatives: [
+      'dodaj', 'dodajte', 'dodati',
+      'unesi', 'unesite', 'uneti',
+      'zabelezi', 'zabelezite', 'zabeleziti',
+      'upisi', 'upisite', 'upisati',
+      'evidentiraj', 'evidentirajte',
+      'add', 'record', 'log',
+    ],
+    // No lead adjectives: *"novi trošak"* is not how this is asked, and the rung's false-positive
+    // surface is exactly what the adjectives were for on the category side.
+    leadAdjectives: [],
+    // ⚠️ **Folded forms, not English spellings.** Every cue here is compared against
+    // `foldForMatching`'s output, and since A-10 that fold maps `x` → `ks` — so `expense` is the token
+    // `ekspense` by the time this list sees it, and the spelling `expense` matched nothing. Found by a
+    // test that asserted the text of *"add expense coffee 180"* and got the whole phrase back. If you
+    // add a word here, add what the fold produces (docs/15).
+    objects: [
+      'trosak', 'transakciju', 'transakcija', 'transakcije',
+      'rashod', 'prihod', 'uplatu', 'uplata', 'uplate',
+      'ekspense', 'ekspenses', 'transaction', 'payment', 'income',
+    ],
+    slot: 'text',
+    amountAnchor: true,
   },
 });
 
@@ -120,28 +159,65 @@ export function planAction(question: string): {
     // `dodaj kategoriju Kategorija` must propose `Kategorija`, not an empty name. Searching from the
     // right would swallow it.
     const objectAt = tokens.findIndex((token) => cues.objects.includes(token.folded));
-    if (objectAt < 0) continue;
+    const anchor =
+      objectAt >= 0 && hasImperativeBefore(tokens, cues, objectAt)
+        ? { at: objectAt, on: 'object' }
+        : // The object rung is tried first, so *"unesi trošak kafa 180"* proposes `kafa 180` and not
+          // both words; the amount rung exists for the phrasing that names no object at all.
+          amountAnchorFor(tokens, cues);
+    if (anchor === null) continue;
 
-    // A verb *before* the object is what makes it an imperative rather than a mention — and the
-    // adjective-only shapes count only in first position (see `ActionCues`).
-    const before = tokens.slice(0, objectAt);
-    const hasImperative = before.some((token) => cues.imperatives.includes(token.folded));
-    const leadsWithAdjective = cues.leadAdjectives.includes(tokens[0]?.folded ?? '');
-    if (!hasImperative && !(leadsWithAdjective && objectAt > 0)) continue;
-
-    const name = cleanName(tokens.slice(objectAt + 1).map((token) => token.raw).join(' '));
-    if (name.length === 0) {
+    const text = cleanName(
+      tokens.slice(anchor.at + 1).map((token) => token.raw).join(' '),
+    );
+    if (text.length === 0) {
       // "dodaj kategoriju" with no name: the intent is unmistakable but the proposal is not
-      // buildable. Returning the action with no `name` lets the caller refuse with a *reason*
+      // buildable. Returning the action with no text lets the caller refuse with a *reason*
       // (`UNRUNNABLE:name`) instead of silently treating the question as a read — the same
       // distinction `missingSlots` draws on the read side.
-      return { action, slots: {}, matchedOn: [`action:${action}`, 'slot:name missing'] };
+      return { action, slots: {}, matchedOn: [`action:${action}`, `slot:${cues.slot} missing`] };
     }
 
-    return { action, slots: { name }, matchedOn: [`action:${action}`, 'slot:name'] };
+    return {
+      action,
+      slots: { [cues.slot]: text },
+      matchedOn: [`action:${action}`, `slot:${cues.slot}`, `anchor:${anchor.on}`],
+    };
   }
 
   return null;
+}
+
+/** A verb *before* the object is what makes it an imperative rather than a mention. */
+function hasImperativeBefore(
+  tokens: readonly RawToken[],
+  cues: ActionCues,
+  objectAt: number,
+): boolean {
+  const before = tokens.slice(0, objectAt);
+  if (before.some((token) => cues.imperatives.includes(token.folded))) return true;
+  // …and the adjective-only shapes count only in first position (see `ActionCues`).
+  return cues.leadAdjectives.includes(tokens[0]?.folded ?? '') && objectAt > 0;
+}
+
+/**
+ * The imperative-plus-a-number rung, anchored on the imperative so the text is what follows the verb.
+ *
+ * `/\d/` rather than `parseAmount`: the planner decides **whether a question is shaped like a
+ * request**, and the amount itself is the parser's job one layer down — a numeric *existence* test is
+ * enough to tell *"dodaj kafu 180"* from *"dodaj kategoriju Putovanja"*, and importing the money
+ * parser here would put ADR-003's rules in the planner for no gain.
+ */
+function amountAnchorFor(
+  tokens: readonly RawToken[],
+  cues: ActionCues,
+): { readonly at: number; readonly on: 'amount' } | null {
+  if (!cues.amountAnchor) return null;
+  const imperativeAt = tokens.findIndex((token) => cues.imperatives.includes(token.folded));
+  if (imperativeAt < 0) return null;
+  const rest = tokens.slice(imperativeAt + 1);
+  if (!rest.some((token) => /\d/u.test(token.raw))) return null;
+  return { at: imperativeAt, on: 'amount' };
 }
 
 /** The name bound the service enforces, exported so the planner's refusal and the service agree. */

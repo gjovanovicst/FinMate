@@ -28,12 +28,12 @@
 /**
  * The closed set of writes the assistant may **propose**.
  *
- * One member in v1, deliberately: docs/16's B.3–B.5 name six more (`ADD_TRANSACTION`, `ADD_TAG`,
- * `ADD_GOAL`, `SET_BUDGET`, `ADD_RECURRING_RULE`, `CREATE_RULE_FROM_CORRECTION`), and each is added by
- * the task that builds its executor — a template with no executor would be a trap, and
- * `ASSISTANT_ACTIONS` being closed is what makes that impossible to add by accident.
+ * Two members, each added by the task that built its executor: docs/16's B.4–B.5 still name five more
+ * (`ADD_TAG`, `ADD_GOAL`, `SET_BUDGET`, `ADD_RECURRING_RULE`, `CREATE_RULE_FROM_CORRECTION`), and a
+ * template with no executor would be a trap — `ASSISTANT_ACTIONS` being closed is what makes that
+ * impossible to add by accident.
  */
-export const ASSISTANT_ACTIONS = ['ADD_CATEGORY'] as const;
+export const ASSISTANT_ACTIONS = ['ADD_CATEGORY', 'ADD_TRANSACTION'] as const;
 
 export type AssistantAction = (typeof ASSISTANT_ACTIONS)[number];
 
@@ -45,7 +45,7 @@ export type AssistantAction = (typeof ASSISTANT_ACTIONS)[number];
  * ADR-035 decision 5 adds that kind here first. Sharing the union would let a read template ask for a
  * slot nothing resolves, and vice versa.
  */
-export type ActionSlotName = 'name' | 'kind' | 'parentId';
+export type ActionSlotName = 'name' | 'text' | 'kind' | 'parentId' | 'accountId';
 
 /** How thoroughly an action can be undone. `NONE` is why `destroys` exists (ADR-035 decision 7). */
 export type ActionUndo = 'SOFT_DELETE' | 'UNDO_CAPTURE' | 'NONE';
@@ -59,11 +59,21 @@ export interface ActionTemplate {
   /** Slots the proposal cannot be built without. A missing one is a refusal, not a guess. */
   readonly requiredSlots: readonly ActionSlotName[];
   /**
-   * Slots the preview **fills** rather than the planner resolves, and says so on the card.
+   * The slots this action's preview is **allowed** to fill rather than the question stating, and the
+   * set the card may therefore offer to change.
    *
-   * `createCategory` requires a `kind`, and nobody says *"add an income category"* when they mean
-   * *"add a category"* — so the proposal defaults it and the card shows it, because guessing silently
-   * is not an option and guessing visibly is.
+   * Two different permissions live here, and the difference matters:
+   *
+   * - *May* fill. `createCategory` requires a `kind` nobody says out loud, and a transaction needs an
+   *   account the question rarely names, so both proposals supply one and the card shows it, because
+   *   guessing silently is not an option and guessing visibly is.
+   * - *Whether it did* is decided **per proposal**, not here: a transaction whose text said
+   *   *"plata 85000"* stated its direction, and a card must not offer to change a value the user gave.
+   *   `ADD_CATEGORY.kind` is always filled; `ADD_TRANSACTION.kind` only when the parser found no
+   *   direction signal.
+   *
+   * A slot that is not listed here can never be flagged `defaulted`, which is the guard that keeps a
+   * card from offering to edit something the action does not own.
    */
   readonly defaultedSlots: readonly ActionSlotName[];
   /**
@@ -88,6 +98,26 @@ export const ACTION_TEMPLATES: Readonly<Record<AssistantAction, ActionTemplate>>
     defaultedSlots: ['kind'],
     role: 'MEMBER',
     undo: 'SOFT_DELETE',
+    destroys: false,
+  },
+  /**
+   * The capture path, reached by a question — docs/16 B.3.
+   *
+   * `mutation` is `captureCommit`, the very method `/capture`'s Confirm calls, so this action inherits
+   * the whole pipeline: `parseAmount` (ADR-003), the deterministic-first classification
+   * (ADR-002), the I-3 direction reconciliation, the confidence gate that sends a blocking row to the
+   * review queue as `PENDING`, duplicate-suspect detection, and I-10 idempotency. What it does *not*
+   * inherit is the screen's editing surface: the proposal carries **one** row, and a text that parses
+   * to more than one is refused rather than half-shown (see `assistant-action.service.ts`).
+   */
+  ADD_TRANSACTION: {
+    mutation: 'captureCommit',
+    requiredSlots: ['text'],
+    // The account and — only when the text stated no direction — the kind.
+    defaultedSlots: ['accountId', 'kind'],
+    role: 'MEMBER',
+    // `undoCapture`: docs/02 §3's undo toast, the same call it makes, all-or-nothing and per id.
+    undo: 'UNDO_CAPTURE',
     destroys: false,
   },
 });

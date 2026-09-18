@@ -15,6 +15,17 @@
 > its own foundation — the action planner read attributive adjectives as imperatives, and a string enum
 > reaches a client by its member *key*, not its value (docs/15).
 >
+> **B-3a added `ADD_TRANSACTION`**, the action that inherits the capture path instead of re-implementing
+> it: `ClassificationService.parse` at propose time and `TransactionsService.captureCommit` at execute
+> time, with the decision the card showed as the row's accepted proposal — so the pipeline runs once and
+> the Category the human approved is the Category stored. Its proposal carries structured rows (the
+> amount as `Money`, the Category, the day, whether the gate will file it for review), fills the account
+> and — only when the text states no direction — the kind, and refuses rather than guesses on an
+> ambiguous amount, a text that reads as several entries, or a Household with no account. Proposing
+> therefore became a **`Mutation`**: it runs the classifier, and a Query that spends money is a lie
+> about itself (docs/06 §8.16). **B-3b is the card half** — the rows, the amounts through `fm-money`,
+> and the account picker.
+>
 > [14 §Part 3](14-decisions-and-risks.md) also carries **Q-12** (refusal telemetry), which A-8 needs.
 
 The request behind this document, verbatim:
@@ -343,7 +354,8 @@ One commit per row, per the working agreement. Part A rows are independent of Pa
 | **B-1** | **ADR-035: propose writes, never execute them** | **Q-11** — answered 2026-09-17 | the architectural gate — **done** ([ADR-035](14-decisions-and-risks.md#adr-035--the-assistant-may-propose-a-write-only-a-humans-click-executes-it)) |
 | B-2a | action registry + `text` slot + Redis proposals + `assistantProposeAction`/`assistantExecuteAction` + `ADD_CATEGORY` | B-1 | the first action, server-side and live-verifiable — **done** ([06 §8.16](06-api-specification.md)) |
 | B-2b | the proposal card on `/assistant` (preview, diff, **confirm**, the `kind` toggle, the undo affordance) | B-2a | the same action, reachable by a person — the half B-2a deliberately leaves — **done** ([06 §8.16](06-api-specification.md), [02 §4.16](02-ux-flows-and-screens.md)) |
-| B-3 | `ADD_TRANSACTION` through the existing capture preview | B-2 | highest-value action, ~90 % already built |
+| B-3a | `ADD_TRANSACTION` server-side: the registry entry, the transaction cues, propose-via-`parse`, execute-via-`captureCommit`, the structured preview lines, `assistantProposeAction` becomes a `Mutation` | B-2 | the highest-value action, on the method `/capture` already calls — **done**, live 18/18 ([06 §8.16](06-api-specification.md)) |
+| B-3b | the transaction card: the preview rows with their amounts through `fm-money`, the Category and day, the review note, and the **account picker** | B-3a | the same action, reachable and correctable by a person |
 | B-4 | `SET_BUDGET`, `ADD_GOAL`, `ADD_TAG` | B-2 | "configure", as asked |
 | B-5 | `CREATE_RULE_FROM_CORRECTION` | B-2 | ADR-010's confirmation, reached by question |
 

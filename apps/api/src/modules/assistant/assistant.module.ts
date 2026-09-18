@@ -4,6 +4,7 @@ import { GraphqlScalarsModule } from '../../graphql/scalars/scalars.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { AccountsModule } from '../accounts/accounts.module';
 import { BudgetingModule } from '../budgeting/budgeting.module';
+import { ClassificationModule } from '../classification/classification.module';
 import { GoalsModule } from '../goals/goals.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { RecurringModule } from '../recurring/recurring.module';
@@ -62,6 +63,10 @@ import { PendingActionStore } from './pending-action.store';
     GraphqlScalarsModule,
     AccountsModule,
     BudgetingModule,
+    // `ADD_TRANSACTION` runs the capture pipeline at **propose** time, through the same
+    // `ClassificationService` the `/capture` screen calls (docs/16 B.3): a second classification path
+    // is how a card starts disagreeing with the screen beside it.
+    ClassificationModule,
     GoalsModule,
     LedgerModule,
     RecurringModule,

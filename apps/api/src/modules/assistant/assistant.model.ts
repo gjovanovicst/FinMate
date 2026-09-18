@@ -2,10 +2,13 @@ import { Field, Int, ObjectType, registerEnumType } from '@nestjs/graphql';
 
 import { JsonScalar } from '../../graphql/scalars/json.scalar';
 import { BalanceScalar } from '../../graphql/scalars/balance.scalar';
+import { MoneyScalar } from '../../graphql/scalars/money.scalar';
 import { LocalDateScalar, UuidScalar } from '../../graphql/scalars/uuid.scalar';
 import { AssistantIntentEnum, type AssistantIntent } from './assistant-intents';
 import type { ActionSlotName, AssistantAction } from './assistant-actions';
-import type { ActionDiffEntry } from './pending-action.store';
+import { money, type Money } from '@finmate/domain';
+
+import type { ActionDiffEntry, ActionPreviewLine } from './pending-action.store';
 import type { AssistantAnswerView, DrillThroughView, NarrationMode } from './assistant.service';
 import type { AssistantFactsView, FactRowView, FactTotalView, ProvenanceView } from './fact-assembly.service';
 
@@ -229,7 +232,24 @@ export function toAssistantAnswerModel(view: AssistantAnswerView): AssistantAnsw
  */
 export enum AssistantActionEnum {
   ADD_CATEGORY = 'ADD_CATEGORY',
+  ADD_TRANSACTION = 'ADD_TRANSACTION',
 }
+
+/**
+ * The SDL mirror of the registry, made exhaustive **at compile time**.
+ *
+ * Nothing else would catch the drift, and B-3a's live pass proved it: the model's `action` field is
+ * typed with the *registry's* union, so a member the GraphQL enum lacks compiles perfectly and fails at
+ * runtime with `Enum "AssistantAction" cannot represent value: "ADD_TRANSACTION"`. A `Record` keyed by
+ * the registry turns that from a 500 into a red squiggle, which is the same argument ADR-035 decision 3
+ * makes for the action registry itself.
+ */
+export const ASSISTANT_ACTION_ENUM_MIRROR: Readonly<
+  Record<AssistantAction, AssistantActionEnum>
+> = {
+  ADD_CATEGORY: AssistantActionEnum.ADD_CATEGORY,
+  ADD_TRANSACTION: AssistantActionEnum.ADD_TRANSACTION,
+};
 
 registerEnumType(AssistantActionEnum, {
   name: 'AssistantAction',
@@ -251,9 +271,22 @@ registerEnumType(AssistantActionEnum, {
  */
 export enum AssistantActionSlotEnum {
   name = 'name',
+  text = 'text',
   kind = 'kind',
   parentId = 'parentId',
+  accountId = 'accountId',
 }
+
+/** {@link ASSISTANT_ACTION_ENUM_MIRROR}'s twin for the slots — same failure, same guard. */
+export const ASSISTANT_ACTION_SLOT_ENUM_MIRROR: Readonly<
+  Record<ActionSlotName, AssistantActionSlotEnum>
+> = {
+  name: AssistantActionSlotEnum.name,
+  text: AssistantActionSlotEnum.text,
+  kind: AssistantActionSlotEnum.kind,
+  parentId: AssistantActionSlotEnum.parentId,
+  accountId: AssistantActionSlotEnum.accountId,
+};
 
 registerEnumType(AssistantActionSlotEnum, {
   name: 'AssistantActionSlot',
@@ -297,6 +330,36 @@ export class ActionDiffEntryModel {
 
 @ObjectType({
   description:
+    'One row a proposal will write, for an action that creates a row rather than a named entity. The ' +
+    'amount is `Money`, not a formatted string, because the client renders every figure through ' +
+    '`fm-money` (ADR-003) — a pre-formatted "180,00 RSD" is a number no money component ever sees.',
+})
+export class ActionPreviewLineModel {
+  @Field(() => String, { description: 'The text the row will carry, as the parser read it.' })
+  label!: string;
+
+  @Field(() => MoneyScalar, { description: 'Integer minor units plus currency. Always non-negative.' })
+  amount!: Money;
+
+  @Field(() => String, {
+    nullable: true,
+    description: 'The resolved Category name, or null when nothing chose one (the row needs review).',
+  })
+  category!: string | null;
+
+  @Field(() => LocalDateScalar, {
+    description: "The calendar day the row will be filed under — the text's own date, or the Household's today.",
+  })
+  occurredOn!: string;
+
+  @Field(() => Boolean, {
+    description: 'True when the row will be written `PENDING` and enter the review queue (I-8).',
+  })
+  needsReview!: boolean;
+}
+
+@ObjectType({
+  description:
     'The backend-rendered proposal. Never narrated: a write confirmation is a numeral-bearing ' +
     'statement, so ADR-017 applies to it exactly as to an answer (ADR-035 decision 8).',
 })
@@ -306,6 +369,13 @@ export class AssistantActionPreviewModel {
 
   @Field(() => [ActionDiffEntryModel])
   diff!: ActionDiffEntryModel[];
+
+  @Field(() => [ActionPreviewLineModel], {
+    description:
+      'The rows this action will write. Empty for an action that creates one named entity, where the ' +
+      'diff is the whole story.',
+  })
+  lines!: ActionPreviewLineModel[];
 }
 
 @ObjectType({
@@ -369,7 +439,11 @@ export function toActionProposalModel(view: {
   readonly reason?: string | null;
   readonly proposalId?: string;
   readonly action?: AssistantAction;
-  readonly preview?: { readonly sentence: string; readonly diff: readonly ActionDiffEntry[] };
+  readonly preview?: {
+    readonly sentence: string;
+    readonly diff: readonly ActionDiffEntry[];
+    readonly lines?: readonly ActionPreviewLine[];
+  };
   readonly expiresAt?: Date;
 }): AssistantActionProposalModel {
   return {
@@ -380,7 +454,23 @@ export function toActionProposalModel(view: {
     preview:
       view.preview === undefined
         ? null
-        : { sentence: view.preview.sentence, diff: [...view.preview.diff] },
+        : {
+            sentence: view.preview.sentence,
+            diff: [...view.preview.diff],
+            // `?? []` rather than a spread: a proposal stored by the build that had no lines is still
+            // a proposal this build must be able to render, and a non-nullable field with `undefined`
+            // in it is a 500 (docs/15).
+            lines: (view.preview.lines ?? []).map((line) => ({
+              label: line.label,
+              // The store is JSON, so the amount travels as a string (a `bigint` would make
+              // `JSON.stringify` throw); `money()` is what turns it back into the value the scalar
+              // serialises, and it refuses a negative on the way (ADR-003).
+              amount: money(BigInt(line.amountMinor), line.currency),
+              category: line.category,
+              occurredOn: line.occurredOn,
+              needsReview: line.needsReview,
+            })),
+          },
     expiresAt: view.expiresAt ?? null,
   };
 }

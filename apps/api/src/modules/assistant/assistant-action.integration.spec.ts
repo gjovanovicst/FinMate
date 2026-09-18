@@ -7,9 +7,10 @@ import type { RedisService } from '../../common/redis/redis.service';
 import { runWithTenant, type TenantContext } from '../../common/tenancy/tenant-context';
 import { ConfigModule } from '../../config/config.module';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { AuthModule } from '../auth/auth.module';
+import { AssistantModule } from './assistant.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CategoriesService } from '../taxonomy/categories.service';
-import { TaxonomyModule } from '../taxonomy/taxonomy.module';
 import { AssistantActionService } from './assistant-action.service';
 import { PendingActionStore } from './pending-action.store';
 
@@ -57,12 +58,24 @@ describe('assistant actions (integration)', () => {
   }
 
   beforeAll(async () => {
+    // The **real** module, with only the store replaced.
+    //
+    // Constructing the service by hand would have been shorter and would have proved less: the module
+    // is what decides that `ClassificationModule` (which `ADD_TRANSACTION`'s executor needs) and
+    // `AccountsModule` are wired at all, and a missing import is a boot failure rather than a test
+    // failure otherwise (docs/15).
     moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot(), PrismaModule, TaxonomyModule],
-    }).compile();
+      imports: [ConfigModule.forRoot(), PrismaModule, AuthModule, AssistantModule],
+    })
+      // `AuthModule` is `@Global()` in production, so nothing imports it by hand — which is exactly
+      // why a test module has to. It is also what supplies `RedisService`, and `RateLimitService` is
+      // in the graph because `AssistantService` throttles narration (the write path never calls it).
+      .overrideProvider(PendingActionStore)
+      .useValue(memoryStore())
+      .compile();
     prisma = moduleRef.get(PrismaService);
     categories = moduleRef.get(CategoriesService);
-    actions = new AssistantActionService(categories, memoryStore());
+    actions = moduleRef.get(AssistantActionService);
 
     const stamp = Date.now();
     await prisma.client.users.createMany({

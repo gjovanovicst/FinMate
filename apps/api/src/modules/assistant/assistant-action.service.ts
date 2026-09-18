@@ -11,46 +11,71 @@
  *   for a `proposalId` the server itself stored.
  * - **Trust the caller's arguments.** `execute` reads `proposalId` and `idempotencyKey` and nothing
  *   else, so the action performed is byte-for-byte the action the card showed (decision 2).
- * - **Invent a number or an id.** The only slot a caller supplies is `name`, which is text; ids come
- *   from the database and every service call goes through the same method the UI's mutation uses.
- * - **Offer a write that will fail.** The duplicate check runs at **propose** time, against the same
- *   rule Postgres enforces (`categories_unique_name`: household, parent, `lower(name)`), because a
- *   confirm button for a doomed write is a lie the card does not need to tell.
+ * - **Invent a number or an id.** A name is text the user typed; an amount comes from `parseAmount`
+ *   through the classification pipeline; ids come from the database. Every service call goes through
+ *   the method the UI's own mutation calls.
+ * - **Offer a write that will fail.** `ADD_CATEGORY` checks the duplicate rule the partial index
+ *   enforces at **propose** time, and `ADD_TRANSACTION` refuses what the capture screen refuses (an
+ *   ambiguous amount) rather than letting a confirm button offer a doomed write.
+ *
+ * ## The two actions are built differently on purpose
+ *
+ * `ADD_CATEGORY` is a name and two defaults: the preview *is* the diff. `ADD_TRANSACTION` runs the
+ * whole capture pipeline, so its proposal carries the parser's own output — the amount as minor units
+ * for `fm-money`, the Category it resolved, the day it will be filed under, and whether the confidence
+ * gate will send the row to the review queue as `PENDING`. That is what makes the confirmation honest:
+ * the human is approving the classification, not just the text.
  *
  * ## Idempotency, and why the result is cached
  *
- * `take` consumes the proposal atomically, so a double confirm cannot create two Categories. But a
- * *retry* after a timeout must not report failure for a write that happened — so the outcome is
- * remembered against the caller's idempotency key first, and `execute` checks that before touching
- * the proposal. The worst case is then "expired" for a write that did not happen, never a second row.
+ * `take` consumes the proposal atomically, so a double confirm cannot create two rows. But a *retry*
+ * after a timeout must not report failure for a write that happened — so the outcome is remembered
+ * against the caller's idempotency key first, and `execute` checks that before touching the proposal.
  *
  * @module apps/api/src/modules/assistant
  */
 
 import { Injectable, Logger } from '@nestjs/common';
 
-import { uuidv7 } from '@finmate/domain';
+import {
+  DEFAULT_TIME_ZONE,
+  formatMoney,
+  money,
+  todayIn,
+  uuidv7,
+  type CurrencyCode,
+  type Money,
+} from '@finmate/domain';
 
 import { ApiError } from '../../common/filters/all-exceptions.filter';
+import { PrismaService } from '../../prisma/prisma.service';
+import { AccountsService } from '../accounts/accounts.service';
+import { ClassificationService, type FragmentResult } from '../classification/classification.service';
+import { CaptureCommitRejected, TransactionsService } from '../ledger/transactions.service';
+import { TransactionKind, TransactionStatus } from '../ledger/transaction.model';
 import { CategoriesService } from '../taxonomy/categories.service';
 import { CategoryKind } from '../taxonomy/category.model';
-import { ACTION_TEMPLATES, type AssistantAction } from './assistant-actions';
+import { ACTION_TEMPLATES, type ActionSlotName, type AssistantAction } from './assistant-actions';
 import { ACTION_NAME_MAX_LENGTH } from './action-planner';
 import {
   PendingActionStore,
   PROPOSAL_TTL_SECONDS,
-  type ActionDiffEntry,
   type ActionPreview,
+  type ActionPreviewLine,
   type ExecutedActionResult,
   type PendingActionProposal,
 } from './pending-action.store';
 
-export interface ProposeActionResult {
-  readonly proposalId: string;
-  readonly action: AssistantAction;
-  readonly preview: ActionPreview;
-  readonly expiresAt: string;
-}
+/** A proposal, or an honest refusal to make one — the shape `assistantAnswer` established. */
+export type ProposeOutcome =
+  | {
+      readonly proposed: true;
+      readonly proposalId: string;
+      readonly action: AssistantAction;
+      readonly preview: ActionPreview;
+      readonly expiresAt: string;
+    }
+  | { readonly proposed: false; readonly reason: string };
 
 export interface ExecuteActionResult {
   readonly action: AssistantAction;
@@ -62,28 +87,77 @@ export interface ExecuteActionResult {
   readonly replayed: boolean;
 }
 
+/** What one action's builder hands back: the slots to store, the derived args, and the card. */
+interface BuiltProposal {
+  readonly slots: Readonly<Record<string, string>>;
+  readonly args?: Readonly<Record<string, string>>;
+  readonly preview: ActionPreview;
+}
+
+/** What an executor hands back. `sentence` quotes the **returned** row (ADR-035 decision 8). */
+interface Executed {
+  readonly id: string;
+  readonly label: string;
+  readonly sentence: string;
+}
+
 /**
  * How one action reads on a card, per language.
  *
  * Two templates, not a catalogue: the API has no i18n layer (docs/06 §5.14 records that breach, and
  * A-7 owns it). A **write confirmation** is nevertheless the one sentence worth not shipping
- * English-only into a Serbian Household, so the two phrasings live here beside the action, in the
- * shape ADR-019's amendment prescribes — one entry, its per-language variants together.
+ * English-only into a Serbian Household, so the phrasings live here beside the action, in the shape
+ * ADR-019's amendment prescribes — one entry, its per-language variants together.
+ *
+ * The money is formatted with the **same language the copy is written in**, deliberately: the sentence
+ * and the figures inside it disagreeing about grouping is the one thing a reader would notice.
  */
 const COPY = {
   en: {
+    locale: 'en-US',
     kind: { EXPENSE: 'expense', INCOME: 'income' },
     topLevel: 'top level',
+    noCategory: 'no category',
+    fields: { name: 'name', kind: 'kind', parent: 'parent', amount: 'amount', account: 'account' },
     sentence: (name: string, kind: string, parent: string): string =>
       `New category “${name}” (${kind}, ${parent})`,
-    fields: { name: 'name', kind: 'kind', parent: 'parent' },
+    // Built by joining parts rather than by referring to the sibling key: a template that reads
+    // `COPY.en.…` from inside `COPY`'s own literal is a circular inference TypeScript refuses.
+    transaction: (
+      label: string,
+      amount: string,
+      category: string,
+      needsReview: boolean,
+    ): string =>
+      [`New transaction “${label}” — ${amount}`, category, ...(needsReview ? ['goes to review'] : [])].join(
+        ', ',
+      ),
+    confirmed: (label: string, amount: string, notes: readonly string[]): string =>
+      `Added “${label}” — ${amount}.${notes.length > 0 ? ` ${notes.join(' ')}` : ''}`,
+    pendingNote: 'It is waiting in the review queue until you confirm its category.',
+    duplicateNote: 'It may be a duplicate of something you already had.',
   },
   sr: {
+    locale: 'sr-Latn-RS',
     kind: { EXPENSE: 'rashod', INCOME: 'prihod' },
     topLevel: 'bez nadređene',
+    noCategory: 'bez kategorije',
+    fields: { name: 'naziv', kind: 'vrsta', parent: 'nadređena', amount: 'iznos', account: 'račun' },
     sentence: (name: string, kind: string, parent: string): string =>
       `Nova kategorija „${name}” (${kind}, ${parent})`,
-    fields: { name: 'naziv', kind: 'vrsta', parent: 'nadređena' },
+    transaction: (
+      label: string,
+      amount: string,
+      category: string,
+      needsReview: boolean,
+    ): string =>
+      [`Nova transakcija „${label}” — ${amount}`, category, ...(needsReview ? ['ide na pregled'] : [])].join(
+        ', ',
+      ),
+    confirmed: (label: string, amount: string, notes: readonly string[]): string =>
+      `Dodato „${label}” — ${amount}.${notes.length > 0 ? ` ${notes.join(' ')}` : ''}`,
+    pendingNote: 'Čeka u pregledu dok ne potvrdiš njenu kategoriju.',
+    duplicateNote: 'Možda je duplikat nečega što već imaš.',
   },
 } as const;
 
@@ -98,12 +172,20 @@ export class AssistantActionService {
 
   constructor(
     private readonly categories: CategoriesService,
+    private readonly classification: ClassificationService,
+    private readonly transactions: TransactionsService,
+    private readonly accounts: AccountsService,
+    private readonly prisma: PrismaService,
     private readonly store: PendingActionStore,
   ) {}
 
   /**
-   * Build and store a proposal. Writes nothing to the ledger and is therefore a `Query` at the edge,
-   * exactly as `captureParse` is a read that writes only its own audit row.
+   * Build and store a proposal.
+   *
+   * Writes nothing to the ledger. It is a `Mutation` at the edge for one reason: a transaction
+   * proposal runs the classifier, which records a `classification_decisions` row and may call a model —
+   * `captureParse` is a Mutation for exactly that reason, and a Query that spends money is a lie about
+   * itself (docs/06 §8.16).
    */
   async propose(input: {
     readonly householdId: string;
@@ -111,7 +193,7 @@ export class AssistantActionService {
     readonly action: AssistantAction;
     readonly slots: Readonly<Record<string, string>>;
     readonly locale?: string;
-  }): Promise<ProposeActionResult> {
+  }): Promise<ProposeOutcome> {
     const template = ACTION_TEMPLATES[input.action];
     // A `destroys` action is not offered at all, so this cannot be reached through a stored proposal
     // — but the check belongs at the boundary that creates one (ADR-035 decision 7).
@@ -119,22 +201,40 @@ export class AssistantActionService {
       throw new ApiError('VALIDATION_FAILED', 'That action is not available.');
     }
 
-    const name = this.requireName(input.slots['name']);
-    const kind = this.readKind(input.slots['kind']);
+    // Only the slots this action declares may be supplied, so a caller cannot inject one an action
+    // does not own — `ADD_CATEGORY` has no account, and a client sending one must not be able to give
+    // it one. The same filter is what lets the resolver merge its `kind`/`accountId` overrides in
+    // without knowing which action it is looking at.
+    const slots = this.declaredSlots(input.action, input.slots);
+    let built: BuiltProposal | { readonly proposed: false; readonly reason: string };
+    try {
+      built = await this.builders[input.action]({
+        householdId: input.householdId,
+        slots,
+        ...(input.locale === undefined ? {} : { locale: input.locale }),
+      });
+    } catch (error) {
+      // A slot the proposal cannot be built without is a **refusal with a reason**, not an error —
+      // the same distinction `UNRUNNABLE:name` draws on the read side. It is a throw inside a builder
+      // because a `Record` of builders has one return type.
+      if (error instanceof UnrunnableSlot) {
+        return { proposed: false, reason: `UNRUNNABLE:${error.slot}` };
+      }
+      throw error;
+    }
+    if ('proposed' in built) return built;
 
-    await this.assertNameFree(input.householdId, name);
-
-    const preview = this.renderPreview(input.action, { name, kind }, input.locale);
     const id = uuidv7();
-    const createdAt = new Date().toISOString();
     const proposal: PendingActionProposal = {
       id,
       householdId: input.householdId,
       userId: input.userId,
       action: input.action,
-      slots: { name, kind },
-      preview,
-      createdAt,
+      slots: built.slots,
+      ...(built.args === undefined ? {} : { args: built.args }),
+      ...(input.locale === undefined ? {} : { locale: input.locale }),
+      preview: built.preview,
+      createdAt: new Date().toISOString(),
     };
 
     const stored = await this.store.put(proposal);
@@ -146,9 +246,10 @@ export class AssistantActionService {
     }
 
     return {
+      proposed: true,
       proposalId: id,
       action: input.action,
-      preview,
+      preview: built.preview,
       expiresAt: new Date(Date.now() + PROPOSAL_TTL_SECONDS * 1000).toISOString(),
     };
   }
@@ -178,7 +279,7 @@ export class AssistantActionService {
       throw new ApiError('NOT_FOUND', 'That action is no longer available.');
     }
 
-    const created = await this.dispatch(proposal);
+    const created = await this.executors[proposal.action](proposal);
     const result: ExecutedActionResult = {
       action: proposal.action,
       createdId: created.id,
@@ -186,10 +287,7 @@ export class AssistantActionService {
       undo: ACTION_TEMPLATES[proposal.action].undo,
       // The confirmation quotes the **returned row**, not the proposal: the sentence must describe
       // what happened, and only the write knows that (ADR-035 decision 8).
-      sentence: this.renderPreview(proposal.action, {
-        name: proposal.slots['name'] ?? created.label,
-        kind: this.readKind(proposal.slots['kind']),
-      }).sentence,
+      sentence: created.sentence,
       executedAt: new Date().toISOString(),
     };
 
@@ -197,13 +295,152 @@ export class AssistantActionService {
     return { ...result, replayed: false };
   }
 
+  // -------------------------------------------------------------------------------------------
+  // The builders: what a proposal for each action is
+  // -------------------------------------------------------------------------------------------
+
+  private readonly builders: Readonly<
+    Record<
+      AssistantAction,
+      (context: {
+        readonly householdId: string;
+        readonly slots: Readonly<Record<string, string>>;
+        readonly locale?: string;
+      }) => Promise<BuiltProposal | { readonly proposed: false; readonly reason: string }>
+    >
+  > = {
+    ADD_CATEGORY: async ({ householdId, slots, locale }) => {
+      const name = this.requireName(slots['name']);
+      const kind = this.readKind(slots['kind']);
+      await this.assertNameFree(householdId, name);
+
+      return {
+        slots: { name, kind },
+        preview: this.categoryPreview({ name, kind }, locale),
+      };
+    },
+
+    ADD_TRANSACTION: async ({ householdId, slots, locale }) => {
+      const text = this.requireText(slots['text']);
+
+      // The same pipeline `/capture` runs, including its audit row and its cost (ADR-002's ladder,
+      // ADR-009's gate). Nothing about the ledger changes here.
+      const parse = await this.classification.parse(householdId, {
+        text,
+        locale: locale ?? null,
+        allowAi: true,
+      });
+
+      // A fragment with no amount is a word, not a Transaction — the capture screen drops those from
+      // the batch, and dropping them here keeps *"dodaj trošak kafa 180 i hleb"* from refusing.
+      const rows = parse.fragments.filter((fragment) => fragment.amountMinor !== null);
+      if (rows.length === 0) return { proposed: false, reason: 'NO_AMOUNT' };
+      // One row, deliberately. A batch needs per-row editing (categories, amounts, removals) that a
+      // confirmation card does not have, and showing only the first of three would be a card that
+      // misdescribes what the button does. The capture screen is the surface for more than one.
+      if (rows.length > 1) return { proposed: false, reason: 'MULTIPLE_ROWS' };
+
+      const row = rows[0] as FragmentResult;
+      // `1.200` is two amounts, and the capture screen refuses the whole batch until the user picks
+      // one. A card cannot ask, so it must not guess: a tenfold error in the user's money is exactly
+      // what ADR-003's parsing rule exists to prevent.
+      if (hasAmbiguousAmount(row)) return { proposed: false, reason: 'AMBIGUOUS_AMOUNT' };
+
+      const amountMinor = row.amountMinor as string;
+      const household = await this.prisma.client.households.findFirst({
+        where: { id: householdId },
+      });
+      if (household === null) throw new ApiError('NOT_FOUND', 'Household not found.');
+
+      const currency = (row.currency ?? household.ledger_currency) as CurrencyCode;
+      const amount = this.readAmount(amountMinor, currency);
+      if (amount === null) return { proposed: false, reason: 'NO_AMOUNT' };
+      const account = await this.requireAccount(householdId, slots['accountId']);
+      const category = await this.categoryName(householdId, row.categoryId);
+
+      // The direction: stated by the text, or filled in visibly. `UNKNOWN` and a refund/storno word
+      // are the two cases the parser refuses to decide, and the card answers both by offering the
+      // toggle rather than by guessing (ADR-035 decision 5) — which is also what
+      // `needsDirectionConfirmation` is for on the capture screen.
+      const parsedKind = row.kind === 'INCOME' || row.kind === 'EXPENSE' ? row.kind : null;
+      const kindStated = parsedKind !== null && !row.needsDirectionConfirmation;
+      // A supplied `kind` is the card's toggle coming back, and it **wins**: the human chose it, and the
+      // stored slot has to be what they were shown. The `defaulted` flag does *not* follow it — it
+      // records that the *question* never said, which is what keeps the toggle on the card instead of
+      // vanishing the moment it is used once.
+      const kind =
+        slots['kind'] === 'INCOME' || slots['kind'] === 'EXPENSE' ? slots['kind'] : (parsedKind ?? 'EXPENSE');
+      const occurredOn =
+        row.occurredOn ?? todayIn(household.iana_timezone || DEFAULT_TIME_ZONE, new Date());
+      const description = (row.description.length > 0 ? row.description : text).trim();
+
+      const copy = copyFor(locale);
+      const line: ActionPreviewLine = {
+        label: description,
+        amountMinor,
+        currency,
+        category: category?.name ?? null,
+        occurredOn,
+        needsReview: row.needsReview,
+      };
+
+      return {
+        slots: { text, kind, accountId: account.id },
+        args: {
+          amountMinor,
+          currency,
+          kind,
+          description,
+          occurredOn,
+          accountId: account.id,
+          // The decision *is* the classification: committing against it reuses the stored category
+          // instead of running the pipeline a second time (and paying for it twice).
+          acceptedProposalId: row.decisionId,
+          // Minted here, once, and stored — the offline queue's rule, for the same reason: a retry
+          // must be the same row (I-10), not a second one.
+          clientRowId: uuidv7(),
+          idempotencyKey: uuidv7(),
+          ...(row.merchantId === null ? {} : { merchantId: row.merchantId }),
+          ...(row.counterpartyId === null ? {} : { counterpartyId: row.counterpartyId }),
+        },
+        preview: {
+          sentence: copy.transaction(description, formatMoney(amount, copy.locale), line.category ?? copy.noCategory, line.needsReview),
+          diff: [
+            {
+              slot: 'kind',
+              field: copy.fields.kind,
+              before: null,
+              after: copy.kind[kind],
+              afterValue: kind,
+              // Only when the text did not state it — a direction the user gave is not a suggestion.
+              defaulted: !kindStated,
+            },
+            {
+              slot: 'accountId',
+              field: copy.fields.account,
+              before: null,
+              after: account.name,
+              afterValue: account.id,
+              defaulted: true,
+            },
+          ],
+          lines: [line],
+        },
+      };
+    },
+  };
+
+  // -------------------------------------------------------------------------------------------
+  // The executors: what each action does, once a human has confirmed it
+  // -------------------------------------------------------------------------------------------
+
   /**
    * The executor map, `Record<AssistantAction, …>` on purpose: adding a member to
    * `ASSISTANT_ACTIONS` without an executor is a **compile** error, which is ADR-035 decision 3's
    * whole argument made structural.
    */
   private readonly executors: Readonly<
-    Record<AssistantAction, (proposal: PendingActionProposal) => Promise<{ id: string; label: string }>>
+    Record<AssistantAction, (proposal: PendingActionProposal) => Promise<Executed>>
   > = {
     ADD_CATEGORY: async (proposal) => {
       const created = await this.categories.create(proposal.householdId, {
@@ -211,12 +448,150 @@ export class AssistantActionService {
         kind: (proposal.slots['kind'] as CategoryKind | undefined) ?? CategoryKind.EXPENSE,
         parentId: null,
       });
-      return { id: created.id, label: created.name };
+      return {
+        id: created.id,
+        label: created.name,
+        sentence: this.categoryPreview(
+          {
+            name: created.name,
+            kind: (proposal.slots['kind'] as CategoryKind | undefined) ?? CategoryKind.EXPENSE,
+          },
+          proposal.locale,
+        ).sentence,
+      };
+    },
+
+    ADD_TRANSACTION: async (proposal) => {
+      const args = proposal.args ?? {};
+      const row = this.readStoredRow(args);
+      const copy = copyFor(proposal.locale);
+
+      let outcome;
+      try {
+        outcome = await this.transactions.captureCommit(proposal.householdId, {
+          // No `parseId`: the row names the decision it was built from, and `captureCommit` reads that
+          // decision's category rather than classifying again. `allowAi: false` is the same statement
+          // from the other side — the model was asked once, at propose time, and its answer is what
+          // the card showed and the human approved.
+          rows: [
+            {
+              clientRowId: row.clientRowId,
+              idempotencyKey: row.idempotencyKey,
+              accountId: row.accountId,
+              kind: row.kind === 'INCOME' ? TransactionKind.INCOME : TransactionKind.EXPENSE,
+              amount: money(BigInt(row.amountMinor), args['currency'] as CurrencyCode),
+              description: row.description,
+              occurredOn: row.occurredOn,
+              acceptedProposalId: row.acceptedProposalId,
+              merchantId: args['merchantId'] ?? null,
+              counterpartyId: args['counterpartyId'] ?? null,
+              // The capture screen's own default: a blocked row is written PENDING and goes to the
+              // queue. Writing it CONFIRMED is a deliberate act per row, not something this path does
+              // on the user's behalf.
+              confirmDespiteLowConfidence: false,
+            },
+          ],
+          allowAi: false,
+        });
+      } catch (error) {
+        // `CaptureCommitRejected` is the capture path's *diagnostic* payload, and the assistant has no
+        // rows to hang it on. It becomes the typed error the card can print, with the field the
+        // capture path named — never a 500 for a write the user can fix.
+        if (error instanceof CaptureCommitRejected) {
+          const first = error.rows[0];
+          throw new ApiError(
+            'VALIDATION_FAILED',
+            first === undefined ? error.message : `${first.message} (${first.field ?? first.code})`,
+          );
+        }
+        throw error;
+      }
+
+      const committed = outcome.committed[0];
+      if (committed === undefined) {
+        // The row was skipped rather than written. There is nothing to confirm, so the action failed
+        // and the reason is the capture path's own.
+        throw new ApiError(
+          'VALIDATION_FAILED',
+          outcome.skipped[0]?.reason ?? 'The transaction was not written.',
+        );
+      }
+
+      const transaction = committed.transaction;
+      const notes: string[] = [];
+      if (transaction.status === TransactionStatus.PENDING) notes.push(copy.pendingNote);
+      if (outcome.duplicateSuspects.length > 0) notes.push(copy.duplicateNote);
+
+      return {
+        id: transaction.id,
+        label: transaction.description,
+        sentence: copy.confirmed(
+          transaction.description,
+          formatMoney(transaction.amount, copy.locale),
+          notes,
+        ),
+      };
     },
   };
 
-  private dispatch(proposal: PendingActionProposal): Promise<{ id: string; label: string }> {
-    return this.executors[proposal.action](proposal);
+  // -------------------------------------------------------------------------------------------
+  // Shapes the card is built from
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * The category card: one sentence and a field-by-field diff, rendered by the backend so the model
+   * can never describe a write (ADR-035 decision 8).
+   */
+  private categoryPreview(
+    input: { readonly name: string; readonly kind: CategoryKind },
+    locale?: string,
+  ): ActionPreview {
+    const copy = copyFor(locale);
+    const kindWord = copy.kind[input.kind];
+    return {
+      sentence: copy.sentence(input.name, kindWord, copy.topLevel),
+      diff: [
+        {
+          slot: 'name',
+          field: copy.fields.name,
+          before: null,
+          after: input.name,
+          afterValue: null,
+          defaulted: false,
+        },
+        {
+          slot: 'kind',
+          field: copy.fields.kind,
+          before: null,
+          after: kindWord,
+          afterValue: input.kind,
+          defaulted: true,
+        },
+        {
+          slot: 'parentId',
+          field: copy.fields.parent,
+          before: null,
+          after: copy.topLevel,
+          afterValue: null,
+          defaulted: false,
+        },
+      ],
+    };
+  }
+
+  /**
+   * The slots this action declares — required plus defaulted — and nothing else.
+   *
+   * `kind` and `accountId` arrive from the resolver as overrides, and which of them an action even has
+   * is the registry's business, not the client's.
+   */
+  private declaredSlots(
+    action: AssistantAction,
+    slots: Readonly<Record<string, string>>,
+  ): Readonly<Record<string, string>> {
+    const template = ACTION_TEMPLATES[action];
+    const allowed = new Set<string>([...template.requiredSlots, ...template.defaultedSlots]);
+    return Object.fromEntries(Object.entries(slots).filter(([slot]) => allowed.has(slot)));
   }
 
   /**
@@ -239,6 +614,47 @@ export class AssistantActionService {
     }
   }
 
+  /**
+   * The account a capture goes to: the one `/capture` preselects — the Household's newest live
+   * account, because `AccountsService.list` orders by the UUIDv7 key descending.
+   *
+   * The rule is duplicated from that screen, so it is **visible and changeable** on the card rather
+   * than silent: the diff flags `accountId` as defaulted, and the same argument that re-proposes the
+   * `kind` re-proposes this. That is what makes a shared guess safe (ADR-035 decision 5).
+   */
+  private async requireAccount(
+    householdId: string,
+    requested: string | undefined,
+  ): Promise<{ readonly id: string; readonly name: string }> {
+    const page = await this.accounts.list({ householdId, first: 10 });
+    const live = page.items;
+    if (live.length === 0) {
+      // Not `PROPOSED: false` with a missing slot: there is nothing the user can add to a card, and
+      // the refusal says which slot could not be filled.
+      throw new UnrunnableSlot('accountId');
+    }
+    if (requested === undefined) {
+      const first = live[0] as { id: string; name: string };
+      return { id: first.id, name: first.name };
+    }
+    const chosen = live.find((account) => account.id === requested);
+    if (chosen === undefined) {
+      throw new ApiError('VALIDATION_FAILED', 'That account is not one this Household can use.');
+    }
+    return { id: chosen.id, name: chosen.name };
+  }
+
+  /** The Category a decision chose, by name — `null` when nothing chose one. */
+  private async categoryName(
+    householdId: string,
+    categoryId: string | null,
+  ): Promise<{ readonly name: string } | null> {
+    if (categoryId === null) return null;
+    const categories = await this.categories.list(householdId);
+    const found = categories.find((category) => category.id === categoryId);
+    return found === undefined ? null : { name: found.name };
+  }
+
   private requireName(raw: string | undefined): string {
     const name = (raw ?? '').trim();
     if (name.length === 0) {
@@ -253,6 +669,21 @@ export class AssistantActionService {
     return name;
   }
 
+  /** The transaction text, bounded by the same rule a Category name is. */
+  private requireText(raw: string | undefined): string {
+    const text = (raw ?? '').trim();
+    if (text.length === 0) {
+      throw new ApiError('VALIDATION_FAILED', 'Something to record is required.');
+    }
+    if (text.length > ACTION_NAME_MAX_LENGTH) {
+      throw new ApiError(
+        'VALIDATION_FAILED',
+        `That is longer than ${ACTION_NAME_MAX_LENGTH} characters. Please shorten it.`,
+      );
+    }
+    return text;
+  }
+
   private readKind(raw: string | undefined): CategoryKind {
     if (raw === undefined) return CategoryKind.EXPENSE;
     const upper = raw.toUpperCase();
@@ -261,46 +692,87 @@ export class AssistantActionService {
   }
 
   /**
-   * The card's content: one sentence and a field-by-field diff, rendered by the backend so the model
-   * can never describe a write (ADR-035 decision 8). The `defaulted` flag is what lets the UI offer to
-   * change a value the question did not state.
+   * The amount as `Money`, from the parser's own string.
+   *
+   * `money()` throws on a negative or an unsupported currency, so a value that cannot be money is
+   * refused as unrunnable rather than 500-ing — the parser is a boundary, and a bug on its side must
+   * not become an opaque INTERNAL on the user's screen.
    */
-  private renderPreview(
-    action: AssistantAction,
-    slots: { readonly name: string; readonly kind: CategoryKind },
-    locale?: string,
-  ): ActionPreview {
-    const copy = copyFor(locale);
-    const template = ACTION_TEMPLATES[action];
-    const kindWord = copy.kind[slots.kind];
-    const parentWord = copy.topLevel;
-    const diff: ActionDiffEntry[] = [
-      {
-        slot: 'name',
-        field: copy.fields.name,
-        before: null,
-        after: slots.name,
-        afterValue: null,
-        defaulted: template.defaultedSlots.includes('name'),
-      },
-      {
-        slot: 'kind',
-        field: copy.fields.kind,
-        before: null,
-        after: kindWord,
-        afterValue: slots.kind,
-        defaulted: template.defaultedSlots.includes('kind'),
-      },
-      {
-        slot: 'parentId',
-        field: copy.fields.parent,
-        before: null,
-        after: parentWord,
-        afterValue: null,
-        defaulted: template.defaultedSlots.includes('parentId'),
-      },
-    ];
-
-    return { sentence: copy.sentence(slots.name, kindWord, parentWord), diff };
+  private readAmount(amountMinor: string, currency: CurrencyCode): Money | null {
+    try {
+      return money(BigInt(amountMinor), currency);
+    } catch {
+      // A negative or an unsupported currency is not money (ADR-003). The parser is a boundary, and a
+      // value that cannot be money is a refusal — never an opaque INTERNAL on the user's screen.
+      return null;
+    }
   }
+
+  /** The stored row, or a refusal when the blob is one this build cannot honour. */
+  private readStoredRow(args: Readonly<Record<string, string>>): {
+    readonly clientRowId: string;
+    readonly idempotencyKey: string;
+    readonly accountId: string;
+    readonly amountMinor: string;
+    readonly kind: string;
+    readonly description: string;
+    readonly occurredOn: string | null;
+    readonly acceptedProposalId: string;
+  } {
+    const required = [
+      'clientRowId',
+      'idempotencyKey',
+      'accountId',
+      'amountMinor',
+      'description',
+      'acceptedProposalId',
+    ] as const;
+    const missing = required.filter((key) => (args[key] ?? '').length === 0);
+    if (missing.length > 0) {
+      // A proposal written by an older build is not one this build can execute, and guessing at an
+      // amount would be the worst possible reading of that (pending-action.store.ts).
+      throw new ApiError('INTERNAL', 'That proposal is incomplete and was not applied.');
+    }
+    return {
+      clientRowId: args['clientRowId'] as string,
+      idempotencyKey: args['idempotencyKey'] as string,
+      accountId: args['accountId'] as string,
+      amountMinor: args['amountMinor'] as string,
+      kind: args['kind'] ?? 'EXPENSE',
+      description: args['description'] as string,
+      occurredOn: args['occurredOn'] ?? null,
+      acceptedProposalId: args['acceptedProposalId'] as string,
+    };
+  }
+}
+
+/**
+ * A slot the proposal cannot be built without, raised from inside a builder so the caller refuses
+ * with a reason instead of an error — the same distinction `UNRUNNABLE:name` draws on the read side.
+ *
+ * It is a `throw` rather than a return because the builders are a `Record` with one return type, and
+ * a `null` return would have to be threaded through every branch; `propose` catches it at the one
+ * place that knows how to phrase it.
+ */
+export class UnrunnableSlot extends Error {
+  constructor(readonly slot: ActionSlotName) {
+    super(`unrunnable:${slot}`);
+    this.name = 'UnrunnableSlot';
+  }
+}
+
+/**
+ * Whether the parser found more than one reading of the amount (`1.200` is 1200 and 1.2).
+ *
+ * The capture screen refuses the whole batch until the user picks one, and the alternatives live in
+ * the decision's own audit blob — so this reads exactly what that screen reads, from the same place
+ * (docs/04 §3.1's ambiguity policy).
+ */
+function hasAmbiguousAmount(fragment: FragmentResult): boolean {
+  const readings = new Set(
+    fragment.candidates
+      .filter((candidate) => candidate.kind === 'AMOUNT')
+      .map((candidate) => candidate.amountMinor),
+  );
+  return readings.size > 1;
 }

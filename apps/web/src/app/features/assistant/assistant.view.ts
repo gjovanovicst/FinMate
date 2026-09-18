@@ -494,10 +494,26 @@ export function renderableProposal(
 export function actionRefusalKey(reason: string | null | undefined): TranslationKey | null {
   if (reason == null) return null;
   const [head, detail = ''] = reason.split(':', 2) as [string, string?];
-  if (head !== 'UNRUNNABLE') return null;
-  return detail.split(',').includes('name')
-    ? 'assistant.action.needName'
-    : 'assistant.action.notRunnable';
+  switch (head) {
+    case 'UNRUNNABLE': {
+      const missing = detail.split(',');
+      if (missing.includes('name')) return 'assistant.action.needName';
+      if (missing.includes('accountId')) return 'assistant.action.needAccount';
+      if (missing.includes('text')) return 'assistant.action.needText';
+      return 'assistant.action.notRunnable';
+    }
+    // `ADD_TRANSACTION`'s three: the text the pipeline could not turn into a row, a text that reads as
+    // several, and an amount the parser itself refuses to decide. Each names what the reader can do
+    // instead, because "I cannot do that" alone would leave them retyping the same sentence.
+    case 'NO_AMOUNT':
+      return 'assistant.action.needAmount';
+    case 'AMBIGUOUS_AMOUNT':
+      return 'assistant.action.ambiguousAmount';
+    case 'MULTIPLE_ROWS':
+      return 'assistant.action.multipleRows';
+    default:
+      return null;
+  }
 }
 
 /**

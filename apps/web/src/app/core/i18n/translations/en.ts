@@ -265,6 +265,13 @@ export const en = {
   'assistant.action.expired': 'This offer is no longer valid — it expired or was already applied. Ask again and I will make a new one.',
   'assistant.action.needName': 'Tell me what to call it — for example, “add a category Travel”.',
   'assistant.action.notRunnable': 'I need one more detail before I can offer that.',
+  'assistant.action.needText': 'Tell me what to record — for example, “dodaj trošak kafa 180”.',
+  'assistant.action.needAmount': 'I could not find an amount in that. Say it like “kafa 180”.',
+  'assistant.action.ambiguousAmount':
+    'That amount reads two ways and the wrong one is ten times off, so I will not guess — add it on the capture screen, where you can pick the reading.',
+  'assistant.action.multipleRows':
+    'That reads as more than one entry. The capture screen takes a batch; I offer one at a time.',
+  'assistant.action.needAccount': 'There is no account to put that in. Create one first, then ask me again.',
   'assistant.action.done': 'Done',
   'assistant.action.undo': 'Undo',
   'assistant.action.undoing': 'Undoing…',

@@ -74,6 +74,32 @@ type ActionDiffEntryModel {
   slot: AssistantActionSlot!
 }
 
+"""
+One row a proposal will write, for an action that creates a row rather than a named entity. The amount is `Money`, not a formatted string, because the client renders every figure through `fm-money` (ADR-003) — a pre-formatted "180,00 RSD" is a number no money component ever sees.
+"""
+type ActionPreviewLineModel {
+  """Integer minor units plus currency. Always non-negative."""
+  amount: Money!
+
+  """
+  The resolved Category name, or null when nothing chose one (the row needs review).
+  """
+  category: String
+
+  """The text the row will carry, as the parser read it."""
+  label: String!
+
+  """
+  True when the row will be written `PENDING` and enter the review queue (I-8).
+  """
+  needsReview: Boolean!
+
+  """
+  The calendar day the row will be filed under — the text's own date, or the Household's today.
+  """
+  occurredOn: LocalDate!
+}
+
 type AiEgressModel {
   """
   The configured endpoint, e.g. `LOCAL`, `DEEPSEEK_EU` or `DEEPSEEK_GLOBAL`.
@@ -202,6 +228,7 @@ A registered assistant action. Closed: the registry has no unregistered member (
 """
 enum AssistantAction {
   ADD_CATEGORY
+  ADD_TRANSACTION
 }
 
 """
@@ -209,6 +236,11 @@ The backend-rendered proposal. Never narrated: a write confirmation is a numeral
 """
 type AssistantActionPreviewModel {
   diff: [ActionDiffEntryModel!]!
+
+  """
+  The rows this action will write. Empty for an action that creates one named entity, where the diff is the whole story.
+  """
+  lines: [ActionPreviewLineModel!]!
   sentence: String!
 }
 
@@ -254,9 +286,11 @@ type AssistantActionResultModel {
 Which slot of a proposal a diff row is. Stable across languages; `field` is the label.
 """
 enum AssistantActionSlot {
+  accountId
   kind
   name
   parentId
+  text
 }
 
 """docs/06 §4.4 and §8.5."""
@@ -1452,6 +1486,11 @@ type Mutation {
   assistantExecuteAction(idempotencyKey: String!, proposalId: UUID!): AssistantActionResultModel!
 
   """
+  Propose a write from a question (e.g. "dodaj kategoriju Putovanja"). Changes nothing in the ledger; the returned `proposalId` is the only argument the execute mutation accepts (ADR-035). A **Mutation**, not a Query, and the reason is `ADD_TRANSACTION`: proposing one runs the classification pipeline, which records a `classification_decisions` row and may call a model — `captureParse` is a Mutation for exactly that reason. A Query that spends money is a lie about itself, and the operation type must cover an operation at its worst, not its cheapest.
+  """
+  assistantProposeAction(accountId: ID, kind: CategoryKind, locale: String, question: String!): AssistantActionProposalModel!
+
+  """
   The write half of the capture path (docs/06 §5.2). Validates, classifies and writes the whole `rows` array in ONE database transaction: if any row is structurally invalid nothing is written and every offending row is named. A row the confidence gate puts in the blocking lane is NOT a validation failure — it is written PENDING and enters the review queue, so one ambiguous row never blocks a batch (F-06). Idempotent per row via `idempotencyKey` (I-10).
   """
   captureCommit(input: CaptureCommitInput!): CaptureCommitResult!
@@ -2183,11 +2222,6 @@ type Query {
   Answer a question about this Household's own ledger. The backend computes the facts; the model only narrates them, and every numeral it writes must exist in `facts` (ADR-017).
   """
   assistantAnswer(locale: String, question: String!): AssistantAnswerModel!
-
-  """
-  Propose a write from a question (e.g. "dodaj kategoriju Putovanja"). Writes nothing; the returned `proposalId` is the only argument the execute mutation accepts (ADR-035).
-  """
-  assistantProposeAction(kind: CategoryKind, locale: String, question: String!): AssistantActionProposalModel!
 
   """
   The answerable starter questions (docs/06 §8.1), for the assistant screen.
