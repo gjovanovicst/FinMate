@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { ReviewQueueStore } from '../../core/review/review-queue.store';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import { ReviewComponent } from './review.component';
 
@@ -138,7 +139,7 @@ async function mount(client: GraphqlClient): Promise<{
   });
   // `fm-money` is a custom element here; see the file header.
   TestBed.overrideComponent(ReviewComponent, {
-    remove: { imports: [MoneyComponent] },
+    remove: { imports: [MoneyComponent, IconComponent] },
     add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
 

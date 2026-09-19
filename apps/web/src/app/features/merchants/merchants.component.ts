@@ -5,6 +5,7 @@ import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import {
   aliasUnion,
   deleteRefusal,
@@ -122,37 +123,45 @@ const PAGE_SIZE = 200;
 @Component({
   selector: 'fm-merchants',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, IconComponent],
   template: `
-    <header class="head">
+    <div class="fm-page">
+    <header class="fm-page__head">
       <div>
-        <h1 class="head__title">{{ i18n.t('merchants.title') }}</h1>
-        <p class="head__sub">{{ i18n.t('merchants.subtitle') }}</p>
+        <h1 class="fm-page__title">{{ i18n.t('merchants.title') }}</h1>
+        <p class="fm-page__sub">{{ i18n.t('merchants.subtitle') }}</p>
       </div>
-      <button class="btn btn--primary" type="button" (click)="startCreate()">
-        {{ i18n.t('merchants.add') }}
-      </button>
+      <div class="fm-page__actions">
+        <button class="fm-btn fm-btn--primary" type="button" (click)="startCreate()">
+          {{ i18n.t('merchants.add') }}
+        </button>
+      </div>
     </header>
 
     @if (error()) {
       <p class="alert" role="alert">{{ error() }}</p>
     }
-    <p class="announce" aria-live="polite">{{ announcement() }}</p>
+    <p class="fm-visually-hidden" aria-live="polite">{{ announcement() }}</p>
 
     @if (creating()) {
-      <section class="panel">
-        <h2 class="panel__title">{{ i18n.t('merchants.addTitle') }}</h2>
+      <section class="fm-card">
+        <div class="fm-card__head">
+          <h2 class="fm-card__title">
+            <fm-icon name="merchants" [size]="18" />
+            {{ i18n.t('merchants.addTitle') }}
+          </h2>
+        </div>
         <form class="form" [formGroup]="createForm" (ngSubmit)="create()" novalidate>
-          <label class="field">
-            <span class="field__label">{{ i18n.t('merchants.name') }}</span>
-            <input class="field__input" type="text" formControlName="name" required />
+          <label class="fm-field">
+            <span class="fm-field__label">{{ i18n.t('merchants.name') }}</span>
+            <input class="fm-field__input" type="text" formControlName="name" required />
             @if (duplicateWarning()) {
-              <span class="field__hint field__hint--warn">{{ duplicateWarning() }}</span>
+              <span class="fm-field__hint fm-field__hint--warn">{{ duplicateWarning() }}</span>
             }
           </label>
-          <label class="field">
-            <span class="field__label">{{ i18n.t('merchants.defaultCategory') }}</span>
-            <select class="field__input" formControlName="defaultCategoryId">
+          <label class="fm-field">
+            <span class="fm-field__label">{{ i18n.t('merchants.defaultCategory') }}</span>
+            <select class="fm-field__input" formControlName="defaultCategoryId">
               <option value="">{{ i18n.t('merchants.noDefaultCategory') }}</option>
               @for (category of categories(); track category.id) {
                 <option [value]="category.id">{{ categoryLabel(category) }}</option>
@@ -160,10 +169,10 @@ const PAGE_SIZE = 200;
             </select>
           </label>
           <div class="actions">
-            <button class="btn btn--primary" type="submit" [disabled]="busy()">
+            <button class="fm-btn fm-btn--primary" type="submit" [disabled]="busy()">
               {{ busy() ? i18n.t('merchants.creating') : i18n.t('merchants.create') }}
             </button>
-            <button class="btn" type="button" (click)="creating.set(false)">
+            <button class="fm-btn" type="button" (click)="creating.set(false)">
               {{ i18n.t('merchants.cancel') }}
             </button>
           </div>
@@ -172,11 +181,11 @@ const PAGE_SIZE = 200;
     }
 
     <div class="editor">
-      <section class="panel">
-        <label class="field">
-          <span class="field__label">{{ i18n.t('merchants.search') }}</span>
+      <section class="fm-card list-card">
+        <label class="fm-field">
+          <span class="fm-field__label">{{ i18n.t('merchants.search') }}</span>
           <input
-            class="field__input"
+            class="fm-field__input"
             type="search"
             [value]="search()"
             [placeholder]="i18n.t('merchants.searchPlaceholder')"
@@ -232,41 +241,46 @@ const PAGE_SIZE = 200;
         }
       </section>
 
-      <section class="panel">
+      <section class="fm-card editor-card">
         @if (selected(); as node) {
-          <h2 class="panel__title">{{ node.name }}</h2>
+          <div class="fm-card__head">
+            <h2 class="fm-card__title">
+              <fm-icon name="merchants" [size]="18" />
+              {{ node.name }}
+            </h2>
+          </div>
 
           @if (node.isGlobal) {
             <p class="notice">{{ i18n.t('merchants.copyOnWrite') }}</p>
           }
 
           <form class="form" [formGroup]="form" (ngSubmit)="save()" novalidate>
-            <label class="field">
-              <span class="field__label">{{ i18n.t('merchants.name') }}</span>
-              <input class="field__input" type="text" formControlName="name" required />
+            <label class="fm-field">
+              <span class="fm-field__label">{{ i18n.t('merchants.name') }}</span>
+              <input class="fm-field__input" type="text" formControlName="name" required />
               @if (duplicateWarning()) {
-                <span class="field__hint field__hint--warn">{{ duplicateWarning() }}</span>
+                <span class="fm-field__hint fm-field__hint--warn">{{ duplicateWarning() }}</span>
               }
             </label>
 
-            <label class="field">
-              <span class="field__label">{{ i18n.t('merchants.defaultCategory') }}</span>
-              <select class="field__input" formControlName="defaultCategoryId">
+            <label class="fm-field">
+              <span class="fm-field__label">{{ i18n.t('merchants.defaultCategory') }}</span>
+              <select class="fm-field__input" formControlName="defaultCategoryId">
                 <option value="">{{ i18n.t('merchants.noDefaultCategory') }}</option>
                 @for (category of categories(); track category.id) {
                   <option [value]="category.id">{{ categoryLabel(category) }}</option>
                 }
               </select>
-              <span class="field__hint">{{ i18n.t('merchants.defaultCategoryHint') }}</span>
+              <span class="fm-field__hint">{{ i18n.t('merchants.defaultCategoryHint') }}</span>
             </label>
 
-            <label class="field">
-              <span class="field__label">{{ i18n.t('merchants.aiHint') }}</span>
-              <input class="field__input" type="text" formControlName="aiHint" />
-              <span class="field__hint">{{ i18n.t('merchants.aiHintHint') }}</span>
+            <label class="fm-field">
+              <span class="fm-field__label">{{ i18n.t('merchants.aiHint') }}</span>
+              <input class="fm-field__input" type="text" formControlName="aiHint" />
+              <span class="fm-field__hint">{{ i18n.t('merchants.aiHintHint') }}</span>
             </label>
 
-            <button class="btn btn--primary" type="submit" [disabled]="busy()">
+            <button class="fm-btn fm-btn--primary" type="submit" [disabled]="busy()">
               {{ busy() ? i18n.t('merchants.saving') : i18n.t('merchants.save') }}
             </button>
           </form>
@@ -297,17 +311,17 @@ const PAGE_SIZE = 200;
             }
 
             <form class="alias-form" [formGroup]="aliasForm" (ngSubmit)="addAlias()" novalidate>
-              <label class="field">
-                <span class="field__label">{{ i18n.t('merchants.aliases') }}</span>
+              <label class="fm-field">
+                <span class="fm-field__label">{{ i18n.t('merchants.aliases') }}</span>
                 <input
-                  class="field__input"
+                  class="fm-field__input"
                   type="text"
                   formControlName="alias"
                   [placeholder]="i18n.t('merchants.aliasPlaceholder')"
                   required
                 />
               </label>
-              <button class="btn" type="submit" [disabled]="busy()">
+              <button class="fm-btn" type="submit" [disabled]="busy()">
                 {{ i18n.t('merchants.addAlias') }}
               </button>
             </form>
@@ -317,10 +331,10 @@ const PAGE_SIZE = 200;
             <h3 class="block__title">{{ i18n.t('merchants.merge') }}</h3>
             <p class="hint">{{ i18n.t('merchants.mergeHint') }}</p>
 
-            <label class="field">
-              <span class="field__label">{{ i18n.t('merchants.mergeTarget') }}</span>
+            <label class="fm-field">
+              <span class="fm-field__label">{{ i18n.t('merchants.mergeTarget') }}</span>
               <select
-                class="field__input"
+                class="fm-field__input"
                 [value]="mergeTargetId()"
                 (change)="setMergeTarget($any($event.target).value)"
               >
@@ -346,7 +360,7 @@ const PAGE_SIZE = 200;
                 {{ i18n.t('merchants.mergePreviewAliases') }}:
                 {{ unionPreview().join(', ') || '—' }}
               </p>
-              <button class="btn btn--danger" type="button" [disabled]="busy()" (click)="merge()">
+              <button class="fm-btn fm-btn--danger" type="button" [disabled]="busy()" (click)="merge()">
                 {{ busy() ? i18n.t('merchants.merging') : i18n.t('merchants.mergeConfirm') }}
               </button>
             }
@@ -357,7 +371,7 @@ const PAGE_SIZE = 200;
             @if (deleteRefusalKey(); as key) {
               <p class="hint hint--warn">{{ i18n.t(key) }}</p>
             } @else {
-              <button class="btn btn--danger" type="button" [disabled]="busy()" (click)="remove()">
+              <button class="fm-btn fm-btn--danger" type="button" [disabled]="busy()" (click)="remove()">
                 {{ busy() ? i18n.t('merchants.deleting') : i18n.t('merchants.delete') }}
               </button>
             }
@@ -367,41 +381,22 @@ const PAGE_SIZE = 200;
         }
       </section>
     </div>
+    </div>
   `,
   styles: [
     `
-      .head {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: start;
-        justify-content: space-between;
-        gap: var(--space-3);
-        margin-block-end: var(--space-4);
-      }
-      .head__title {
-        margin: 0;
-        font-size: var(--text-2xl);
-      }
-      .head__sub,
       .muted {
         margin: var(--space-1) 0 0;
         color: var(--color-text-muted);
         font-size: var(--text-sm);
       }
       .alert {
+        margin: 0;
         padding: var(--space-3);
         border-radius: var(--radius-md);
-        background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+        background: var(--color-danger-soft);
         color: var(--color-danger);
         font-size: var(--text-sm);
-      }
-      .announce {
-        position: absolute;
-        inline-size: 1px;
-        block-size: 1px;
-        overflow: hidden;
-        clip-path: inset(50%);
-        white-space: nowrap;
       }
       .editor {
         display: grid;
@@ -412,26 +407,28 @@ const PAGE_SIZE = 200;
         .editor {
           grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
         }
+        /* The editor stays beside the list instead of scrolling away under it. */
+        .editor-card {
+          position: sticky;
+          inset-block-start: var(--space-5);
+        }
       }
-      .panel {
-        display: grid;
-        gap: var(--space-3);
-        padding: var(--space-4);
-        background: var(--color-surface);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-lg);
-        margin-block-end: var(--space-4);
-      }
-      .panel__title {
-        margin: 0;
-        font-size: var(--text-lg);
+      /* A long merchant name wraps rather than widening the card. */
+      .editor-card .fm-card__title {
         overflow-wrap: anywhere;
+      }
+      /* PAGE_SIZE is the API's own cap and the seeded catalogue is the whole list, so the list card
+         is bounded and scrolls on its own: unbounded it ran thousands of pixels past the editor, and
+         the editor's own prompt — "choose a merchant" — was off screen the moment the list began. */
+      .list-card {
+        max-block-size: 70vh;
+        overflow-y: auto;
       }
       .notice {
         margin: 0;
         padding: var(--space-3);
         border-radius: var(--radius-md);
-        background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+        background: var(--color-primary-soft);
         font-size: var(--text-sm);
       }
       .list,
@@ -468,7 +465,7 @@ const PAGE_SIZE = 200;
         border-color: var(--color-primary);
       }
       .row--on {
-        background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+        background: var(--color-primary-soft);
       }
       .row__main {
         display: grid;
@@ -503,7 +500,7 @@ const PAGE_SIZE = 200;
       }
       .empty__title {
         margin: 0 0 var(--space-1);
-        font-weight: 600;
+        font-weight: var(--weight-semibold);
       }
       .empty__body {
         margin: 0;
@@ -520,7 +517,7 @@ const PAGE_SIZE = 200;
           grid-template-columns: 1fr 1fr;
         }
         .form > .actions,
-        .form > .btn {
+        .form > .fm-btn {
           grid-column: 1 / -1;
         }
         .alias-form {
@@ -528,59 +525,17 @@ const PAGE_SIZE = 200;
           align-items: end;
         }
       }
-      .field {
-        display: grid;
-        gap: var(--space-1);
+      /* The box, its label and its hint come from .fm-field*; only the warning ink is this screen's. */
+      .fm-field {
         min-inline-size: 0;
       }
-      .field__label {
-        font-size: var(--text-sm);
-        color: var(--color-text-muted);
-      }
-      .field__hint {
-        font-size: var(--text-xs);
-        color: var(--color-text-subtle);
-      }
-      .field__hint--warn {
+      .fm-field__hint--warn {
         color: var(--color-warning);
-      }
-      .field__input {
-        padding: var(--space-2);
-        font: inherit;
-        color: var(--color-text);
-        background: var(--color-bg);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-        min-inline-size: 0;
       }
       .actions {
         display: flex;
         flex-wrap: wrap;
         gap: var(--space-2);
-      }
-      .btn {
-        padding: var(--space-2) var(--space-4);
-        font: inherit;
-        font-weight: 600;
-        color: var(--color-text);
-        background: var(--color-bg);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-        cursor: pointer;
-      }
-      .btn:disabled {
-        opacity: 0.6;
-        cursor: default;
-      }
-      .btn--primary {
-        color: var(--color-primary-contrast);
-        background: var(--color-primary);
-        border-color: transparent;
-      }
-      .btn--danger {
-        color: var(--color-danger);
-        background: none;
-        border-color: var(--color-danger);
       }
       .block {
         display: grid;
@@ -591,7 +546,7 @@ const PAGE_SIZE = 200;
       .block__title {
         margin: 0;
         font-size: var(--text-sm);
-        font-weight: 600;
+        font-weight: var(--weight-semibold);
       }
       .hint {
         margin: 0;
@@ -609,7 +564,7 @@ const PAGE_SIZE = 200;
         padding: var(--space-1) var(--space-2);
         font-size: var(--text-sm);
         border: 1px solid var(--color-border);
-        border-radius: 999px;
+        border-radius: var(--radius-pill);
       }
       .chip__word {
         overflow-wrap: anywhere;

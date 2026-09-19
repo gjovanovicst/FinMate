@@ -4,6 +4,7 @@
 import { initAngularTesting, setSignalInput } from '@web-test/angular-testing';
 
 import {
+  CUSTOM_ELEMENTS_SCHEMA,
   provideZonelessChangeDetection,
 } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
@@ -12,6 +13,7 @@ import { of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GraphqlClient } from '../../core/graphql/graphql.client';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { ReceiptAttachmentComponent } from './receipt-attachment.component';
 import { MAX_RECEIPT_BYTES } from './receipts.view';
 
@@ -144,6 +146,12 @@ async function mount(
       { provide: HttpClient, useValue: http },
     ],
   });
+  // `fm-icon`'s required `name` input throws NG0950 under JIT before its binding lands, exactly as
+  // `fm-money` does; the icon is a custom element here, as in every other mounted spec.
+  TestBed.overrideComponent(ReceiptAttachmentComponent, {
+    remove: { imports: [IconComponent] },
+    add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
+  });
 
   const fixture = TestBed.createComponent(ReceiptAttachmentComponent);
   setSignalInput(fixture.componentInstance, 'transactionId', 'tx-1');
@@ -259,7 +267,8 @@ describe('ReceiptAttachmentComponent (mounted)', () => {
     await settle(fixture);
 
     expect(text(fixture)).toContain('Choose a photo instead');
-    expect(root(fixture).querySelector('progress')).toBeNull();
+    // The upload bar is `.fm-progress`, not a bare progress element (ADR-039).
+    expect(root(fixture).querySelector('.fm-progress')).toBeNull();
     expect(text(fixture)).not.toContain('Starting the camera');
     expect(root(fixture).querySelector('input[type="file"]')).not.toBeNull();
   });

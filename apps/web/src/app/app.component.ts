@@ -25,6 +25,7 @@ import { ReviewQueueStore } from './core/review/review-queue.store';
 import { AppLockScreenComponent } from './shared/ui/app-lock/app-lock-screen.component';
 import { AppUpdateComponent } from './shared/ui/app-update/app-update.component';
 import { AvatarComponent } from './shared/ui/avatar/avatar.component';
+import { BrandComponent } from './shared/ui/brand/brand.component';
 import { IconComponent } from './shared/ui/icon/icon.component';
 import { InstallSheetComponent } from './shared/ui/install-sheet/install-sheet.component';
 import { LanguageSwitcherComponent } from './shared/ui/language-switcher/language-switcher.component';
@@ -73,6 +74,7 @@ import { ThemeToggleComponent } from './shared/ui/theme-toggle/theme-toggle.comp
     IconComponent,
     ThemeToggleComponent,
     AvatarComponent,
+    BrandComponent,
   ],
   template: `
     <a class="skip-link" href="#main">{{ i18n.t('app.skipToContent') }}</a>
@@ -110,21 +112,7 @@ import { ThemeToggleComponent } from './shared/ui/theme-toggle/theme-toggle.comp
                  in the compact bar to 36 px in the sidebar and inherit the brand gradient, which a raster
                  favicon cannot do. -->
             <a class="brand" routerLink="/" [attr.aria-label]="i18n.t('nav.dashboard')">
-              <span class="brand__mark" aria-hidden="true">
-                <svg viewBox="0 0 32 32" fill="none">
-                  <path
-                    d="M9 22.5c0-6.4 4.6-11 11.4-11.6M9 22.5c5.9 1.2 11.4-1.6 13.6-6.6"
-                    stroke="currentColor"
-                    stroke-width="2.4"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-              </span>
-              <span class="brand__text">
-                <span class="brand__name">{{ i18n.t('app.name') }}</span>
-                <span class="brand__tagline">{{ i18n.t('app.tagline') }}</span>
-              </span>
+              <fm-brand [tagline]="true" />
             </a>
 
             @if (moreOpen()) {
@@ -208,17 +196,7 @@ import { ThemeToggleComponent } from './shared/ui/theme-toggle/theme-toggle.comp
             <!-- The compact bar has no room for a field, so the brand mark stands in and the search
                  field is hidden by CSS rather than duplicated. -->
             <a class="topbar__brand" routerLink="/" [attr.aria-label]="i18n.t('nav.dashboard')">
-              <span class="brand__mark brand__mark--small" aria-hidden="true">
-                <svg viewBox="0 0 32 32" fill="none">
-                  <path
-                    d="M9 22.5c0-6.4 4.6-11 11.4-11.6M9 22.5c5.9 1.2 11.4-1.6 13.6-6.6"
-                    stroke="currentColor"
-                    stroke-width="2.4"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-              </span>
+              <fm-brand [tagline]="false" />
             </a>
 
             <form class="search" role="search" (submit)="submitSearch($event)">
@@ -314,32 +292,6 @@ import { ThemeToggleComponent } from './shared/ui/theme-toggle/theme-toggle.comp
         min-block-size: 100dvh;
       }
 
-      /* ---- the brand mark ---- */
-      .brand__mark {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        inline-size: 2.25rem;
-        block-size: 2.25rem;
-        flex: none;
-        border-radius: var(--radius-md);
-        background: var(--gradient-brand);
-        color: #ffffff;
-        box-shadow: var(--shadow-glow);
-      }
-      .brand__mark svg {
-        inline-size: 1.6rem;
-        block-size: 1.6rem;
-      }
-      .brand__mark--small {
-        inline-size: 2rem;
-        block-size: 2rem;
-      }
-      .brand__mark--small svg {
-        inline-size: 1.4rem;
-        block-size: 1.4rem;
-      }
-
       /* The offline shell (ADR-033): a sentence, one action, and the outlet. It deliberately has no
          nav and no header — every destination it cannot serve is a control that cannot work. */
       .offline {
@@ -410,6 +362,12 @@ import { ThemeToggleComponent } from './shared/ui/theme-toggle/theme-toggle.comp
            is the one declaration that stops it — do not remove it. */
         grid-template-columns: minmax(0, 1fr);
         grid-template-rows: 1fr;
+        /* The **public** shell's one area. The main content element carries grid-area: content for the
+           authenticated layout below, and a named area that does not exist makes the grid invent implicit
+           named lines instead: measured on /sign-in, the sign-in form was placed in the third column of a
+           3x3 implicit grid — 226 px wide, at the bottom right of an empty page. This one declaration is
+           what stops it; the authenticated block overrides it. */
+        grid-template-areas: 'content';
         min-block-size: 100dvh;
       }
 
@@ -730,6 +688,14 @@ import { ThemeToggleComponent } from './shared/ui/theme-toggle/theme-toggle.comp
           var(--space-4) + var(--nav-bottom-h) + env(safe-area-inset-bottom)
         );
         outline: none;
+      }
+
+      /* The public screens are a single card on an empty page, so it is centred in the window rather than
+         pinned to the top of a 900 px column. Only the auth screens reach this: a signed-in person always
+         has the authenticated shell, including on the onboarding wizard. */
+      .shell:not(.shell--authenticated) .content {
+        display: grid;
+        align-content: center;
       }
 
       /* ---- expanded: sidebar, vertical nav, account block ---- */

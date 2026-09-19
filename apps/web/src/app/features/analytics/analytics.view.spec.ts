@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   categoryLabel,
-  changeGlyph,
+  changeIcon,
   changeKind,
   changeLabelKey,
   csvHref,
@@ -127,8 +127,11 @@ describe('shares and changes', () => {
     expect(changeKind(0)).toBe('FLAT');
     expect(changeKind(0.2)).toBe('UP');
     expect(changeKind(-1)).toBe('DOWN');
-    expect(changeGlyph('NO_BASIS')).toBe('');
-    expect(changeGlyph('UP')).toBe('↑');
+    expect(changeIcon('NO_BASIS')).toBe('');
+    // A chrome glyph is an <fm-icon> name, never a text arrow (ADR-039).
+    expect(changeIcon('UP')).toBe('arrowUp');
+    expect(changeIcon('DOWN')).toBe('arrowDown');
+    expect(changeIcon('FLAT')).toBe('trending');
     expect(changeLabelKey('NO_BASIS')).toBe('analytics.noBasis');
   });
 

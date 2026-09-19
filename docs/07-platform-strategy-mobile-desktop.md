@@ -1054,7 +1054,7 @@ launch gates and the §2 trigger baseline.
 
 | Route / artefact | Budget | Loading |
 |---|---|---|
-| App shell + boot | ≤ 150 KB | Eager |
+| App shell + boot | ≤ 156 KB | Eager |
 | Capture ([F-05](01-product-requirements.md), [F-06](01-product-requirements.md)) | ≤ 180 KB | Eager (critical path) |
 | Dashboard ([F-19](01-product-requirements.md), [F-21](01-product-requirements.md)) | ≤ 220 KB | Eager after auth |
 | Transaction list ([F-24](01-product-requirements.md)) | ≤ 260 KB | Eager after auth |
@@ -1100,17 +1100,27 @@ than inferred:
 
 | Route | Cold cost | Budget |
 |---|---|---|
-| App shell + boot | **149.9 KB** (was 137.9 — the icon registry, the theme service, the account block and the shell's own styles; **99.9 % of the budget**) | ≤ 150 KB |
+| App shell + boot | **150.9 KB** (was 137.9 — the icon registry, the theme service, the account block, the shared field primitive and the shell's own styles; 97 % of the raised budget) | ≤ 156 KB |
 | Capture | 172.2 KB (was 159.9) | ≤ 180 KB |
 | Transaction list | 187.0 KB (was 174.9) | ≤ 260 KB |
 | Dashboard / Review / Receipts / Analytics / Assistant | 168.6 / 162.7 / 162.7 / 166.4 / 167.9 KB | 220 / 220 / 240 / 300 / 280 KB |
 | The 17 routes §11 does not name | 163–190 KB | held to the 320 KB total |
 | `packages/nlp` | **2.7 KB** (one chunk, fetched with the first route that needs it — not eagerly) | ≤ 40 KB |
 
-**The shell has no real headroom left.** Fourteen unused icon paths were deleted to bring it back under
-150 KB, and every path in `shared/ui/icon` lands in the initial chunk because the shell renders `fm-icon`.
-The next addition there should either move the lazy-chunk icons behind a dynamic import **or** raise this
-budget in this table with a stated reason — never silently.
+**The shell budget moved 150 → 156 KB, and this is the stated reason.** It was first *used* rather than
+raised: fourteen unused icon paths were deleted to bring 150.3 KB back under 150. Then the ADR-039 audit
+found that the registry was **incomplete** — `chevronDown` (the shell's account block) and `chevronRight`
+(the dashboard's View-all chips) were rendered by templates and had no path at all, and `calendar`, `globe`
+and `logout` had been deleted by a careless regex while trimming. Restoring those five and adding the two
+the screens needed (`chevronLeft`, `close`) plus `lock` for the app-lock section is a **bug fix, not
+growth**, and it cost ~0.3 KB; the rest of the 0.9 KB is the shared `.fm-field*` primitive, `.fm-btn--danger`,
+`accent-color` for native controls, the file-picker theme and the extracted `fm-brand` component — all of
+them design-system infrastructure in the eager chunk because the shell renders them.
+
+Every path in `shared/ui/icon` lands in the initial chunk, because the shell renders `fm-icon`. The next
+addition should either move the lazy-chunk icons (the dashboard's charts, sparkles, chevrons) behind a
+dynamic import **or** raise this number here again with a stated reason. It is a regression guard, not a
+freeze on the design system — but a raise without a reason in this table is the thing it exists to stop.
 
 **4.3.4b measured the accessibility half with axe** (injected from a fetched copy, so the client takes
 no dependency) across all 20 routes of the served production build: it found **20 serious

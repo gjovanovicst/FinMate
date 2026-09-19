@@ -11,19 +11,21 @@ import { I18nService } from '../../core/i18n/i18n.service';
     <section class="nf">
       <h1 class="nf__title">{{ i18n.t('notFound.title') }}</h1>
       <p class="nf__body">{{ i18n.t('notFound.body') }}</p>
-      <a class="nf__cta" routerLink="/">{{ i18n.t('notFound.cta') }}</a>
+      <a class="fm-btn fm-btn--primary nf__cta" routerLink="/">{{ i18n.t('notFound.cta') }}</a>
     </section>
   `,
   styles: [
     `
       .nf {
-        max-inline-size: 420px;
+        max-inline-size: 26rem;
         margin-inline: auto;
         padding-block-start: var(--space-7);
         text-align: center;
       }
       .nf__title {
-        font-size: var(--text-xl);
+        font-size: var(--text-2xl);
+        font-weight: var(--weight-bold);
+        letter-spacing: var(--tracking-tight);
         margin-block: 0 var(--space-2);
       }
       .nf__body {
@@ -31,15 +33,10 @@ import { I18nService } from '../../core/i18n/i18n.service';
         font-size: var(--text-sm);
         margin-block: 0 var(--space-5);
       }
+      /* Everything but the centring comes from the shared button class: a bespoke primary button with its
+         own radius and weight was 4 px rounder and bolder than every other primary action in the app. */
       .nf__cta {
-        display: inline-block;
-        padding: var(--space-2) var(--space-4);
-        background: var(--color-primary);
-        color: var(--color-primary-contrast);
-        border-radius: var(--radius-md);
-        text-decoration: none;
-        font-size: var(--text-sm);
-        font-weight: 600;
+        justify-self: center;
       }
     `,
   ],

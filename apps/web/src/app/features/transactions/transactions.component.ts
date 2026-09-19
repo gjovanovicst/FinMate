@@ -13,7 +13,8 @@ import { syncedAtLabel } from '../../core/offline/sync.view';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
-import { toMajorString } from '../../shared/money-text';
+import { moneyText, toMajorString } from '../../shared/money-text';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import {
   TransactionDetailComponent,
@@ -216,142 +217,199 @@ const SEARCH_DEBOUNCE_MS = 300;
 @Component({
   selector: 'fm-transactions',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MoneyComponent, TransactionDetailComponent],
+  imports: [ReactiveFormsModule, RouterLink, MoneyComponent, IconComponent, TransactionDetailComponent],
   template: `
-    <header class="head">
-      <h1 class="head__title">{{ i18n.t('transactions.title') }}</h1>
-      <p class="head__sub">
-        @if (loading()) {
-          {{ i18n.t('accounts.loading') }}
-        } @else if (cached()) {
-          {{ i18n.t('transactions.cachedCount', { count: cachedCount() }) }}
-        } @else {
-          {{ i18n.t('transactions.count', { count: totalCount() }) }}
-        }
-      </p>
-    </header>
-
-    @if (error()) {
-      <p class="alert" role="alert">{{ error() }}</p>
-    }
-
-    @if (cached()) {
-      <div class="cached" role="status">
-        @if (staleLabel(); as asOf) {
-          <p class="cached__asof">{{ i18n.t('money.asOf', { time: asOf }) }}</p>
-        }
-        <p class="cached__body">{{ i18n.t('transactions.cachedNotice') }}</p>
-      </div>
-
-      @for (group of cachedGroups(); track group.date) {
-        <section class="day">
-          <header class="day__head">
-            <h2 class="day__date">{{ group.date }}</h2>
-            <p class="day__totals">
-              @if (group.expenseTotal; as spent) {
-                <span>{{ i18n.t('transactions.daySpent', { amount: amountText(spent) }) }}</span>
-              }
-              @if (group.incomeTotal; as received) {
-                <span>{{ i18n.t('transactions.dayReceived', { amount: amountText(received) }) }}</span>
-              }
-            </p>
-          </header>
-
-          <ul class="list">
-            <!--
-              Deliberately NOT a button: a cached row has no id to open (the whitelist drops it, and
-              adding one is a data-minimisation decision, not a convenience). A row that looked
-              tappable and did nothing would be worse than a row that plainly does not.
-            -->
-            @for (row of group.rows; track $index) {
-              <li class="row row--cached">
-                <span class="row__main">
-                  <span class="row__desc">{{ row.description }}</span>
-                  <span class="row__meta">
-                    <!--
-                      Nothing when the cache holds no category. A null category means "uncategorised"
-                      OR "divided" — a split Transaction has no Category of its own and the whitelist
-                      holds one — so the screen claims neither instead of guessing.
-                    -->
-                    @if (row.categoryName; as name) {
-                      {{ name }}
-                    }
-                  </span>
-                </span>
-                <fm-money class="row__amount" [amount]="row.amount" [direction]="row.kind" />
-              </li>
+    <div class="fm-page">
+      <header class="fm-page__head">
+        <div>
+          <h1 class="fm-page__title">{{ i18n.t('transactions.title') }}</h1>
+          <p class="fm-page__sub">
+            @if (loading()) {
+              {{ i18n.t('accounts.loading') }}
+            } @else if (cached()) {
+              {{ i18n.t('transactions.cachedCount', { count: cachedCount() }) }}
+            } @else {
+              {{ i18n.t('transactions.count', { count: totalCount() }) }}
             }
-          </ul>
-        </section>
+          </p>
+        </div>
+
+        <!-- The head's control cluster (ADR-039): filters and the export belong to the page, not to a
+             bespoke toolbar. They are absent in the cached mode, which is read-only by construction. -->
+        @if (!loading() && !cached() && !noAccounts()) {
+          <div class="fm-page__actions">
+            <button
+              class="fm-btn fm-btn--ghost"
+              type="button"
+              (click)="filtersOpen.set(!filtersOpen())"
+            >
+              {{ i18n.t('transactions.filters') }}
+              @if (hasFilters()) {
+                <span class="dot" aria-hidden="true"></span>
+              }
+            </button>
+
+            @if (hasFilters()) {
+              <button class="fm-btn fm-btn--ghost" type="button" (click)="clearFilters()">
+                {{ i18n.t('transactions.clearFilters') }}
+              </button>
+            }
+
+            <!-- The count is the promise: the file contains exactly the rows the filter matched, not
+                 the rows currently paged in. Hidden at zero, because an empty export helps nobody. -->
+            @if (totalCount() > 0) {
+              <button class="fm-btn" type="button" [disabled]="exporting()" (click)="exportCsv()">
+                {{
+                  exporting()
+                    ? i18n.t('transactions.exporting')
+                    : i18n.t('transactions.exportCount', { count: totalCount() })
+                }}
+              </button>
+            }
+          </div>
+        }
+      </header>
+
+      @if (error()) {
+        <p class="alert" role="alert">{{ error() }}</p>
       }
-    } @else if (noAccounts()) {
-      <div class="empty">
-        <p class="empty__title">{{ i18n.t('transactions.noAccountsTitle') }}</p>
-        <p class="empty__body">{{ i18n.t('transactions.noAccountsBody') }}</p>
-        <p><a routerLink="/accounts">{{ i18n.t('nav.accounts') }}</a></p>
-      </div>
-    } @else {
-      <section class="create">
-        <h2 class="create__title">{{ i18n.t('transactions.addTitle') }}</h2>
-        <form class="create__form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
-          <label class="field">
-            <span class="field__label">{{ i18n.t('transactions.amount') }}</span>
-            <input
-              class="field__input"
-              type="text"
-              inputmode="decimal"
-              formControlName="amount"
-              [placeholder]="i18n.t('transactions.amountPlaceholder')"
-              autocomplete="off"
-              required
-            />
-            @if (amountHint(); as hint) {
-              <span class="field__hint">{{ hint }}</span>
+
+      @if (cached()) {
+        <div class="cached" role="status">
+          @if (staleLabel(); as asOf) {
+            <p class="cached__asof">{{ i18n.t('money.asOf', { time: asOf }) }}</p>
+          }
+          <p class="cached__body">{{ i18n.t('transactions.cachedNotice') }}</p>
+        </div>
+
+        <!-- The same one-card ledger the live list renders: a flush card around one table, so a cached
+             day is not a stack of bordered row cards either. -->
+        <div class="fm-card fm-card--flush">
+          <table class="fm-table ledger">
+            @for (group of cachedGroups(); track group.date) {
+              <tbody>
+                <tr class="ledger__day">
+                  <th colspan="3" scope="rowgroup" class="ledger__day-head">
+                    <span class="day__head">
+                      <span class="day__date">{{ dayLabel(group.date) }}</span>
+                      <span class="day__totals">
+                        @if (group.expenseTotal; as spent) {
+                          <span>{{ i18n.t('transactions.daySpent', { amount: amountText(spent) }) }}</span>
+                        }
+                        @if (group.incomeTotal; as received) {
+                          <span>{{ i18n.t('transactions.dayReceived', { amount: amountText(received) }) }}</span>
+                        }
+                      </span>
+                    </span>
+                  </th>
+                </tr>
+
+                <!--
+                  Deliberately NOT a button: a cached row has no id to open (the whitelist drops it, and
+                  adding one is a data-minimisation decision, not a convenience). A row that looked
+                  tappable and did nothing would be worse than a row that plainly does not.
+                -->
+                @for (row of group.rows; track $index) {
+                  <tr class="ledger__row ledger__row--cached">
+                    <td>
+                      <span class="row__main">
+                        <span class="row__desc">{{ row.description }}</span>
+                        <span class="row__meta">
+                          <!--
+                            Nothing when the cache holds no category. A null category means "uncategorised"
+                            OR "divided" — a split Transaction has no Category of its own and the whitelist
+                            holds one — so the screen claims neither instead of guessing.
+                          -->
+                          @if (row.categoryName; as name) {
+                            {{ name }}
+                          }
+                        </span>
+                      </span>
+                    </td>
+                    <td class="ledger__amount">
+                      <fm-money class="row__amount" [amount]="row.amount" [direction]="row.kind" />
+                    </td>
+                    <td class="ledger__edit"></td>
+                  </tr>
+                }
+              </tbody>
             }
-          </label>
+          </table>
+        </div>
+      } @else if (noAccounts()) {
+        <div class="empty">
+          <p class="empty__title">{{ i18n.t('transactions.noAccountsTitle') }}</p>
+          <p class="empty__body">{{ i18n.t('transactions.noAccountsBody') }}</p>
+          <p><a routerLink="/accounts">{{ i18n.t('nav.accounts') }}</a></p>
+        </div>
+      } @else {
+        <section class="fm-card">
+          <div class="fm-card__head">
+            <h2 class="fm-card__title">
+              <fm-icon name="capture" [size]="18" />
+              {{ i18n.t('transactions.addTitle') }}
+            </h2>
+          </div>
 
-          <label class="field">
-            <span class="field__label">{{ i18n.t('transactions.description') }}</span>
-            <input class="field__input" type="text" formControlName="description" required />
-          </label>
-
-          <label class="field">
-            <span class="field__label">{{ i18n.t('transactions.kind') }}</span>
-            <select class="field__input" formControlName="kind">
-              <option value="EXPENSE">{{ i18n.t('transactionKind.EXPENSE') }}</option>
-              <option value="INCOME">{{ i18n.t('transactionKind.INCOME') }}</option>
-            </select>
-          </label>
-
-          @if (!splitMode()) {
+          <form class="form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
             <label class="field">
-              <span class="field__label">{{ i18n.t('transactions.category') }}</span>
-              <select class="field__input" formControlName="categoryId">
-                <option value="">{{ i18n.t('transactions.noCategory') }}</option>
-                @for (category of matchingCategories(); track category.id) {
-                  <option [value]="category.id">{{ categoryLabel(category) }}</option>
+              <span class="field__label">{{ i18n.t('transactions.amount') }}</span>
+              <input
+                class="field__input"
+                type="text"
+                inputmode="decimal"
+                formControlName="amount"
+                [placeholder]="i18n.t('transactions.amountPlaceholder')"
+                autocomplete="off"
+                required
+              />
+              @if (amountHint(); as hint) {
+                <span class="field__hint">{{ hint }}</span>
+              }
+            </label>
+
+            <label class="field">
+              <span class="field__label">{{ i18n.t('transactions.description') }}</span>
+              <input class="field__input" type="text" formControlName="description" required />
+            </label>
+
+            <label class="field">
+              <span class="field__label">{{ i18n.t('transactions.kind') }}</span>
+              <select class="field__input" formControlName="kind">
+                <option value="EXPENSE">{{ i18n.t('transactionKind.EXPENSE') }}</option>
+                <option value="INCOME">{{ i18n.t('transactionKind.INCOME') }}</option>
+              </select>
+            </label>
+
+            @if (!splitMode()) {
+              <label class="field">
+                <span class="field__label">{{ i18n.t('transactions.category') }}</span>
+                <select class="field__input" formControlName="categoryId">
+                  <option value="">{{ i18n.t('transactions.noCategory') }}</option>
+                  @for (category of matchingCategories(); track category.id) {
+                    <option [value]="category.id">{{ categoryLabel(category) }}</option>
+                  }
+                </select>
+              </label>
+            }
+
+            <label class="field">
+              <span class="field__label">{{ i18n.t('transactions.account') }}</span>
+              <select class="field__input" formControlName="accountId">
+                @for (account of accounts(); track account.id) {
+                  <option [value]="account.id">{{ account.name }}</option>
                 }
               </select>
             </label>
-          }
 
-          <label class="field">
-            <span class="field__label">{{ i18n.t('transactions.account') }}</span>
-            <select class="field__input" formControlName="accountId">
-              @for (account of accounts(); track account.id) {
-                <option [value]="account.id">{{ account.name }}</option>
-              }
-            </select>
-          </label>
+            <label class="field">
+              <span class="field__label">{{ i18n.t('transactions.date') }}</span>
+              <input class="field__input" type="date" formControlName="occurredOn" required />
+            </label>
 
-          <label class="field">
-            <span class="field__label">{{ i18n.t('transactions.date') }}</span>
-            <input class="field__input" type="date" formControlName="occurredOn" required />
-          </label>
-
-          <!-- Splits are a create-time concept: the API cannot divide an existing Transaction,
-               which the edit sheet states outright rather than hiding. -->
-          <div class="mode">
+            <!-- Splits are a create-time concept: the API cannot divide an existing Transaction,
+                 which the edit sheet states outright rather than hiding. -->
+            <div class="mode">
               <label class="mode__option">
                 <input
                   type="radio"
@@ -369,269 +427,263 @@ const SEARCH_DEBOUNCE_MS = 300;
                   (change)="setSplitMode(true)"
                 />
                 <span>{{ i18n.t('transactions.splitAcross') }}</span>
-            </label>
-          </div>
+              </label>
+            </div>
 
-          @if (splitMode()) {
-            <div class="splits">
-              <p class="hint">{{ i18n.t('transactions.splitHint') }}</p>
+            @if (splitMode()) {
+              <div class="splits">
+                <p class="hint">{{ i18n.t('transactions.splitHint') }}</p>
 
-              @for (draft of splitDrafts(); track $index; let index = $index) {
-                <div class="splits__row">
-                  <select
-                    class="field__input"
-                    [value]="draft.categoryId"
-                    (change)="setSplitCategory(index, $any($event.target).value)"
-                    [attr.aria-label]="i18n.t('transactions.category') + ' ' + (index + 1)"
-                  >
-                    <option value="">{{ i18n.t('transactions.noCategory') }}</option>
-                    @for (category of matchingCategories(); track category.id) {
-                      <option [value]="category.id">{{ categoryLabel(category) }}</option>
-                    }
-                  </select>
-                  <input
-                    class="field__input splits__amount"
-                    type="text"
-                    inputmode="decimal"
-                    [value]="draft.amountText"
-                    (input)="setSplitAmount(index, $any($event.target).value)"
-                    [attr.aria-label]="i18n.t('transactions.amount') + ' ' + (index + 1)"
-                  />
-                  <button
-                    class="splits__remove"
-                    type="button"
-                    (click)="removeSplitRow(index)"
-                    [attr.aria-label]="i18n.t('transactions.removeSplit')"
-                  >
-                    ×
+                @for (draft of splitDrafts(); track $index; let index = $index) {
+                  <div class="splits__row">
+                    <select
+                      class="field__input"
+                      [value]="draft.categoryId"
+                      (change)="setSplitCategory(index, $any($event.target).value)"
+                      [attr.aria-label]="i18n.t('transactions.category') + ' ' + (index + 1)"
+                    >
+                      <option value="">{{ i18n.t('transactions.noCategory') }}</option>
+                      @for (category of matchingCategories(); track category.id) {
+                        <option [value]="category.id">{{ categoryLabel(category) }}</option>
+                      }
+                    </select>
+                    <input
+                      class="field__input splits__amount"
+                      type="text"
+                      inputmode="decimal"
+                      [value]="draft.amountText"
+                      (input)="setSplitAmount(index, $any($event.target).value)"
+                      [attr.aria-label]="i18n.t('transactions.amount') + ' ' + (index + 1)"
+                    />
+                    <button
+                      class="splits__remove"
+                      type="button"
+                      (click)="removeSplitRow(index)"
+                      [attr.aria-label]="i18n.t('transactions.removeSplit')"
+                    >
+                      ×
+                    </button>
+                  </div>
+                }
+
+                <div class="splits__actions">
+                  <button class="link" type="button" (click)="addSplitRow()">
+                    {{ i18n.t('transactions.addSplit') }}
+                  </button>
+                  <button class="link" type="button" (click)="splitEvenly()">
+                    {{ i18n.t('transactions.splitEvenly') }}
                   </button>
                 </div>
-              }
 
-              <div class="splits__actions">
-                <button class="link" type="button" (click)="addSplitRow()">
-                  {{ i18n.t('transactions.addSplit') }}
-                </button>
-                <button class="link" type="button" (click)="splitEvenly()">
-                  {{ i18n.t('transactions.splitEvenly') }}
-                </button>
+                @if (splitMessage(); as message) {
+                  <p class="hint" [class.hint--warn]="!splitsBalanced()">{{ message }}</p>
+                }
               </div>
+            }
 
-              @if (splitMessage(); as message) {
-                <p class="hint" [class.hint--warn]="!splitsBalanced()">{{ message }}</p>
-              }
-            </div>
-          }
+            <button class="fm-btn fm-btn--primary form__submit" type="submit" [disabled]="creating()">
+              {{ creating() ? i18n.t('transactions.submitting') : i18n.t('transactions.submit') }}
+            </button>
+          </form>
+        </section>
 
-          <button class="create__submit" type="submit" [disabled]="creating()">
-            {{ creating() ? i18n.t('transactions.submitting') : i18n.t('transactions.submit') }}
-          </button>
-        </form>
-      </section>
-
-      <section class="toolbar">
-        <label class="field field--search">
-          <span class="field__label">{{ i18n.t('transactions.search') }}</span>
-          <input
-            class="field__input"
-            type="search"
-            [value]="filters().search"
-            [placeholder]="i18n.t('transactions.searchPlaceholder')"
-            (input)="onSearch($any($event.target).value)"
-          />
-        </label>
-
-        <button class="link" type="button" (click)="filtersOpen.set(!filtersOpen())">
-          {{ i18n.t('transactions.filters') }}
-          @if (hasFilters()) {
-            <span class="dot" aria-hidden="true"></span>
-          }
-        </button>
-
-        @if (hasFilters()) {
-          <button class="link" type="button" (click)="clearFilters()">
-            {{ i18n.t('transactions.clearFilters') }}
-          </button>
-        }
-
-        <!-- The count is the promise: the file contains exactly the rows the filter matched, not the
-             rows currently paged in. Hidden at zero, because an empty export helps nobody. -->
-        @if (totalCount() > 0) {
-          <button class="link" type="button" [disabled]="exporting()" (click)="exportCsv()">
-            {{
-              exporting()
-                ? i18n.t('transactions.exporting')
-                : i18n.t('transactions.exportCount', { count: totalCount() })
-            }}
-          </button>
-        }
-      </section>
-
-      @if (filtersOpen()) {
-        <section class="filters">
-          <label class="field">
-            <span class="field__label">{{ i18n.t('transactions.kind') }}</span>
-            <select
-              class="field__input"
-              [value]="filters().kind"
-              (change)="setFilter('kind', $any($event.target).value)"
-            >
-              <option value="">{{ i18n.t('transactions.allKinds') }}</option>
-              <option value="EXPENSE">{{ i18n.t('transactionKind.EXPENSE') }}</option>
-              <option value="INCOME">{{ i18n.t('transactionKind.INCOME') }}</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span class="field__label">{{ i18n.t('transactions.category') }}</span>
-            <select
-              class="field__input"
-              [value]="filters().categoryId"
-              (change)="setFilter('categoryId', $any($event.target).value)"
-            >
-              <option value="">{{ i18n.t('transactions.allCategories') }}</option>
-              @for (category of categories(); track category.id) {
-                <option [value]="category.id">{{ categoryLabel(category) }}</option>
-              }
-            </select>
-          </label>
-
-          <label class="field">
-            <span class="field__label">{{ i18n.t('transactions.account') }}</span>
-            <select
-              class="field__input"
-              [value]="filters().accountId"
-              (change)="setFilter('accountId', $any($event.target).value)"
-            >
-              <option value="">{{ i18n.t('transactions.allAccounts') }}</option>
-              @for (account of accounts(); track account.id) {
-                <option [value]="account.id">{{ account.name }}</option>
-              }
-            </select>
-          </label>
-
-          <label class="field">
-            <span class="field__label">{{ i18n.t('transactions.from') }}</span>
+        <section class="toolbar">
+          <label class="field field--search">
+            <span class="field__label">{{ i18n.t('transactions.search') }}</span>
             <input
               class="field__input"
-              type="date"
-              [value]="filters().from"
-              (change)="setFilter('from', $any($event.target).value)"
+              type="search"
+              [value]="filters().search"
+              [placeholder]="i18n.t('transactions.searchPlaceholder')"
+              (input)="onSearch($any($event.target).value)"
             />
-          </label>
-
-          <label class="field">
-            <span class="field__label">{{ i18n.t('transactions.to') }}</span>
-            <input
-              class="field__input"
-              type="date"
-              [value]="filters().to"
-              (change)="setFilter('to', $any($event.target).value)"
-            />
-          </label>
-
-          <label class="mode__option">
-            <input
-              type="checkbox"
-              [checked]="filters().needsReviewOnly"
-              (change)="setFilter('needsReviewOnly', $any($event.target).checked)"
-            />
-            <span>{{ i18n.t('transactions.onlyNeedsReview') }}</span>
           </label>
         </section>
-      }
 
-      @if (loading()) {
-        <p class="muted">{{ i18n.t('accounts.loading') }}</p>
-      } @else if (rows().length === 0) {
-        <div class="empty">
-          @if (hasFilters()) {
-            <p class="empty__title">{{ i18n.t('transactions.emptyFilteredTitle') }}</p>
-            <p class="empty__body">{{ i18n.t('transactions.emptyFilteredBody') }}</p>
-          } @else {
-            <p class="empty__title">{{ i18n.t('transactions.emptyTitle') }}</p>
-            <p class="empty__body">{{ i18n.t('transactions.emptyBody') }}</p>
-          }
-        </div>
-      } @else {
-        @for (group of groups(); track group.date) {
-          <section class="day">
-            <header class="day__head">
-              <h2 class="day__date">{{ group.date }}</h2>
-              <p class="day__totals">
-                @if (group.expenseTotal; as spent) {
-                  <span>{{ i18n.t('transactions.daySpent', { amount: amountText(spent) }) }}</span>
-                }
-                @if (group.incomeTotal; as received) {
-                  <span>
-                    {{ i18n.t('transactions.dayReceived', { amount: amountText(received) }) }}
-                  </span>
-                }
-                @if (!group.expenseTotal && !group.incomeTotal) {
-                  <span class="day__partial">{{ i18n.t('transactions.dayPartial') }}</span>
-                }
-              </p>
-            </header>
+        @if (filtersOpen()) {
+          <section class="filters">
+            <label class="field">
+              <span class="field__label">{{ i18n.t('transactions.kind') }}</span>
+              <select
+                class="field__input"
+                [value]="filters().kind"
+                (change)="setFilter('kind', $any($event.target).value)"
+              >
+                <option value="">{{ i18n.t('transactions.allKinds') }}</option>
+                <option value="EXPENSE">{{ i18n.t('transactionKind.EXPENSE') }}</option>
+                <option value="INCOME">{{ i18n.t('transactionKind.INCOME') }}</option>
+              </select>
+            </label>
 
-            <ul class="list">
-              @for (row of group.rows; track row.id) {
-                <li class="row">
-                  <button class="row__open" type="button" (click)="editing.set(row)">
-                    <span class="row__main">
-                      <span class="row__desc">{{ row.description }}</span>
-                      <span class="row__meta">
-                        {{ row.categoryId ? categoryName(row.categoryId) : categoryLabelOf(row) }}
-                        @if (row.status !== 'CONFIRMED') {
-                          · {{ statusLabel(row.status) }}
-                        }
-                        @if (row.needsReview) {
-                          <span class="row__flag">{{ i18n.t('transactions.needsReview') }}</span>
-                        }
-                      </span>
-                    </span>
-                    <fm-money
-                      class="row__amount"
-                      [amount]="row.amount"
-                      [direction]="row.kind"
-                    />
-                    <span class="row__edit">{{ i18n.t('transactions.edit') }}</span>
-                  </button>
-                </li>
-              }
-            </ul>
+            <label class="field">
+              <span class="field__label">{{ i18n.t('transactions.category') }}</span>
+              <select
+                class="field__input"
+                [value]="filters().categoryId"
+                (change)="setFilter('categoryId', $any($event.target).value)"
+              >
+                <option value="">{{ i18n.t('transactions.allCategories') }}</option>
+                @for (category of categories(); track category.id) {
+                  <option [value]="category.id">{{ categoryLabel(category) }}</option>
+                }
+              </select>
+            </label>
+
+            <label class="field">
+              <span class="field__label">{{ i18n.t('transactions.account') }}</span>
+              <select
+                class="field__input"
+                [value]="filters().accountId"
+                (change)="setFilter('accountId', $any($event.target).value)"
+              >
+                <option value="">{{ i18n.t('transactions.allAccounts') }}</option>
+                @for (account of accounts(); track account.id) {
+                  <option [value]="account.id">{{ account.name }}</option>
+                }
+              </select>
+            </label>
+
+            <label class="field">
+              <span class="field__label">{{ i18n.t('transactions.from') }}</span>
+              <input
+                class="field__input"
+                type="date"
+                [value]="filters().from"
+                (change)="setFilter('from', $any($event.target).value)"
+              />
+            </label>
+
+            <label class="field">
+              <span class="field__label">{{ i18n.t('transactions.to') }}</span>
+              <input
+                class="field__input"
+                type="date"
+                [value]="filters().to"
+                (change)="setFilter('to', $any($event.target).value)"
+              />
+            </label>
+
+            <label class="mode__option">
+              <input
+                type="checkbox"
+                [checked]="filters().needsReviewOnly"
+                (change)="setFilter('needsReviewOnly', $any($event.target).checked)"
+              />
+              <span>{{ i18n.t('transactions.onlyNeedsReview') }}</span>
+            </label>
           </section>
         }
 
-        @if (hasMore()) {
-          <button class="more" type="button" [disabled]="loadingMore()" (click)="loadMore()">
-            {{ loadingMore() ? i18n.t('transactions.loadingMore') : i18n.t('transactions.loadMore') }}
-          </button>
+        @if (loading()) {
+          <p class="muted">{{ i18n.t('accounts.loading') }}</p>
+        } @else if (rows().length === 0) {
+          <div class="empty">
+            @if (hasFilters()) {
+              <p class="empty__title">{{ i18n.t('transactions.emptyFilteredTitle') }}</p>
+              <p class="empty__body">{{ i18n.t('transactions.emptyFilteredBody') }}</p>
+            } @else {
+              <p class="empty__title">{{ i18n.t('transactions.emptyTitle') }}</p>
+              <p class="empty__body">{{ i18n.t('transactions.emptyBody') }}</p>
+            }
+          </div>
+        } @else {
+          <!-- One card around one table (ADR-039). Twenty bordered row cards became rows of a single
+               ledger: the day is a full-width header row inside its own tbody, and a Transaction is a
+               row with no border or radius of its own. The row stays one click target — the button in
+               the first cell stretches over the whole line (see .ledger__open), so the behaviour is
+               exactly what the card list had. -->
+          <div class="fm-card fm-card--flush">
+            <table class="fm-table ledger">
+              @for (group of groups(); track group.date) {
+                <tbody>
+                  <tr class="ledger__day">
+                    <th colspan="3" scope="rowgroup" class="ledger__day-head">
+                      <span class="day__head">
+                        <span class="day__date">{{ dayLabel(group.date) }}</span>
+                        <span class="day__totals">
+                          @if (group.expenseTotal; as spent) {
+                            <span>{{ i18n.t('transactions.daySpent', { amount: amountText(spent) }) }}</span>
+                          }
+                          @if (group.incomeTotal; as received) {
+                            <span>
+                              {{ i18n.t('transactions.dayReceived', { amount: amountText(received) }) }}
+                            </span>
+                          }
+                          @if (!group.expenseTotal && !group.incomeTotal) {
+                            <span class="day__partial">{{ i18n.t('transactions.dayPartial') }}</span>
+                          }
+                        </span>
+                      </span>
+                    </th>
+                  </tr>
+
+                  @for (row of group.rows; track row.id) {
+                    <tr class="ledger__row">
+                      <td>
+                        <button class="ledger__open" type="button" (click)="editing.set(row)">
+                          <span class="row__desc">{{ row.description }}</span>
+                          <span class="row__meta">
+                            {{ row.categoryId ? categoryName(row.categoryId) : categoryLabelOf(row) }}
+                            @if (row.status !== 'CONFIRMED') {
+                              · {{ statusLabel(row.status) }}
+                            }
+                            @if (row.needsReview) {
+                              <span class="row__flag">{{ i18n.t('transactions.needsReview') }}</span>
+                            }
+                          </span>
+                        </button>
+                      </td>
+                      <td class="ledger__amount">
+                        <fm-money class="row__amount" [amount]="row.amount" [direction]="row.kind" />
+                      </td>
+                      <td class="ledger__edit">
+                        <span class="row__edit">{{ i18n.t('transactions.edit') }}</span>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              }
+
+              @if (hasMore()) {
+                <tfoot>
+                  <tr>
+                    <td colspan="3" class="ledger__more">
+                      <button
+                        class="fm-btn more"
+                        type="button"
+                        [disabled]="loadingMore()"
+                        (click)="loadMore()"
+                      >
+                        {{
+                          loadingMore()
+                            ? i18n.t('transactions.loadingMore')
+                            : i18n.t('transactions.loadMore')
+                        }}
+                      </button>
+                    </td>
+                  </tr>
+                </tfoot>
+              }
+            </table>
+          </div>
         }
       }
-    }
 
-    @if (editing(); as row) {
-      <fm-transaction-detail
-        [transaction]="row"
-        [categories]="categories()"
-        (saved)="reload()"
-        (deleted)="reload()"
-        (closed)="closeDetail()"
-      />
-    }
+      @if (editing(); as row) {
+        <fm-transaction-detail
+          [transaction]="row"
+          [categories]="categories()"
+          (saved)="reload()"
+          (deleted)="reload()"
+          (closed)="closeDetail()"
+        />
+      }
+    </div>
   `,
   styles: [
     `
-      .head {
-        margin-block-end: var(--space-5);
-      }
-      .head__title {
-        margin: 0;
-        font-size: var(--text-2xl);
-      }
-      .head__sub,
       .muted {
-        margin: var(--space-1) 0 0;
+        margin: 0;
         color: var(--color-text-muted);
         font-size: var(--text-sm);
       }
@@ -657,26 +709,16 @@ const SEARCH_DEBOUNCE_MS = 300;
         color: var(--color-text-muted);
         font-size: var(--text-sm);
       }
-      .create {
-        padding: var(--space-4);
-        background: var(--color-surface);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-lg);
-        margin-block-end: var(--space-5);
-      }
-      .create__title {
-        margin: 0 0 var(--space-4);
-        font-size: var(--text-lg);
-      }
-      .create__form {
+      /* The create panel's form. The card around it is .fm-card, so only the field grid lives here. */
+      .form {
         display: grid;
         gap: var(--space-3);
       }
       @media (min-width: 768px) {
-        .create__form {
+        .form {
           grid-template-columns: 1fr 1fr;
         }
-        .create__submit,
+        .form__submit,
         .mode,
         .splits {
           grid-column: 1 / -1;
@@ -704,20 +746,8 @@ const SEARCH_DEBOUNCE_MS = 300;
         border-radius: var(--radius-md);
         min-inline-size: 0;
       }
-      .create__submit {
+      .form__submit {
         justify-self: start;
-        padding: var(--space-3) var(--space-5);
-        font: inherit;
-        font-weight: 600;
-        color: var(--color-primary-contrast);
-        background: var(--color-primary);
-        border: none;
-        border-radius: var(--radius-md);
-        cursor: pointer;
-      }
-      .create__submit:disabled {
-        opacity: 0.6;
-        cursor: default;
       }
       .mode {
         display: flex;
@@ -783,7 +813,6 @@ const SEARCH_DEBOUNCE_MS = 300;
         flex-wrap: wrap;
         align-items: end;
         gap: var(--space-3);
-        margin-block-end: var(--space-3);
       }
       .field--search {
         flex: 1 1 14rem;
@@ -792,7 +821,7 @@ const SEARCH_DEBOUNCE_MS = 300;
         padding: 0;
         font: inherit;
         font-size: var(--text-sm);
-        color: var(--color-primary);
+        color: var(--color-primary-text);
         background: none;
         border: none;
         cursor: pointer;
@@ -813,7 +842,6 @@ const SEARCH_DEBOUNCE_MS = 300;
         background: var(--color-surface);
         border: 1px solid var(--color-border);
         border-radius: var(--radius-md);
-        margin-block-end: var(--space-4);
       }
       @media (min-width: 768px) {
         .filters {
@@ -821,8 +849,24 @@ const SEARCH_DEBOUNCE_MS = 300;
           align-items: end;
         }
       }
-      .day {
-        margin-block-end: var(--space-4);
+      /* ---- the ledger ----
+         One flush card holding one table (ADR-039). A day is a full-width header row inside its own
+         tbody; a Transaction is a row. Nothing below is a card: no radius, no side borders, only the
+         shared .fm-table row divider. The hover fill comes from .fm-table itself. */
+      .ledger__day:hover {
+        background: transparent;
+      }
+      /* A cached row is not a control, so it must not light up on hover like one. */
+      .ledger__row--cached:hover {
+        background: transparent;
+      }
+      /* .fm-table th carries the uppercase column-header treatment; a day header is a date, not a
+         column label, so the case and tracking are reset here and the row lays itself out. */
+      .ledger__day-head {
+        padding-block: var(--space-2);
+        font-size: var(--text-sm);
+        text-transform: none;
+        letter-spacing: normal;
       }
       .day__head {
         display: flex;
@@ -830,50 +874,68 @@ const SEARCH_DEBOUNCE_MS = 300;
         align-items: baseline;
         justify-content: space-between;
         gap: var(--space-2);
-        padding-block-end: var(--space-1);
-        border-block-end: 1px solid var(--color-border);
       }
       .day__date {
-        margin: 0;
-        font-size: var(--text-sm);
-        font-weight: 600;
+        font-weight: var(--weight-semibold);
         color: var(--color-text-muted);
       }
       .day__totals {
         display: flex;
         gap: var(--space-3);
-        margin: 0;
         font-size: var(--text-xs);
+        font-weight: var(--weight-normal);
         color: var(--color-text-subtle);
       }
       .day__partial {
         font-style: italic;
       }
-      .list {
-        display: grid;
-        gap: var(--space-2);
-        margin: var(--space-2) 0 0;
-        padding: 0;
-        list-style: none;
+      /* The last row of a day still closes the day: the shared table drops the divider on a tbody's
+         final row, which would leave one group running into the next. */
+      .ledger tbody tr:last-child td {
+        border-block-end: 1px solid var(--color-border);
       }
-      .row__open {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: var(--space-3);
+      .ledger tbody:last-child tr:last-child td {
+        border-block-end: none;
+      }
+      /* The row's whole line is the click target: the button in the first cell stretches over the table
+         row, so clicking the amount opens the sheet exactly as the old card-wide button did. */
+      .ledger__row {
+        position: relative;
+      }
+      .ledger__open {
+        display: grid;
+        gap: var(--space-1);
         inline-size: 100%;
-        padding: var(--space-3) var(--space-4);
+        padding: 0;
         font: inherit;
         text-align: start;
         color: inherit;
-        background: var(--color-surface);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
+        background: none;
+        border: none;
         cursor: pointer;
       }
-      .row__open:hover,
-      .row__open:focus-visible {
-        border-color: var(--color-primary);
+      .ledger__open::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+      }
+      .ledger__amount {
+        text-align: end;
+        white-space: nowrap;
+      }
+      .ledger__edit {
+        text-align: end;
+      }
+      /* Below this the third column only takes width from the description, and it is a hover-only
+         affordance — there is no hover on a phone, so at 320 px the description column was narrow
+         enough to break words in half. The row is the button either way. */
+      @media (max-width: 559px) {
+        .ledger__edit {
+          display: none;
+        }
+      }
+      .ledger__more {
+        padding: var(--space-3) var(--space-4);
       }
       /* The cached mode (4.2.8b): one provenance line for every row below it, never per row
          (ADR-027 decision 4), plus a read-only row that plainly is not a button. */
@@ -895,17 +957,8 @@ const SEARCH_DEBOUNCE_MS = 300;
         color: var(--color-text-muted);
         font-size: var(--text-sm);
       }
-      /* Same geometry as the row button, without the affordances: no hover, no cursor, no edit label. */
-      .row--cached {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: var(--space-3);
-        padding: var(--space-3) var(--space-4);
-        background: var(--color-surface);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-      }
+      /* The cached row's content, without the live row's affordances: no hover, no cursor, no edit
+         label. It is the same cell as the live row's, so the two ledgers have one geometry. */
       .row__main {
         display: grid;
         gap: var(--space-1);
@@ -920,37 +973,35 @@ const SEARCH_DEBOUNCE_MS = 300;
         gap: var(--space-2);
         font-size: var(--text-xs);
         color: var(--color-text-subtle);
+        /* A wrapped flex line still refuses to go below the longest word, and a table column sizes to
+           that min-content: a long category path pushed the whole ledger 27 px past its card at 320 px
+           (the flush card clips, so the amount column was cut). Allowing a break anywhere lets the
+           column shrink, which is what the free-flowing card layout used to do. */
+        overflow-wrap: anywhere;
       }
       .row__flag {
         color: var(--color-warning);
       }
       .row__amount {
-        font-weight: 600;
+        font-weight: var(--weight-semibold);
       }
       /* The edit affordance is visible only on hover/focus: it is a repeated action, and a column of
          "Edit" labels competes with the amounts. The row is a real button either way. */
       .row__edit {
         display: none;
         font-size: var(--text-xs);
-        color: var(--color-primary);
+        color: var(--color-primary-text);
       }
-      .row__open:hover .row__edit,
-      .row__open:focus-visible .row__edit {
+      .ledger__row:hover .row__edit,
+      .ledger__row:focus-within .row__edit {
         display: inline;
       }
+      /* Paging sits in the ledger's own footer, so a short last page still reads as part of the table.
+         The box is the shared button; the brand-coloured label is the colour this control already
+         carried, kept rather than reset to the shared button's ink. */
       .more {
         inline-size: 100%;
-        padding: var(--space-3);
-        font: inherit;
-        color: var(--color-primary);
-        background: var(--color-surface);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-        cursor: pointer;
-      }
-      .more:disabled {
-        opacity: 0.6;
-        cursor: default;
+        color: var(--color-primary-text);
       }
     `,
   ],
@@ -1555,9 +1606,29 @@ export class TransactionsComponent {
     return this.i18n.t('transactions.noCategory');
   }
 
+  /**
+   * A day as "18 Sep", in the active locale, for a ledger day header.
+   *
+   * A `LocalDate` is a calendar day, not an instant, so it is read at `T00:00:00Z` with
+   * `timeZone: 'UTC'`: formatting it in the device's zone would move a midnight boundary day by one
+   * (the same rule the dashboard's `shortDate` follows, and docs/03's date rule).
+   */
+  dayLabel(date: string): string {
+    return new Intl.DateTimeFormat(this.i18n.tag(), {
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'UTC',
+    }).format(new Date(`${date}T00:00:00Z`));
+  }
+
   /** An amount as text for a translated sentence. Magnitudes only: the sentence carries direction. */
   amountText(value: Money): string {
-    return `${toMajorString(value.amountMinor, value.currency)} ${value.currency}`;
+    // Through the shared formatter, so a day total is grouped and spelled exactly like the fm-money rows
+    // beneath it (it used to read "45000.00 RSD" above a row reading "+ RSD 45,000.00").
+    return moneyText(
+      { amountMinor: value.amountMinor.toString(), currency: value.currency },
+      this.i18n.tag(),
+    );
   }
 }
 

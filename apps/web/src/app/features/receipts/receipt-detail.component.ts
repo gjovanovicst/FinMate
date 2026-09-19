@@ -16,6 +16,7 @@ import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
 import { toMajorString } from '../../shared/money-text';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { MoneyComponent, type MoneyWire } from '../../shared/ui/money/money.component';
 import {
   canPost,
@@ -73,7 +74,7 @@ import {
 @Component({
   selector: 'fm-receipt-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, MoneyComponent],
+  imports: [RouterLink, MoneyComponent, IconComponent],
   template: `
     <main class="wrap">
       <header class="head">
@@ -164,7 +165,8 @@ import {
                   {{ item.rawText }}
                   @if (item.needsReview) {
                     <span class="items__flag" [attr.title]="i18n.t('receipts.items.needsReview')">
-                      ⚠ {{ i18n.t('receipts.items.needsReview') }}
+                      <fm-icon name="alert" [size]="14" />
+                      {{ i18n.t('receipts.items.needsReview') }}
                     </span>
                   }
                 </span>
@@ -203,7 +205,7 @@ import {
                   <span class="items__label">{{ i18n.t('receipts.items.confidence') }}</span>
                   <!-- The badge carries an icon *and* its words: colour alone is not an answer. -->
                   <span class="badge">
-                    <span aria-hidden="true">{{ badge(item.confidence).icon }}</span>
+                    <fm-icon [name]="badge(item.confidence).icon" [size]="14" />
                     {{ i18n.t(badge(item.confidence).labelKey) }}
                   </span>
                 </span>
@@ -599,6 +601,9 @@ import {
       overflow-wrap: anywhere;
     }
     .items__flag {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
       color: var(--color-warning);
       font-size: var(--text-xs);
       white-space: nowrap;
@@ -942,7 +947,7 @@ export class ReceiptDetailComponent {
     };
   }
 
-  badge(confidence: number | null): { readonly icon: string; readonly labelKey: TranslationKey } {
+  badge(confidence: number | null): { readonly icon: 'info' | 'check' | 'alert'; readonly labelKey: TranslationKey } {
     return confidenceBadge(confidence);
   }
 

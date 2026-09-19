@@ -6,6 +6,7 @@ import { I18nService } from '../../core/i18n/i18n.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { PushService } from '../../core/push/push.service';
 import { offersEmailFallback, pushActionKey, pushMessageKey } from '../../core/push/push.view';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import {
   CHANNELS,
   channelLabelKey,
@@ -55,69 +56,98 @@ import {
 @Component({
   selector: 'fm-notifications',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink],
+  imports: [RouterLink, IconComponent],
   template: `
-    <main class="wrap">
-      <h1>{{ i18n.t('notifications.title') }}</h1>
-      <p class="muted">{{ i18n.t('notifications.subtitle') }}</p>
+    <main class="fm-page">
+      <header class="fm-page__head">
+        <div>
+          <h1 class="fm-page__title">{{ i18n.t('notifications.title') }}</h1>
+          <p class="fm-page__sub">{{ i18n.t('notifications.subtitle') }}</p>
+        </div>
+        <div class="fm-page__actions toolbar">
+          <label class="toggle">
+            <input
+              type="checkbox"
+              [checked]="unreadOnly()"
+              (change)="unreadOnly.set(!unreadOnly())"
+            />
+            <span>{{ i18n.t('notifications.unreadOnly') }}</span>
+          </label>
+          @if (unreadCount() > 0) {
+            <button type="button" class="fm-btn" [disabled]="busy()" (click)="markAllRead()">
+              {{ i18n.t('notifications.markAllRead') }}
+            </button>
+          }
+        </div>
+      </header>
 
       @if (error()) {
         <p class="error" role="alert">{{ i18n.t('notifications.settings.error') }}</p>
       }
 
-      <div class="toolbar">
-        <label class="toggle">
-          <input
-            type="checkbox"
-            [checked]="unreadOnly()"
-            (change)="unreadOnly.set(!unreadOnly())"
-          />
-          <span>{{ i18n.t('notifications.unreadOnly') }}</span>
-        </label>
-        @if (unreadCount() > 0) {
-          <button type="button" class="btn" [disabled]="busy()" (click)="markAllRead()">
-            {{ i18n.t('notifications.markAllRead') }}
-          </button>
+      <section class="fm-card">
+        <div class="fm-card__head">
+          <h2 class="fm-card__title">
+            <fm-icon name="bell" [size]="18" />
+            {{ i18n.t('notifications.listLabel') }}
+          </h2>
+        </div>
+
+        @if (loading()) {
+          <p class="muted">{{ i18n.t('notifications.loading') }}</p>
+        } @else if (rows().length === 0) {
+          <p class="muted">
+            {{ unreadOnly() ? i18n.t('notifications.emptyUnread') : i18n.t('notifications.empty') }}
+          </p>
+        } @else {
+          <ul class="list">
+            @for (row of rows(); track row.id) {
+              <li class="row" [class.row--unread]="row.readAt === null" [attr.data-tone]="tone(row)">
+                <div class="row__head">
+                  <span class="row__title">{{ row.title }}</span>
+                  <span class="row__meta">
+                    {{ i18n.t(statusLabelKey(row.status)) }} ·
+                    {{ i18n.t(channelLabelKey(row.channel)) }}
+                  </span>
+                </div>
+                <p class="row__body">{{ row.body }}</p>
+                <div class="row__actions">
+                  @if (linkFor(row); as href) {
+                    <a class="fm-btn fm-btn--ghost" [routerLink]="href">
+                      {{ i18n.t('notifications.open') }}
+                    </a>
+                  }
+                  @if (row.readAt === null) {
+                    <button
+                      type="button"
+                      class="fm-btn fm-btn--ghost"
+                      [disabled]="busy()"
+                      (click)="markRead(row)"
+                    >
+                      {{ i18n.t('notifications.markRead') }}
+                    </button>
+                  }
+                </div>
+              </li>
+            }
+          </ul>
         }
-      </div>
+      </section>
 
-      @if (loading()) {
-        <p class="muted">{{ i18n.t('notifications.loading') }}</p>
-      } @else if (rows().length === 0) {
-        <p class="muted">
-          {{ unreadOnly() ? i18n.t('notifications.emptyUnread') : i18n.t('notifications.empty') }}
-        </p>
-      } @else {
-        <ul class="list" [attr.aria-label]="i18n.t('notifications.listLabel')">
-          @for (row of rows(); track row.id) {
-            <li class="row" [class.row--unread]="row.readAt === null" [attr.data-tone]="tone(row)">
-              <div class="row__head">
-                <span class="row__title">{{ row.title }}</span>
-                <span class="row__meta">
-                  {{ i18n.t(statusLabelKey(row.status)) }} ·
-                  {{ i18n.t(channelLabelKey(row.channel)) }}
-                </span>
-              </div>
-              <p class="row__body">{{ row.body }}</p>
-              <div class="row__actions">
-                @if (linkFor(row); as href) {
-                  <a class="btn btn--link" [routerLink]="href">{{ i18n.t('notifications.open') }}</a>
-                }
-                @if (row.readAt === null) {
-                  <button type="button" class="btn btn--link" [disabled]="busy()" (click)="markRead(row)">
-                    {{ i18n.t('notifications.markRead') }}
-                  </button>
-                }
-              </div>
-            </li>
-          }
-        </ul>
-      }
+      <section class="fm-card settings">
+        <div class="fm-card__head">
+          <h2 class="fm-card__title">
+            <fm-icon name="settings" [size]="18" />
+            {{ i18n.t('notifications.settings.title') }}
+          </h2>
+        </div>
 
-      <section class="settings">
-        <h2>{{ i18n.t('notifications.settings.title') }}</h2>
-
-        <h3>{{ i18n.t('notifications.settings.kinds') }}</h3>
+        <div class="fm-card__head">
+          <h3 class="fm-card__title">
+            <fm-icon name="bell" [size]="18" />
+            {{ i18n.t('notifications.settings.kinds') }}
+          </h3>
+        </div>
         @for (rule of rules(); track rule.id) {
           <div class="rule">
             <label class="toggle">
@@ -129,7 +159,7 @@ import {
               <span>{{ i18n.t(kindLabel(rule.kind)) }}</span>
             </label>
             <fieldset class="channels">
-              <legend class="sr-only">{{ i18n.t('notifications.settings.channels') }}</legend>
+              <legend class="fm-visually-hidden">{{ i18n.t('notifications.settings.channels') }}</legend>
               @for (channel of channels; track channel) {
                 <label class="toggle toggle--small">
                   <input
@@ -142,9 +172,16 @@ import {
               }
             </fieldset>
           </div>
+        } @empty {
+          <p class="muted">{{ i18n.t('notifications.settings.noRules') }}</p>
         }
 
-        <h3>{{ i18n.t('notifications.settings.quietHours') }}</h3>
+        <div class="fm-card__head">
+          <h3 class="fm-card__title">
+            <fm-icon name="moon" [size]="18" />
+            {{ i18n.t('notifications.settings.quietHours') }}
+          </h3>
+        </div>
         <label class="toggle">
           <input
             type="checkbox"
@@ -197,10 +234,15 @@ import {
         <p class="muted small">{{ i18n.t('notifications.settings.channelsNote') }}</p>
 
         <section class="devpush" aria-labelledby="push-heading">
-          <h3 id="push-heading">{{ i18n.t('notifications.push.title') }}</h3>
+          <div class="fm-card__head">
+            <h3 class="fm-card__title" id="push-heading">
+              <fm-icon name="sparkles" [size]="18" />
+              {{ i18n.t('notifications.push.title') }}
+            </h3>
+          </div>
           <p class="muted small">{{ i18n.t(pushMessageKey()) }}</p>
           @if (pushActionKey(); as action) {
-            <button type="button" class="btn" [disabled]="push.busy()" (click)="togglePush()">
+            <button type="button" class="fm-btn" [disabled]="push.busy()" (click)="togglePush()">
               {{ i18n.t(action) }}
             </button>
           }
@@ -217,7 +259,7 @@ import {
 
         <button
           type="button"
-          class="btn btn--primary"
+          class="fm-btn fm-btn--primary"
           [disabled]="busy() || quietProblem() !== null"
           (click)="savePreferences()"
         >
@@ -230,52 +272,27 @@ import {
     </main>
   `,
   styles: `
-    .wrap {
-      padding: 1rem;
-      /* No fixed widths: the 320 px pass found every one of them (docs/02 §9). */
-      max-inline-size: 46rem;
-      margin-inline: auto;
-    }
-    h1 {
-      font-size: 1.4rem;
-      margin-block: 0 0.25rem;
-    }
-    h2 {
-      font-size: 1.15rem;
-      margin-block: 1.5rem 0.5rem;
-    }
-    h3 {
-      font-size: 1rem;
-      margin-block: 1rem 0.35rem;
-    }
     .muted {
       color: var(--color-text-muted);
     }
     .small {
-      font-size: 0.85rem;
-    }
-    .toolbar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      align-items: center;
-      justify-content: space-between;
-      margin-block: 1rem 0.5rem;
+      font-size: var(--text-sm);
     }
     .list {
       list-style: none;
+      margin: 0;
       padding: 0;
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
     .row {
       border: 1px solid var(--color-border);
-      border-radius: 0.5rem;
-      padding: 0.6rem 0.75rem;
+      border-radius: var(--radius-md);
+      padding: var(--space-3);
       display: flex;
       flex-direction: column;
-      gap: 0.35rem;
+      gap: var(--space-2);
     }
     .row--unread {
       border-inline-start: 4px solid var(--color-primary);
@@ -292,16 +309,16 @@ import {
     .row__head {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: var(--space-2);
       justify-content: space-between;
       align-items: baseline;
     }
     .row__title {
-      font-weight: 600;
+      font-weight: var(--weight-semibold);
       min-inline-size: 0;
     }
     .row__meta {
-      font-size: 0.8rem;
+      font-size: var(--text-xs);
       color: var(--color-text-muted);
     }
     .row__body {
@@ -312,18 +329,12 @@ import {
     .row__actions {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.75rem;
-    }
-    .settings {
-      margin-block-start: 2rem;
-      border-block-start: 1px solid var(--color-border);
-      padding-block-start: 0.5rem;
+      gap: var(--space-2);
     }
     .rule {
       display: flex;
       flex-direction: column;
-      gap: 0.25rem;
-      margin-block-end: 0.75rem;
+      gap: var(--space-1);
     }
     .channels {
       border: 0;
@@ -331,84 +342,45 @@ import {
       margin: 0;
       display: flex;
       flex-wrap: wrap;
-      gap: 0.75rem;
+      gap: var(--space-3);
     }
     .toggle {
       display: flex;
-      gap: 0.4rem;
+      gap: var(--space-2);
       align-items: center;
       /* The label is the target: the native checkbox inside is 13 px (task 4.3.1e). */
       min-block-size: var(--control-size);
     }
     .toggle--small {
-      font-size: 0.9rem;
+      font-size: var(--text-sm);
     }
     .quiet {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.75rem;
-      margin-block: 0.5rem;
+      gap: var(--space-3);
     }
     .quiet label {
       display: flex;
       flex-direction: column;
-      gap: 0.2rem;
-    }
-    .btn {
-      font: inherit;
-      padding: 0.35rem 0.7rem;
-      border-radius: 0.375rem;
-      border: 1px solid var(--color-border);
-      background: transparent;
-      cursor: pointer;
-    }
-    .btn--link {
-      border: 0;
-      padding: 0;
-      text-decoration: underline;
-    }
-    .btn--primary {
-      /* The canonical primary pair (see capture.component.ts): --color-primary alone leaves white text
-         below 4.5:1, which is why the app pairs it with --color-primary-contrast. */
-      background: var(--color-primary);
-      border-color: var(--color-primary);
-      color: var(--color-primary-contrast);
-    }
-    .btn[disabled] {
-      opacity: 0.6;
-      cursor: not-allowed;
+      gap: var(--space-1);
     }
     .error {
       color: var(--color-danger);
     }
     .ok {
-      margin-inline-start: 0.5rem;
+      margin-inline-start: var(--space-2);
       color: var(--color-success);
     }
-    /* The device-level push panel: a plain block, no fixed widths, wraps at 320 px. */
+    /* The device-level push panel: a plain block inside the preferences card, no fixed widths, wraps
+       at 320 px. */
     .devpush {
-      margin-block: 1rem 0.5rem;
-      padding: 0.6rem 0.75rem;
-      border: 1px solid var(--color-border);
-      border-radius: 0.5rem;
       display: flex;
       flex-direction: column;
-      gap: 0.4rem;
+      gap: var(--space-2);
       align-items: flex-start;
-    }
-    .devpush h3 {
-      margin: 0;
     }
     .devpush p {
       margin: 0;
-    }
-    .sr-only {
-      position: absolute;
-      inline-size: 1px;
-      block-size: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-      white-space: nowrap;
     }
   `,
 })

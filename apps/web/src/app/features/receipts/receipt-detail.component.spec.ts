@@ -12,6 +12,7 @@ import { provideRouter } from '@angular/router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GraphqlClient } from '../../core/graphql/graphql.client';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import { ReceiptDetailComponent } from './receipt-detail.component';
 
@@ -200,8 +201,11 @@ async function mount(
   });
 
   // `fm-money` is a custom element here; see the file header.
+  // `fm-icon` joins `fm-money` in the removal list for the reason `@web-test/angular-testing` documents:
+  // the JIT runner cannot bind a signal input from a parent template, so a mounted child with a required
+  // `name` throws NG0950 before the component renders.
   TestBed.overrideComponent(ReceiptDetailComponent, {
-    remove: { imports: [MoneyComponent] },
+    remove: { imports: [MoneyComponent, IconComponent] },
     add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
 
@@ -306,17 +310,19 @@ describe('ReceiptDetailComponent (mounted)', () => {
     const { fixture } = await mount();
     const rendered = text(fixture);
 
-    expect(rendered).toContain('🟢');
+    // The **words** are asserted, because they are the answer; the glyph is `fm-icon`'s business and is a
+    // custom element here. It used to assert the emoji (🟢🟡🔴⚪) that the badge returned before the
+    // ADR-039 audit — an emoji the platform drew in its own colours, which the reserved ADR-009 band tints
+    // could not reach.
     expect(rendered).toContain('Confident');
-    expect(rendered).toContain('🟡');
     expect(rendered).toContain('Check it');
-    expect(rendered).toContain('🔴');
     expect(rendered).toContain('Not sure');
-    // A line nobody measured is a white circle with words, never "0 %".
-    expect(rendered).toContain('⚪');
+    // A line nobody measured is worded as unknown, never "0 %".
     expect(rendered).toContain('No suggestion');
     // A hand-typed line with no category is flagged for review.
     expect(rendered).toContain('Needs review');
+    // And every badge carries an icon element, so the band is drawn as well as spoken.
+    expect(root(fixture).querySelectorAll('fm-icon').length).toBeGreaterThan(0);
   });
 
   it('disables the post button on a mismatch and says which gate is closed', async () => {

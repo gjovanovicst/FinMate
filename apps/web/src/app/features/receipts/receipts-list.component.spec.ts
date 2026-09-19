@@ -12,6 +12,7 @@ import { of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GraphqlClient } from '../../core/graphql/graphql.client';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import { ReceiptsListComponent } from './receipts-list.component';
 
@@ -151,9 +152,10 @@ async function mount(
     ],
   });
 
-  // `fm-money` is a custom element here; see the file header.
+  // `fm-money` and `fm-icon` are custom elements here; see the file header. The icon's required
+  // `name` input throws NG0950 under JIT before its binding lands, exactly as `fm-money` does.
   TestBed.overrideComponent(ReceiptsListComponent, {
-    remove: { imports: [MoneyComponent] },
+    remove: { imports: [MoneyComponent, IconComponent] },
     add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
 

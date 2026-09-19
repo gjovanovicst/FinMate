@@ -346,6 +346,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'notifications.kind.unknown': 'Ostalo',
   'notifications.settings.title': 'Šta ti se javlja',
   'notifications.settings.kinds': 'Upozorenja',
+  'notifications.settings.noRules': 'Još nema pravila za upozorenja. Pojavljuju se kad bude nešto vredno javljanja.',
   'notifications.settings.channels': 'Gde',
   'notifications.settings.quietHours': 'Tiho vreme',
   'notifications.settings.quietHint': 'U tom periodu se ništa ne šalje. Obaveštenja čekaju i stižu posle.',

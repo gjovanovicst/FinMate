@@ -4,7 +4,7 @@
 // `capture.component.spec.ts`).
 import { initAngularTesting } from '@web-test/angular-testing';
 
-import { Component, provideZonelessChangeDetection } from '@angular/core';
+import { CUSTOM_ELEMENTS_SCHEMA, Component, provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { OnboardingStore } from '../../core/onboarding/onboarding.store';
 import { CaptureComponent } from '../capture/capture.component';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { OnboardingComponent } from './onboarding.component';
 
 initAngularTesting();
@@ -134,8 +135,10 @@ async function mount(options: StubOptions = {}) {
     ],
   });
   TestBed.overrideComponent(OnboardingComponent, {
-    remove: { imports: [CaptureComponent] },
-    add: { imports: [CaptureStub] },
+    // `fm-icon` is a signal-input child and the JIT runner cannot bind one from a parent template
+    // (NG0950 — see `@web-test/angular-testing`), so it joins the capture composer in the removal list.
+    remove: { imports: [CaptureComponent, IconComponent] },
+    add: { imports: [CaptureStub], schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
 
   const fixture = TestBed.createComponent(OnboardingComponent);

@@ -19,6 +19,7 @@ import {
 } from '../../core/app-lock/lock.view';
 import { I18nService } from '../../core/i18n/i18n.service';
 import { ConsentPurposeComponent } from '../../shared/ui/consent-purpose/consent-purpose.component';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { SyncService } from '../../core/offline/sync.service';
 
 /**
@@ -53,27 +54,40 @@ import { SyncService } from '../../core/offline/sync.service';
 @Component({
   selector: 'fm-settings',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, ConsentPurposeComponent],
+  imports: [RouterLink, ConsentPurposeComponent, IconComponent],
   template: `
-    <main class="wrap">
+    <main class="fm-page wrap">
       <h1>{{ i18n.t('settings.title') }}</h1>
 
-      <section class="card" aria-labelledby="security-heading">
-        <h2 id="security-heading">{{ i18n.t('settings.security.title') }}</h2>
+      <section class="fm-card" aria-labelledby="security-heading">
+        <div class="fm-card__head">
+          <h2 class="fm-card__title" id="security-heading">
+            <fm-icon name="lock" [size]="18" />
+            {{ i18n.t('settings.security.title') }}
+          </h2>
+        </div>
         <p class="muted">{{ i18n.t(lockMessageKey(lock.state())) }}</p>
 
         @if (lock.state() === 'OFF') {
           <p class="muted small">{{ i18n.t('settings.security.why') }}</p>
 
           @if (lock.webauthnPossible) {
-            <button type="button" class="btn" [disabled]="lock.busy()" (click)="armWithDevice()">
+            <button
+              type="button"
+              class="fm-btn fm-btn--primary"
+              [disabled]="lock.busy()"
+              (click)="armWithDevice()"
+            >
               {{ i18n.t('settings.security.withDevice') }}
             </button>
           }
 
           <form class="pin" (submit)="armWithPin($event)">
-            <label for="new-pin">{{ i18n.t('settings.security.pinLabel') }}</label>
+            <label class="fm-field__label" for="new-pin">
+              {{ i18n.t('settings.security.pinLabel') }}
+            </label>
             <input
+              class="fm-field__input pin__input"
               id="new-pin"
               type="password"
               inputmode="numeric"
@@ -82,7 +96,7 @@ import { SyncService } from '../../core/offline/sync.service';
               [value]="pin()"
               (input)="setPin($event)"
             />
-            <button type="submit" class="btn" [disabled]="lock.busy() || !isValidPin(pin())">
+            <button type="submit" class="fm-btn fm-btn--primary" [disabled]="lock.busy() || !isValidPin(pin())">
               {{ i18n.t('settings.security.withPin') }}
             </button>
           </form>
@@ -91,10 +105,15 @@ import { SyncService } from '../../core/offline/sync.service';
 
         @if (lock.state() === 'UNLOCKED') {
           <div class="actions">
-            <button type="button" class="btn" [disabled]="lock.busy()" (click)="lockNow()">
+            <button type="button" class="fm-btn" [disabled]="lock.busy()" (click)="lockNow()">
               {{ i18n.t('settings.security.lockNow') }}
             </button>
-            <button type="button" class="btn btn--danger" [disabled]="lock.busy()" (click)="turnOff()">
+            <button
+              type="button"
+              class="fm-btn fm-btn--danger"
+              [disabled]="lock.busy()"
+              (click)="turnOff()"
+            >
               {{ i18n.t('settings.security.turnOff') }}
             </button>
           </div>
@@ -113,8 +132,13 @@ import { SyncService } from '../../core/offline/sync.service';
         }
       </section>
 
-      <section class="card" aria-labelledby="ai-heading">
-        <h2 id="ai-heading">{{ i18n.t('consent.title') }}</h2>
+      <section class="fm-card" aria-labelledby="ai-heading">
+        <div class="fm-card__head">
+          <h2 class="fm-card__title" id="ai-heading">
+            <fm-icon name="sparkles" [size]="18" />
+            {{ i18n.t('consent.title') }}
+          </h2>
+        </div>
         <p class="muted">{{ i18n.t('consent.intro') }}</p>
 
         @if (consent.error(); as message) {
@@ -149,38 +173,31 @@ import { SyncService } from '../../core/offline/sync.service';
         }
       </section>
 
-      <section class="card" aria-labelledby="notifications-heading">
-        <h2 id="notifications-heading">{{ i18n.t('nav.notifications') }}</h2>
+      <section class="fm-card" aria-labelledby="notifications-heading">
+        <div class="fm-card__head">
+          <h2 class="fm-card__title" id="notifications-heading">
+            <fm-icon name="bell" [size]="18" />
+            {{ i18n.t('nav.notifications') }}
+          </h2>
+        </div>
         <p class="muted">{{ i18n.t('settings.notifications.body') }}</p>
-        <a class="btn" routerLink="/notifications">{{ i18n.t('settings.notifications.open') }}</a>
+        <a class="fm-btn notifications__open" routerLink="/notifications">
+          {{ i18n.t('settings.notifications.open') }}
+        </a>
       </section>
     </main>
   `,
   styles: `
     .wrap {
-      padding: 1rem;
-      /* docs/02 §9: no fixed widths. */
+      /* docs/02 §9: no fixed widths. The rhythm, the padding and the card material come from fm-page and
+         fm-card; this only sets the reading measure and centres it. */
       max-inline-size: 46rem;
       margin-inline: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
     }
     h1 {
-      font-size: 1.4rem;
-      margin: 0;
-    }
-    .card {
-      border: 1px solid var(--color-border);
-      border-radius: 0.5rem;
-      padding: 0.75rem 1rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-      align-items: flex-start;
-    }
-    h2 {
-      font-size: 1.1rem;
+      font-size: var(--text-2xl);
+      font-weight: var(--weight-bold);
+      letter-spacing: var(--tracking-tight);
       margin: 0;
     }
     p {
@@ -190,25 +207,31 @@ import { SyncService } from '../../core/offline/sync.service';
       color: var(--color-text-muted);
     }
     .small {
-      font-size: 0.85rem;
+      font-size: var(--text-sm);
     }
     .pin {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: var(--space-2);
       align-items: center;
     }
-    .pin input {
-      font-size: 1.2rem;
+    /* The one field in the app whose value is read digit by digit: wider tracking, centred, and narrow
+       because a six-digit PIN does not need a full-width box. */
+    .pin__input {
+      inline-size: 8rem;
+      font-size: var(--text-lg);
       letter-spacing: 0.3em;
-      inline-size: 7rem;
-      padding: 0.35rem;
       text-align: center;
     }
     .actions {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: var(--space-2);
+    }
+    /* A shared button is inline-flex and shrink-to-fit, but as a grid child it stretches to the column,
+       which drew a full-width empty bar around one short label. */
+    .notifications__open {
+      justify-self: start;
     }
     .error {
       color: var(--color-danger);

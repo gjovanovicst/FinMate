@@ -155,24 +155,31 @@ describe('toneForState', () => {
   });
 });
 
+/**
+ * The badge returns an **icon name**, not a glyph.
+ *
+ * It returned ⚪🟢🟡🔴 until the ADR-039 audit: an emoji is drawn by the platform in its own colours, so
+ * the reserved band tints (ADR-009) could not reach it. The names are asserted rather than the shapes,
+ * because the shape is `fm-icon`'s business and the *band* is this function's.
+ */
 describe('confidenceBadge', () => {
-  it('is green exactly at the 0.90 auto-apply floor', () => {
-    expect(confidenceBadge(0.9)).toEqual({ icon: '🟢', labelKey: 'receipts.confidence.high' });
-    expect(confidenceBadge(1)).toEqual({ icon: '🟢', labelKey: 'receipts.confidence.high' });
-    expect(confidenceBadge(0.899)).toEqual({ icon: '🟡', labelKey: 'receipts.confidence.medium' });
+  it('is a tick exactly at the 0.90 auto-apply floor', () => {
+    expect(confidenceBadge(0.9)).toEqual({ icon: 'check', labelKey: 'receipts.confidence.high' });
+    expect(confidenceBadge(1)).toEqual({ icon: 'check', labelKey: 'receipts.confidence.high' });
+    expect(confidenceBadge(0.899)).toEqual({ icon: 'alert', labelKey: 'receipts.confidence.medium' });
   });
 
-  it('is yellow exactly at the 0.60 verify floor and red one step below', () => {
-    expect(confidenceBadge(0.6)).toEqual({ icon: '🟡', labelKey: 'receipts.confidence.medium' });
-    expect(confidenceBadge(0.89)).toEqual({ icon: '🟡', labelKey: 'receipts.confidence.medium' });
-    expect(confidenceBadge(0.599)).toEqual({ icon: '🔴', labelKey: 'receipts.confidence.low' });
-    expect(confidenceBadge(0)).toEqual({ icon: '🔴', labelKey: 'receipts.confidence.low' });
+  it('warns exactly at the 0.60 verify floor and one step below', () => {
+    expect(confidenceBadge(0.6)).toEqual({ icon: 'alert', labelKey: 'receipts.confidence.medium' });
+    expect(confidenceBadge(0.89)).toEqual({ icon: 'alert', labelKey: 'receipts.confidence.medium' });
+    expect(confidenceBadge(0.599)).toEqual({ icon: 'alert', labelKey: 'receipts.confidence.low' });
+    expect(confidenceBadge(0)).toEqual({ icon: 'alert', labelKey: 'receipts.confidence.low' });
   });
 
-  it('draws a missing measurement as a white circle, never as zero', () => {
+  it('draws a missing measurement as information, never as zero', () => {
     // `null` means "nothing was recorded"; rendering it as 0 would present a missing fact as a
     // measurement (the same distinction `shared/confidence.ts` makes).
-    expect(confidenceBadge(null)).toEqual({ icon: '⚪', labelKey: 'receipts.confidence.none' });
+    expect(confidenceBadge(null)).toEqual({ icon: 'info', labelKey: 'receipts.confidence.none' });
   });
 });
 

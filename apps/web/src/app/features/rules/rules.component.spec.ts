@@ -3,12 +3,13 @@
 // module body runs. See `@web-test/angular-testing`.
 import { initAngularTesting } from '@web-test/angular-testing';
 
-import { provideZonelessChangeDetection } from '@angular/core';
+import { CUSTOM_ELEMENTS_SCHEMA, provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GraphqlClient } from '../../core/graphql/graphql.client';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { RulesComponent } from './rules.component';
 
 initAngularTesting();
@@ -125,6 +126,13 @@ async function mount(client: GraphqlClient) {
   TestBed.configureTestingModule({
     imports: [RulesComponent],
     providers: [provideZonelessChangeDetection(), provideRouter([]), { provide: GraphqlClient, useValue: client }],
+  });
+  // The card titles gained an `<fm-icon>`. Angular's JIT cannot discover `input()` signal inputs, so a
+  // parent binding one renders `NG0950` instead of the child (see `@web-test/angular-testing`): the icon
+  // is dropped from this mount and its own rendering is asserted by `icon.spec.ts`.
+  TestBed.overrideComponent(RulesComponent, {
+    remove: { imports: [IconComponent] },
+    add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
   const fixture = TestBed.createComponent(RulesComponent);
   await fixture.whenStable();

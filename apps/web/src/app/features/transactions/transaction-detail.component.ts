@@ -217,6 +217,9 @@ const DELETE_TRANSACTION = /* GraphQL */ `
       (cancel)="onCancel($event)"
     >
       <form class="sheet__form" [formGroup]="form" (ngSubmit)="save()" novalidate>
+        <!-- The scrolling body. The footer below is outside it, so save and delete are always visible
+             however long the receipt block grows. -->
+        <div class="sheet__body">
         <!-- The drag handle (docs/07 §4.2). Only a shortcut: the close button beside it and Esc are the
              real routes, and all three end in the same guard (WCAG 2.2 SC 2.5.7). -->
         <header
@@ -240,10 +243,10 @@ const DELETE_TRANSACTION = /* GraphQL */ `
             <p class="confirm__title" id="discard-heading">{{ i18n.t('transactions.discardTitle') }}</p>
             <p class="confirm__body">{{ i18n.t('transactions.discardBody') }}</p>
             <div class="confirm__actions">
-              <button class="btn btn--danger" type="button" (click)="discard()">
+              <button class="fm-btn fm-btn--danger" type="button" (click)="discard()">
                 {{ i18n.t('transactions.discard') }}
               </button>
-              <button class="btn" type="button" (click)="keepEditing()">
+              <button class="fm-btn" type="button" (click)="keepEditing()">
                 {{ i18n.t('transactions.keepEditing') }}
               </button>
             </div>
@@ -374,10 +377,10 @@ const DELETE_TRANSACTION = /* GraphQL */ `
               <a class="proposal__link" routerLink="/rules">{{ i18n.t('nav.rules') }}</a>
             } @else {
               <div class="proposal__actions">
-                <button class="btn btn--primary" type="button" [disabled]="busy()" (click)="acceptProposal()">
+                <button class="fm-btn fm-btn--primary" type="button" [disabled]="busy()" (click)="acceptProposal()">
                   {{ i18n.t('transactions.proposalAccept') }}
                 </button>
-                <button class="btn" type="button" (click)="proposal.set(null)">
+                <button class="fm-btn" type="button" (click)="proposal.set(null)">
                   {{ i18n.t('transactions.proposalDismiss') }}
                 </button>
               </div>
@@ -385,11 +388,13 @@ const DELETE_TRANSACTION = /* GraphQL */ `
           </section>
         }
 
+        </div>
+
         <footer class="sheet__foot">
-          <button class="btn btn--primary" type="submit" [disabled]="busy()">
+          <button class="fm-btn fm-btn--primary" type="submit" [disabled]="busy()">
             {{ busy() ? i18n.t('transactions.saving') : i18n.t('transactions.save') }}
           </button>
-          <button class="btn btn--danger" type="button" [disabled]="busy()" (click)="remove()">
+          <button class="fm-btn fm-btn--danger" type="button" [disabled]="busy()" (click)="remove()">
             {{ busy() ? i18n.t('transactions.deleting') : i18n.t('transactions.delete') }}
           </button>
         </footer>
@@ -401,10 +406,14 @@ const DELETE_TRANSACTION = /* GraphQL */ `
       .sheet {
         width: min(560px, calc(100vw - 2rem));
         /* dvh, never vh (docs/07 section 4.3): on mobile Safari 100vh is the URL-bar-EXPANDED height, so
-           a tall sheet had its own footer — save and delete — clipped off the bottom. min() with the
-           doc's 90dvh cap keeps the button on screen and still leaves the 2rem margin when there is room. */
+           a tall sheet had its own footer — save and delete — clipped off the bottom.
+           The cap alone was not enough: the **whole** dialog scrolled, so at a 900 px window the footer
+           still sat 155 px below the box and the camera button was cut in half by the edge (measured live
+           in the ADR-039 audit). So the dialog is a column that does not scroll, the body inside it
+           scrolls, and the footer is stuck to the bottom of the dialog. */
         max-height: min(90dvh, calc(100dvh - 2rem));
         padding: 0;
+        overflow: hidden;
         color: var(--color-text);
         background: var(--color-surface);
         border: 1px solid var(--color-border);
@@ -415,8 +424,20 @@ const DELETE_TRANSACTION = /* GraphQL */ `
       }
       .sheet__form {
         display: grid;
-        gap: var(--space-3);
-        padding: var(--space-5);
+        /* One row that may shrink: minmax(0, 1fr) is what lets the body scroll instead of stretching the
+           dialog past its own max-height. */
+        grid-template-rows: minmax(0, 1fr) auto;
+        max-height: min(90dvh, calc(100dvh - 2rem));
+        /* The body is the only scrolling part. Announced as a region by role, not by scrolling: a sheet
+           whose fields can move while a finger is on them is a sheet that submits the wrong value. */
+        overflow: hidden;
+      }
+      .sheet__body {
+        display: grid;
+        gap: var(--space-2);
+        padding: var(--space-4);
+        overflow-y: auto;
+        min-block-size: 0;
       }
       .sheet__head {
         display: flex;
@@ -581,28 +602,9 @@ const DELETE_TRANSACTION = /* GraphQL */ `
         display: flex;
         flex-wrap: wrap;
         gap: var(--space-3);
-        padding-block-start: var(--space-2);
-      }
-      .btn {
-        padding: var(--space-3) var(--space-5);
-        font: inherit;
-        font-weight: 600;
-        border: 1px solid transparent;
-        border-radius: var(--radius-md);
-        cursor: pointer;
-      }
-      .btn:disabled {
-        opacity: 0.6;
-        cursor: default;
-      }
-      .btn--primary {
-        color: var(--color-primary-contrast);
-        background: var(--color-primary);
-      }
-      .btn--danger {
-        color: var(--color-danger);
-        background: none;
-        border-color: var(--color-danger);
+        padding: var(--space-3) var(--space-4);
+        background: var(--color-surface);
+        border-block-start: 1px solid var(--color-border);
       }
     `,
   ],

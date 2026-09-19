@@ -1,6 +1,6 @@
 import type { Routes } from '@angular/router';
 
-import { anonymousGuard, authenticatedGuard } from './core/auth/auth.guard';
+import { anonymousGuard, authenticatedGuard, shellGuard } from './core/auth/auth.guard';
 import { onboardingGuard } from './core/onboarding/onboarding.guard';
 
 /**
@@ -212,6 +212,9 @@ export const routes: Routes = [
   },
   {
     path: '**',
+    // Restores a session when there is one, so the page renders in the shell a signed-in person expects,
+    // and redirects nobody (see `shellGuard`).
+    canActivate: [shellGuard],
     loadComponent: () =>
       import('./features/not-found/not-found.component').then((m) => m.NotFoundComponent),
     title: 'Nije pronađeno',

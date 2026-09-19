@@ -194,13 +194,18 @@ export function toneForState(state: ReconciliationState): ReconciliationTone {
  * render one without the other: the colour is decoration, the words are the answer.
  */
 export function confidenceBadge(confidence: number | null): {
-  readonly icon: string;
+  /**
+   * An **icon name**, not a glyph. It returned ⚪🟢🟡🔴 until the ADR-039 audit: an emoji is drawn by the
+   * platform in its own colours, so the reserved band tints (ADR-009) could not reach it and a receipt's
+   * confidence looked different on every OS. The tint lives on the badge's own rule; this is the shape.
+   */
+  readonly icon: 'info' | 'check' | 'alert';
   readonly labelKey: TranslationKey;
 } {
-  if (confidence === null) return { icon: '⚪', labelKey: 'receipts.confidence.none' };
-  if (confidence >= 0.9) return { icon: '🟢', labelKey: 'receipts.confidence.high' };
-  if (confidence >= 0.6) return { icon: '🟡', labelKey: 'receipts.confidence.medium' };
-  return { icon: '🔴', labelKey: 'receipts.confidence.low' };
+  if (confidence === null) return { icon: 'info', labelKey: 'receipts.confidence.none' };
+  if (confidence >= 0.9) return { icon: 'check', labelKey: 'receipts.confidence.high' };
+  if (confidence >= 0.6) return { icon: 'alert', labelKey: 'receipts.confidence.medium' };
+  return { icon: 'alert', labelKey: 'receipts.confidence.low' };
 }
 
 /** What `canPost` needs to know: the state, and whether every line can become a Split. */

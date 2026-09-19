@@ -17,6 +17,7 @@ import { SyncService } from '../../core/offline/sync.service';
 import { TaxonomyService } from '../../core/offline/taxonomy.service';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import { ConsentSheetComponent } from '../../shared/ui/consent-sheet/consent-sheet.component';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { CaptureComponent } from './capture.component';
 
 initAngularTesting();
@@ -184,7 +185,7 @@ async function mount(
   // mounted sheet would throw NG0950. Its own copy and verbs are `consent-sheet.component.spec.ts`'s
   // subject; what a *capture* test can prove is the trigger, which is this component's `askKind`.
   TestBed.overrideComponent(CaptureComponent, {
-    remove: { imports: [MoneyComponent, ConsentSheetComponent] },
+    remove: { imports: [MoneyComponent, ConsentSheetComponent, IconComponent] },
     add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
 

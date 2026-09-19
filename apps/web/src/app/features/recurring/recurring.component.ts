@@ -62,14 +62,18 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MoneyComponent],
   template: `
-    <main class="wrap">
-      <header class="head">
-        <h1 class="head__title">{{ i18n.t('recurring.title') }}</h1>
-        <button class="head__new" type="button" (click)="toggleForm()">
-          {{ formOpen() ? i18n.t('recurring.cancel') : i18n.t('recurring.new') }}
-        </button>
+    <div class="fm-page">
+      <header class="fm-page__head">
+        <div>
+          <h1 class="fm-page__title">{{ i18n.t('recurring.title') }}</h1>
+          <p class="fm-page__sub">{{ i18n.t('recurring.subtitle') }}</p>
+        </div>
+        <div class="fm-page__actions">
+          <button class="fm-btn fm-btn--primary" type="button" (click)="toggleForm()">
+            {{ formOpen() ? i18n.t('recurring.cancel') : i18n.t('recurring.new') }}
+          </button>
+        </div>
       </header>
-      <p class="muted">{{ i18n.t('recurring.subtitle') }}</p>
 
       @if (error()) {
         <p class="alert" role="alert">{{ error() }}</p>
@@ -79,16 +83,16 @@ import {
       }
 
       @if (proposals().length > 0) {
-        <section class="panel panel--proposals" aria-labelledby="recurring-proposals">
-          <h2 class="panel__title" id="recurring-proposals">
+        <section class="fm-card proposals" aria-labelledby="recurring-proposals">
+          <h2 class="fm-card__title" id="recurring-proposals">
             {{ i18n.t('recurring.proposals', { count: proposals().length }) }}
           </h2>
           <p class="muted">{{ i18n.t('recurring.proposalsHint') }}</p>
           <ul class="cards">
             @for (proposal of proposals(); track proposal.id) {
-              <li class="card">
-                <div class="card__head">
-                  <h3 class="card__name">{{ proposal.description }}</h3>
+              <li class="fm-card fm-card--tight">
+                <div class="fm-card__head">
+                  <h3 class="fm-card__title">{{ proposal.description }}</h3>
                   <fm-money [amount]="proposal.amount" />
                 </div>
                 <p class="card__schedule">
@@ -96,10 +100,10 @@ import {
                   <span class="card__next">{{ evidenceText(proposal) }}</span>
                 </p>
                 <div class="card__actions">
-                  <button class="button" type="button" (click)="acceptProposal(proposal)">
+                  <button class="fm-btn fm-btn--primary" type="button" (click)="acceptProposal(proposal)">
                     {{ i18n.t('recurring.accept') }}
                   </button>
-                  <button class="button button--quiet" type="button" (click)="dismissProposal(proposal)">
+                  <button class="fm-btn fm-btn--ghost" type="button" (click)="dismissProposal(proposal)">
                     {{ i18n.t('recurring.dismiss') }}
                   </button>
                 </div>
@@ -109,15 +113,15 @@ import {
         </section>
       } @else {
         <p class="muted">
-          <button class="button button--quiet" type="button" [disabled]="saving()" (click)="checkSubscriptions()">
+          <button class="fm-btn fm-btn--ghost" type="button" [disabled]="saving()" (click)="checkSubscriptions()">
             {{ saving() ? i18n.t('recurring.checking') : i18n.t('recurring.check') }}
           </button>
         </p>
       }
 
       @if (formOpen()) {
-        <section class="panel" aria-labelledby="recurring-form">
-          <h2 class="panel__title" id="recurring-form">
+        <section class="fm-card" aria-labelledby="recurring-form">
+          <h2 class="fm-card__title" id="recurring-form">
             {{ editingId() === null ? i18n.t('recurring.new') : i18n.t('recurring.edit') }}
           </h2>
           <!-- (submit) with a cancelled default, not (ngSubmit): this component imports no forms
@@ -231,7 +235,7 @@ import {
             }
 
             <div class="form__actions">
-              <button class="button" type="submit" [disabled]="saving()">
+              <button class="fm-btn fm-btn--primary" type="submit" [disabled]="saving()">
                 {{ saving() ? i18n.t('recurring.saving') : i18n.t('recurring.save') }}
               </button>
             </div>
@@ -239,9 +243,13 @@ import {
         </section>
       }
 
-      <section class="panel" aria-labelledby="recurring-upcoming">
-        <h2 class="panel__title" id="recurring-upcoming">{{ i18n.t('recurring.upcoming') }}</h2>
-        @if (upcoming().length === 0) {
+      <section class="fm-card" aria-labelledby="recurring-upcoming">
+        <h2 class="fm-card__title" id="recurring-upcoming">{{ i18n.t('recurring.upcoming') }}</h2>
+        @if (loading()) {
+          <!-- The query is in flight: "nothing is due" is a claim about the Household's bills, so it
+               must not be made before the response arrives. -->
+          <div class="fm-skeleton skeleton__line" aria-hidden="true"></div>
+        } @else if (upcoming().length === 0) {
           <p class="muted">{{ i18n.t('recurring.upcomingEmpty', { days: 30 }) }}</p>
         } @else {
           <ul class="plain">
@@ -256,15 +264,25 @@ import {
         }
       </section>
 
-      @if (rules().length === 0 && !loading()) {
-        <p class="muted">{{ i18n.t('recurring.empty') }}</p>
-      }
+      @if (loading()) {
+        <div class="fm-card" aria-hidden="true">
+          <div class="fm-skeleton skeleton__line"></div>
+          <div class="fm-skeleton skeleton__line skeleton__line--short"></div>
+        </div>
+        <div class="fm-card" aria-hidden="true">
+          <div class="fm-skeleton skeleton__line"></div>
+          <div class="fm-skeleton skeleton__line skeleton__line--short"></div>
+        </div>
+      } @else {
+        @if (rules().length === 0) {
+          <p class="muted">{{ i18n.t('recurring.empty') }}</p>
+        }
 
       <ul class="cards">
         @for (rule of ordered(); track rule.id) {
-          <li class="card" [class.card--off]="!rule.isActive">
-            <div class="card__head">
-              <h2 class="card__name">{{ rule.description }}</h2>
+          <li class="fm-card" [class.card--off]="!rule.isActive">
+            <div class="fm-card__head">
+              <h2 class="fm-card__title">{{ rule.description }}</h2>
               <fm-money [amount]="rule.amount" />
             </div>
             <p class="card__schedule">
@@ -290,15 +308,15 @@ import {
                 />
                 <span>{{ i18n.t('recurring.autoConfirm') }}</span>
               </label>
-              <button class="button button--quiet" type="button" (click)="edit(rule)">
+              <button class="fm-btn fm-btn--ghost" type="button" (click)="edit(rule)">
                 {{ i18n.t('recurring.edit') }}
               </button>
               @if (rule.isActive) {
-                <button class="button button--quiet" type="button" (click)="setActive(rule, false)">
+                <button class="fm-btn fm-btn--ghost" type="button" (click)="setActive(rule, false)">
                   {{ i18n.t('recurring.deactivate') }}
                 </button>
               } @else {
-                <button class="button button--quiet" type="button" (click)="setActive(rule, true)">
+                <button class="fm-btn fm-btn--ghost" type="button" (click)="setActive(rule, true)">
                   {{ i18n.t('recurring.activate') }}
                 </button>
               }
@@ -311,28 +329,11 @@ import {
           </li>
         }
       </ul>
-    </main>
+      }
+    </div>
   `,
   styles: [
     `
-      .wrap {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-4);
-        padding: var(--space-4);
-        max-inline-size: 48rem;
-        margin-inline: auto;
-      }
-      .head {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-3);
-        align-items: baseline;
-        justify-content: space-between;
-      }
-      .head__title {
-        margin: 0;
-      }
       .muted {
         color: var(--color-text-muted);
         font-size: var(--text-sm);
@@ -342,19 +343,9 @@ import {
         margin: 0;
         font-size: var(--text-sm);
       }
-      .panel--proposals {
+      /* The proposals card is the one the screen is offering, not a rule already in force. */
+      .proposals {
         border-style: dashed;
-      }
-      .panel,
-      .card {
-        padding: var(--space-4);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-lg);
-        background: var(--color-surface);
-      }
-      .panel__title {
-        margin: 0 0 var(--space-3);
-        font-size: var(--text-lg);
       }
       .form {
         display: flex;
@@ -415,25 +406,8 @@ import {
         padding: 0;
         list-style: none;
       }
-      .card {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-2);
-      }
       .card--off {
         opacity: 0.65;
-      }
-      .card__head {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-2);
-        align-items: baseline;
-        justify-content: space-between;
-      }
-      .card__name {
-        margin: 0;
-        font-size: var(--text-lg);
-        overflow-wrap: anywhere;
       }
       .card__schedule {
         display: flex;
@@ -451,9 +425,6 @@ import {
         flex-wrap: wrap;
         gap: var(--space-3);
         align-items: center;
-      }
-      .button {
-        cursor: pointer;
       }
       .raw summary {
         padding-block: var(--space-3);
@@ -491,6 +462,13 @@ import {
       .plain__name {
         min-inline-size: 0;
         overflow-wrap: anywhere;
+      }
+      /* Loading placeholders for a read in flight, so the screen never sits blank. */
+      .skeleton__line {
+        block-size: var(--space-4);
+      }
+      .skeleton__line--short {
+        inline-size: 60%;
       }
     `,
   ],

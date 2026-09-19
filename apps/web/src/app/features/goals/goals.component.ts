@@ -5,6 +5,7 @@ import { type CurrencyCode, uuidv7 } from '@finmate/domain';
 import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import type { TranslationKey } from '../../core/i18n/translations';
 import {
@@ -57,16 +58,20 @@ import {
 @Component({
   selector: 'fm-goals',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MoneyComponent],
+  imports: [IconComponent, MoneyComponent],
   template: `
-    <main class="wrap">
-      <header class="head">
-        <h1 class="head__title">{{ i18n.t('goals.title') }}</h1>
-        <button class="head__new" type="button" (click)="toggleCreate()">
-          {{ creating() ? i18n.t('goals.cancel') : i18n.t('goals.new') }}
-        </button>
+    <div class="fm-page">
+      <header class="fm-page__head">
+        <div>
+          <h1 class="fm-page__title">{{ i18n.t('goals.title') }}</h1>
+          <p class="fm-page__sub">{{ i18n.t('goals.subtitle') }}</p>
+        </div>
+        <div class="fm-page__actions">
+          <button class="fm-btn fm-btn--primary" type="button" (click)="toggleCreate()">
+            {{ creating() ? i18n.t('goals.cancel') : i18n.t('goals.new') }}
+          </button>
+        </div>
       </header>
-      <p class="muted">{{ i18n.t('goals.subtitle') }}</p>
 
       @if (error()) {
         <p class="alert" role="alert">{{ error() }}</p>
@@ -76,8 +81,8 @@ import {
       }
 
       @if (creating()) {
-        <section class="panel" aria-labelledby="goals-new">
-          <h2 class="panel__title" id="goals-new">{{ i18n.t('goals.new') }}</h2>
+        <section class="fm-card" aria-labelledby="goals-new">
+          <h2 class="fm-card__title" id="goals-new">{{ i18n.t('goals.new') }}</h2>
           <!-- (submit) with a cancelled default, not (ngSubmit): this component imports no forms
                module, so NgForm is never applied and (ngSubmit) never fires (docs/15). -->
           <form class="form" (submit)="create($event)" novalidate>
@@ -123,7 +128,7 @@ import {
             }
 
             <div class="form__actions">
-              <button class="button" type="submit" [disabled]="saving()">
+              <button class="fm-btn fm-btn--primary" type="submit" [disabled]="saving()">
                 {{ saving() ? i18n.t('goals.saving') : i18n.t('goals.save') }}
               </button>
             </div>
@@ -131,16 +136,28 @@ import {
         </section>
       }
 
-      @if (goals().length === 0 && !loading()) {
+      @if (loading()) {
+        <!-- A read in flight renders a card-shaped skeleton, never a blank page: the empty message and
+             the list both used to wait for the response, so the screen said nothing at all. -->
+        <div class="fm-card" aria-hidden="true">
+          <div class="fm-skeleton skeleton__line"></div>
+          <div class="fm-skeleton skeleton__line skeleton__line--short"></div>
+        </div>
+        <div class="fm-card" aria-hidden="true">
+          <div class="fm-skeleton skeleton__line"></div>
+          <div class="fm-skeleton skeleton__line skeleton__line--short"></div>
+        </div>
+      } @else if (goals().length === 0) {
         <p class="muted">{{ i18n.t('goals.empty') }}</p>
       }
 
+      @if (!loading()) {
       <ul class="cards">
         @for (goal of ordered(); track goal.id) {
-          <li class="card" [class.card--archived]="goal.status === 'ARCHIVED'">
-            <div class="card__head">
-              <h2 class="card__name">{{ goal.name }}</h2>
-              <span class="chip" [attr.data-status]="goal.status">
+          <li class="fm-card" [class.card--archived]="goal.status === 'ARCHIVED'">
+            <div class="fm-card__head">
+              <h2 class="fm-card__title">{{ goal.name }}</h2>
+              <span class="chip fm-chip fm-chip--static" [attr.data-status]="goal.status">
                 {{ i18n.t(statusKey(goal.status)) }}
               </span>
             </div>
@@ -153,14 +170,14 @@ import {
             </p>
 
             <span
-              class="track"
+              class="fm-progress"
               role="progressbar"
               [attr.aria-valuenow]="percent(goal.progress)"
               aria-valuemin="0"
               aria-valuemax="100"
               [attr.aria-label]="goal.name"
             >
-              <span class="track__fill" [style.inline-size.%]="percent(goal.progress)"></span>
+              <span class="fm-progress__bar" [style.inline-size.%]="percent(goal.progress)"></span>
             </span>
 
             <p class="card__rate">
@@ -185,12 +202,12 @@ import {
                       }
                     </span>
                     <button
-                      class="payments__remove"
+                      class="fm-icon-btn payments__remove"
                       type="button"
                       [attr.aria-label]="i18n.t('goals.removePayment', { name: goal.name })"
                       (click)="removeContribution(contribution.id)"
                     >
-                      ×
+                      <fm-icon name="close" [size]="16" />
                     </button>
                   </li>
                 }
@@ -223,10 +240,10 @@ import {
                   <p class="alert" role="alert">{{ i18n.t(key) }}</p>
                 }
                 <div class="form__actions">
-                  <button class="button" type="submit" [disabled]="saving()">
+                  <button class="fm-btn fm-btn--primary" type="submit" [disabled]="saving()">
                     {{ i18n.t('goals.savePayment') }}
                   </button>
-                  <button class="button button--quiet" type="button" (click)="closePayment()">
+                  <button class="fm-btn fm-btn--ghost" type="button" (click)="closePayment()">
                     {{ i18n.t('goals.cancel') }}
                   </button>
                 </div>
@@ -234,7 +251,7 @@ import {
             } @else {
               <div class="card__actions">
                 @if (canPay(goal)) {
-                  <button class="button" type="button" (click)="openPayment(goal)">
+                  <button class="fm-btn" type="button" (click)="openPayment(goal)">
                     {{ i18n.t('goals.addPayment') }}
                   </button>
                 }
@@ -258,25 +275,25 @@ import {
                       />
                     </label>
                     <span class="edit__actions">
-                      <button class="button" type="button" (click)="saveEdit(goal)">
+                      <button class="fm-btn fm-btn--primary" type="button" (click)="saveEdit(goal)">
                         {{ i18n.t('goals.save') }}
                       </button>
-                      <button class="button button--quiet" type="button" (click)="editingFor.set(null)">
+                      <button class="fm-btn fm-btn--ghost" type="button" (click)="editingFor.set(null)">
                         {{ i18n.t('goals.cancel') }}
                       </button>
                     </span>
                   </span>
                 } @else {
-                  <button class="button button--quiet" type="button" (click)="openEdit(goal)">
+                  <button class="fm-btn fm-btn--ghost" type="button" (click)="openEdit(goal)">
                     {{ i18n.t('goals.edit') }}
                   </button>
                 }
                 @if (goal.status === 'ARCHIVED') {
-                  <button class="button button--quiet" type="button" (click)="setStatus(goal, 'ACTIVE')">
+                  <button class="fm-btn fm-btn--ghost" type="button" (click)="setStatus(goal, 'ACTIVE')">
                     {{ i18n.t('goals.restore') }}
                   </button>
                 } @else {
-                  <button class="button button--quiet" type="button" (click)="setStatus(goal, 'ARCHIVED')">
+                  <button class="fm-btn fm-btn--ghost" type="button" (click)="setStatus(goal, 'ARCHIVED')">
                     {{ i18n.t('goals.archive') }}
                   </button>
                 }
@@ -289,28 +306,11 @@ import {
       @if (archivedCount() > 0) {
         <p class="muted">{{ i18n.t('goals.archivedNote', { count: archivedCount() }) }}</p>
       }
-    </main>
+      }
+    </div>
   `,
   styles: [
     `
-      .wrap {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-4);
-        padding: var(--space-4);
-        max-inline-size: 48rem;
-        margin-inline: auto;
-      }
-      .head {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-3);
-        align-items: baseline;
-        justify-content: space-between;
-      }
-      .head__title {
-        margin: 0;
-      }
       .muted {
         color: var(--color-text-muted);
         font-size: var(--text-sm);
@@ -320,16 +320,13 @@ import {
         color: var(--color-text-muted);
         font-size: var(--text-sm);
       }
-      .panel,
-      .card {
-        padding: var(--space-4);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-lg);
-        background: var(--color-surface);
-      }
-      .panel__title {
-        margin: 0 0 var(--space-3);
-        font-size: var(--text-lg);
+      .alert {
+        margin: 0;
+        padding: var(--space-3);
+        border-radius: var(--radius-md);
+        background: var(--color-danger-soft);
+        color: var(--color-danger);
+        font-size: var(--text-sm);
       }
       .form {
         display: flex;
@@ -361,12 +358,6 @@ import {
         gap: var(--space-2);
         align-items: flex-end;
       }
-      .button {
-        cursor: pointer;
-      }
-      .button--quiet {
-        opacity: 0.85;
-      }
       .cards {
         display: flex;
         flex-direction: column;
@@ -375,32 +366,21 @@ import {
         padding: 0;
         list-style: none;
       }
-      .card {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-2);
-      }
       .card--archived {
         opacity: 0.65;
       }
-      .card__head {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-2);
-        align-items: baseline;
-        justify-content: space-between;
+      /* .fm-chip supplies the shape; the state colours stay the screen's, keyed on data-status. */
+      .chip[data-status='ACTIVE'] {
+        border-color: var(--color-primary);
+        color: var(--color-primary-text);
       }
-      .card__name {
-        margin: 0;
-        font-size: var(--text-lg);
-        overflow-wrap: anywhere;
+      .chip[data-status='ACHIEVED'] {
+        border-color: transparent;
+        background: var(--color-success-soft);
+        color: var(--color-success);
       }
-      .chip {
-        font-size: var(--text-xs);
-        padding: 0.1rem 0.5rem;
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
-        white-space: nowrap;
+      .chip[data-status='ARCHIVED'] {
+        color: var(--color-text-subtle);
       }
       .card__figures {
         display: flex;
@@ -416,18 +396,6 @@ import {
         margin-inline-start: auto;
         font-variant-numeric: tabular-nums;
         color: var(--color-text-muted);
-      }
-      .track {
-        display: block;
-        block-size: 0.5rem;
-        border-radius: var(--radius-sm);
-        background: var(--color-border);
-        overflow: hidden;
-      }
-      .track__fill {
-        display: block;
-        block-size: 100%;
-        background: var(--color-accent, currentColor);
       }
       .card__rate {
         display: flex;
@@ -461,7 +429,14 @@ import {
       }
       .payments__remove {
         margin-inline-start: auto;
-        cursor: pointer;
+      }
+      /* Loading placeholders: card-shaped blocks with two shimmering lines, so a read in flight looks
+         like a read in flight rather than an empty page. */
+      .skeleton__line {
+        block-size: var(--space-4);
+      }
+      .skeleton__line--short {
+        inline-size: 60%;
       }
     `,
   ],

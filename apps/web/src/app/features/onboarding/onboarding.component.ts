@@ -10,6 +10,7 @@ import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
 import { CaptureComponent } from '../capture/capture.component';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import {
   LAST_STEP,
   canContinue as canContinueStep,
@@ -58,7 +59,7 @@ import {
 @Component({
   selector: 'fm-onboarding',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, CaptureComponent],
+  imports: [FormsModule, RouterLink, CaptureComponent, IconComponent],
   template: `
     <div class="wizard">
       <header class="head">
@@ -170,7 +171,8 @@ import {
                 @for (proposal of proposals(); track proposal.index) {
                   <li class="card">
                     <p class="card__name">
-                      <span aria-hidden="true">👤</span> {{ proposal.personName }}
+                      <fm-icon name="people" [size]="18" />
+                      {{ proposal.personName }}
                     </p>
                     <!--
                       A category picker, not just a label. The pipeline only suggests a category when the

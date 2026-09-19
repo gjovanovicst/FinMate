@@ -10,6 +10,7 @@ import { TestBed } from '@angular/core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GraphqlClient } from '../../core/graphql/graphql.client';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import { AnalyticsComponent } from './analytics.component';
 import { monthRange, shiftMonthKey } from './analytics.view';
@@ -153,7 +154,7 @@ async function mount(): Promise<{
   // input is `input.required`, and a JIT-rendered child throws NG0950 when the harness evaluates it
   // before the binding lands. What this file proves is that the figures are *handed* to it.
   TestBed.overrideComponent(AnalyticsComponent, {
-    remove: { imports: [MoneyComponent] },
+    remove: { imports: [MoneyComponent, IconComponent] },
     add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
 
@@ -290,7 +291,7 @@ describe('the analytics screen', () => {
       ],
     });
     TestBed.overrideComponent(AnalyticsComponent, {
-      remove: { imports: [MoneyComponent] },
+      remove: { imports: [MoneyComponent, IconComponent] },
       add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
     });
     const fixture: Fixture = TestBed.createComponent(AnalyticsComponent);

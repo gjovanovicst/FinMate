@@ -356,6 +356,7 @@ export const en = {
   'notifications.kind.unknown': 'Other',
   'notifications.settings.title': 'What you get told',
   'notifications.settings.kinds': 'Alerts',
+  'notifications.settings.noRules': 'No alert rules yet. They appear once there is something worth telling you about.',
   'notifications.settings.channels': 'Where',
   'notifications.settings.quietHours': 'Quiet hours',
   'notifications.settings.quietHint': 'During this window nothing is sent. Notifications wait and arrive afterwards.',

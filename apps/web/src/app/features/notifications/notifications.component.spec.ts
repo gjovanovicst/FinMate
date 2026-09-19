@@ -4,7 +4,7 @@
 // `capture.component.spec.ts` for the full reasoning).
 import { initAngularTesting } from '@web-test/angular-testing';
 
-import { provideZonelessChangeDetection } from '@angular/core';
+import { CUSTOM_ELEMENTS_SCHEMA, provideZonelessChangeDetection } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -13,6 +13,7 @@ import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { NotificationStore } from '../../core/notifications/notification.store';
 import { PushService } from '../../core/push/push.service';
 import type { PushState } from '../../core/push/push.view';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { NotificationsComponent } from './notifications.component';
 
 initAngularTesting();
@@ -120,6 +121,12 @@ async function mount(push: ReturnType<typeof fakePush> = fakePush()): Promise<{
       { provide: GraphqlClient, useValue: client },
       { provide: PushService, useValue: push },
     ],
+  });
+  // The chrome icons are custom elements here: JIT cannot discover `input()` signal inputs, so a
+  // parent binding one cannot render the child at all (see `@web-test/angular-testing`).
+  TestBed.overrideComponent(NotificationsComponent, {
+    remove: { imports: [IconComponent] },
+    add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
   const fixture = TestBed.createComponent(NotificationsComponent);
   await fixture.whenStable();

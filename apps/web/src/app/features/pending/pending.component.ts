@@ -24,213 +24,237 @@ import { nextAttemptDelay, type OutboxEntry } from '../../core/offline/outbox';
 import { SyncService } from '../../core/offline/sync.service';
 import type { SyncDiff } from '../../core/offline/sync.types';
 import { categoryLabel, rawInputs, syncedAtLabel, whyKey } from '../../core/offline/sync.view';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 
 @Component({
   selector: 'fm-pending',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [IconComponent],
   template: `
-    <header class="head">
-      <h1 class="head__title">{{ i18n.t('pending.title') }}</h1>
-      <p class="head__sub">{{ i18n.t(subtitleKey()) }}</p>
-    </header>
+    <div class="fm-page">
+      <header class="fm-page__head">
+        <div>
+          <h1 class="fm-page__title">{{ i18n.t('pending.title') }}</h1>
+          <p class="fm-page__sub">{{ i18n.t(subtitleKey()) }}</p>
+        </div>
+      </header>
 
-    <!-- The count is announced, not only drawn: it is the one number that changes under the user. -->
-    <p class="count" role="status" aria-live="polite">
-      {{
-        i18n.t('pending.count', {
-          waiting: sync.pendingCount(),
-          refused: sync.rejected().length
-        })
-      }}
-    </p>
+      <!-- The count is announced, not only drawn: it is the one number that changes under the user. -->
+      <p class="count" role="status" aria-live="polite">
+        {{
+          i18n.t('pending.count', {
+            waiting: sync.pendingCount(),
+            refused: sync.rejected().length
+          })
+        }}
+      </p>
 
-    @if (sync.busy()) {
-      <p class="status" role="status">{{ i18n.t('pending.sending') }}</p>
-    }
+      @if (sync.busy()) {
+        <p class="status" role="status">{{ i18n.t('pending.sending') }}</p>
+      }
 
-    @if (sync.lastError(); as message) {
-      <p class="alert" role="alert">{{ i18n.t('pending.flushError', { message }) }}</p>
-    }
+      @if (sync.lastError(); as message) {
+        <p class="alert" role="alert">{{ i18n.t('pending.flushError', { message }) }}</p>
+      }
 
-    <div class="toolbar">
-      <!-- ADR-033 decision 4: nothing can be sent without a session, so the control is not offered
-           rather than shown broken (docs/02 §2). The offline shell says why, once, above this screen. -->
-      @if (canSend()) {
-        <button
-          class="btn btn--primary"
-          type="button"
-          [disabled]="sync.busy() || empty()"
-          (click)="retryAll()"
-        >
-          {{ i18n.t('pending.retryAll') }}
+      <div class="toolbar">
+        <!-- ADR-033 decision 4: nothing can be sent without a session, so the control is not offered
+             rather than shown broken (docs/02 §2). The offline shell says why, once, above this screen. -->
+        @if (canSend()) {
+          <button
+            class="fm-btn fm-btn--primary"
+            type="button"
+            [disabled]="sync.busy() || empty()"
+            (click)="retryAll()"
+          >
+            {{ i18n.t('pending.retryAll') }}
+          </button>
+        }
+        <button class="fm-btn" type="button" [disabled]="empty()" (click)="exportText()">
+          {{ i18n.t('pending.export') }}
         </button>
-      }
-      <button class="btn" type="button" [disabled]="empty()" (click)="exportText()">
-        {{ i18n.t('pending.export') }}
-      </button>
-    </div>
-
-    @if (exported(); as text) {
-      <label class="export">
-        <span class="export__label">{{ i18n.t('pending.exportLabel') }}</span>
-        <textarea class="export__text" readonly rows="10" [value]="text"></textarea>
-      </label>
-    }
-
-    @if (loading()) {
-      <p class="status" role="status">{{ i18n.t('pending.loading') }}</p>
-    } @else if (empty() && !sync.busy()) {
-      <div class="empty">
-        <p class="empty__title">{{ i18n.t('pending.empty') }}</p>
-        <p class="empty__body">{{ i18n.t('pending.emptyBody') }}</p>
       </div>
-    } @else {
-      @if (sync.rejected().length > 0) {
-        <section class="group">
-          <h2 class="group__title">{{ i18n.t('pending.rejectedTitle') }}</h2>
-          <p class="group__body">{{ i18n.t('pending.rejectedBody') }}</p>
-          <ul class="list">
-            @for (entry of sync.rejected(); track entry.seq) {
-              <li class="row row--refused">
-                <div class="row__head">
-                  <span class="row__status">{{ i18n.t('pending.statusRejected') }}</span>
-                  <span class="row__meta">
-                    <time [attr.datetime]="entry.enqueuedAt">{{ localTime(entry.enqueuedAt) }}</time>
-                    @if (entry.attempts > 0) {
-                      <span>{{ attemptsLabel(entry) }}</span>
-                    }
-                  </span>
-                </div>
-                @for (input of inputs(entry); track $index) {
-                  <p class="row__input">{{ input }}</p>
-                }
-                <p class="row__error">{{ i18n.t('pending.lastError', { message: errorText(entry) }) }}</p>
-                <div class="row__actions">
-                  @if (canSend()) {
-                    <button class="btn" type="button" [disabled]="sync.busy()" (click)="retry(entry.seq)">
-                      {{ i18n.t('pending.retry') }}
-                    </button>
-                  }
-                  <button class="btn" type="button" [disabled]="sync.busy()" (click)="discard(entry.seq)">
-                    {{ i18n.t('pending.discard') }}
-                  </button>
-                </div>
-              </li>
-            }
-          </ul>
-        </section>
+
+      @if (exported(); as text) {
+        <label class="export">
+          <span class="export__label">{{ i18n.t('pending.exportLabel') }}</span>
+          <textarea class="export__text" readonly rows="10" [value]="text"></textarea>
+        </label>
       }
 
-      @if (sync.pending().length > 0) {
-        <section class="group">
-          <h2 class="group__title">{{ i18n.t('pending.pendingTitle') }}</h2>
-          <ul class="list">
-            @for (entry of sync.pending(); track entry.seq) {
-              <li class="row">
-                <div class="row__head">
-                  <span class="row__status">{{ i18n.t('pending.statusPending') }}</span>
-                  <span class="row__meta">
-                    <time [attr.datetime]="entry.enqueuedAt">{{ localTime(entry.enqueuedAt) }}</time>
-                    @if (entry.attempts > 0) {
-                      <span>{{ attemptsLabel(entry) }}</span>
-                    }
-                  </span>
-                </div>
-                @for (input of inputs(entry); track $index) {
-                  <p class="row__input">{{ input }}</p>
-                }
-                @if (entry.error) {
-                  <p class="row__error">
-                    {{ i18n.t('pending.lastError', { message: errorText(entry) }) }}
-                  </p>
-                  <p class="row__wait">
-                    {{ i18n.t('pending.nextAttempt', { seconds: nextWaitSeconds(entry) }) }}
-                  </p>
-                }
-                <div class="row__actions">
-                  @if (canSend()) {
-                    <button class="btn" type="button" [disabled]="sync.busy()" (click)="retry(entry.seq)">
-                      {{ i18n.t('pending.retry') }}
-                    </button>
-                  }
-                  <button class="btn" type="button" [disabled]="sync.busy()" (click)="discard(entry.seq)">
-                    {{ i18n.t('pending.discard') }}
-                  </button>
-                </div>
-              </li>
-            }
-          </ul>
+      @if (loading()) {
+        <p class="status" role="status">{{ i18n.t('pending.loading') }}</p>
+      } @else if (empty() && !sync.busy()) {
+        <section class="fm-card empty">
+          <p class="empty__title">{{ i18n.t('pending.empty') }}</p>
+          <p class="empty__body">{{ i18n.t('pending.emptyBody') }}</p>
         </section>
-      }
-    }
-
-    @if (sync.conflicts().length > 0) {
-      <!-- A refused edit (task 4.2.7b, ADR-030). Deliberately a separate panel from the diffs below:
-           that one explains the server's *decision* about a row it accepted, this one explains a write
-           it **rejected**. It also quotes no reason it was not given — the two versions are the whole
-           explanation the API supports, and the Zašto line stays with the re-classification diff. -->
-      <section class="diffs">
-        <h2 class="group__title">
-          {{ i18n.t('pending.conflictTitle') }}
-        </h2>
-        <p class="group__body">{{ i18n.t('pending.conflictBody') }}</p>
-        <ul class="list">
-          @for (conflict of sync.conflicts(); track conflict.seq + ':' + conflict.transactionId) {
-            <li class="diff">
-              <p class="diff__line">
-                {{ i18n.t('pending.conflictVersions', { edited: conflict.editedVersion, server: conflict.serverVersion }) }}
-              </p>
-              @if (conflict.changes.length === 0) {
-                <p class="diff__why">{{ i18n.t('pending.conflictNoFieldChanges') }}</p>
-              } @else {
-                <table class="conflict">
-                  <caption class="sr-only">{{ i18n.t('pending.conflictTitle') }}</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">{{ i18n.t('pending.diffField') }}</th>
-                      <th scope="col">{{ i18n.t('pending.diffBefore') }}</th>
-                      <th scope="col">{{ i18n.t('pending.diffAfter') }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (change of conflict.changes; track change.field) {
-                      <tr>
-                        <th scope="row">{{ i18n.t(fieldKey(change.field)) }}</th>
-                        <td>{{ change.before ?? '—' }}</td>
-                        <td>{{ change.after ?? '—' }}</td>
-                      </tr>
+      } @else {
+        @if (sync.rejected().length > 0) {
+          <section class="fm-card group">
+            <div class="fm-card__head">
+              <h2 class="fm-card__title">
+                <fm-icon name="alert" [size]="18" />
+                {{ i18n.t('pending.rejectedTitle') }}
+              </h2>
+            </div>
+            <p class="group__body">{{ i18n.t('pending.rejectedBody') }}</p>
+            <ul class="list">
+              @for (entry of sync.rejected(); track entry.seq) {
+                <li class="row row--refused">
+                  <div class="row__head">
+                    <span class="row__status">{{ i18n.t('pending.statusRejected') }}</span>
+                    <span class="row__meta">
+                      <time [attr.datetime]="entry.enqueuedAt">{{ localTime(entry.enqueuedAt) }}</time>
+                      @if (entry.attempts > 0) {
+                        <span>{{ attemptsLabel(entry) }}</span>
+                      }
+                    </span>
+                  </div>
+                  @for (input of inputs(entry); track $index) {
+                    <p class="row__input">{{ input }}</p>
+                  }
+                  <p class="row__error">{{ i18n.t('pending.lastError', { message: errorText(entry) }) }}</p>
+                  <div class="row__actions">
+                    @if (canSend()) {
+                      <button class="fm-btn" type="button" [disabled]="sync.busy()" (click)="retry(entry.seq)">
+                        {{ i18n.t('pending.retry') }}
+                      </button>
                     }
-                  </tbody>
-                </table>
+                    <button class="fm-btn" type="button" [disabled]="sync.busy()" (click)="discard(entry.seq)">
+                      {{ i18n.t('pending.discard') }}
+                    </button>
+                  </div>
+                </li>
               }
-            </li>
-          }
-        </ul>
-      </section>
-    }
+            </ul>
+          </section>
+        }
 
-    @if (sync.diffs().length > 0) {
-      <section class="diffs">
-        <h2 class="group__title">{{ i18n.t('pending.diffTitle', { count: sync.diffs().length }) }}</h2>
-        <p class="group__body">{{ i18n.t('pending.diffBody') }}</p>
-        <ul class="list">
-          @for (diff of sync.diffs(); track $index + ':' + diff.seq) {
-            <li class="diff">
-              <p class="diff__text">{{ diff.rawText }}</p>
-              <p class="diff__line">
-                <span class="diff__side">{{ i18n.t('pending.diffBefore') }}</span>
-                {{ beforeLabel(diff) }}
-              </p>
-              <p class="diff__line">
-                <span class="diff__side">{{ i18n.t('pending.diffAfter') }}</span>
-                {{ afterLabel(diff) }}
-              </p>
-              <p class="diff__why">{{ i18n.t('pending.diffWhy', { why: whyLabel(diff.why) }) }}</p>
-            </li>
-          }
-        </ul>
-      </section>
-    }
+        @if (sync.pending().length > 0) {
+          <section class="fm-card group">
+            <div class="fm-card__head">
+              <h2 class="fm-card__title">
+                <fm-icon name="transactions" [size]="18" />
+                {{ i18n.t('pending.pendingTitle') }}
+              </h2>
+            </div>
+            <ul class="list">
+              @for (entry of sync.pending(); track entry.seq) {
+                <li class="row">
+                  <div class="row__head">
+                    <span class="row__status">{{ i18n.t('pending.statusPending') }}</span>
+                    <span class="row__meta">
+                      <time [attr.datetime]="entry.enqueuedAt">{{ localTime(entry.enqueuedAt) }}</time>
+                      @if (entry.attempts > 0) {
+                        <span>{{ attemptsLabel(entry) }}</span>
+                      }
+                    </span>
+                  </div>
+                  @for (input of inputs(entry); track $index) {
+                    <p class="row__input">{{ input }}</p>
+                  }
+                  @if (entry.error) {
+                    <p class="row__error">
+                      {{ i18n.t('pending.lastError', { message: errorText(entry) }) }}
+                    </p>
+                    <p class="row__wait">
+                      {{ i18n.t('pending.nextAttempt', { seconds: nextWaitSeconds(entry) }) }}
+                    </p>
+                  }
+                  <div class="row__actions">
+                    @if (canSend()) {
+                      <button class="fm-btn" type="button" [disabled]="sync.busy()" (click)="retry(entry.seq)">
+                        {{ i18n.t('pending.retry') }}
+                      </button>
+                    }
+                    <button class="fm-btn" type="button" [disabled]="sync.busy()" (click)="discard(entry.seq)">
+                      {{ i18n.t('pending.discard') }}
+                    </button>
+                  </div>
+                </li>
+              }
+            </ul>
+          </section>
+        }
+      }
+
+      @if (sync.conflicts().length > 0) {
+        <!-- A refused edit (task 4.2.7b, ADR-030). Deliberately a separate panel from the diffs below:
+             that one explains the server's *decision* about a row it accepted, this one explains a write
+             it **rejected**. It also quotes no reason it was not given — the two versions are the whole
+             explanation the API supports, and the Zašto line stays with the re-classification diff. -->
+        <section class="fm-card diffs">
+          <div class="fm-card__head">
+            <h2 class="fm-card__title">
+              <fm-icon name="alert" [size]="18" />
+              {{ i18n.t('pending.conflictTitle') }}
+            </h2>
+          </div>
+          <p class="group__body">{{ i18n.t('pending.conflictBody') }}</p>
+          <ul class="list">
+            @for (conflict of sync.conflicts(); track conflict.seq + ':' + conflict.transactionId) {
+              <li class="diff">
+                <p class="diff__line">
+                  {{ i18n.t('pending.conflictVersions', { edited: conflict.editedVersion, server: conflict.serverVersion }) }}
+                </p>
+                @if (conflict.changes.length === 0) {
+                  <p class="diff__why">{{ i18n.t('pending.conflictNoFieldChanges') }}</p>
+                } @else {
+                  <table class="fm-table conflict">
+                    <caption class="fm-visually-hidden">{{ i18n.t('pending.conflictTitle') }}</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">{{ i18n.t('pending.diffField') }}</th>
+                        <th scope="col">{{ i18n.t('pending.diffBefore') }}</th>
+                        <th scope="col">{{ i18n.t('pending.diffAfter') }}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (change of conflict.changes; track change.field) {
+                        <tr>
+                          <th scope="row">{{ i18n.t(fieldKey(change.field)) }}</th>
+                          <td>{{ change.before ?? '—' }}</td>
+                          <td>{{ change.after ?? '—' }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                }
+              </li>
+            }
+          </ul>
+        </section>
+      }
+
+      @if (sync.diffs().length > 0) {
+        <section class="fm-card diffs">
+          <div class="fm-card__head">
+            <h2 class="fm-card__title">
+              <fm-icon name="info" [size]="18" />
+              {{ i18n.t('pending.diffTitle', { count: sync.diffs().length }) }}
+            </h2>
+          </div>
+          <p class="group__body">{{ i18n.t('pending.diffBody') }}</p>
+          <ul class="list">
+            @for (diff of sync.diffs(); track $index + ':' + diff.seq) {
+              <li class="diff">
+                <p class="diff__text">{{ diff.rawText }}</p>
+                <p class="diff__line">
+                  <span class="diff__side">{{ i18n.t('pending.diffBefore') }}</span>
+                  {{ beforeLabel(diff) }}
+                </p>
+                <p class="diff__line">
+                  <span class="diff__side">{{ i18n.t('pending.diffAfter') }}</span>
+                  {{ afterLabel(diff) }}
+                </p>
+                <p class="diff__why">{{ i18n.t('pending.diffWhy', { why: whyLabel(diff.why) }) }}</p>
+              </li>
+            }
+          </ul>
+        </section>
+      }
+    </div>
   `,
   styles: [
     `
@@ -238,42 +262,16 @@ import { categoryLabel, rawInputs, syncedAtLabel, whyKey } from '../../core/offl
         display: block;
       }
       .conflict {
-        inline-size: 100%;
-        border-collapse: collapse;
-        margin-block-start: var(--space-2);
-        font-size: var(--text-sm);
-      }
-      .conflict th,
-      .conflict td {
-        text-align: start;
-        padding: 0.2rem 0.5rem 0.2rem 0;
-        border-block-end: 1px solid var(--color-border);
         overflow-wrap: anywhere;
       }
-      .sr-only {
-        position: absolute;
-        inline-size: 1px;
-        block-size: 1px;
-        overflow: hidden;
-        clip-path: inset(50%);
-        white-space: nowrap;
-      }
-      .head__title {
-        margin: 0;
-        font-size: var(--text-xl);
-      }
-      .head__sub {
-        margin: var(--space-1) 0 var(--space-3);
-        color: var(--color-text-muted);
-      }
       .count {
-        margin: 0 0 var(--space-3);
+        margin: 0;
         font-size: var(--text-sm);
         color: var(--color-text-subtle);
       }
       .status,
       .alert {
-        margin: 0 0 var(--space-3);
+        margin: 0;
         padding: var(--space-3);
         border: 1px solid var(--color-border);
         border-radius: var(--radius-md);
@@ -287,13 +285,11 @@ import { categoryLabel, rawInputs, syncedAtLabel, whyKey } from '../../core/offl
         display: flex;
         flex-wrap: wrap;
         gap: var(--space-2);
-        margin-block-end: var(--space-4);
       }
       .export {
         display: grid;
         gap: var(--space-1);
         min-inline-size: 0;
-        margin-block-end: var(--space-4);
       }
       .export__label {
         font-size: var(--text-xs);
@@ -312,15 +308,10 @@ import { categoryLabel, rawInputs, syncedAtLabel, whyKey } from '../../core/offl
         resize: vertical;
       }
       .group {
-        margin-block-end: var(--space-5);
         min-inline-size: 0;
       }
-      .group__title {
-        margin: 0 0 var(--space-2);
-        font-size: var(--text-lg);
-      }
       .group__body {
-        margin: 0 0 var(--space-2);
+        margin: 0;
         color: var(--color-text-muted);
       }
       .list {
@@ -328,17 +319,20 @@ import { categoryLabel, rawInputs, syncedAtLabel, whyKey } from '../../core/offl
         margin: 0;
         padding: 0;
         display: grid;
-        gap: var(--space-3);
       }
       .row,
       .diff {
         min-inline-size: 0;
-        padding: var(--space-3);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-        background: var(--color-surface);
+        padding-block: var(--space-3);
+        border-block-end: 1px solid var(--color-border);
+      }
+      .row:last-child,
+      .diff:last-child {
+        padding-block-end: 0;
+        border-block-end: none;
       }
       .row--refused {
+        padding-inline-start: var(--space-3);
         border-inline-start: 3px solid var(--color-danger);
       }
       .row__head {
@@ -400,34 +394,17 @@ import { categoryLabel, rawInputs, syncedAtLabel, whyKey } from '../../core/offl
         overflow-wrap: anywhere;
       }
       .empty {
-        margin-block-start: var(--space-5);
+        gap: var(--space-2);
         text-align: center;
-        color: var(--color-text-muted);
       }
       .empty__title {
         margin: 0;
         font-size: var(--text-lg);
       }
       .empty__body {
-        margin: var(--space-1) 0 0;
-      }
-      .btn {
-        padding: var(--space-2) var(--space-4);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
-        background: var(--color-bg);
-        color: inherit;
-        font: inherit;
-        cursor: pointer;
-      }
-      .btn--primary {
-        background: var(--color-primary);
-        border-color: var(--color-primary);
-        color: var(--color-primary-contrast);
-      }
-      .btn:disabled {
-        opacity: 0.6;
-        cursor: default;
+        margin: 0;
+        color: var(--color-text-muted);
+        font-size: var(--text-sm);
       }
     `,
   ],

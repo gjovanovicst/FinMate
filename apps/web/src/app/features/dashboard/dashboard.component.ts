@@ -1138,13 +1138,13 @@ export class DashboardComponent {
   protected readonly amountText = amountText;
 
   /** The budget, in major units, for the "of 300.000,00 RSD" line. */
-  readonly budgetText = computed(() => moneyText(this.data()?.monthlyBudget));
+  readonly budgetText = computed(() => moneyText(this.data()?.monthlyBudget, this.i18n.tag()));
 
   /** The spent-this-month figure as in-sentence text, for the donut's centre. */
-  readonly spentText = computed(() => moneyText(this.data()?.spentThisMonth));
+  readonly spentText = computed(() => moneyText(this.data()?.spentThisMonth, this.i18n.tag()));
 
   /** Safe-to-spend today, as in-sentence text. */
-  readonly safeTodayText = computed(() => moneyText(this.data()?.safeToSpendToday));
+  readonly safeTodayText = computed(() => moneyText(this.data()?.safeToSpendToday, this.i18n.tag()));
 
   /**
    * How much of the budget is used, as a 0…1 ratio — computed by @finmate/domain.
@@ -1166,10 +1166,10 @@ export class DashboardComponent {
    * available is a signed Balance, so this reads as an overspend only once it has gone negative — see
    * `overspendText`, which owns that sign and is covered by `money-text.spec.ts`.
    */
-  readonly overrunText = computed(() => overspendText(this.data()?.available));
+  readonly overrunText = computed(() => overspendText(this.data()?.available, this.i18n.tag()));
 
   /** How much the month is *projected* to overshoot, or null when the projection is inside budget. */
-  readonly projectedOverText = computed(() => overrunText(this.data()?.projectedOverrun));
+  readonly projectedOverText = computed(() => overrunText(this.data()?.projectedOverrun, this.i18n.tag()));
 
   // ---- the panels, all computed from one response ------------------------------------------------
 
@@ -1281,8 +1281,8 @@ export class DashboardComponent {
   readonly barBuckets = computed<readonly BarBucket[]>(() =>
     (this.panels()?.spendOverTime ?? []).map((bucket) => {
       const day = String(Number(bucket.bucketStart.slice(8, 10)));
-      const income = amountText(bucket.incomeTotal);
-      const expense = amountText(bucket.expenseTotal);
+      const income = amountText(bucket.incomeTotal, this.i18n.tag());
+      const expense = amountText(bucket.expenseTotal, this.i18n.tag());
 
       return {
         label: bucket.bucketStart,
@@ -1319,7 +1319,7 @@ export class DashboardComponent {
 
   /** A goal's "due in N months · X per month" footnote, in one of the shapes the data allows. */
   goalFootnote(goal: GoalRow): string {
-    const perMonth = amountText(goal.requiredPerMonth);
+    const perMonth = amountText(goal.requiredPerMonth, this.i18n.tag());
     if (goal.monthsRemaining === null) {
       return perMonth === '' ? '' : this.i18n.t('dashboard.goalPerMonth', { amount: perMonth });
     }

@@ -5,6 +5,7 @@ import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import {
   actionsOf,
   bucketRules,
@@ -47,19 +48,20 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush,
   // `NgTemplateOutlet` keeps ONE definition of a rule row while three groups render it. The
   // alternative — the same forty lines three times — is how the groups start drifting apart.
-  imports: [NgTemplateOutlet],
+  imports: [NgTemplateOutlet, IconComponent],
   template: `
-    <header class="head">
+    <div class="fm-page">
+    <header class="fm-page__head">
       <div>
-        <h1 class="head__title">{{ i18n.t('rules.title') }}</h1>
-        <p class="head__sub">{{ i18n.t('rules.subtitle') }}</p>
+        <h1 class="fm-page__title">{{ i18n.t('rules.title') }}</h1>
+        <p class="fm-page__sub">{{ i18n.t('rules.subtitle') }}</p>
       </div>
     </header>
 
     @if (error(); as message) {
       <p class="alert" role="alert">{{ message }}</p>
     }
-    <p class="announce" aria-live="polite">{{ announcement() }}</p>
+    <p class="fm-visually-hidden" aria-live="polite">{{ announcement() }}</p>
 
     @if (loading()) {
       <p class="muted">{{ i18n.t('accounts.loading') }}</p>
@@ -71,8 +73,15 @@ import {
     } @else {
       @if (buckets().needsAttention.length > 0) {
         <section class="group">
-          <h2 class="group__title">{{ i18n.t('rules.attentionTitle') }}</h2>
-          <p class="group__sub">{{ i18n.t('rules.attentionBody') }}</p>
+          <div class="group__head">
+            <div class="fm-card__head">
+              <h2 class="fm-card__title">
+                <fm-icon name="alert" [size]="18" />
+                {{ i18n.t('rules.attentionTitle') }}
+              </h2>
+            </div>
+            <p class="group__sub">{{ i18n.t('rules.attentionBody') }}</p>
+          </div>
           @for (rule of buckets().needsAttention; track rule.id) {
             <ng-container *ngTemplateOutlet="row; context: { $implicit: rule }" />
           }
@@ -80,7 +89,12 @@ import {
       }
 
       <section class="group">
-        <h2 class="group__title">{{ i18n.t('rules.activeTitle', { count: buckets().active.length }) }}</h2>
+        <div class="fm-card__head">
+          <h2 class="fm-card__title">
+            <fm-icon name="rules" [size]="18" />
+            {{ i18n.t('rules.activeTitle', { count: buckets().active.length }) }}
+          </h2>
+        </div>
         @for (rule of buckets().active; track rule.id) {
           <ng-container *ngTemplateOutlet="row; context: { $implicit: rule }" />
         }
@@ -88,16 +102,22 @@ import {
 
       @if (buckets().inactive.length > 0) {
         <section class="group">
-          <h2 class="group__title">{{ i18n.t('rules.inactiveTitle', { count: buckets().inactive.length }) }}</h2>
+          <div class="fm-card__head">
+            <h2 class="fm-card__title">
+              <fm-icon name="close" [size]="18" />
+              {{ i18n.t('rules.inactiveTitle', { count: buckets().inactive.length }) }}
+            </h2>
+          </div>
           @for (rule of buckets().inactive; track rule.id) {
             <ng-container *ngTemplateOutlet="row; context: { $implicit: rule }" />
           }
         </section>
       }
     }
+    </div>
 
     <ng-template #row let-rule>
-      <article class="rule" [class.rule--off]="!rule.isActive">
+      <article class="fm-card fm-card--tight rule" [class.rule--off]="!rule.isActive">
         <div class="rule__head">
           <h3 class="rule__name">{{ rule.name }}</h3>
           <span class="rule__meta">
@@ -144,10 +164,10 @@ import {
         }
 
         <div class="rule__actions">
-          <button class="btn" type="button" [disabled]="busy()" (click)="toggle(rule)">
+          <button class="fm-btn" type="button" [disabled]="busy()" (click)="toggle(rule)">
             {{ rule.isActive ? i18n.t('rules.switchOff') : i18n.t('rules.switchOn') }}
           </button>
-          <button class="btn btn--danger" type="button" [disabled]="busy()" (click)="remove(rule)">
+          <button class="fm-btn fm-btn--danger" type="button" [disabled]="busy()" (click)="remove(rule)">
             {{ i18n.t('rules.delete') }}
           </button>
         </div>
@@ -159,23 +179,13 @@ import {
       :host {
         display: block;
       }
-      .head__title {
-        margin: 0;
-        font-size: var(--text-xl);
-      }
-      .head__sub {
-        margin: var(--space-1) 0 var(--space-4);
-        color: var(--color-text-muted);
-      }
       .alert {
-        margin: 0 0 var(--space-3);
+        margin: 0;
         padding: var(--space-3);
-        border: 1px solid var(--color-danger);
         border-radius: var(--radius-md);
+        background: var(--color-danger-soft);
         color: var(--color-danger);
-      }
-      .announce:empty {
-        display: none;
+        font-size: var(--text-sm);
       }
       .muted {
         color: var(--color-text-muted);
@@ -192,26 +202,25 @@ import {
       .empty__body {
         margin: var(--space-1) 0 0;
       }
+      /* A group is a heading plus its rule cards; the page's own gap separates one group from the
+         next, so this one only has to space the head from the cards. */
       .group {
-        margin-block-end: var(--space-5);
+        display: grid;
+        gap: var(--space-3);
       }
-      .group__title {
-        margin: 0;
-        font-size: var(--text-lg);
+      .group__head {
+        display: grid;
+        gap: var(--space-1);
       }
       .group__sub {
-        margin: var(--space-1) 0 var(--space-2);
+        margin: 0;
         font-size: var(--text-xs);
         color: var(--color-text-subtle);
       }
+      /* The rule card's body, radius, padding and shadow come from .fm-card--tight; the denser gap is
+         this screen's, because a rule is a short list of short lines. */
       .rule {
-        display: grid;
         gap: var(--space-2);
-        padding: var(--space-3);
-        margin-block-start: var(--space-2);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-        background: var(--color-surface);
       }
       .rule--off {
         opacity: 0.65;
@@ -240,18 +249,21 @@ import {
         border: 1px solid var(--color-border);
         border-radius: var(--radius-lg);
       }
+      /* --color-primary-text, not --color-primary: the fill is 3.78:1 as text on a card and this badge is
+         12 px (found by the ADR-039 audit). styles.css states the rule; this is the one place that broke
+         it. */
       .badge[data-origin='LEARNED'] {
-        color: var(--color-primary);
-        border-color: var(--color-primary);
+        color: var(--color-primary-text);
+        border-color: var(--color-primary-text);
       }
       .badge--warn {
-        color: var(--color-warning, #b45309);
-        border-color: var(--color-warning, #b45309);
+        color: var(--color-warning);
+        border-color: var(--color-warning);
       }
       .warn {
         margin: 0;
         font-size: var(--text-sm);
-        color: var(--color-warning, #b45309);
+        color: var(--color-warning);
       }
       .rule__body {
         margin: 0;
@@ -280,24 +292,6 @@ import {
         display: flex;
         flex-wrap: wrap;
         gap: var(--space-2);
-      }
-      .btn {
-        padding: var(--space-1) var(--space-3);
-        font: inherit;
-        font-size: var(--text-sm);
-        color: inherit;
-        background: var(--color-bg);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
-        cursor: pointer;
-      }
-      .btn--danger {
-        color: var(--color-danger);
-        border-color: var(--color-danger);
-      }
-      .btn:disabled {
-        opacity: 0.6;
-        cursor: default;
       }
     `,
   ],

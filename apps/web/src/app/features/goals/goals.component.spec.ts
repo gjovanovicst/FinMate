@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { GoalsComponent } from './goals.component';
 import type { Goal } from './goals.view';
 
@@ -77,7 +78,7 @@ async function mount(
   // child throws NG0950 when the harness evaluates it before the binding lands. What this file proves
   // is that the figures are *handed* to it.
   TestBed.overrideComponent(GoalsComponent, {
-    remove: { imports: [MoneyComponent] },
+    remove: { imports: [MoneyComponent, IconComponent] },
     add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
 
@@ -227,7 +228,7 @@ describe('the goals screen', () => {
       providers: [provideZonelessChangeDetection(), { provide: GraphqlClient, useValue: client }],
     });
     TestBed.overrideComponent(GoalsComponent, {
-      remove: { imports: [MoneyComponent] },
+      remove: { imports: [MoneyComponent, IconComponent] },
       add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
     });
     const fixture: Fixture = TestBed.createComponent(GoalsComponent);

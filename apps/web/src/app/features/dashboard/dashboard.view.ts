@@ -157,6 +157,6 @@ export interface RecentRow {
 }
 
 /** A money amount as in-sentence text, for a chart label or a footnote. Never a raw number. */
-export function amountText(value: MoneyWire | null | undefined): string {
-  return moneyText(value);
+export function amountText(value: MoneyWire | null | undefined, locale = 'en'): string {
+  return moneyText(value, locale);
 }

@@ -3,6 +3,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { BrandComponent } from '../../shared/ui/brand/brand.component';
 import { AUTH_STYLES } from './auth.styles';
 
 /** What the exchange with the API produced. `missing` never leaves the browser. */
@@ -35,9 +36,10 @@ type VerifyState = 'working' | 'verified' | 'failed' | 'missing';
 @Component({
   selector: 'fm-verify-email',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink],
+  imports: [RouterLink, BrandComponent],
   template: `
     <section class="auth">
+      <div class="auth__brand"><fm-brand size="lg" [tagline]="true" /></div>
       @switch (state()) {
         @case ('working') {
           <h1 class="auth__title">{{ i18n.t('verify.title') }}</h1>

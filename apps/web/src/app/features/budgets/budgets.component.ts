@@ -99,10 +99,18 @@ const DELETE_BUDGET = /* GraphQL */ `
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, RouterLink, MoneyComponent],
   template: `
-    <header class="head">
-      <h1 class="head__title">{{ i18n.t('budgets.title') }}</h1>
-      <p class="head__sub">{{ i18n.t('budgets.explain') }}</p>
-    </header>
+    <div class="fm-page">
+      <header class="fm-page__head">
+        <div>
+          <h1 class="fm-page__title">{{ i18n.t('budgets.title') }}</h1>
+          <p class="fm-page__sub">{{ i18n.t('budgets.explain') }}</p>
+        </div>
+        <div class="fm-page__actions">
+          <!-- The old footer link was an orphan below the last card and duplicated the sidebar's
+               Overview. As a header action it is the same destination where a page action belongs. -->
+          <a class="fm-chip" routerLink="/">{{ i18n.t('nav.dashboard') }}</a>
+        </div>
+      </header>
 
     @if (error()) {
       <p class="alert" role="alert">{{ error() }}</p>
@@ -176,7 +184,7 @@ const DELETE_BUDGET = /* GraphQL */ `
             <!-- The bar plots BOTH ratios: fill is usage, the marker is where the period should be.
                  Comparing them is the whole point, so they share one scale and one card. -->
             <div
-              class="bar"
+              class="fm-progress bar"
               role="progressbar"
               [attr.aria-valuenow]="percent(budget.usedRatio)"
               aria-valuemin="0"
@@ -188,7 +196,7 @@ const DELETE_BUDGET = /* GraphQL */ `
                 })
               "
             >
-              <span class="bar__fill" [style.inline-size.%]="percent(budget.usedRatio)"></span>
+              <span class="fm-progress__bar" [style.inline-size.%]="percent(budget.usedRatio)"></span>
               <span class="bar__pace" [style.inset-inline-start.%]="percent(budget.elapsedRatio)"></span>
             </div>
 
@@ -216,22 +224,10 @@ const DELETE_BUDGET = /* GraphQL */ `
       </ul>
     }
 
-    <p class="foot">
-      <!-- The link class is what gives this anchor the shared control floor (task 4.3.1e): it was the
-           last control in the app under the house rule's 44 px, and one class is the whole fix. -->
-      <a class="link" routerLink="/">{{ i18n.t('nav.dashboard') }}</a>
-    </p>
+    </div>
   `,
   styles: [
     `
-      .head {
-        margin-block-end: var(--space-5);
-      }
-      .head__title {
-        margin: 0;
-        font-size: var(--text-2xl);
-      }
-      .head__sub,
       .muted {
         margin: var(--space-1) 0 0;
         color: var(--color-text-muted);
@@ -358,27 +354,19 @@ const DELETE_BUDGET = /* GraphQL */ `
         font-size: var(--text-lg);
         font-weight: 600;
       }
+      /* .fm-progress supplies the track (--space-2 tall, pill radius) and .fm-progress__bar the fill.
+         The screen adds only the pace marker, which shares the track's scale. */
       .bar {
         position: relative;
-        block-size: 8px;
-        border-radius: 999px;
-        background: var(--color-border);
-        overflow: hidden;
       }
-      .bar__fill {
-        position: absolute;
-        inset-block: 0;
-        inset-inline-start: 0;
-        background: var(--color-primary);
-      }
-      .card--over .bar__fill {
+      .card--over .fm-progress__bar {
         background: var(--color-danger);
       }
       /* The pace marker: a hairline at the share of the period already elapsed. */
       .bar__pace {
         position: absolute;
-        inset-block: -2px;
-        inline-size: 2px;
+        inset-block: 0;
+        inline-size: var(--space-1);
         background: var(--color-text-muted);
       }
       .card__figures {
@@ -401,10 +389,6 @@ const DELETE_BUDGET = /* GraphQL */ `
         border: none;
         cursor: pointer;
         text-decoration: underline;
-      }
-      .foot {
-        margin-block-start: var(--space-6);
-        font-size: var(--text-sm);
       }
     `,
   ],
@@ -513,17 +497,17 @@ export class BudgetsComponent {
   }
 
   spentText(budget: BudgetNode): string {
-    return moneyText(budget.spent);
+    return moneyText(budget.spent, this.i18n.tag());
   }
 
   amountText(budget: BudgetNode): string {
-    return moneyText(budget.amount);
+    return moneyText(budget.amount, this.i18n.tag());
   }
 
   /** The overspend magnitude for "Over by {amount}" — the sign is carried by the sentence. */
   overText(budget: BudgetNode): string {
     const remaining = BigInt(budget.remaining.amountMinor);
     const magnitude = remaining < 0n ? -remaining : remaining;
-    return `${toMajorString(magnitude, budget.remaining.currency)} ${budget.remaining.currency}`;
+    return moneyText({ amountMinor: magnitude.toString(), currency: budget.remaining.currency }, this.i18n.tag());
   }
 }

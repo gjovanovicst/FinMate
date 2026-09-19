@@ -40,7 +40,7 @@ import { syncedAtLabel } from '../../../core/offline/sync.view';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <article class="purpose">
-      <h3>{{ i18n.t(nameKey()) }}</h3>
+      <h3 class="fm-card__title">{{ i18n.t(nameKey()) }}</h3>
       <p class="muted small">{{ i18n.t(whatKey()) }}</p>
 
       @for (destination of destinations(); track destination.provider + '|' + destination.region) {
@@ -72,17 +72,17 @@ import { syncedAtLabel } from '../../../core/offline/sync.view';
         @if (mayChange()) {
           <div class="actions">
             @if (state() === 'GRANTED') {
-              <button type="button" class="btn btn--danger" [disabled]="saving()" (click)="decide.emit('WITHDRAWN')">
+              <button type="button" class="fm-btn fm-btn--danger" [disabled]="saving()" (click)="decide.emit('WITHDRAWN')">
                 {{ i18n.t('consent.withdraw') }}
               </button>
             } @else {
-              <button type="button" class="btn" [disabled]="saving()" (click)="decide.emit('GRANTED')">
+              <button type="button" class="fm-btn" [disabled]="saving()" (click)="decide.emit('GRANTED')">
                 {{ i18n.t('consent.allow') }}
               </button>
               @if (state() === 'NOT_ASKED') {
                 <!-- Present only while the question is open. Once somebody has declined, "Decline" again
                      would be a button that changes nothing. -->
-                <button type="button" class="btn" [disabled]="saving()" (click)="decide.emit('DECLINED')">
+                <button type="button" class="fm-btn" [disabled]="saving()" (click)="decide.emit('DECLINED')">
                   {{ i18n.t('consent.decline') }}
                 </button>
               }
@@ -100,8 +100,8 @@ import { syncedAtLabel } from '../../../core/offline/sync.view';
       flex-direction: column;
       gap: 0.25rem;
     }
+    /* The size and weight come from .fm-card__title; only the margin is this component's business. */
     h3 {
-      font-size: 1rem;
       margin: 0;
     }
     p {

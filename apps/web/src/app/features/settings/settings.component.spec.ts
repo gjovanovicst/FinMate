@@ -14,6 +14,7 @@ import type { AiEgressEntry, ConsentRecord } from '../../core/consent/consent.vi
 import { purposeToAsk, stateOf } from '../../core/consent/consent.view';
 import { SyncService } from '../../core/offline/sync.service';
 import { ConsentPurposeComponent } from '../../shared/ui/consent-purpose/consent-purpose.component';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { SettingsComponent } from './settings.component';
 
 initAngularTesting();
@@ -122,7 +123,9 @@ async function mount(
   });
   // The purpose card is opaque in this spec; see the AI-section suite's header below.
   TestBed.overrideComponent(SettingsComponent, {
-    remove: { imports: [ConsentPurposeComponent] },
+    // `fm-icon` is a signal-input child; the JIT runner cannot bind one from a parent template
+    // (NG0950), so it is removed alongside the consent card.
+    remove: { imports: [ConsentPurposeComponent, IconComponent] },
     add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
   const fixture = TestBed.createComponent(SettingsComponent);
@@ -252,7 +255,9 @@ describe('SettingsComponent — the AI consent section', () => {
     const { fixture } = await mount('OFF', { consent: consentStub([record('AI_DATA_PROCESSING', 'NOT_ASKED')]) });
 
     const section = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('#ai-heading')!.parentElement!;
-    expect(section.querySelector('h2')?.textContent).toBe('AI');
+    // Trimmed: the card title now carries an `fm-icon` before its words, so the heading's text content
+    // has the icon element's own whitespace around it.
+    expect(section.querySelector('h2')?.textContent?.trim()).toBe('AI');
     expect(text(fixture)).toContain('Some of the app can use an AI model');
     // The §6.4 assertion list and the §6.1 trade, both required by §6.6.
     expect(text(fixture)).toContain('Never sent:');

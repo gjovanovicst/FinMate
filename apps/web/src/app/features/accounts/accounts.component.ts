@@ -72,87 +72,84 @@ const CREATE_ACCOUNT_MUTATION = /* GraphQL */ `
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, MoneyComponent],
   template: `
-    <header class="head">
-      <h1 class="head__title">{{ i18n.t('accounts.title') }}</h1>
-      <p class="head__sub">
-        @if (loading()) {
-          {{ i18n.t('accounts.loading') }}
-        } @else {
-          {{ i18n.t('accounts.count', { shown: accounts().length, total: totalCount() }) }}
-        }
-      </p>
-    </header>
-
-    @if (error()) {
-      <p class="alert" role="alert">{{ error() }}</p>
-    }
-
-    @if (!loading() && accounts().length === 0) {
-      <!-- Actionable empty state, not decoration: it says what to do next. -->
-      <div class="empty">
-        <p class="empty__title">{{ i18n.t('accounts.emptyTitle') }}</p>
-        <p class="empty__body">{{ i18n.t('accounts.emptyBody') }}</p>
-      </div>
-    }
-
-    <ul class="list">
-      @for (account of accounts(); track account.id) {
-        <li class="card">
-          <div class="card__main">
-            <span class="card__name">{{ account.name }}</span>
-            <span class="card__kind">{{ kindLabel(account.kind) }}</span>
-          </div>
-          <fm-money class="card__amount" [amount]="account.balance" />
-        </li>
-      }
-    </ul>
-
-    <section class="create">
-      <h2 class="create__title">{{ i18n.t('accounts.newTitle') }}</h2>
-      <form class="create__form" [formGroup]="form" (ngSubmit)="create()" novalidate>
-        <label class="field">
-          <span class="field__label">{{ i18n.t('accounts.name') }}</span>
-          <input class="field__input" type="text" formControlName="name" required />
-        </label>
-
-        <label class="field">
-          <span class="field__label">{{ i18n.t('accounts.kind') }}</span>
-          <select class="field__input" formControlName="kind">
-            @for (kind of accountKinds; track kind) {
-              <option [value]="kind">{{ i18n.t(kindKey(kind)) }}</option>
+    <div class="fm-page">
+      <header class="fm-page__head">
+        <div>
+          <h1 class="fm-page__title">{{ i18n.t('accounts.title') }}</h1>
+          <p class="fm-page__sub">
+            @if (loading()) {
+              {{ i18n.t('accounts.loading') }}
+            } @else {
+              {{ i18n.t('accounts.count', { shown: accounts().length, total: totalCount() }) }}
             }
-          </select>
-        </label>
+          </p>
+        </div>
+      </header>
 
-        <label class="field">
-          <span class="field__label">{{ i18n.t('accounts.openingBalance') }}</span>
-          <input class="field__input" type="text" inputmode="numeric" formControlName="openingMinor" />
-          <!-- Deliberately parama, not dinara: the wire format is integer minor units (ADR-003)
-               and a text field avoids the browser handing us a float. A friendlier dinara input
-               with correct parsing is a Phase 1 concern. -->
-          <span class="field__hint">{{ i18n.t('accounts.openingBalanceHint') }}</span>
-        </label>
+      @if (error()) {
+        <p class="alert" role="alert">{{ error() }}</p>
+      }
 
-        <button class="create__submit" type="submit" [disabled]="creating()">
-          {{ creating() ? i18n.t('accounts.submitting') : i18n.t('accounts.submit') }}
-        </button>
-      </form>
-    </section>
+      @if (!loading() && accounts().length === 0) {
+        <!-- Actionable empty state, not decoration: it says what to do next. -->
+        <div class="empty">
+          <p class="empty__title">{{ i18n.t('accounts.emptyTitle') }}</p>
+          <p class="empty__body">{{ i18n.t('accounts.emptyBody') }}</p>
+        </div>
+      }
+
+      <ul class="list">
+        @for (account of accounts(); track account.id) {
+          <li class="fm-card card">
+            <div class="card__main">
+              <span class="card__name">{{ account.name }}</span>
+              <span class="card__kind">{{ kindLabel(account.kind) }}</span>
+            </div>
+            <fm-money class="card__amount" [amount]="account.balance" />
+          </li>
+        }
+      </ul>
+
+      <section class="create">
+        <h2 class="create__title">{{ i18n.t('accounts.newTitle') }}</h2>
+        <form class="create__form" [formGroup]="form" (ngSubmit)="create()" novalidate>
+          <label class="fm-field">
+            <span class="fm-field__label">{{ i18n.t('accounts.name') }}</span>
+            <input class="fm-field__input" type="text" formControlName="name" required />
+          </label>
+
+          <label class="fm-field">
+            <span class="fm-field__label">{{ i18n.t('accounts.kind') }}</span>
+            <select class="fm-field__input" formControlName="kind">
+              @for (kind of accountKinds; track kind) {
+                <option [value]="kind">{{ i18n.t(kindKey(kind)) }}</option>
+              }
+            </select>
+          </label>
+
+          <label class="fm-field">
+            <span class="fm-field__label">{{ i18n.t('accounts.openingBalance') }}</span>
+            <input
+              class="fm-field__input"
+              type="text"
+              inputmode="numeric"
+              formControlName="openingMinor"
+            />
+            <!-- Deliberately parama, not dinara: the wire format is integer minor units (ADR-003)
+                 and a text field avoids the browser handing us a float. A friendlier dinara input
+                 with correct parsing is a Phase 1 concern. -->
+            <span class="fm-field__hint">{{ i18n.t('accounts.openingBalanceHint') }}</span>
+          </label>
+
+          <button class="fm-btn fm-btn--primary create__submit" type="submit" [disabled]="creating()">
+            {{ creating() ? i18n.t('accounts.submitting') : i18n.t('accounts.submit') }}
+          </button>
+        </form>
+      </section>
+    </div>
   `,
   styles: [
     `
-      .head {
-        margin-block-end: var(--space-5);
-      }
-      .head__title {
-        margin: 0;
-        font-size: var(--text-2xl);
-      }
-      .head__sub {
-        margin: var(--space-1) 0 0;
-        color: var(--color-text-muted);
-        font-size: var(--text-sm);
-      }
       .alert {
         padding: var(--space-3);
         border-radius: var(--radius-md);
@@ -168,7 +165,7 @@ const CREATE_ACCOUNT_MUTATION = /* GraphQL */ `
       }
       .empty__title {
         margin: 0 0 var(--space-2);
-        font-weight: 600;
+        font-weight: var(--weight-semibold);
       }
       .empty__body {
         margin: 0;
@@ -178,19 +175,16 @@ const CREATE_ACCOUNT_MUTATION = /* GraphQL */ `
       .list {
         display: grid;
         gap: var(--space-3);
-        margin: 0 0 var(--space-6);
+        margin: 0;
         padding: 0;
         list-style: none;
       }
+      /* The shared card supplies the surface, radius, padding and shadow; only the row's own
+         arrangement is local. */
       .card {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: var(--space-4);
-        padding: var(--space-4);
-        background: var(--color-surface);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
       }
       .card__main {
         display: grid;
@@ -198,7 +192,7 @@ const CREATE_ACCOUNT_MUTATION = /* GraphQL */ `
         min-inline-size: 0;
       }
       .card__name {
-        font-weight: 600;
+        font-weight: var(--weight-semibold);
         /* Long account names must not push the amount off-screen on a narrow phone. */
         overflow-wrap: anywhere;
       }
@@ -207,7 +201,7 @@ const CREATE_ACCOUNT_MUTATION = /* GraphQL */ `
         color: var(--color-text-subtle);
       }
       .card__amount {
-        font-weight: 600;
+        font-weight: var(--weight-semibold);
         font-size: var(--text-lg);
       }
       .create {
@@ -223,43 +217,9 @@ const CREATE_ACCOUNT_MUTATION = /* GraphQL */ `
         gap: var(--space-4);
         max-inline-size: 420px;
       }
-      .field {
-        display: grid;
-        gap: var(--space-1);
-      }
-      .field__label {
-        font-size: var(--text-sm);
-        color: var(--color-text-muted);
-      }
-      .field__hint {
-        font-size: var(--text-xs);
-        color: var(--color-text-subtle);
-      }
-      .field__input {
-        padding: var(--space-3);
-        font: inherit;
-        color: var(--color-text);
-        background: var(--color-surface);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-      }
+      /* Placement only: the button's box is the shared fm-btn fm-btn--primary. */
       .create__submit {
         justify-self: start;
-        padding: var(--space-3) var(--space-5);
-        font: inherit;
-        font-weight: 600;
-        color: var(--color-primary-contrast);
-        background: var(--color-primary);
-        border: none;
-        border-radius: var(--radius-md);
-        cursor: pointer;
-      }
-      .create__submit:hover:not(:disabled) {
-        background: var(--color-primary-hover);
-      }
-      .create__submit:disabled {
-        opacity: 0.6;
-        cursor: default;
       }
     `,
   ],

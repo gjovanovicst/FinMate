@@ -56,6 +56,35 @@ describe('the icon registry', () => {
   it('refuses an unknown name instead of drawing a box', () => {
     expect(isIconName('definitely-not-an-icon')).toBe(false);
   });
+
+  it('has a path for every name a template writes', () => {
+    // The dangerous half of "an unknown name renders nothing": a **missing** path is invisible. Two were
+    // live when this test was added — chevronDown in the shell's account block and chevronRight in the
+    // dashboard's View-all chips — because a name that is never in the registry produces no error, no
+    // warning and no glyph. Reading the templates is the only way to catch it, so this does.
+    // `src/app/**`: three levels up from `src/app/shared/ui/icon/`. The first attempt used two and
+    // matched only the shared folder — 1 name out of 40, i.e. a guard that would have passed forever.
+    const sources = import.meta.glob('../../../**/*.ts', {
+      query: '?raw',
+      import: 'default',
+      eager: true,
+    }) as Record<string, string>;
+
+    const named = new Set<string>();
+    for (const [file, source] of Object.entries(sources)) {
+      // The registry itself and its specs are where names are *defined*, not used.
+      if (file.includes('icon-paths') || file.includes('icon.spec')) continue;
+
+      // The two ways a template supplies a name that is knowable at rest. A computed name (the theme
+      // toggle's sun/moon) is covered by its own spec, because only a runtime branch can see it.
+      for (const match of source.matchAll(/<fm-icon[^>]*\bname="([a-zA-Z]+)"/g)) named.add(match[1]!);
+      for (const match of source.matchAll(/\[name\]="'([a-zA-Z]+)'"/g)) named.add(match[1]!);
+    }
+
+    expect(named.size).toBeGreaterThan(10);
+    const missing = [...named].filter((name) => !isIconName(name)).sort();
+    expect(missing, 'these names are rendered but have no path in the registry').toEqual([]);
+  });
 });
 
 describe('fm-icon', () => {

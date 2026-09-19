@@ -7,6 +7,7 @@ import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
 import { ReviewQueueStore } from '../../core/review/review-queue.store';
 import type { ConfidenceBand } from '../../shared/confidence';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import {
   badgeOf as confidenceBandOf,
@@ -61,17 +62,20 @@ import {
 @Component({
   selector: 'fm-review',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MoneyComponent],
+  imports: [MoneyComponent, IconComponent],
   template: `
-    <header class="head">
-      <div>
-        <h1 class="head__title">{{ i18n.t('review.title') }}</h1>
-        <p class="head__sub">{{ i18n.t('review.subtitle') }}</p>
-      </div>
-      @if (!loading() && items().length > 0) {
-        <p class="head__count">{{ i18n.t('review.waiting', { count: items().length }) }}</p>
-      }
-    </header>
+    <div class="fm-page">
+      <header class="fm-page__head">
+        <div>
+          <h1 class="fm-page__title">{{ i18n.t('review.title') }}</h1>
+          <p class="fm-page__sub">{{ i18n.t('review.subtitle') }}</p>
+        </div>
+        @if (!loading() && items().length > 0) {
+          <div class="fm-page__actions">
+            <p class="head__count">{{ i18n.t('review.waiting', { count: items().length }) }}</p>
+          </div>
+        }
+      </header>
 
     @if (error(); as message) {
       <p class="alert" role="alert">
@@ -121,7 +125,11 @@ import {
               <span class="row__description">{{ item.transaction.description }}</span>
               <fm-money [amount]="item.transaction.amount" />
               <span class="badge" [attr.data-band]="badgeOf(item)">
-                <span class="badge__glyph" aria-hidden="true">{{ glyphFor(item) }}</span>
+                <fm-icon
+                  class="badge__glyph"
+                  [name]="glyphFor(item)"
+                  [size]="16"
+                />
                 <span class="badge__text">{{ badgeLabel(item) }}</span>
               </span>
             </div>
@@ -225,31 +233,17 @@ import {
     } @else if (error() === null) {
       <!-- Only when the queue is genuinely empty. Showing "all caught up" under a failure banner
            would state a fact the screen does not know (docs/02 §6). -->
-      <div class="empty">
+      <section class="fm-card empty">
         <p class="empty__title">{{ i18n.t('review.empty') }}</p>
         <p class="empty__body">{{ i18n.t('review.emptyBody') }}</p>
-      </div>
+      </section>
     }
+    </div>
   `,
   styles: [
     `
       :host {
         display: block;
-      }
-      .head {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: var(--space-2);
-      }
-      .head__title {
-        margin: 0;
-        font-size: var(--text-xl);
-      }
-      .head__sub {
-        margin: var(--space-1) 0 var(--space-4);
-        color: var(--color-text-muted);
       }
       .head__count {
         margin: 0;
@@ -261,7 +255,7 @@ import {
         flex-wrap: wrap;
         align-items: center;
         gap: var(--space-3);
-        margin: 0 0 var(--space-3);
+        margin: 0;
         padding: var(--space-3);
         border: 1px solid var(--color-danger);
         border-radius: var(--radius-md);
@@ -271,7 +265,7 @@ import {
         display: none;
       }
       .announce {
-        margin: 0 0 var(--space-2);
+        margin: 0;
         font-size: var(--text-sm);
         color: var(--color-text-muted);
       }
@@ -280,7 +274,7 @@ import {
         flex-wrap: wrap;
         align-items: center;
         gap: var(--space-3);
-        margin: 0 0 var(--space-3);
+        margin: 0;
         padding: var(--space-3);
         border: 1px solid var(--color-primary);
         border-radius: var(--radius-md);
@@ -300,16 +294,17 @@ import {
         background: var(--color-surface);
       }
       .empty {
-        margin-block-start: var(--space-5);
+        gap: var(--space-2);
         text-align: center;
-        color: var(--color-text-muted);
       }
       .empty__title {
         margin: 0;
         font-size: var(--text-lg);
       }
       .empty__body {
-        margin: var(--space-1) 0 0;
+        margin: 0;
+        color: var(--color-text-muted);
+        font-size: var(--text-sm);
       }
       .queue {
         display: grid;
@@ -380,10 +375,11 @@ import {
         color: var(--color-danger);
       }
       .badge[data-band='VERIFY'] {
-        color: var(--color-warning, #b45309);
+        color: var(--color-warning);
       }
       .badge[data-band='AUTO'] {
-        color: var(--color-primary);
+        /* Brand **text**, not the fill: --color-primary is 3.78:1 on a card and this is a 12 px badge. */
+        color: var(--color-primary-text);
       }
       .row__choice {
         display: flex;
@@ -473,7 +469,7 @@ import {
         color: var(--color-text-subtle);
       }
       .shortcuts {
-        margin: var(--space-4) 0 0;
+        margin: 0;
         font-size: var(--text-xs);
         color: var(--color-text-subtle);
       }
@@ -575,16 +571,23 @@ export class ReviewComponent {
     return `review-select-${id}`;
   }
 
-  glyphFor(item: ReviewItem): string {
+  /**
+   * The band's glyph, as an **icon name** rather than an emoji.
+   *
+   * It returned 🟢🟡🔴⚪ until the ADR-039 audit: an emoji is drawn by the platform in its own colour, so
+   * the reserved band tints (`--color-success`/`--color-warning`/`--color-danger`, ADR-009) could not
+   * reach it and the badge looked different on every OS. The tint is already on the badge's `[data-band]`
+   * rule, which now colours the stroke instead of a glyph the platform owns.
+   */
+  glyphFor(item: ReviewItem): 'check' | 'alert' | 'info' {
     switch (this.badgeOf(item)) {
       case 'AUTO':
-        return '🟢';
+        return 'check';
       case 'VERIFY':
-        return '🟡';
       case 'ASK':
-        return '🔴';
+        return 'alert';
       default:
-        return '⚪';
+        return 'info';
     }
   }
 

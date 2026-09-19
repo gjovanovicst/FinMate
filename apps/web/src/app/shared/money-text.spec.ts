@@ -4,8 +4,25 @@ import { moneyText, overrunText, overspendText, toMajorString } from './money-te
 
 const rsd = (amountMinor: string) => ({ amountMinor, currency: 'RSD' });
 
+/**
+ * `Intl` separates a currency code from its number with a **non-breaking** space (U+00A0), which is the
+ * typographically correct choice and unreadable in a diff. The assertions below compare against an
+ * ordinary space so a failure shows the four digits that changed rather than two identical-looking runs.
+ */
+const plain = (value: string | null): string | null => value?.replace(/\u00a0/g, ' ') ?? null;
+
+/**
+ * In-sentence money.
+ *
+ * The rule these pin is that a figure inside a sentence is formatted by the **same** formatter `fm-money`
+ * renders through. It was not: this module used the domain's ungrouped `toMajorString` and appended the
+ * currency by hand, so the dashboard showed "of 1200000.00 RSD" directly beneath an `fm-money` reading
+ * "RSD 1,200,000.00" — two spellings of one quantity on one card (ADR-039 audit).
+ */
 describe('toMajorString', () => {
-  it('renders major units with two decimals', () => {
+  it('renders major units with two decimals, and **only** the digits', () => {
+    // This form goes into a text field that `parseAmount` reads back, so a currency code or a grouping
+    // separator in here is a parsing bug rather than a nicety.
     expect(toMajorString(30000000n)).toBe('300000.00');
     expect(toMajorString(1700344n)).toBe('17003.44');
   });
@@ -26,9 +43,21 @@ describe('toMajorString', () => {
   });
 });
 
+describe('the difference between the editable form and the sentence form', () => {
+  it('is what stops a field from showing a currency, and a sentence from losing one', () => {
+    expect(toMajorString(30000000n)).toBe('300000.00');
+    expect(plain(moneyText({ amountMinor: '30000000', currency: 'RSD' }))).toBe('RSD 300,000.00');
+  });
+
+  it('groups in the locale it is given, so a Serbian household sees Serbian grouping', () => {
+    // 'sr-Latn' uses a dot as the thousands separator and a comma for the decimal.
+    expect(moneyText({ amountMinor: '30000000', currency: 'RSD' }, 'sr-Latn')).toContain('300.000');
+  });
+});
+
 describe('moneyText', () => {
-  it('appends the currency', () => {
-    expect(moneyText(rsd('30000000'))).toBe('300000.00 RSD');
+  it('renders the currency and the grouping, exactly as fm-money does', () => {
+    expect(plain(moneyText(rsd('30000000')))).toBe('RSD 300,000.00');
   });
 
   it('renders nothing when the value is absent, so no stray "0.00" implies a budget of zero', () => {
@@ -42,7 +71,7 @@ describe('overspendText', () => {
     // The bug this exists for: `available` is negative when the month is over, and `overrunText`'s own
     // sign gate returns null for it — so the dashboard's over-budget line never rendered. Found by the
     // visual pass with a month 9,4 M RSD over its available budget and no warning on screen.
-    expect(overspendText(rsd('-946112900'))).toBe('9461129.00 RSD');
+    expect(plain(overspendText(rsd('-946112900')))).toBe('RSD 9,461,129.00');
   });
 
   it('is silent while the month is inside its available budget', () => {
@@ -58,7 +87,7 @@ describe('overspendText', () => {
 
 describe('overrunText', () => {
   it('renders a positive overrun', () => {
-    expect(overrunText(rsd('200000'))).toBe('2000.00 RSD');
+    expect(plain(overrunText(rsd('200000')))).toBe('RSD 2,000.00');
   });
 
   it('returns null for a NEGATIVE Balance, because a signed Balance is under budget', () => {

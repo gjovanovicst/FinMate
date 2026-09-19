@@ -2606,6 +2606,47 @@ invisible to `web:typecheck`, to the unit suite and to a code read:
    to an ellipsis ("Su…", "Gor…") in the side-by-side arrangement written for a card width this layout never
    reaches. All three are fixed, and the pass now captures **1920** as well as 320/768/1280.
 
+**The second wave: five reviewers, twenty-three screens, and what they found.** Every route was captured at
+1280 px in both themes and audited against the token layer and the reference screen. The findings that
+mattered were all of one kind — **a declaration that silently did nothing** — and none of them was visible
+to `web:typecheck`, the unit suite or a code read:
+
+- **`--color-accent` and `--color-on-accent` have never existed**, and three screens referenced them: the
+  analytics trend line and its category bars painted in `--color-text` (`currentColor` in the fallback),
+  the goals progress bar filled black, and the assistant's *Ask* button **and the button that writes to the
+  ledger** rendered as plain grey text with no fill and no border. `styles.tokens.spec.ts` now fails on any
+  `var(--…)` the token layer does not declare.
+- **Two icons the templates render were not in the registry** (`chevronDown` in the shell's account block,
+  `chevronRight` in the dashboard's View-all chips), and trimming the registry with a careless regex had
+  deleted three more that the shell draws (`calendar`, `globe`, `logout`). `fm-icon` renders nothing for an
+  unknown name *by design*, so all five were invisible holes. `icon.spec.ts` now scans the source for every
+  name a template writes.
+- **`/settings` used `.btn`, `.btn--danger` and `.card`, none of which were defined anywhere** — its
+  controls rendered as raw user-agent buttons (grey fill, 2px white border, no radius) beside a card with
+  no surface and no shadow.
+- **The unauthenticated shell had no `grid-template-areas`**, so `grid-area: content` invented implicit
+  named lines and the sign-in form was laid out in the third column of a 3×3 implicit grid: 226 px wide, in
+  the bottom-right corner of an empty page. Every public route was affected.
+- **The transaction sheet's footer was 155 px below the dialog** at a 900 px window and the camera button
+  was sliced in half by its edge: the whole dialog scrolled instead of its body.
+- **`/merchants` rendered a 4 673 px page** with the editor column empty for 4 300 px of it.
+- **In-sentence money was ungrouped** (`1200000.00 RSD`) directly beneath an `fm-money` reading
+  `RSD 1,200,000.00` on the same card, because `money-text.ts` appended a currency to the domain's
+  ungrouped formatter. The sentence helpers now go through `formatMoney`; the editable form is unchanged,
+  because that one feeds `parseAmount`.
+- **Four controls carried the brand as *text*** (`--color-primary` at 3.80–4.14:1 against the 4.5:1 floor)
+  on the ledger, the capture examples, the rules badge and the review badge.
+- The platform's blue checkbox accent, the raw file picker on `/receipts`, emoji confidence badges on
+  `/review`, and a `/notifications` page centred at 46 rem while every other screen starts at the scaffold's
+  edge.
+
+**The lesson is the shape, not the list.** Every one of these was a *claim that did not hold*: a token
+nobody defined, an icon nobody had, a class nobody declared, an area nobody had named, a "keeps the button
+on screen" comment that was never measured at a short window. Three guards now exist because the first
+three would have been caught by them — `styles.tokens.spec.ts` measures contrast **and** token references,
+`template-literal.spec.ts` fails on the backtick that broke the build eight times in this task, and
+`icon.spec.ts` fails on a rendered name with no path.
+
 **Consequences.**
 - ✅ A person can choose light, dark, or the operating system, and the choice survives a reload without a
   flash of the wrong theme.

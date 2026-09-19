@@ -1,4 +1,4 @@
-import { toMajorString as domainMajorString, type Money } from '@finmate/domain';
+import { formatMoney, toMajorString as domainMajorString, type Money } from '@finmate/domain';
 
 import type { MoneyWire } from './ui/money/money.component';
 
@@ -24,14 +24,25 @@ export function moneyFromWire(value: MoneyWire): Money {
   return { amountMinor: BigInt(value.amountMinor), currency: value.currency };
 }
 
-/** `"300000.00"` — minor units to major units, no currency and no grouping. */
+/**
+ * `"2000.00"` — minor units as major units, **no grouping and no currency**.
+ *
+ * This is the *editable* form: its callers put it in a text field that `parseAmount` reads back, so
+ * grouping or a currency code in here would be a parsing bug ("RSD 2,000.00" is not an amount a person
+ * typed). Everything a person *reads* goes through {@link moneyText} instead, which is the domain's
+ * locale-aware currency formatter — the one `fm-money` renders through.
+ *
+ * The distinction is not academic: the ADR-039 audit found the dashboard showing `1200000.00 RSD` in a
+ * sentence directly beneath an `fm-money` reading `RSD 1,200,000.00`. The fix was to route the **sentence**
+ * helpers through `formatMoney`, not to change this one — which would have broken every amount field.
+ */
 export function toMajorString(minor: bigint, currency = 'RSD'): string {
   return domainMajorString({ amountMinor: minor, currency });
 }
 
-/** A Money value as `"300000.00 RSD"`, or `''` when absent. Never a sign — see `overrunText`. */
-export function moneyText(value: MoneyWire | null | undefined): string {
-  return value ? `${domainMajorString(moneyFromWire(value))} ${value.currency}` : '';
+/** A Money value as `"RSD 300,000.00"`, or `''` when absent. Never a sign — see `overrunText`. */
+export function moneyText(value: MoneyWire | null | undefined, locale = 'en'): string {
+  return value ? formatMoney(moneyFromWire(value), locale) : '';
 }
 
 /**
@@ -42,11 +53,11 @@ export function moneyText(value: MoneyWire | null | undefined): string {
  * for any non-null value printed "over budget" on a month comfortably inside its budget — so the
  * gate is the sign, and callers use `@if (…; as over)` to render nothing when it is null.
  */
-export function overrunText(value: MoneyWire | null | undefined): string | null {
+export function overrunText(value: MoneyWire | null | undefined, locale = 'en'): string | null {
   if (!value) return null;
   const minor = BigInt(value.amountMinor);
   if (minor <= 0n) return null;
-  return `${domainMajorString(moneyFromWire(value))} ${value.currency}`;
+  return formatMoney(moneyFromWire(value), locale);
 }
 
 /**
@@ -61,9 +72,9 @@ export function overrunText(value: MoneyWire | null | undefined): string | null 
  *
  * The returned text is the **magnitude**, because "over budget by −9.461.129,00 RSD" is not a sentence.
  */
-export function overspendText(value: MoneyWire | null | undefined): string | null {
+export function overspendText(value: MoneyWire | null | undefined, locale = 'en'): string | null {
   if (!value) return null;
   const minor = BigInt(value.amountMinor);
   if (minor >= 0n) return null;
-  return `${domainMajorString({ amountMinor: -minor, currency: value.currency })} ${value.currency}`;
+  return formatMoney({ amountMinor: -minor, currency: value.currency }, locale);
 }

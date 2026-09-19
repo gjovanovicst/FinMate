@@ -17,6 +17,7 @@ import { firstValueFrom } from 'rxjs';
 import { GraphqlClient, GraphQLRequestError } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import {
   cameraSupported,
   messageKeyForStatus,
@@ -57,9 +58,13 @@ import {
 @Component({
   selector: 'fm-receipt-attachment',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [IconComponent],
   template: `
     <section class="receipt">
-      <h2>{{ i18n.t('receipts.title') }}</h2>
+      <h2 class="fm-card__title">
+        <fm-icon name="receipts" [size]="18" />
+        {{ i18n.t('receipts.title') }}
+      </h2>
       <p class="muted small">{{ i18n.t('receipts.hint') }}</p>
 
       @if (attachmentLoading()) {
@@ -68,7 +73,7 @@ import {
       @if (attachmentError(); as key) {
         <p class="error" role="alert">
           {{ i18n.t(key) }}
-          <button type="button" class="btn btn--link" (click)="reloadAttachment()">{{ i18n.t('receipts.retry') }}</button>
+          <button type="button" class="fm-btn fm-btn--ghost" (click)="reloadAttachment()">{{ i18n.t('receipts.retry') }}</button>
         </p>
       }
       @if (attachment(); as file) {
@@ -79,7 +84,7 @@ import {
           @for (key of notes(); track key) {
             <figcaption class="muted small">{{ i18n.t(key) }}</figcaption>
           }
-          <button type="button" class="btn btn--danger" [disabled]="busy()" (click)="remove()">
+          <button type="button" class="fm-btn fm-btn--danger" [disabled]="busy()" (click)="remove()">
             {{ i18n.t('receipts.remove') }}
           </button>
         </figure>
@@ -88,11 +93,11 @@ import {
       <div class="capture">
         @if (cameraLive()) {
           <video #video autoplay muted playsinline [attr.aria-label]="i18n.t('receipts.camera.preview')"></video>
-          <button type="button" class="btn btn--primary" [disabled]="busy()" (click)="capture()">
+          <button type="button" class="fm-btn fm-btn--primary" [disabled]="busy()" (click)="capture()">
             {{ i18n.t('receipts.camera.capture') }}
           </button>
         } @else {
-          <button type="button" class="btn btn--primary" [disabled]="busy() || cameraStarting()" (click)="startCamera()">
+          <button type="button" class="fm-btn fm-btn--primary" [disabled]="busy() || cameraStarting()" (click)="startCamera()">
             {{ i18n.t('receipts.camera.start') }}
           </button>
         }
@@ -112,7 +117,7 @@ import {
       @if (error(); as key) {
         <p class="error" role="alert">
           {{ i18n.t(key) }}
-          <button type="button" class="btn btn--link" (click)="retry()">{{ i18n.t('receipts.retry') }}</button>
+          <button type="button" class="fm-btn fm-btn--ghost" (click)="retry()">{{ i18n.t('receipts.retry') }}</button>
         </p>
       }
 
@@ -120,7 +125,16 @@ import {
         @if (busy()) {
           <span class="muted small">{{ i18n.t(status() ?? 'receipts.status.uploading') }}</span>
           @if (percent() > 0) {
-            <progress [value]="percent()" max="100"></progress>
+            <span
+              class="fm-progress upload"
+              role="progressbar"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              [attr.aria-valuenow]="percent()"
+              [attr.aria-label]="i18n.t('receipts.status.uploading')"
+            >
+              <span class="fm-progress__bar" [style.inline-size.%]="percent()"></span>
+            </span>
             <span class="muted small">{{ percent() }}%</span>
           }
         } @else if (status(); as key) {
@@ -133,44 +147,32 @@ import {
     .receipt {
       display: flex;
       flex-direction: column;
-      gap: var(--space-2, 0.5rem);
+      gap: var(--space-2);
       /* No fixed width: the 320 px pass found every one of them (docs/02 §9). */
       max-inline-size: 100%;
     }
-    h2 { font-size: 1.05rem; margin: 0; }
-    .muted { color: var(--color-text-muted, #5a5a6b); }
-    .small { font-size: 0.85rem; }
-    .capture { display: flex; flex-wrap: wrap; gap: var(--space-3, 0.75rem); align-items: center; }
+    .muted { color: var(--color-text-muted); }
+    .small { font-size: var(--text-sm); }
+    .capture { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
     video {
       inline-size: 100%;
       max-inline-size: 22rem;
-      border-radius: var(--radius-md, 10px);
-      background: #000;
+      border-radius: var(--radius-md);
+      background: var(--color-surface-sunken);
     }
-    .preview { margin: 0; display: flex; flex-direction: column; gap: var(--space-2, 0.5rem); align-items: flex-start; }
+    .preview { margin: 0; display: flex; flex-direction: column; gap: var(--space-2); align-items: flex-start; }
     .preview img {
       max-inline-size: 100%;
       max-block-size: 20rem;
-      border-radius: var(--radius-md, 10px);
-      border: 1px solid var(--color-border, #dcdce5);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--color-border);
     }
-    .file { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.9rem; }
-    .btn {
-      padding: var(--space-2, 0.5rem) var(--space-4, 1rem);
-      font: inherit;
-      font-weight: 600;
-      border: 1px solid transparent;
-      border-radius: var(--radius-md, 10px);
-      cursor: pointer;
-    }
-    .btn:disabled { opacity: 0.6; cursor: default; }
-    .btn--primary { color: var(--color-primary-contrast, #fff); background: var(--color-primary, #5b48e0); }
-    .btn--danger { color: var(--color-danger, #f2555a); background: none; border-color: var(--color-danger, #f2555a); }
-    .btn--link { border: 0; padding: 0; background: none; color: inherit; text-decoration: underline; }
-    .error { color: var(--color-danger, #f2555a); }
-    .ok { color: var(--color-success, #3fbf7f); }
-    .status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2, 0.5rem); min-block-size: 1.25rem; }
-    progress { inline-size: 12rem; max-inline-size: 100%; }
+    .file { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-xs); }
+    .error { color: var(--color-danger); }
+    .ok { color: var(--color-success); }
+    .status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-block-size: var(--space-5); }
+    /* The bar keeps its width; the height and the radius come from .fm-progress. */
+    .upload { inline-size: 12rem; max-inline-size: 100%; }
   `,
 })
 export class ReceiptAttachmentComponent {

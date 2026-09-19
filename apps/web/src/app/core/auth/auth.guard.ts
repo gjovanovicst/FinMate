@@ -36,6 +36,23 @@ export const authenticatedGuard: CanActivateFn = async (route) => {
   return router.createUrlTree(['/sign-in']);
 };
 
+/**
+ * Restore the session if the cookie still carries one, and **never redirect**.
+ *
+ * The catch-all route needs this and neither guard fits it. Without it `restore()` never runs on an
+ * unknown URL — it lives only in the two guards — so a signed-in person who mistypes an address, or
+ * refreshes one, landed on a page with no navigation and no account block that read as signed out. That
+ * was true of `/nema-ovakve-strane` in both themes (found by the ADR-039 audit).
+ *
+ * A signed-out visitor is left alone: "not found" is the honest answer to a bad URL, and bouncing them to
+ * `/sign-in` would claim the page exists behind a login.
+ */
+export const shellGuard: CanActivateFn = async () => {
+  const auth = inject(AuthStore);
+  if (!auth.isAuthenticated() && auth.restoreFailure() === null) await auth.restore();
+  return true;
+};
+
 /** Keep signed-in users away from the auth pages. */
 export const anonymousGuard: CanActivateFn = async () => {
   const auth = inject(AuthStore);

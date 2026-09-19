@@ -22,6 +22,7 @@ import type { CaptureCommitInput } from '../../core/offline/sync.types';
 import { isRetryable } from '../../core/offline/outbox';
 import { toMajorString } from '../../shared/money-text';
 import { ConsentSheetComponent } from '../../shared/ui/consent-sheet/consent-sheet.component';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import {
   ambiguousRows,
@@ -224,14 +225,15 @@ interface RowError {
 @Component({
   selector: 'fm-capture',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MoneyComponent, RouterLink, ConsentSheetComponent],
+  imports: [MoneyComponent, RouterLink, ConsentSheetComponent, IconComponent],
   template: `
-    <header class="head">
-      <div>
-        <h1 class="head__title">{{ i18n.t('capture.title') }}</h1>
-        <p class="head__sub">{{ i18n.t('capture.subtitle') }}</p>
-      </div>
-    </header>
+    <div class="fm-page">
+      <header class="fm-page__head">
+        <div>
+          <h1 class="fm-page__title">{{ i18n.t('capture.title') }}</h1>
+          <p class="fm-page__sub">{{ i18n.t('capture.subtitle') }}</p>
+        </div>
+      </header>
 
     @if (degraded()) {
       <p class="note" role="status">{{ i18n.t('capture.degraded') }}</p>
@@ -317,9 +319,14 @@ interface RowError {
         </section>
       }
 
-      <section class="field-panel">
+      <section class="fm-card">
+        <div class="fm-card__head">
+          <h2 class="fm-card__title">
+            <fm-icon name="capture" [size]="18" />
+            {{ i18n.t('capture.label') }}
+          </h2>
+        </div>
         <label class="field">
-          <span class="field__label">{{ i18n.t('capture.label') }}</span>
           <textarea
             #input
             class="field__input field__input--capture"
@@ -328,6 +335,7 @@ interface RowError {
             autocapitalize="sentences"
             [placeholder]="i18n.t('capture.placeholder')"
             [value]="text()"
+            [attr.aria-label]="i18n.t('capture.label')"
             [attr.aria-describedby]="'capture-hint'"
             (input)="onInput($any($event.target).value)"
             (keydown)="onKeydown($event)"
@@ -388,7 +396,7 @@ interface RowError {
               >
                 <div class="row__head">
                   <span class="badge" [attr.data-lane]="laneOf(row)">
-                    <span class="badge__glyph" aria-hidden="true">{{ glyphFor(laneOf(row)) }}</span>
+                    <fm-icon class="badge__glyph" [name]="iconFor(laneOf(row))" [size]="16" />
                     <span class="badge__label">{{ laneLabel(laneOf(row)) }}</span>
                     @if (row.proposal; as proposal) {
                       <span class="badge__percent">
@@ -546,24 +554,17 @@ interface RowError {
         </section>
       }
     }
+    </div>
   `,
   styles: [
     `
       :host {
         display: block;
       }
-      .head__title {
-        margin: 0;
-        font-size: var(--text-xl);
-      }
-      .head__sub {
-        margin: var(--space-1) 0 var(--space-4);
-        color: var(--color-text-muted);
-      }
       .alert,
       .note,
       .success {
-        margin: 0 0 var(--space-3);
+        margin: 0;
         padding: var(--space-3);
         border-radius: var(--radius-md);
         border: 1px solid var(--color-border);
@@ -573,13 +574,13 @@ interface RowError {
         color: var(--color-danger);
       }
       .note {
-        background: color-mix(in srgb, var(--color-warning, #b45309) 12%, transparent);
+        background: color-mix(in srgb, var(--color-warning) 12%, transparent);
       }
       .success {
-        border-color: var(--color-success, #15803d);
+        border-color: var(--color-success);
       }
       .panel--after {
-        border-inline-start: 3px solid var(--color-warning, #b45309);
+        border-inline-start: 3px solid var(--color-warning);
       }
       .after__actions {
         display: flex;
@@ -620,7 +621,6 @@ interface RowError {
         overflow-wrap: anywhere;
       }
       .panel {
-        margin-block-end: var(--space-4);
         padding: var(--space-4);
         border: 1px solid var(--color-border);
         border-radius: var(--radius-md);
@@ -639,12 +639,6 @@ interface RowError {
       .errors {
         margin: 0;
         padding-inline-start: var(--space-4);
-      }
-      .field-panel {
-        padding: var(--space-4);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-        background: var(--color-surface);
       }
       .field {
         display: grid;
@@ -694,7 +688,7 @@ interface RowError {
         background: none;
         border: none;
         padding: 0;
-        color: var(--color-primary);
+        color: var(--color-primary-text);
         font: inherit;
         font-size: var(--text-sm);
         text-decoration: underline;
@@ -706,7 +700,6 @@ interface RowError {
         color: var(--color-text-subtle);
       }
       .empty {
-        margin-block-start: var(--space-5);
         text-align: center;
         color: var(--color-text-muted);
       }
@@ -718,7 +711,7 @@ interface RowError {
         margin: var(--space-1) 0 0;
       }
       .preview {
-        margin-block-start: var(--space-5);
+        min-inline-size: 0;
       }
       .preview__title {
         margin: 0 0 var(--space-2);
@@ -756,16 +749,19 @@ interface RowError {
         font-size: var(--text-xs);
       }
       .badge__glyph {
-        font-weight: 700;
+        flex: none;
       }
       .badge[data-lane='AUTO'] .badge__glyph {
-        color: var(--color-success, #15803d);
+        color: var(--color-success);
       }
       .badge[data-lane='ADVISORY'] .badge__glyph {
-        color: var(--color-warning, #b45309);
+        color: var(--color-warning);
       }
       .badge[data-lane='ASK'] .badge__glyph {
         color: var(--color-danger);
+      }
+      .badge[data-lane='AWAITING'] .badge__glyph {
+        color: var(--color-text-subtle);
       }
       .badge__label,
       .badge__percent {
@@ -792,7 +788,7 @@ interface RowError {
         font-size: var(--text-xs);
       }
       .row__warn {
-        color: var(--color-warning, #b45309);
+        color: var(--color-warning);
       }
       .row__provenance {
         color: var(--color-text-subtle);
@@ -1133,8 +1129,24 @@ export class CaptureComponent {
     return Math.round(confidence * 100);
   }
 
-  glyphFor(lane: CaptureLane): string {
-    return lane === 'AUTO' ? '●' : lane === 'ADVISORY' ? '◐' : lane === 'ASK' ? '!' : '…';
+  /**
+   * The lane's glyph, as an **icon name** rather than the Unicode text it used to be.
+   *
+   * It returned the characters ● ◐ ! … until the ADR-039 audit: Unicode punctuation drawn as chrome is
+   * a text node, so it took the font's metrics and colour rules that assumed a text glyph. The tint now
+   * sits on the `.badge[data-lane] .badge__glyph` rules and colours the icon's stroke instead.
+   */
+  iconFor(lane: CaptureLane): 'check' | 'info' | 'alert' | 'more' {
+    switch (lane) {
+      case 'AUTO':
+        return 'check';
+      case 'ADVISORY':
+        return 'info';
+      case 'ASK':
+        return 'alert';
+      default:
+        return 'more';
+    }
   }
 
   laneLabel(lane: CaptureLane): string {

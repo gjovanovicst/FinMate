@@ -432,7 +432,10 @@ import {
   styles: [
     `
       .wrap {
-        max-inline-size: var(--content-max, 48rem);
+        /* A reading measure for a chat transcript, not a design token: prose wants a narrower measure
+           than the shell's content box. It used to read var(--content-max, 48rem) and --content-max does
+           not exist — harmless because of the fallback, which is exactly why it went unnoticed. */
+        max-inline-size: 48rem;
       }
       .head {
         margin: 0;
@@ -457,7 +460,11 @@ import {
         flex-wrap: wrap;
         gap: var(--space-2);
       }
+      /* The surface and ink come from the shared field primitive; without them the field rendered in the
+         browser's own dark fill (measured rgb(59,59,59) against a navy page). */
       .ask__input {
+        background: var(--color-surface-raised);
+        color: var(--color-text);
         flex: 1 1 16rem;
         min-inline-size: 0;
         padding: var(--space-2) var(--space-3);
@@ -465,14 +472,18 @@ import {
         border-radius: var(--radius-md);
         font: inherit;
       }
+      /* The composer's action. --color-accent and --color-on-accent were used here and neither token
+         exists, so the fill was transparent and the ink inherited: Ask rendered as plain grey text with no
+         button around it (ADR-039 audit, both themes). */
       .ask__go {
         padding: var(--space-2) var(--space-4);
-        border: 0;
-        border-radius: var(--radius-md);
-        background: var(--color-accent);
-        color: var(--color-on-accent);
+        border: 1px solid var(--color-primary);
+        border-radius: var(--radius-sm);
+        background: var(--color-primary);
+        color: var(--color-primary-contrast);
         font: inherit;
-        font-weight: 600;
+        font-size: var(--text-sm);
+        font-weight: var(--weight-medium);
         cursor: pointer;
       }
       .ask__go:disabled {
@@ -515,7 +526,7 @@ import {
         text-align: start;
       }
       .chip:hover {
-        border-color: var(--color-accent);
+        border-color: var(--color-primary);
       }
       /*
         An action chip carries a **verb**, so it is marked as the other mode rather than looking like one
@@ -525,12 +536,12 @@ import {
       */
       .chip--action {
         border-style: dashed;
-        border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+        border-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-border));
         color: var(--color-primary-text, inherit);
       }
       .chip--action:hover {
         border-style: solid;
-        border-color: var(--color-accent);
+        border-color: var(--color-primary);
       }
       .turn {
         margin-block-start: var(--space-5);
@@ -631,10 +642,10 @@ import {
         padding: var(--space-4);
         border: 1px solid var(--color-primary-text);
         border-radius: var(--radius-lg);
-        background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+        background: color-mix(in srgb, var(--color-primary) 6%, transparent);
       }
       .act--done {
-        background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+        background: color-mix(in srgb, var(--color-primary) 12%, transparent);
       }
       .act__title {
         margin: 0 0 var(--space-2);
@@ -730,12 +741,14 @@ import {
         border-color: var(--color-primary-text);
         font-weight: 600;
       }
+      /* The button that writes to the ledger. It had the same dead pair, so the most consequential control
+         on the screen rendered as unstyled text. */
       .act__confirm {
         margin-block-start: var(--space-4);
-        border: 0;
-        background: var(--color-accent);
-        color: var(--color-on-accent);
-        font-weight: 600;
+        border: 1px solid var(--color-primary);
+        background: var(--color-primary);
+        color: var(--color-primary-contrast);
+        font-weight: var(--weight-medium);
       }
       .act__confirm:disabled,
       .act__toggle:disabled,

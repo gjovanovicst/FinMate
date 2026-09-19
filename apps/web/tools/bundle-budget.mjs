@@ -39,7 +39,11 @@ const ROUTES_SOURCE = join(WEB, 'src', 'app', 'app.routes.ts');
 
 /** The documented ceilings, in KB gzipped — docs/07 §11's table verbatim. `null` = the eager shell. */
 export const DOCUMENTED = [
-  { label: 'App shell + boot', match: null, budget: 150 },
+  // 150 → 156 in ADR-039: the registry was missing glyphs the templates already rendered (chevronDown,
+  // chevronRight) and had lost three others to a bad regex (calendar, globe, logout), so restoring them is
+  // a fix rather than growth; the rest is the shared field primitive, the danger button, the native-control
+  // accent and the extracted brand component. docs/07 §11 states the reason and the option not taken.
+  { label: 'App shell + boot', match: null, budget: 156 },
   { label: 'Capture', match: 'features/capture/capture.component.ts', budget: 180 },
   { label: 'Dashboard', match: 'features/dashboard/dashboard.component.ts', budget: 220 },
   { label: 'Transaction list', match: 'features/transactions/transactions.component.ts', budget: 260 },

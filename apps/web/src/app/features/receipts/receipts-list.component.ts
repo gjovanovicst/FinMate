@@ -19,6 +19,7 @@ import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient, GraphQLRequestError } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { MoneyComponent, type MoneyWire } from '../../shared/ui/money/money.component';
 import {
   cameraSupported,
@@ -67,18 +68,23 @@ import {
 @Component({
   selector: 'fm-receipts-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, MoneyComponent],
+  imports: [RouterLink, MoneyComponent, IconComponent],
   template: `
-    <main class="wrap">
-      <header class="head">
-        <h1 class="head__title">{{ i18n.t('receipts.library.title') }}</h1>
-        <p class="head__sub">{{ i18n.t('receipts.library.subtitle') }}</p>
+    <main class="fm-page">
+      <header class="fm-page__head">
+        <div>
+          <h1 class="fm-page__title">{{ i18n.t('receipts.library.title') }}</h1>
+          <p class="fm-page__sub">{{ i18n.t('receipts.library.subtitle') }}</p>
+        </div>
       </header>
 
-      <section class="capture" aria-labelledby="receipts-capture">
-        <h2 class="capture__title" id="receipts-capture">
-          {{ i18n.t('receipts.library.capture') }}
-        </h2>
+      <section class="fm-card" aria-labelledby="receipts-capture">
+        <div class="fm-card__head">
+          <h2 class="fm-card__title" id="receipts-capture">
+            <fm-icon name="receipts" [size]="18" />
+            {{ i18n.t('receipts.library.capture') }}
+          </h2>
+        </div>
 
         <div class="capture__row">
           @if (cameraLive()) {
@@ -89,13 +95,13 @@ import {
               playsinline
               [attr.aria-label]="i18n.t('receipts.camera.preview')"
             ></video>
-            <button type="button" class="btn btn--primary" [disabled]="busy()" (click)="capture()">
+            <button type="button" class="fm-btn fm-btn--primary" [disabled]="busy()" (click)="capture()">
               {{ i18n.t('receipts.camera.capture') }}
             </button>
           } @else {
             <button
               type="button"
-              class="btn btn--primary"
+              class="fm-btn fm-btn--primary"
               [disabled]="busy() || cameraStarting()"
               (click)="startCamera()"
             >
@@ -103,10 +109,14 @@ import {
             </button>
           }
 
-          <label class="file">
-            <span>{{ i18n.t('receipts.file.label') }}</span>
+          <!-- The native control stays in the DOM (so it is what the label activates and what a
+               keyboard reaches) but is never the UA's own chrome: the label is the button. -->
+          <label class="fm-btn file" for="receipts-file">
+            {{ i18n.t('receipts.file.label') }}
             <input
               #file
+              id="receipts-file"
+              class="fm-visually-hidden"
               type="file"
               accept="image/*"
               capture="environment"
@@ -127,7 +137,16 @@ import {
           @if (busy()) {
             <span class="muted small">{{ i18n.t(status() ?? 'receipts.status.uploading') }}</span>
             @if (percent() > 0) {
-              <progress [value]="percent()" max="100"></progress>
+              <span
+                class="fm-progress"
+                role="progressbar"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                [attr.aria-valuenow]="percent()"
+                [attr.aria-label]="i18n.t(status() ?? 'receipts.status.uploading')"
+              >
+                <span class="fm-progress__bar" [style.inline-size.%]="percent()"></span>
+              </span>
               <span class="muted small">{{ percent() }}%</span>
             }
           } @else if (status(); as key) {
@@ -138,7 +157,7 @@ import {
         @if (uploadError(); as key) {
           <p class="error" role="alert">
             {{ i18n.t(key) }}
-            <button type="button" class="btn btn--link" (click)="retry()">
+            <button type="button" class="fm-btn fm-btn--ghost error__retry" (click)="retry()">
               {{ i18n.t('receipts.retry') }}
             </button>
           </p>
@@ -186,39 +205,11 @@ import {
     </main>
   `,
   styles: `
-    .wrap {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-4);
-      max-inline-size: 100%;
-    }
-    .head__title {
-      margin: 0;
-      font-size: var(--text-2xl);
-    }
-    .head__sub {
-      margin: var(--space-1) 0 0;
-      color: var(--color-text-muted);
-      font-size: var(--text-sm);
-    }
     .muted {
       color: var(--color-text-muted);
     }
     .small {
       font-size: var(--text-xs);
-    }
-    .capture {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-3);
-      padding: var(--space-4);
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-lg);
-    }
-    .capture__title {
-      margin: 0;
-      font-size: var(--text-lg);
     }
     .capture__row {
       display: flex;
@@ -230,42 +221,20 @@ import {
       inline-size: 100%;
       max-inline-size: 22rem;
       border-radius: var(--radius-md);
-      background: #000;
+      background: var(--color-surface-sunken);
     }
-    .file {
-      display: flex;
-      flex-direction: column;
-      gap: 0.2rem;
-      font-size: var(--text-sm);
-      min-inline-size: 0;
-    }
-    .btn {
-      padding: var(--space-2) var(--space-4);
-      font: inherit;
-      font-weight: 600;
-      border: 1px solid transparent;
-      border-radius: var(--radius-md);
-      cursor: pointer;
-    }
-    .btn:disabled {
-      opacity: 0.6;
-      cursor: default;
-    }
-    .btn--primary {
-      color: var(--color-primary-contrast);
-      background: var(--color-primary);
-    }
-    .btn--link {
-      border: 0;
-      padding: 0;
-      background: none;
-      color: inherit;
-      text-decoration: underline;
+    /* The label is the button that opens the picker (the native input is visually hidden but stays in
+       the DOM); this mirrors the focus ring onto it while that input holds focus. */
+    .file:focus-within {
+      border-color: var(--color-primary);
     }
     .error {
       margin: 0;
       color: var(--color-danger);
       font-size: var(--text-sm);
+    }
+    .error__retry {
+      margin-inline-start: var(--space-2);
     }
     .ok {
       color: var(--color-success);
@@ -283,11 +252,11 @@ import {
       flex-wrap: wrap;
       align-items: center;
       gap: var(--space-2);
-      min-block-size: 1.25rem;
+      min-block-size: var(--space-5);
     }
-    progress {
-      inline-size: 12rem;
-      max-inline-size: 100%;
+    .status .fm-progress {
+      flex: 1 1 auto;
+      min-inline-size: 0;
     }
     .empty {
       padding: var(--space-5);
@@ -297,7 +266,7 @@ import {
     }
     .empty__title {
       margin: 0 0 var(--space-2);
-      font-weight: 600;
+      font-weight: var(--weight-semibold);
     }
     .empty__body {
       margin: 0;
@@ -328,7 +297,7 @@ import {
       border-color: var(--color-primary);
     }
     .row__date {
-      font-weight: 600;
+      font-weight: var(--weight-semibold);
       min-inline-size: 0;
     }
     .row__figure {
@@ -343,8 +312,8 @@ import {
     }
     .row__state {
       font-size: var(--text-xs);
-      font-weight: 600;
-      padding: 0.1rem 0.4rem;
+      font-weight: var(--weight-semibold);
+      padding: var(--space-1) var(--space-2);
       border-radius: var(--radius-sm);
       border: 1px solid currentColor;
     }

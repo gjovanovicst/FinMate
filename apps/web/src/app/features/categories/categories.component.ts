@@ -5,6 +5,7 @@ import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient, GraphQLRequestError } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import {
   buildTree,
   moveRefusal,
@@ -17,6 +18,15 @@ import {
   type KeywordMatchMode,
   type KeywordPolarity,
 } from './categories.view';
+
+/**
+ * The colour the editor opens on when a Category has none stored.
+ *
+ * This is a **form default for user data, not a theme colour**: `Category.color` is whatever the user
+ * picked for their own tree, so its default belongs to neither the palette nor the token set. It is
+ * named once because two literals are how a default drifts.
+ */
+const DEFAULT_CATEGORY_COLOR = '#888888';
 
 /** The `totalCount` of a filtered Transaction page — reused here as a cheap scoped COUNT. */
 interface UsageResult {
@@ -137,309 +147,303 @@ const CATEGORY_USAGE = /* GraphQL */ `
 @Component({
   selector: 'fm-categories',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, IconComponent],
   template: `
-    <header class="head">
-      <div>
-        <h1 class="head__title">{{ i18n.t('categories.title') }}</h1>
-        <p class="head__sub">{{ i18n.t('categories.subtitle') }}</p>
+    <div class="fm-page">
+      <header class="fm-page__head">
+        <div>
+          <h1 class="fm-page__title">{{ i18n.t('categories.title') }}</h1>
+          <p class="fm-page__sub">{{ i18n.t('categories.subtitle') }}</p>
+        </div>
+        <div class="fm-page__actions">
+          <button class="fm-btn fm-btn--primary" type="button" (click)="startCreate(null)">
+            {{ i18n.t('categories.add') }}
+          </button>
+        </div>
+      </header>
+
+      <!-- Segmented control: depth and kind are structural, so the two trees never mix (I-3). -->
+      <div class="segmented" role="group" [attr.aria-label]="i18n.t('categories.title')">
+        <button
+          class="segmented__option"
+          type="button"
+          [class.segmented__option--on]="kind() === 'EXPENSE'"
+          [attr.aria-pressed]="kind() === 'EXPENSE'"
+          (click)="setKind('EXPENSE')"
+        >
+          {{ i18n.t('categories.expenses') }}
+        </button>
+        <button
+          class="segmented__option"
+          type="button"
+          [class.segmented__option--on]="kind() === 'INCOME'"
+          [attr.aria-pressed]="kind() === 'INCOME'"
+          (click)="setKind('INCOME')"
+        >
+          {{ i18n.t('categories.income') }}
+        </button>
       </div>
-      <button class="btn btn--primary" type="button" (click)="startCreate(null)">
-        {{ i18n.t('categories.add') }}
-      </button>
-    </header>
 
-    <!-- Segmented control: depth and kind are structural, so the two trees never mix (I-3). -->
-    <div class="segmented" role="group" [attr.aria-label]="i18n.t('categories.title')">
-      <button
-        class="segmented__option"
-        type="button"
-        [class.segmented__option--on]="kind() === 'EXPENSE'"
-        [attr.aria-pressed]="kind() === 'EXPENSE'"
-        (click)="setKind('EXPENSE')"
-      >
-        {{ i18n.t('categories.expenses') }}
-      </button>
-      <button
-        class="segmented__option"
-        type="button"
-        [class.segmented__option--on]="kind() === 'INCOME'"
-        [attr.aria-pressed]="kind() === 'INCOME'"
-        (click)="setKind('INCOME')"
-      >
-        {{ i18n.t('categories.income') }}
-      </button>
-    </div>
+      @if (error()) {
+        <p class="alert" role="alert">{{ error() }}</p>
+      }
 
-    @if (error()) {
-      <p class="alert" role="alert">{{ error() }}</p>
-    }
+      <!-- Announced, never shown: the move already changed the list visually. -->
+      <p class="fm-visually-hidden" aria-live="polite">{{ announcement() }}</p>
 
-    <!-- Announcements for moves, which otherwise change the list silently for a screen reader. -->
-    <p class="announce" aria-live="polite">{{ announcement() }}</p>
-
-    @if (creatingParent() !== undefined) {
-      <section class="create">
-        <h2 class="create__title">{{ i18n.t('categories.addTitle') }}</h2>
-        <form class="create__form" [formGroup]="createForm" (ngSubmit)="create()" novalidate>
-          <label class="field">
-            <span class="field__label">{{ i18n.t('categories.name') }}</span>
-            <input class="field__input" type="text" formControlName="name" required />
-          </label>
-          <label class="field">
-            <span class="field__label">{{ i18n.t('categories.parent') }}</span>
-            <select class="field__input" formControlName="parentId">
-              <option value="">{{ i18n.t('categories.topLevel') }}</option>
-              @for (option of parentOptions(null); track option.id) {
-                <option [value]="option.id">{{ option.path.join(' › ') }}</option>
-              }
-            </select>
-          </label>
-          <div class="create__actions">
-            <button class="btn btn--primary" type="submit" [disabled]="busy()">
-              {{ busy() ? i18n.t('categories.creating') : i18n.t('categories.create') }}
-            </button>
-            <button class="btn" type="button" (click)="cancelCreate()">
-              {{ i18n.t('categories.cancel') }}
-            </button>
-          </div>
-        </form>
-      </section>
-    }
-
-    <div class="editor">
-      <section class="pane">
-        @if (loading()) {
-          <p class="muted">{{ i18n.t('accounts.loading') }}</p>
-        } @else if (rows().length === 0) {
-          <div class="empty">
-            <p class="empty__title">{{ i18n.t('categories.empty') }}</p>
-            <p class="empty__body">{{ i18n.t('categories.emptyBody') }}</p>
-          </div>
-        } @else {
-          <ul class="tree" role="tree" [attr.aria-label]="i18n.t('categories.title')">
-            @for (row of rows(); track row.node.id) {
-              <li class="tree__item" role="treeitem" [attr.aria-level]="row.depth + 1">
-                <div
-                  class="tree__row"
-                  [class.tree__row--on]="selectedId() === row.node.id"
-                  [style.padding-inline-start.rem]="1 + row.depth * 1.25"
-                >
-                  @if (row.hasChildren) {
-                    <button
-                      class="tree__twisty"
-                      type="button"
-                      (click)="toggleCollapsed(row.node.id)"
-                      [attr.aria-label]="
-                        row.expanded ? i18n.t('categories.collapse') : i18n.t('categories.expand')
-                      "
-                      [attr.aria-expanded]="row.expanded"
-                    >
-                      {{ row.expanded ? '▾' : '▸' }}
-                    </button>
-                  } @else {
-                    <span class="tree__twisty" aria-hidden="true"></span>
-                  }
-
-                  <button
-                    class="tree__select"
-                    type="button"
-                    [attr.aria-current]="selectedId() === row.node.id ? 'true' : null"
-                    (click)="select(row.node.id)"
-                    (keydown)="onKeydown($event, row.node.id)"
-                  >
-                    <span class="tree__icon" aria-hidden="true">{{ row.node.icon ?? '•' }}</span>
-                    <span class="tree__name">{{ row.node.name }}</span>
-                    @if (row.node.isSystem) {
-                      <span class="tree__badge">{{ i18n.t('categories.starter') }}</span>
-                    }
-                    @if (row.node.keywords.length > 0) {
-                      <span class="tree__count">{{ row.node.keywords.length }}</span>
-                    }
-                  </button>
-                </div>
-              </li>
-            }
-          </ul>
-          <p class="hint">{{ i18n.t('categories.keyboardHint') }}</p>
-        }
-      </section>
-
-      <section class="pane pane--detail">
-        @if (selected(); as node) {
-          <h2 class="detail__title">{{ node.path.join(' › ') }}</h2>
-          <p class="hint">{{ usageText() }}</p>
-          <p class="hint">{{ i18n.t('categories.usageNote') }}</p>
-
-          <form class="detail__form" [formGroup]="form" (ngSubmit)="save()" novalidate>
+      @if (creatingParent() !== undefined) {
+        <section class="create">
+          <h2 class="create__title">{{ i18n.t('categories.addTitle') }}</h2>
+          <form class="create__form" [formGroup]="createForm" (ngSubmit)="create()" novalidate>
             <label class="field">
               <span class="field__label">{{ i18n.t('categories.name') }}</span>
               <input class="field__input" type="text" formControlName="name" required />
             </label>
-
             <label class="field">
               <span class="field__label">{{ i18n.t('categories.parent') }}</span>
               <select class="field__input" formControlName="parentId">
                 <option value="">{{ i18n.t('categories.topLevel') }}</option>
-                @for (option of parentOptions(node.id); track option.id) {
+                @for (option of parentOptions(null); track option.id) {
                   <option [value]="option.id">{{ option.path.join(' › ') }}</option>
                 }
               </select>
             </label>
-
-            <label class="field">
-              <span class="field__label">{{ i18n.t('categories.icon') }}</span>
-              <input class="field__input" type="text" maxlength="4" formControlName="icon" />
-              <span class="field__hint">{{ i18n.t('categories.iconHint') }}</span>
-            </label>
-
-            <label class="field">
-              <span class="field__label">{{ i18n.t('categories.color') }}</span>
-              <input class="field__input field__input--color" type="color" formControlName="color" />
-            </label>
-
-            <label class="field field--wide">
-              <span class="field__label">{{ i18n.t('categories.aiDescription') }}</span>
-              <input class="field__input" type="text" formControlName="aiDescription" />
-              <span class="field__hint">{{ i18n.t('categories.aiDescriptionHint') }}</span>
-            </label>
-
-            <div class="detail__actions field--wide">
-              <button class="btn btn--primary" type="submit" [disabled]="busy()">
-                {{ busy() ? i18n.t('categories.saving') : i18n.t('categories.save') }}
+            <div class="create__actions">
+              <button class="fm-btn fm-btn--primary" type="submit" [disabled]="busy()">
+                {{ busy() ? i18n.t('categories.creating') : i18n.t('categories.create') }}
               </button>
-              <button class="btn" type="button" (click)="startCreate(node.id)">
-                {{ i18n.t('categories.addChild') }}
+              <button class="fm-btn" type="button" (click)="cancelCreate()">
+                {{ i18n.t('categories.cancel') }}
               </button>
             </div>
           </form>
+        </section>
+      }
 
-          <section class="keywords">
-            <h3 class="keywords__title">{{ i18n.t('categories.keywords') }}</h3>
-            <p class="hint">{{ i18n.t('categories.keywordsHint') }}</p>
+      <div class="editor">
+        <section class="pane">
+          @if (loading()) {
+            <p class="muted">{{ i18n.t('accounts.loading') }}</p>
+          } @else if (rows().length === 0) {
+            <div class="empty">
+              <p class="empty__title">{{ i18n.t('categories.empty') }}</p>
+              <p class="empty__body">{{ i18n.t('categories.emptyBody') }}</p>
+            </div>
+          } @else {
+            <ul class="tree" role="tree" [attr.aria-label]="i18n.t('categories.title')">
+              @for (row of rows(); track row.node.id) {
+                <li class="tree__item" role="treeitem" [attr.aria-level]="row.depth + 1">
+                  <div
+                    class="tree__row"
+                    [class.tree__row--on]="selectedId() === row.node.id"
+                    [style.padding-inline-start.rem]="1 + row.depth * 1.25"
+                  >
+                    @if (row.hasChildren) {
+                      <button
+                        class="tree__twisty"
+                        type="button"
+                        (click)="toggleCollapsed(row.node.id)"
+                        [attr.aria-label]="
+                          row.expanded ? i18n.t('categories.collapse') : i18n.t('categories.expand')
+                        "
+                        [attr.aria-expanded]="row.expanded"
+                      >
+                        <fm-icon
+                          [name]="row.expanded ? 'chevronDown' : 'chevronRight'"
+                          [size]="16"
+                        />
+                      </button>
+                    } @else {
+                      <span class="tree__twisty" aria-hidden="true"></span>
+                    }
 
-            @if (node.keywords.length === 0) {
-              <p class="hint">{{ i18n.t('categories.noKeywords') }}</p>
-            } @else {
-              <ul class="keywords__list">
-                @for (keyword of node.keywords; track keyword.id) {
-                  <li class="chip" [class.chip--exclude]="keyword.polarity === 'EXCLUDE'">
-                    <span class="chip__mark" aria-hidden="true">
-                      {{ keyword.polarity === 'EXCLUDE' ? '−' : '+' }}
-                    </span>
-                    <span class="chip__word">{{ keyword.keyword }}</span>
-                    <span class="chip__mode">{{ matchModeLabel(keyword.matchMode) }}</span>
                     <button
-                      class="chip__remove"
+                      class="tree__select"
                       type="button"
-                      (click)="removeKeyword(keyword.id)"
-                      [attr.aria-label]="
-                        i18n.t('categories.removeKeyword', { keyword: keyword.keyword })
-                      "
+                      [attr.aria-current]="selectedId() === row.node.id ? 'true' : null"
+                      (click)="select(row.node.id)"
+                      (keydown)="onKeydown($event, row.node.id)"
                     >
-                      ×
+                      <span class="tree__icon" aria-hidden="true">{{ row.node.icon ?? '•' }}</span>
+                      <span class="tree__name">{{ row.node.name }}</span>
+                      @if (row.node.isSystem) {
+                        <span class="fm-chip fm-chip--static">{{ i18n.t('categories.starter') }}</span>
+                      }
+                      @if (row.node.keywords.length > 0) {
+                        <span class="tree__count">{{ row.node.keywords.length }}</span>
+                      }
                     </button>
-                  </li>
-                }
-              </ul>
-            }
+                  </div>
+                </li>
+              }
+            </ul>
+            <p class="hint">{{ i18n.t('categories.keyboardHint') }}</p>
+          }
+        </section>
 
-            <form class="keywords__form" [formGroup]="keywordForm" (ngSubmit)="addKeyword()" novalidate>
+        <section class="pane pane--detail">
+          @if (selected(); as node) {
+            <h2 class="detail__title">{{ node.path.join(' › ') }}</h2>
+            <p class="hint">{{ usageText() }}</p>
+            <p class="hint">{{ i18n.t('categories.usageNote') }}</p>
+
+            <form class="detail__form" [formGroup]="form" (ngSubmit)="save()" novalidate>
               <label class="field">
-                <span class="field__label">{{ i18n.t('categories.keywords') }}</span>
-                <input
-                  class="field__input"
-                  type="text"
-                  formControlName="keyword"
-                  [placeholder]="i18n.t('categories.keywordPlaceholder')"
-                  aria-describedby="keyword-normalised"
-                  required
-                />
-                <!-- The server strips accents and case to match how the pipeline normalises text, so
-                     the stored chip differs from what was typed. Explained up front, because a
-                     silently rewritten input reads as a bug. -->
-                <span class="field__hint" id="keyword-normalised">
-                  {{ i18n.t('categories.keywordNormalised') }}
-                </span>
+                <span class="field__label">{{ i18n.t('categories.name') }}</span>
+                <input class="field__input" type="text" formControlName="name" required />
               </label>
-              <label class="field">
-                <span class="field__label">{{ i18n.t('categories.polarity') }}</span>
-                <select class="field__input" formControlName="polarity">
-                  <option value="INCLUDE">{{ i18n.t('categories.polarityInclude') }}</option>
-                  <option value="EXCLUDE">{{ i18n.t('categories.polarityExclude') }}</option>
-                </select>
-              </label>
-              <label class="field">
-                <span class="field__label">{{ i18n.t('categories.matchMode') }}</span>
-                <select class="field__input" formControlName="matchMode">
-                  <option value="WORD">{{ i18n.t('categories.matchWord') }}</option>
-                  <option value="PREFIX">{{ i18n.t('categories.matchPrefix') }}</option>
-                  <option value="SUBSTRING">{{ i18n.t('categories.matchSubstring') }}</option>
-                </select>
-              </label>
-              <button class="btn" type="submit" [disabled]="busy()">
-                {{ i18n.t('categories.addKeyword') }}
-              </button>
-            </form>
 
-            @if (keywordForm.controls.matchMode.value === 'SUBSTRING') {
-              <p class="hint hint--warn">{{ i18n.t('categories.substringWarning') }}</p>
-            }
-          </section>
-
-          <section class="danger">
-            <h3 class="danger__title">{{ i18n.t('categories.delete') }}</h3>
-
-            @if (deleteRefused()) {
-              <p class="alert" role="alert">{{ deleteRefused() }}</p>
-              <p class="hint">{{ i18n.t('categories.deleteRefusedBody') }}</p>
               <label class="field">
-                <span class="field__label">{{ i18n.t('categories.reassignTo') }}</span>
-                <select class="field__input" [value]="reassignTo()" (change)="setReassignTo($event)">
-                  <option value="">{{ i18n.t('categories.chooseTarget') }}</option>
+                <span class="field__label">{{ i18n.t('categories.parent') }}</span>
+                <select class="field__input" formControlName="parentId">
+                  <option value="">{{ i18n.t('categories.topLevel') }}</option>
                   @for (option of parentOptions(node.id); track option.id) {
                     <option [value]="option.id">{{ option.path.join(' › ') }}</option>
                   }
                 </select>
               </label>
-            }
 
-            <button
-              class="btn btn--danger"
-              type="button"
-              [disabled]="busy() || (deleteRefused() !== null && reassignTo() === '')"
-              (click)="remove()"
-            >
-              {{
-                busy()
-                  ? i18n.t('categories.deleting')
-                  : deleteRefused()
-                    ? i18n.t('categories.reassignAndDelete')
-                    : i18n.t('categories.delete')
-              }}
-            </button>
-          </section>
-        } @else {
-          <p class="muted">{{ i18n.t('categories.selectPrompt') }}</p>
-        }
-      </section>
+              <label class="field">
+                <span class="field__label">{{ i18n.t('categories.icon') }}</span>
+                <input class="field__input" type="text" maxlength="4" formControlName="icon" />
+                <span class="field__hint">{{ i18n.t('categories.iconHint') }}</span>
+              </label>
+
+              <label class="field">
+                <span class="field__label">{{ i18n.t('categories.color') }}</span>
+                <input class="field__input field__input--color" type="color" formControlName="color" />
+              </label>
+
+              <label class="field field--wide">
+                <span class="field__label">{{ i18n.t('categories.aiDescription') }}</span>
+                <input class="field__input" type="text" formControlName="aiDescription" />
+                <span class="field__hint">{{ i18n.t('categories.aiDescriptionHint') }}</span>
+              </label>
+
+              <div class="detail__actions field--wide">
+                <button class="fm-btn fm-btn--primary" type="submit" [disabled]="busy()">
+                  {{ busy() ? i18n.t('categories.saving') : i18n.t('categories.save') }}
+                </button>
+                <button class="fm-btn" type="button" (click)="startCreate(node.id)">
+                  {{ i18n.t('categories.addChild') }}
+                </button>
+              </div>
+            </form>
+
+            <section class="keywords">
+              <h3 class="keywords__title">{{ i18n.t('categories.keywords') }}</h3>
+              <p class="hint">{{ i18n.t('categories.keywordsHint') }}</p>
+
+              @if (node.keywords.length === 0) {
+                <p class="hint">{{ i18n.t('categories.noKeywords') }}</p>
+              } @else {
+                <ul class="keywords__list">
+                  @for (keyword of node.keywords; track keyword.id) {
+                    <li class="fm-chip chip" [class.chip--exclude]="keyword.polarity === 'EXCLUDE'">
+                      <span class="chip__mark" aria-hidden="true">
+                        {{ keyword.polarity === 'EXCLUDE' ? '−' : '+' }}
+                      </span>
+                      <span class="chip__word">{{ keyword.keyword }}</span>
+                      <span class="chip__mode">{{ matchModeLabel(keyword.matchMode) }}</span>
+                      <button
+                        class="chip__remove"
+                        type="button"
+                        (click)="removeKeyword(keyword.id)"
+                        [attr.aria-label]="
+                          i18n.t('categories.removeKeyword', { keyword: keyword.keyword })
+                        "
+                      >
+                        ×
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+
+              <form class="keywords__form" [formGroup]="keywordForm" (ngSubmit)="addKeyword()" novalidate>
+                <label class="field">
+                  <span class="field__label">{{ i18n.t('categories.keywords') }}</span>
+                  <input
+                    class="field__input"
+                    type="text"
+                    formControlName="keyword"
+                    [placeholder]="i18n.t('categories.keywordPlaceholder')"
+                    aria-describedby="keyword-normalised"
+                    required
+                  />
+                  <!-- The server strips accents and case to match how the pipeline normalises text, so
+                       the stored chip differs from what was typed. Explained up front, because a
+                       silently rewritten input reads as a bug. -->
+                  <span class="field__hint" id="keyword-normalised">
+                    {{ i18n.t('categories.keywordNormalised') }}
+                  </span>
+                </label>
+                <label class="field">
+                  <span class="field__label">{{ i18n.t('categories.polarity') }}</span>
+                  <select class="field__input" formControlName="polarity">
+                    <option value="INCLUDE">{{ i18n.t('categories.polarityInclude') }}</option>
+                    <option value="EXCLUDE">{{ i18n.t('categories.polarityExclude') }}</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field__label">{{ i18n.t('categories.matchMode') }}</span>
+                  <select class="field__input" formControlName="matchMode">
+                    <option value="WORD">{{ i18n.t('categories.matchWord') }}</option>
+                    <option value="PREFIX">{{ i18n.t('categories.matchPrefix') }}</option>
+                    <option value="SUBSTRING">{{ i18n.t('categories.matchSubstring') }}</option>
+                  </select>
+                </label>
+                <button class="fm-btn" type="submit" [disabled]="busy()">
+                  {{ i18n.t('categories.addKeyword') }}
+                </button>
+              </form>
+
+              @if (keywordForm.controls.matchMode.value === 'SUBSTRING') {
+                <p class="hint hint--warn">{{ i18n.t('categories.substringWarning') }}</p>
+              }
+            </section>
+
+            <section class="danger">
+              <h3 class="danger__title">{{ i18n.t('categories.delete') }}</h3>
+
+              @if (deleteRefused()) {
+                <p class="alert" role="alert">{{ deleteRefused() }}</p>
+                <p class="hint">{{ i18n.t('categories.deleteRefusedBody') }}</p>
+                <label class="field">
+                  <span class="field__label">{{ i18n.t('categories.reassignTo') }}</span>
+                  <select class="field__input" [value]="reassignTo()" (change)="setReassignTo($event)">
+                    <option value="">{{ i18n.t('categories.chooseTarget') }}</option>
+                    @for (option of parentOptions(node.id); track option.id) {
+                      <option [value]="option.id">{{ option.path.join(' › ') }}</option>
+                    }
+                  </select>
+                </label>
+              }
+
+              <button
+                class="fm-btn fm-btn--danger"
+                type="button"
+                [disabled]="busy() || (deleteRefused() !== null && reassignTo() === '')"
+                (click)="remove()"
+              >
+                {{
+                  busy()
+                    ? i18n.t('categories.deleting')
+                    : deleteRefused()
+                      ? i18n.t('categories.reassignAndDelete')
+                      : i18n.t('categories.delete')
+                }}
+              </button>
+            </section>
+          } @else {
+            <p class="muted">{{ i18n.t('categories.selectPrompt') }}</p>
+          }
+        </section>
+        </div>
     </div>
   `,
   styles: [
     `
-      .head {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: start;
-        justify-content: space-between;
-        gap: var(--space-3);
-        margin-block-end: var(--space-4);
-      }
-      .head__title {
-        margin: 0;
-        font-size: var(--text-2xl);
-      }
-      .head__sub,
       .muted {
         margin: var(--space-1) 0 0;
         color: var(--color-text-muted);
@@ -452,18 +456,9 @@ const CATEGORY_USAGE = /* GraphQL */ `
         color: var(--color-danger);
         font-size: var(--text-sm);
       }
-      /* Announced, never shown: the move already changed the list visually. */
-      .announce {
-        position: absolute;
-        inline-size: 1px;
-        block-size: 1px;
-        overflow: hidden;
-        clip-path: inset(50%);
-        white-space: nowrap;
-      }
       .segmented {
         display: inline-flex;
-        margin-block-end: var(--space-4);
+        justify-self: start;
         border: 1px solid var(--color-border);
         border-radius: var(--radius-md);
         overflow: hidden;
@@ -487,9 +482,6 @@ const CATEGORY_USAGE = /* GraphQL */ `
         background: var(--color-surface);
         border: 1px solid var(--color-border);
         border-radius: var(--radius-lg);
-      }
-      .create {
-        margin-block-end: var(--space-4);
       }
       .create__title {
         margin: 0 0 var(--space-3);
@@ -526,7 +518,7 @@ const CATEGORY_USAGE = /* GraphQL */ `
       }
       .empty__title {
         margin: 0 0 var(--space-2);
-        font-weight: 600;
+        font-weight: var(--weight-semibold);
       }
       .empty__body {
         margin: 0;
@@ -551,7 +543,7 @@ const CATEGORY_USAGE = /* GraphQL */ `
         background: color-mix(in srgb, var(--color-primary) 12%, transparent);
       }
       .tree__twisty {
-        inline-size: 1.5rem;
+        inline-size: var(--control-size);
         padding: 0;
         font: inherit;
         color: var(--color-text-muted);
@@ -575,13 +567,6 @@ const CATEGORY_USAGE = /* GraphQL */ `
       }
       .tree__name {
         overflow-wrap: anywhere;
-      }
-      .tree__badge {
-        padding: 0 var(--space-1);
-        font-size: var(--text-xs);
-        color: var(--color-text-subtle);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
       }
       .tree__count {
         margin-inline-start: auto;
@@ -642,31 +627,7 @@ const CATEGORY_USAGE = /* GraphQL */ `
       }
       .field__input--color {
         padding: var(--space-1);
-        block-size: 2.5rem;
-      }
-      .btn {
-        padding: var(--space-2) var(--space-4);
-        font: inherit;
-        font-weight: 600;
-        color: var(--color-text);
-        background: var(--color-bg);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-        cursor: pointer;
-      }
-      .btn:disabled {
-        opacity: 0.6;
-        cursor: default;
-      }
-      .btn--primary {
-        color: var(--color-primary-contrast);
-        background: var(--color-primary);
-        border-color: transparent;
-      }
-      .btn--danger {
-        color: var(--color-danger);
-        background: none;
-        border-color: var(--color-danger);
+        block-size: var(--control-size-comfortable);
       }
       .detail__actions,
       .create__actions {
@@ -684,7 +645,7 @@ const CATEGORY_USAGE = /* GraphQL */ `
       .danger__title {
         margin: 0;
         font-size: var(--text-sm);
-        font-weight: 600;
+        font-weight: var(--weight-semibold);
       }
       .keywords__form {
         display: grid;
@@ -696,23 +657,21 @@ const CATEGORY_USAGE = /* GraphQL */ `
           align-items: end;
         }
       }
+      /* The shared chip supplies the pill, spacing and border; the keyword chip only adds what the
+         editor needs on top of it. */
       .chip {
-        display: inline-flex;
-        align-items: center;
-        gap: var(--space-1);
         inline-size: fit-content;
         max-inline-size: 100%;
-        padding: var(--space-1) var(--space-2);
+        /* The shared chip is nowrap; a long keyword must wrap inside the detail pane instead. */
+        white-space: normal;
         font-size: var(--text-sm);
-        border: 1px solid var(--color-border);
-        border-radius: 999px;
       }
       /* Exclude reads as a negation, so it is marked with a minus rather than a colour alone. */
       .chip--exclude {
         border-style: dashed;
       }
       .chip__mark {
-        font-weight: 700;
+        font-weight: var(--weight-bold);
       }
       .chip__word {
         overflow-wrap: anywhere;
@@ -767,7 +726,7 @@ export class CategoriesComponent {
     name: ['', [Validators.required, Validators.maxLength(80)]],
     parentId: [''],
     icon: [''],
-    color: ['#888888'],
+    color: [DEFAULT_CATEGORY_COLOR],
     aiDescription: [''],
   });
 
@@ -848,7 +807,7 @@ export class CategoriesComponent {
         name: node.name,
         parentId: node.parentId ?? '',
         icon: node.icon ?? '',
-        color: node.color ?? '#888888',
+        color: node.color ?? DEFAULT_CATEGORY_COLOR,
         aiDescription: node.aiDescription ?? '',
       });
       void this.loadUsage(id);

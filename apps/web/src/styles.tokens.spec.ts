@@ -98,6 +98,69 @@ const THEMES = [
   { name: 'light', tokens: tokensFor(":root[data-theme='light']") },
 ];
 
+/**
+ * Every `var(--token)` a component writes must be a token this file defines.
+ *
+ * This is the guard for ADR-039's most expensive audit finding: `--color-accent` and `--color-on-accent`
+ * were referenced by **three screens** (a chart line, a progress bar, the assistant's Ask button and the
+ * button that writes to the ledger) and **defined nowhere**. CSS treats an undeclared custom property as
+ * invalid at computed-value time, so the declaration is dropped: the chart drew in `--color-text`, the bar
+ * filled black, and two buttons rendered as plain text. Nothing failed — not the type-checker, not the
+ * build, not a screenshot review that had no reference to compare against.
+ *
+ * Tokens a component defines **itself** are legitimate (a component may publish a custom property for its
+ * own children to read), so they are listed rather than guessed at.
+ */
+const LOCALLY_DEFINED = new Set([
+  // `fm-avatar` publishes its tint for its own children.
+  '--fm-avatar-tint',
+  // The onboarding tree sets this per row with `[style.--depth]` and its CSS reads it back; a component
+  // publishing a custom property for its own subtree is a legitimate pattern, not a reference to a token
+  // the layer owes.
+  '--depth',
+]);
+
+describe('token references', () => {
+  /** Every token name declared anywhere in `styles.css`, in any theme block. */
+  const declared = new Set([...CSS.matchAll(/^\s*(--[a-z0-9-]+)\s*:/gim)].map((match) => match[1]!));
+
+  it('declares a value for every token a component references', () => {
+    const sources = import.meta.glob('./app/**/*.ts', {
+      query: '?raw',
+      import: 'default',
+      eager: true,
+    }) as Record<string, string>;
+
+    const missing = new Map<string, string>();
+    for (const [file, source] of Object.entries(sources)) {
+      if (file.endsWith('.spec.ts')) continue;
+
+      // Comments are stripped first: a comment that *names* a token (this guard's own documentation, for
+      // instance) is not a reference, and reporting it would train the reader to ignore the failure.
+      const code = source.replace(/\/\*[\s\S]*?\*\//g, '');
+
+      for (const match of code.matchAll(/var\(\s*(--[a-z0-9-]+)/gi)) {
+        const token = match[1]!;
+        // A name ending in a hyphen is a prefix being composed at runtime (`'var(--chart-' + n + ')'`).
+        if (token.endsWith('-')) continue;
+        if (declared.has(token) || LOCALLY_DEFINED.has(token)) continue;
+        if (!missing.has(token)) missing.set(token, file);
+      }
+    }
+
+    expect(
+      [...missing].map(([token, file]) => `${token} (first seen in ${file})`),
+      'these custom properties are referenced but never defined, so CSS drops the declaration',
+    ).toEqual([]);
+  });
+
+  it('scans the source tree it is supposed to scan', () => {
+    // A glob that matches nothing is a green test that checks nothing.
+    const sources = import.meta.glob('./app/**/*.ts', { query: '?raw', import: 'default', eager: true });
+    expect(Object.keys(sources).length).toBeGreaterThan(50);
+  });
+});
+
 describe.each(THEMES)('$name theme tokens', ({ name, tokens }) => {
   const surfaceNames = [
     '--color-surface',

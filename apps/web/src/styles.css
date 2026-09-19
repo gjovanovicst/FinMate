@@ -500,6 +500,20 @@ a[role='button'],
   background: var(--color-primary-hover);
   border-color: var(--color-primary-hover);
 }
+/* The destructive variant. It existed **four times** in four screens with two different bodies before
+   this (ADR-039's audit), which is exactly the drift one shared class ends. Ink and border rather than a
+   red fill: the filling is reserved for the one card that is a headline (ADR-039), and a filled red
+   button in a list of cards reads as the primary action of the screen. */
+.fm-btn--danger {
+  border-color: var(--color-danger);
+  background: transparent;
+  color: var(--color-danger);
+}
+.fm-btn--danger:hover:not(:disabled) {
+  border-color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+
 .fm-btn--ghost {
   background: transparent;
   border-color: transparent;
@@ -541,6 +555,34 @@ a[role='button'],
   color: var(--color-primary-text);
 }
 
+/* ---- native controls ----
+   A checkbox, a radio and a progress bar draw their accent from the platform unless told otherwise, so a
+   checked box was Chrome's blue while every selected control in the app is violet (found by the ADR-039
+   audit on /notifications). One declaration, so no screen has to remember it. */
+input[type='checkbox'],
+input[type='radio'],
+progress {
+  accent-color: var(--color-primary);
+}
+
+/* A native file input's button is not reachable by class; this is the one hook. The receipts screen pairs
+   it with a branded camera button, and an unstyled picker beside it was the only RAW control in the app. */
+input[type='file']::file-selector-button {
+  margin-inline-end: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+input[type='file']::file-selector-button:hover {
+  border-color: var(--color-border-strong);
+}
+
 /* ---- chip ---- */
 .fm-chip {
   gap: var(--space-1);
@@ -563,6 +605,36 @@ a[role='button'],
 /* A read-only chip: a range, a period, a count. No pointer affordance. */
 .fm-chip--static {
   cursor: default;
+}
+
+/* ---- field ---- */
+.fm-field {
+  display: grid;
+  gap: var(--space-1);
+}
+.fm-field__label {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.fm-field__hint {
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+}
+.fm-field__input {
+  padding: var(--space-3);
+  min-block-size: var(--control-size-comfortable);
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--motion-fast) ease;
+}
+.fm-field__input:hover {
+  border-color: var(--color-border-strong);
+}
+.fm-field__input:focus-visible {
+  border-color: var(--color-primary);
 }
 
 /* ---- progress ---- */

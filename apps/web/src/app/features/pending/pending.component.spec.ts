@@ -2,7 +2,7 @@
 // FIRST import, deliberately: it loads the JIT compiler before any other Angular import (docs/15 §9).
 import { initAngularTesting } from '@web-test/angular-testing';
 
-import { computed, provideZonelessChangeDetection, signal } from '@angular/core';
+import { CUSTOM_ELEMENTS_SCHEMA, computed, provideZonelessChangeDetection, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -10,6 +10,7 @@ import type { OutboxEntry } from '../../core/offline/outbox';
 import { AuthStore } from '../../core/auth/auth.store';
 import { SyncService } from '../../core/offline/sync.service';
 import type { SyncConflict, SyncDiff } from '../../core/offline/sync.types';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { PendingComponent } from './pending.component';
 
 initAngularTesting();
@@ -85,6 +86,13 @@ async function mount(args: {
       // A session is what makes the send controls appear (ADR-033 decision 4).
       { provide: AuthStore, useValue: { accessToken: signal(args.token === undefined ? 'token-1' : args.token) } },
     ],
+  });
+
+  // The chrome icons are custom elements here: JIT cannot discover `input()` signal inputs, so a
+  // parent binding one cannot render the child at all (see `@web-test/angular-testing`).
+  TestBed.overrideComponent(PendingComponent, {
+    remove: { imports: [IconComponent] },
+    add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
 
   const fixture = TestBed.createComponent(PendingComponent);

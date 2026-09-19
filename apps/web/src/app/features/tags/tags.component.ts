@@ -6,6 +6,7 @@ import { foldForMatching } from '@finmate/nlp';
 import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 
 interface TagNode {
   readonly id: string;
@@ -67,41 +68,47 @@ const DELETE_TAG = /* GraphQL */ `
 @Component({
   selector: 'fm-tags',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, IconComponent],
   template: `
-    <header class="head">
+    <div class="fm-page">
+    <header class="fm-page__head">
       <div>
-        <h1 class="head__title">{{ i18n.t('tags.title') }}</h1>
-        <p class="head__sub">{{ i18n.t('tags.subtitle') }}</p>
+        <h1 class="fm-page__title">{{ i18n.t('tags.title') }}</h1>
+        <p class="fm-page__sub">{{ i18n.t('tags.subtitle') }}</p>
       </div>
     </header>
 
     @if (error()) {
       <p class="alert" role="alert">{{ error() }}</p>
     }
-    <p class="announce" aria-live="polite">{{ announcement() }}</p>
+    <p class="fm-visually-hidden" aria-live="polite">{{ announcement() }}</p>
 
-    <section class="panel">
-      <h2 class="panel__title">{{ i18n.t('tags.addTitle') }}</h2>
+    <section class="fm-card">
+      <div class="fm-card__head">
+        <h2 class="fm-card__title">
+          <fm-icon name="tags" [size]="18" />
+          {{ i18n.t('tags.addTitle') }}
+        </h2>
+      </div>
       <form class="create-form" [formGroup]="createForm" (ngSubmit)="create()" novalidate>
-        <label class="field">
-          <span class="field__label">{{ i18n.t('tags.name') }}</span>
+        <label class="fm-field">
+          <span class="fm-field__label">{{ i18n.t('tags.name') }}</span>
           <input
-            class="field__input"
+            class="fm-field__input"
             type="text"
             formControlName="name"
             [placeholder]="i18n.t('tags.namePlaceholder')"
             required
           />
           @if (duplicateWarning(); as warning) {
-            <span class="field__hint field__hint--warn">{{ warning }}</span>
+            <span class="fm-field__hint fm-field__hint--warn">{{ warning }}</span>
           }
         </label>
-        <label class="field field--color">
-          <span class="field__label">{{ i18n.t('tags.color') }}</span>
-          <input class="field__input field__input--color" type="color" formControlName="color" />
+        <label class="fm-field">
+          <span class="fm-field__label">{{ i18n.t('tags.color') }}</span>
+          <input class="fm-field__input color-input" type="color" formControlName="color" />
         </label>
-        <button class="btn btn--primary" type="submit" [disabled]="busy()">
+        <button class="fm-btn fm-btn--primary" type="submit" [disabled]="busy()">
           {{ busy() ? i18n.t('tags.creating') : i18n.t('tags.create') }}
         </button>
       </form>
@@ -116,39 +123,40 @@ const DELETE_TAG = /* GraphQL */ `
         <p class="empty__body">{{ i18n.t('tags.emptyBody') }}</p>
       </div>
     } @else {
+      <div class="list-region">
       <p class="hint">{{ i18n.t('tags.count', { count: tags().length }) }}</p>
       <ul class="list">
         @for (tag of tags(); track tag.id) {
-          <li class="row">
+          <li class="fm-card fm-card--tight row">
             @if (editingId() === tag.id) {
               <form class="edit-form" [formGroup]="editForm" (ngSubmit)="save(tag.id)" novalidate>
-                <label class="field">
-                  <span class="field__label">{{ i18n.t('tags.name') }}</span>
-                  <input class="field__input" type="text" formControlName="name" required />
+                <label class="fm-field">
+                  <span class="fm-field__label">{{ i18n.t('tags.name') }}</span>
+                  <input class="fm-field__input" type="text" formControlName="name" required />
                   @if (duplicateWarning(); as warning) {
-                    <span class="field__hint field__hint--warn">{{ warning }}</span>
+                    <span class="fm-field__hint fm-field__hint--warn">{{ warning }}</span>
                   }
                 </label>
-                <label class="field field--color">
-                  <span class="field__label">{{ i18n.t('tags.color') }}</span>
+                <label class="fm-field">
+                  <span class="fm-field__label">{{ i18n.t('tags.color') }}</span>
                   <input
-                    class="field__input field__input--color"
+                    class="fm-field__input color-input"
                     type="color"
                     formControlName="color"
                   />
                 </label>
                 <div class="actions">
-                  <button class="btn btn--primary" type="submit" [disabled]="busy()">
+                  <button class="fm-btn fm-btn--primary" type="submit" [disabled]="busy()">
                     {{ busy() ? i18n.t('tags.saving') : i18n.t('tags.save') }}
                   </button>
-                  <button class="btn" type="button" (click)="editingId.set(null)">
+                  <button class="fm-btn" type="button" (click)="editingId.set(null)">
                     {{ i18n.t('tags.cancel') }}
                   </button>
                 </div>
               </form>
             } @else {
               <span class="row__main">
-                <span class="chip" [style.border-color]="tag.color ?? null">
+                <span class="fm-chip fm-chip--static" [style.border-color]="tag.color ?? null">
                   <span
                     class="chip__swatch"
                     aria-hidden="true"
@@ -165,10 +173,10 @@ const DELETE_TAG = /* GraphQL */ `
                 </span>
               </span>
               <span class="actions">
-                <button class="btn" type="button" [disabled]="busy()" (click)="startEdit(tag)">
+                <button class="fm-btn" type="button" [disabled]="busy()" (click)="startEdit(tag)">
                   {{ i18n.t('tags.edit') }}
                 </button>
-                <button class="btn btn--danger" type="button" [disabled]="busy()" (click)="remove(tag)">
+                <button class="fm-btn fm-btn--danger" type="button" [disabled]="busy()" (click)="remove(tag)">
                   {{ i18n.t('tags.delete') }}
                 </button>
               </span>
@@ -176,50 +184,24 @@ const DELETE_TAG = /* GraphQL */ `
           </li>
         }
       </ul>
+      </div>
     }
+    </div>
   `,
   styles: [
     `
-      .head {
-        margin-block-end: var(--space-4);
-      }
-      .head__title {
-        margin: 0;
-        font-size: var(--text-2xl);
-      }
-      .head__sub,
       .muted {
         margin: var(--space-1) 0 0;
         color: var(--color-text-muted);
         font-size: var(--text-sm);
       }
       .alert {
+        margin: 0;
         padding: var(--space-3);
         border-radius: var(--radius-md);
-        background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+        background: var(--color-danger-soft);
         color: var(--color-danger);
         font-size: var(--text-sm);
-      }
-      .announce {
-        position: absolute;
-        inline-size: 1px;
-        block-size: 1px;
-        overflow: hidden;
-        clip-path: inset(50%);
-        white-space: nowrap;
-      }
-      .panel {
-        display: grid;
-        gap: var(--space-3);
-        padding: var(--space-4);
-        background: var(--color-surface);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-lg);
-        margin-block-end: var(--space-4);
-      }
-      .panel__title {
-        margin: 0;
-        font-size: var(--text-lg);
       }
       .create-form,
       .edit-form {
@@ -237,52 +219,37 @@ const DELETE_TAG = /* GraphQL */ `
           grid-column: 1 / -1;
         }
       }
-      .field {
-        display: grid;
-        gap: var(--space-1);
+      /* The box, its label and its hint come from .fm-field*; only the warning ink and the colour
+         input's tighter padding are this screen's. */
+      .fm-field {
         min-inline-size: 0;
       }
-      .field__label {
-        font-size: var(--text-sm);
-        color: var(--color-text-muted);
-      }
-      .field__hint {
-        font-size: var(--text-xs);
-        color: var(--color-text-subtle);
-      }
-      .field__hint--warn {
+      .fm-field__hint--warn {
         color: var(--color-warning);
       }
-      .field__input {
-        padding: var(--space-2);
-        font: inherit;
-        color: var(--color-text);
-        background: var(--color-bg);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-        min-inline-size: 0;
-      }
-      .field__input--color {
+      .color-input {
         padding: var(--space-1);
-        block-size: 2.5rem;
+      }
+      /* The count and the rows read as one block, so they share a tighter gap than the page's. */
+      .list-region {
+        display: grid;
+        gap: var(--space-3);
       }
       .list {
         display: grid;
-        gap: var(--space-2);
+        gap: var(--space-3);
         margin: 0;
         padding: 0;
         list-style: none;
       }
+      /* Each tag is a card (--tight); the row layout is this screen's, so it overrides the card's
+         own grid. */
       .row {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
         justify-content: space-between;
         gap: var(--space-3);
-        padding: var(--space-3);
-        background: var(--color-surface);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
       }
       .row__main {
         display: flex;
@@ -294,16 +261,6 @@ const DELETE_TAG = /* GraphQL */ `
       .row__count {
         font-size: var(--text-xs);
         color: var(--color-text-subtle);
-      }
-      .chip {
-        display: inline-flex;
-        align-items: center;
-        gap: var(--space-2);
-        max-inline-size: 100%;
-        padding: var(--space-1) var(--space-3);
-        font-size: var(--text-sm);
-        border: 1px solid var(--color-border);
-        border-radius: 999px;
       }
       /* The swatch repeats the colour rather than relying on the border alone: a thin coloured
          outline is not distinguishable enough at chip size to be the only carrier of meaning. */
@@ -321,30 +278,6 @@ const DELETE_TAG = /* GraphQL */ `
         flex-wrap: wrap;
         gap: var(--space-2);
       }
-      .btn {
-        padding: var(--space-2) var(--space-3);
-        font: inherit;
-        font-weight: 600;
-        color: var(--color-text);
-        background: var(--color-bg);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-        cursor: pointer;
-      }
-      .btn:disabled {
-        opacity: 0.6;
-        cursor: default;
-      }
-      .btn--primary {
-        color: var(--color-primary-contrast);
-        background: var(--color-primary);
-        border-color: transparent;
-      }
-      .btn--danger {
-        color: var(--color-danger);
-        background: none;
-        border-color: var(--color-danger);
-      }
       .empty {
         padding: var(--space-5);
         border: 1px dashed var(--color-border);
@@ -353,7 +286,7 @@ const DELETE_TAG = /* GraphQL */ `
       }
       .empty__title {
         margin: 0 0 var(--space-1);
-        font-weight: 600;
+        font-weight: var(--weight-semibold);
       }
       .empty__body {
         margin: 0;

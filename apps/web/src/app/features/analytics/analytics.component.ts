@@ -4,11 +4,12 @@ import { RouterLink } from '@angular/router';
 import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import { todayLocally } from '../capture/capture.view';
 import {
   categoryLabel,
-  changeGlyph,
+  changeIcon,
   changeKind,
   changeLabelKey,
   csvHref,
@@ -62,12 +63,14 @@ import {
 @Component({
   selector: 'fm-analytics',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, MoneyComponent],
+  imports: [RouterLink, IconComponent, MoneyComponent],
   template: `
-    <main class="wrap">
-      <header class="head">
-        <h1 class="head__title">{{ i18n.t('analytics.title') }}</h1>
-        <p class="muted">{{ i18n.t('analytics.subtitle') }}</p>
+    <div class="fm-page">
+      <header class="fm-page__head">
+        <div>
+          <h1 class="fm-page__title">{{ i18n.t('analytics.title') }}</h1>
+          <p class="fm-page__sub">{{ i18n.t('analytics.subtitle') }}</p>
+        </div>
       </header>
 
       <div class="controls">
@@ -87,7 +90,7 @@ import {
             [attr.aria-label]="i18n.t('analytics.previous')"
             (click)="shiftPeriod(-1)"
           >
-            ‹
+            <fm-icon name="chevronLeft" [size]="16" />
           </button>
           <button
             type="button"
@@ -95,7 +98,7 @@ import {
             [attr.aria-label]="i18n.t('analytics.next')"
             (click)="shiftPeriod(1)"
           >
-            ›
+            <fm-icon name="chevronRight" [size]="16" />
           </button>
         </span>
 
@@ -116,8 +119,8 @@ import {
       }
 
       @if (data(); as view) {
-        <section class="panel" aria-labelledby="analytics-trend">
-          <h2 class="panel__title" id="analytics-trend">{{ i18n.t('analytics.trend') }}</h2>
+        <section class="fm-card" aria-labelledby="analytics-trend">
+          <h2 class="fm-card__title" id="analytics-trend">{{ i18n.t('analytics.trend') }}</h2>
           <svg
             class="spark"
             viewBox="0 0 100 32"
@@ -151,8 +154,8 @@ import {
           </details>
         </section>
 
-        <section class="panel" aria-labelledby="analytics-categories">
-          <h2 class="panel__title" id="analytics-categories">
+        <section class="fm-card" aria-labelledby="analytics-categories">
+          <h2 class="fm-card__title" id="analytics-categories">
             {{ i18n.t('analytics.spendByCategory') }}
           </h2>
           <p class="muted">{{ i18n.t('analytics.rootsHint') }}</p>
@@ -177,7 +180,9 @@ import {
                     <fm-money class="bar__amount" [amount]="row.total" />
                     <span class="bar__share">{{ percent(row.shareOfTotal) }} %</span>
                     <span class="bar__change">
-                      <span aria-hidden="true">{{ glyph(row.changeRatio) }}</span>
+                      @if (changeIcon(changeKind(row.changeRatio)); as icon) {
+                        <fm-icon [name]="icon" [size]="14" />
+                      }
                       <span class="visually-hidden">{{ changeText(row.changeRatio) }}</span>
                     </span>
                   </span>
@@ -215,8 +220,8 @@ import {
           </details>
         </section>
 
-        <section class="panel" aria-labelledby="analytics-merchants">
-          <h2 class="panel__title" id="analytics-merchants">
+        <section class="fm-card" aria-labelledby="analytics-merchants">
+          <h2 class="fm-card__title" id="analytics-merchants">
             {{ i18n.t('analytics.topMerchants') }}
           </h2>
           @if (view.topMerchants.length === 0) {
@@ -233,8 +238,8 @@ import {
           }
         </section>
 
-        <section class="panel" aria-labelledby="analytics-comparison">
-          <h2 class="panel__title" id="analytics-comparison">
+        <section class="fm-card" aria-labelledby="analytics-comparison">
+          <h2 class="fm-card__title" id="analytics-comparison">
             {{ i18n.t('analytics.comparison', { period: label(view.monthComparison.compareTo) }) }}
           </h2>
           <ul class="plain">
@@ -293,24 +298,10 @@ import {
       } @else if (loading()) {
         <p class="muted">{{ i18n.t('analytics.loading') }}</p>
       }
-    </main>
+    </div>
   `,
   styles: [
     `
-      .wrap {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-5);
-        padding: var(--space-4);
-        max-inline-size: 72rem;
-        margin-inline: auto;
-      }
-      .head__title {
-        margin: 0;
-      }
-      .head p {
-        margin: var(--space-1) 0 0;
-      }
       .muted {
         color: var(--color-text-muted);
         font-size: var(--text-sm);
@@ -343,26 +334,16 @@ import {
         font-size: var(--text-lg);
         line-height: 1;
       }
-      .panel {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-2);
-        padding: var(--space-4);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-lg);
-        background: var(--color-surface);
-      }
-      .panel__title {
-        margin: 0;
-        font-size: var(--text-lg);
-      }
       .spark {
         inline-size: 100%;
         block-size: 4rem;
       }
       .spark__line {
         fill: none;
-        stroke: var(--color-accent, currentColor);
+        /* --chart-1, from the token layer's chart ramp. This used var(--color-accent, currentColor), and
+           --color-accent has never existed — so the fallback always won and the whole trend line was
+           painted in --color-text: white on dark, black on light (measured in the ADR-039 audit). */
+        stroke: var(--chart-1);
         stroke-width: 1.5;
         vector-effect: non-scaling-stroke;
       }
@@ -409,7 +390,8 @@ import {
       .bar__fill {
         display: block;
         block-size: 100%;
-        background: var(--color-accent, currentColor);
+        /* Same dead token: the category bars were ink. */
+        background: var(--chart-1);
       }
       .plain {
         display: flex;
@@ -514,6 +496,15 @@ export class AnalyticsComponent {
   /** The view module's decision, re-exposed for the template without logic in it. */
   readonly monthKeyOf = monthKeyOf;
 
+  /**
+   * The change indicator's icon and the state it is drawn from.
+   *
+   * Exposed as fields because the decision is a *rule* — which of the four states a ratio is, and
+   * which glyph that state draws — and a template is not a place a rule can be tested.
+   */
+  readonly changeIcon = changeIcon;
+  readonly changeKind = changeKind;
+
   label(key: string): string {
     return periodLabel(key, this.i18n.tag());
   }
@@ -524,10 +515,6 @@ export class AnalyticsComponent {
 
   name(row: CategorySpendRow): string {
     return categoryLabel(row, this.i18n.t('analytics.uncategorised'));
-  }
-
-  glyph(ratio: number | null): string {
-    return changeGlyph(changeKind(ratio));
   }
 
   /**

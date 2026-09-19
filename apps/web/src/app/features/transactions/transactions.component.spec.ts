@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { LedgerCacheService, type LedgerSnapshot } from '../../core/offline/ledger-cache.service';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import { TransactionDetailComponent } from './transaction-detail.component';
 import { TransactionsComponent } from './transactions.component';
@@ -155,7 +156,7 @@ async function mount(options: MountOptions = {}): Promise<{
     ],
   });
   TestBed.overrideComponent(TransactionsComponent, {
-    remove: { imports: [MoneyComponent, TransactionDetailComponent] },
+    remove: { imports: [MoneyComponent, IconComponent, TransactionDetailComponent] },
     add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
 

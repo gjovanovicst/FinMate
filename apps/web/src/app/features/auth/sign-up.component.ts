@@ -5,6 +5,7 @@ import { Router, RouterLink } from '@angular/router';
 import { ErrorMessageService } from '../../core/api/error-message.service';
 import { AuthStore } from '../../core/auth/auth.store';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { BrandComponent } from '../../shared/ui/brand/brand.component';
 import { AUTH_STYLES } from './auth.styles';
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from './password-policy';
 
@@ -18,9 +19,10 @@ import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from './password-policy';
 @Component({
   selector: 'fm-sign-up',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, BrandComponent],
   template: `
     <section class="auth">
+      <div class="auth__brand"><fm-brand size="lg" [tagline]="true" /></div>
       <h1 class="auth__title">{{ i18n.t('signUp.title') }}</h1>
       <p class="auth__hint">{{ i18n.t('signUp.intro') }}</p>
 

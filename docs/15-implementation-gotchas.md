@@ -1155,6 +1155,26 @@ The tables hold platform content beside the Household’s own rows, which is whe
   *mechanism* was wrong, which is worse than saying nothing, because the next reader trusts it. Read the
   service before describing what a delete does (found by a review pass, corrected in B-5's follow-up).
 
+- **`fm-icon` renders *nothing* for a name it does not know — so a missing icon is invisible, not an
+  error.** That is the right default (an unknown icon must not be a broken box), but it means a typo, or a
+  path somebody deleted while trimming the registry, produces no warning, no type error and no glyph. The
+  ADR-039 audit found **two live holes** — `chevronDown` in the shell's account block and `chevronRight` in
+  the dashboard's View-all chips — and the guard written for it then found **three more** that a careless
+  regex had deleted from the registry (`calendar`, `globe`, `logout`, all of them rendered by the shell).
+  `icon.spec.ts` now reads every `name="…"` and `[name]="'…'"` in the source tree and fails with the list.
+  If an icon "does nothing", check the registry before the CSS.
+
+- **`var(--token, fallback)` hides a token that does not exist.** CSS drops a declaration whose custom
+  property is undeclared **only when there is no fallback**; with one, the fallback is what renders, and
+  the mistake looks deliberate. Three screens referenced `--color-accent` / `--color-on-accent` — a
+  chart line, a goal progress bar, the assistant's *Ask* button and the button that writes to the ledger —
+  and **neither token has ever been defined**. What shipped was a trend line drawn in `--color-text`
+  (`currentColor` in the fallback), a progress bar filled black, and two primary buttons rendering as plain
+  grey text with no fill and no border. Nothing failed: not `tsc`, not the build, not the unit suite, and
+  not a screenshot review without a reference to compare against. `styles.tokens.spec.ts` now scans every
+  `var(--…)` in the component sources and fails on one the token layer does not declare. **Write the
+  fallback only when you mean it** — a fallback is a claim that the token is optional.
+
 ## 9. Web UI, templates and i18n
 
 - **A spec that uses `TestBed` needs BOTH `// @vitest-environment jsdom` as its first line AND

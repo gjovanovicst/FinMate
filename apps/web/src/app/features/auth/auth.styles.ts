@@ -13,19 +13,37 @@
  * @module apps/web/src/app/features/auth
  */
 export const AUTH_STYLES = `
+  /* The front door is a card on the page background, not a bare form, so the first screen a person sees
+     is made of the same material as every screen behind it (ADR-039). The max-inline-size is a form
+     measure — one field per line, never a two-column sign-in. */
   .auth {
-    max-inline-size: 380px;
+    max-inline-size: 27rem;
     margin-inline: auto;
-    padding-block-start: var(--space-6);
+    padding: var(--space-6);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-1);
+  }
+  /* The brand sits above the title, centred with it: a sign-in page is the one place the product has to
+     say what it is before it asks for anything. */
+  .auth__brand {
+    display: flex;
+    justify-content: center;
+    margin-block-end: var(--space-5);
   }
   .auth__title {
     font-size: var(--text-2xl);
+    font-weight: var(--weight-bold);
+    letter-spacing: var(--tracking-tight);
     margin-block: 0 var(--space-2);
+    text-align: center;
   }
   .auth__hint {
     margin-block: 0 var(--space-5);
     font-size: var(--text-sm);
     color: var(--color-text-muted);
+    text-align: center;
   }
   .auth__form {
     display: grid;
@@ -45,11 +63,15 @@ export const AUTH_STYLES = `
   }
   .field__input {
     padding: var(--space-3);
+    min-block-size: var(--control-size-comfortable);
     font: inherit;
     color: var(--color-text);
-    background: var(--color-surface);
+    background: var(--color-surface-raised);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-sm);
+  }
+  .field__input:hover {
+    border-color: var(--color-border-strong);
   }
   .field__input:focus-visible {
     border-color: var(--color-primary);
@@ -62,11 +84,11 @@ export const AUTH_STYLES = `
   .auth__submit {
     padding: var(--space-3);
     font: inherit;
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     color: var(--color-primary-contrast);
     background: var(--color-primary);
     border: none;
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-sm);
     cursor: pointer;
     transition: background var(--motion-fast) ease;
   }
@@ -81,6 +103,7 @@ export const AUTH_STYLES = `
     margin-block-start: var(--space-5);
     font-size: var(--text-sm);
     color: var(--color-text-muted);
+    text-align: center;
   }
   /* Sign-in's way into the recovery flow: a grid item under the password field, right-aligned so it
      reads as an aside to the field above it rather than as another input. */

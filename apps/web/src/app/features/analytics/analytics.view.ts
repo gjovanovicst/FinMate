@@ -168,15 +168,25 @@ export function changeKind(ratio: number | null): ChangeKind {
   return ratio > 0 ? 'UP' : 'DOWN';
 }
 
-/** The glyph for a change. `NO_BASIS` has none: the row says so in words instead. */
-export function changeGlyph(kind: ChangeKind): string {
+/** The icon a change draws. `NO_BASIS` has none: the row says so in words instead. */
+export type ChangeIcon = 'arrowUp' | 'arrowDown' | 'trending' | '';
+
+/**
+ * The change indicator as an `<fm-icon>` name.
+ *
+ * A chrome glyph is an icon, never a text arrow (ADR-039): the old function returned the literal
+ * characters ↓↑→, which render in whatever the platform's fallback font supplies. The three names
+ * exist in the icon registry; `''` renders nothing, which is the "no basis for comparison" state —
+ * the visible sentence beside it is what says why.
+ */
+export function changeIcon(kind: ChangeKind): ChangeIcon {
   switch (kind) {
     case 'UP':
-      return '↑';
+      return 'arrowUp';
     case 'DOWN':
-      return '↓';
+      return 'arrowDown';
     case 'FLAT':
-      return '→';
+      return 'trending';
     case 'NO_BASIS':
       return '';
   }
