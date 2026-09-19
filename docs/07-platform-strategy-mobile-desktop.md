@@ -138,6 +138,18 @@ compact                medium                 expanded                large
 └───────────┘          └──────────────┘
 ```
 
+**The shell is a fixed frame, and the content region is its only scroller.** The signed-in shell is
+exactly one viewport tall (`100dvh`) with the header and the navigation as rows of it; `<main>` carries
+`overflow-y: auto` and `min-block-size: 0`, which is the declaration that lets a grid item shrink below
+its content so the row scrolls instead of overflowing the frame. Chrome that scrolls away is chrome a
+person has to scroll back to, and it is what §8's *"focus never obscured by sticky chrome"* (WCAG 2.4.11)
+rules out: an element inside a screen scrolls to the top of the content region, which begins below the
+header, instead of to the top of the window, which is under it. On a wide screen the sidebar's destination
+list is the scroller (`overflow-y: auto` on the list, not the column) so the footer — Settings, docs/02
+§2.1's **Nalog** — stays at the bottom of the column at every window height. Because the window no longer
+scrolls, the shell resets the content region's `scrollTop` on `NavigationEnd`: `withInMemoryScrolling`'s
+`scrollPositionRestoration: 'top'` moves the window, which does nothing here.
+
 ### 3.3 Navigation transformation
 
 ```mermaid

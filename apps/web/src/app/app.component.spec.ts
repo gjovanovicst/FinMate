@@ -93,6 +93,8 @@ async function mount(
         { path: 'settings', children: [] },
         { path: 'sign-in', children: [] },
         { path: 'transactions', children: [] },
+        // The one route that hides the navigation (docs/02 §4.1), so the spec can mount the bare shell.
+        { path: 'onboarding', children: [] },
       ]),
       // The shell renders `fm-app-update` (ADR-024), which injects `SwUpdate`. A stub keeps this spec
       // about navigation: there is no service worker in jsdom, and an update banner is not part of
@@ -186,6 +188,41 @@ async function mount(
 
 function navLinks(fixture: { nativeElement: unknown }, selector: string): HTMLAnchorElement[] {
   return Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLAnchorElement>(selector));
+}
+
+/**
+ * The component's own source text, for the assertions jsdom cannot make about its styles.
+ *
+ * Every declaration the frame below rests on fails as a *layout* defect rather than an error, and jsdom
+ * applies no CSS — the same gap `styles.tokens.spec.ts` closes for the design tokens by reading
+ * `styles.css`. Vite resolves the raw import; there is no `node:fs` in this project (see `test/raw.d.ts`).
+ */
+const SOURCE = (
+  import.meta.glob('./app.component.ts', {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  }) as Record<string, string>
+)['./app.component.ts']!;
+
+/** Every declaration block for `selector`, comments stripped and whitespace flattened. */
+function rules(styles: string, selector: string): string[] {
+  const flat = styles.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
+  const bodies: string[] = [];
+  let from = 0;
+  for (;;) {
+    const at = flat.indexOf(`${selector} {`, from);
+    if (at === -1) return bodies;
+    const open = at + selector.length + 2;
+    const close = flat.indexOf('}', open);
+    bodies.push(flat.slice(open, close));
+    from = close;
+  }
+}
+
+function styleRules(selector: string): string[] {
+  const styles = SOURCE.slice(SOURCE.indexOf('styles: ['));
+  return rules(styles, selector);
 }
 
 /** The primary links, excluding the overflow items and the More button. */
@@ -433,6 +470,89 @@ describe('AppComponent nav (mounted)', () => {
     expect(settings?.getAttribute('aria-current')).toBe('page');
     // The route is `/settings`, not a prefix of another destination, so no nav row lights up with it.
     expect(navLink(fixture, '/').classList).not.toContain('nav__link--active');
+  });
+
+  it('keeps Settings outside the sidebar scroller, after the destination list', async () => {
+    // The sidebar is a flex column whose list owns the scroll, so the footer row is the one row that
+    // never scrolls: on a short window sixteen destinations would otherwise push the way into settings
+    // below the fold. Structure is what makes that true — the footer is a sibling *after* the list.
+    const { fixture } = await mount(0);
+    const host = fixture.nativeElement as HTMLElement;
+    const list = host.querySelector('.nav__list');
+    const footer = host.querySelector('.nav__footer');
+
+    expect(list).not.toBeNull();
+    expect(footer).not.toBeNull();
+    expect(list?.contains(footer as Node)).toBe(false);
+    expect(footer?.querySelector('a[href="/settings"]')).not.toBeNull();
+  });
+
+  it('frames the shell at one viewport and scrolls only the content region (styles)', () => {
+    // jsdom applies no CSS, so these are read from the component's own bytes. Each is load-bearing and
+    // each fails as a layout defect with nothing else to catch it: without `block-size: 100dvh` and
+    // `overflow: hidden` the frame grows with the page and the bar and sidebar scroll away again;
+    // without `min-block-size: 0` the content's 1fr row cannot shrink below its content, so it is
+    // clipped rather than scrolled; and a `.nav__list` that does not scroll takes the footer with it.
+    const frame = styleRules('.shell--authenticated').some(
+      (body) => body.includes('block-size: 100dvh') && body.includes('overflow: hidden'),
+    );
+    const content = styleRules('.shell--authenticated .content').some(
+      (body) => body.includes('min-block-size: 0') && body.includes('overflow-y: auto'),
+    );
+    const list = styleRules('.nav__list').some((body) => body.includes('overflow-y: auto'));
+
+    expect(frame, 'the authenticated shell must be a fixed-height frame').toBe(true);
+    expect(content, 'the content region must be the scroller').toBe(true);
+    expect(list, 'the sidebar list must own the sidebar scroll').toBe(true);
+
+    // Onboarding renders the same shell with no navigation, and a grid that still reserves the 264 px
+    // column leaves the wizard with a quarter-window gutter on its left and the bar offset with it
+    // (measured live on /onboarding at 1280 px).
+    const bare = styleRules('.shell--authenticated.shell--bare').some((body) =>
+      body.includes('grid-template-columns: minmax(0, 1fr)'),
+    );
+    expect(bare, 'the bare shell must give up the sidebar column').toBe(true);
+  });
+
+  it('drops the sidebar column when the navigation is hidden', async () => {
+    // The class, not the stylesheet (which jsdom does not apply): `shell--bare` is what the wide-grid
+    // rule keys on, so its presence on `/onboarding` and absence everywhere else is the contract.
+    const { fixture } = await mount(0);
+    const router = TestBed.inject(Router);
+    const host = fixture.nativeElement as HTMLElement;
+
+    await router.navigateByUrl('/transactions');
+    fixture.detectChanges();
+    expect(host.querySelector('.shell')?.classList).not.toContain('shell--bare');
+    expect(host.querySelector('.nav')).not.toBeNull();
+
+    await router.navigateByUrl('/onboarding');
+    fixture.detectChanges();
+    expect(host.querySelector('.nav')).toBeNull();
+    expect(host.querySelector('.shell')?.classList).toContain('shell--bare');
+  });
+
+  it('returns the content pane to the top on navigation', async () => {
+    // The shell's scroll container is `<main>`, not the window, so the router's
+    // `scrollPositionRestoration: 'top'` cannot reach it. Without the shell's own reset, opening a
+    // screen from halfway down a long ledger landed halfway down the new one — the regression this
+    // test exists for. jsdom lays nothing out, so it is the write itself that is asserted.
+    const { fixture } = await mount(0);
+    const router = TestBed.inject(Router);
+    const pane = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('main.content');
+    expect(pane).not.toBeNull();
+
+    let written: number | null = null;
+    Object.defineProperty(pane, 'scrollTop', {
+      configurable: true,
+      get: () => 420,
+      set: (value: number) => {
+        written = value;
+      },
+    });
+
+    await router.navigateByUrl('/transactions');
+    expect(written).toBe(0);
   });
 
   it('moves to the login form when the session ends in place', async () => {

@@ -137,6 +137,15 @@ Size classes are [07 §3.1](07-platform-strategy-mobile-desktop.md): `compact` <
 - Sidebar groups: **Unos** (pinned capture field) · **Danas** · **Transakcije** · **Provera** ·
   **Plan** (Budžeti, Ciljevi, Ponavljajuće) · **Uvid** (Analitika, Asistent) · **Biblioteka**
   (Kategorije, Prodavci, Osobe, Pravila, Prijemi) · **Nalog** (Podešavanja).
+- **The chrome is a frame, not the top of the page.** Every signed-in screen sits in a shell exactly one
+  viewport tall, and the **content region is the only thing that scrolls** — so the header and the
+  navigation stay where they are while a long ledger moves, and a screen's own sticky element sticks
+  below the header rather than under it ([07 §7.4](07-platform-strategy-mobile-desktop.md)'s *"never
+  obscured by sticky chrome"*). The sidebar's destination list is what scrolls *inside* the sidebar,
+  which is what keeps **Podešavanja** — Nalog's single entry — pinned to the bottom of the column at any
+  window height: measured live at 1280×500 px, where sixteen destinations do not fit and the Settings
+  row is still on screen. The shell returns the content region to the top on navigation, because the
+  router's own `scrollPositionRestoration` moves the window and the window no longer moves.
 - `medium` keeps the bottom bar to 840 px, then becomes an icon rail ([07 §3.3](07-platform-strategy-mobile-desktop.md)).
 - Header on both: offline chip (offline or stale only), 🔔 unread, ⚙, avatar menu (Profil,
   Podešavanja, Jezik, Tema, Odjavi se).

@@ -3,6 +3,7 @@ import {
   Component,
   DestroyRef,
   DOCUMENT,
+  ElementRef,
   computed,
   effect,
   inject,
@@ -115,7 +116,7 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
         </main>
       </div>
     } @else {
-      <div class="shell" [class.shell--authenticated]="isAuthenticated()">
+      <div class="shell" [class.shell--authenticated]="isAuthenticated()" [class.shell--bare]="!showNav()">
         @if (showNav()) {
           <nav class="nav" [attr.aria-label]="i18n.t('app.primaryNav')">
             <!-- The brand block. The mark is inline SVG rather than an asset: it has to scale from 28 px
@@ -392,13 +393,21 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
       /* The authenticated shell is three rows: the bar, the content, the navigation. These two
          declarations are load-bearing — the grid-area on the three children resolves against them, and without them every child auto-places into the same cell and paints over the
          others. The compact capture of this redesign caught exactly that: a search field floating in the
-         middle of the monthly chart, with no bar above the content at all. */
+         middle of the monthly chart, with no bar above the content at all.
+
+         It is also a **frame exactly one viewport tall**, and the content row is the scroller inside
+         it (see the .shell--authenticated .content rule below). That is what makes the bar and the
+         navigation stay put while a long ledger moves: they are rows of a frame that never scrolls.
+         The overflow: hidden is load-bearing with the fixed height — without it the frame's rows are
+         simply overflowed and clipped, and the content loses its own scrollbar. */
       .shell--authenticated {
         grid-template-areas:
           'topbar'
           'content'
           'nav';
         grid-template-rows: auto 1fr auto;
+        block-size: 100dvh;
+        overflow: hidden;
       }
 
       /* ---- the navigation ----
@@ -708,6 +717,17 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
         outline: none;
       }
 
+      /* The one scrolling region of a signed-in page. min-block-size: 0 is the declaration that
+         lets it be one: a grid item's automatic minimum is its content, so without it the 1fr row
+         grows past the frame and the content is clipped instead of scrolled — the same
+         automatic-minimum trap the minmax(0, 1fr) column above exists for. A screen's own sticky
+         element therefore sticks to the top of *this* box, which begins below the bar, which is what
+         docs/07 §7.4 asks for when it says focus is never obscured by sticky chrome. */
+      .shell--authenticated .content {
+        min-block-size: 0;
+        overflow-y: auto;
+      }
+
       /* The public screens are a single card on an empty page, so it is centred in the window rather than
          pinned to the top of a 900 px column. Only the auth screens reach this: a signed-in person always
          has the authenticated shell, including on the onboarding wizard. */
@@ -725,6 +745,16 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
             'nav topbar'
             'nav content';
         }
+        /* Onboarding hides the navigation (docs/02 §4.1), so the column it would occupy has to go with
+           it: the wizard is drawn full-screen, and the reserved 264 px strip pushed both the bar and the
+           card a quarter of a window to the right — measured live on /onboarding at 1280 px, where the
+           content began at x = 264 with no sidebar in it. */
+        .shell--authenticated.shell--bare {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-areas:
+            'topbar'
+            'content';
+        }
         .nav {
           /* Back into the flow: on a wide screen the navigation is a sidebar column, and a pinned bar
              would float over the content it is supposed to sit beside. */
@@ -736,10 +766,15 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
           padding-block-end: var(--space-4);
           border-block-start: none;
           border-inline-end: 1px solid var(--color-border);
-          overflow-y: auto;
+          /* The **list** scrolls, not the column (below): the footer has to stay at the bottom of the
+             sidebar whatever the height of the window, and a column that scrolled as a whole took the
+             way into settings off screen on a short one. */
+          overflow: hidden;
         }
         .brand {
           display: flex;
+          /* The wordmark keeps its height; the list below it is what gives way. */
+          flex: 0 0 auto;
         }
         .nav__footer {
           display: grid;
@@ -756,6 +791,10 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
           flex-direction: column;
           gap: var(--space-1);
           padding-inline: var(--space-3);
+          /* The sixteen rows scroll on their own so the footer below them never does. */
+          flex: 1 1 auto;
+          min-block-size: 0;
+          overflow-y: auto;
         }
         .nav__item {
           /* The growth exists for the compact bar; in the sidebar the items stack, so it is given back. */
@@ -785,6 +824,7 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
         .nav__footer {
           display: grid;
           gap: var(--space-2);
+          flex: 0 0 auto;
           margin-block-start: auto;
           padding: var(--space-4) var(--space-3) 0;
           border-block-start: 1px solid var(--color-border);
@@ -817,14 +857,14 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
           padding: var(--space-6);
           /* No pinned bar at this width, so nothing to reserve. */
           padding-block-end: var(--space-6);
-          /* The reading measure, **centred**. docs/07 §4.3's 1200 px was measured against a
-             sidebar-less shell; at 264 px of chrome the content box is the same at 1440 px and narrower
-             below it. Without margin-inline: auto the cap did not centre anything — it left the whole
-             page against the sidebar and pushed 216 px of empty background onto the right edge at
-             1920 px (measured), which reads as a layout that failed to fill rather than as a measure. */
-          max-inline-size: 1440px;
-          inline-size: 100%;
-          margin-inline: auto;
+          /* The reading measure, **centred** — expressed as padding rather than as the
+             max-inline-size plus auto margins this used to be, because this element is now the scroll
+             container. A capped, auto-margined box puts its scrollbar at the edge of the measure,
+             240 px inside a 1920 px window, where it reads as a stray bar floating over the page.
+             Padding centres the same measure and leaves the scrollbar at the window's own edge. The
+             percentage resolves against the grid column, so the result is unchanged: 1440 px of
+             content at 1920 px, and the full column below that. */
+          padding-inline: max(var(--space-6), calc((100% - 1440px) / 2));
         }
       }
 
@@ -834,7 +874,7 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
          arrived. */
       @media (min-width: 1600px) {
         .content {
-          max-inline-size: 1600px;
+          padding-inline: max(var(--space-6), calc((100% - 1600px) / 2));
         }
       }
 
@@ -958,6 +998,15 @@ export class AppComponent {
     ),
   );
 
+  /**
+   * The shell's own element — how the content pane is reached for the scroll reset below.
+   *
+   * Through the host rather than a `viewChild` signal on purpose: a signal query is not populated when
+   * the shell reads it under the test harness (the same finding `assistant.component.ts` records, and
+   * docs/15), so the reset would be a no-op in exactly the suite that is meant to prove it works.
+   */
+  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
+
   constructor() {
     // Ask the scoped COUNT as soon as there is a session, and again on every navigation: the API
     // documents reviewQueueCount as the shell's call on every screen, and there is no realtime layer to
@@ -1043,6 +1092,11 @@ export class AppComponent {
       .pipe(filter((event) => event instanceof NavigationEnd))
       .subscribe((event) => {
         this.url.set((event as NavigationEnd).urlAfterRedirects);
+        // The content pane is the scroller, not the window, so `scrollPositionRestoration: 'top'`
+        // cannot reach it. Assigned rather than `scrollTo(...)`: assigning `scrollTop` is the form
+        // jsdom implements, and the shell's own specs navigate.
+        const pane = this.host.nativeElement.querySelector<HTMLElement>('main.content');
+        if (pane) pane.scrollTop = 0;
         if (this.isAuthenticated()) {
           void this.reviewQueue.refresh();
           void this.notificationsStore.refresh();

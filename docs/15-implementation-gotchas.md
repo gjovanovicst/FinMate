@@ -1881,6 +1881,32 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   no category change to correct). ⚠️ Pinning also means the form is what is stored while the sheet stays
   open, so `loaded` has to be refreshed or the discard guard asks whether to throw away a landed edit.
 
+- **The shell scrolls its content region, not the window — and three things silently assume the window.**
+  `.shell--authenticated` is `block-size: 100dvh; overflow: hidden` and `<main class="content">` owns
+  `overflow-y: auto`, which is what keeps the header and the sidebar from scrolling away (ADR-039's
+  amendment). Each half fails as a *layout* defect with no error anywhere: without the fixed height the
+  frame grows with the page and the chrome scrolls off again; without `overflow: hidden` on the frame the
+  `1fr` row is simply overflowed and clipped; and without **`min-block-size: 0` on the content** the grid
+  item's automatic minimum is its content, so the row grows past the frame and the screen is cut off
+  instead of scrollable — the same trap the shell's `minmax(0, 1fr)` column exists for. Then the
+  window-scroll assumptions: (1) `withInMemoryScrolling`'s `scrollPositionRestoration: 'top'` moves the
+  **window**, so the shell resets `main.content.scrollTop` on `NavigationEnd` itself or a screen opens
+  halfway down; (2) a reading measure written as `max-inline-size` + `margin-inline: auto` puts the
+  scrollbar at the edge of the measure (240 px inside a 1920 px window) — it is padding
+  (`padding-inline: max(var(--space-6), calc((100% - 1440px) / 2))`) so the scrollbar stays at the window
+  edge; (3) an in-page `position: sticky` now measures from the content region's top, which is *below* the
+  header — the reason docs/07 §7.4's "never obscured by sticky chrome" holds without a per-screen offset.
+  The sidebar is the fourth: the **list** scrolls (`overflow-y: auto` on `.nav__list`, `flex: 1 1 auto`,
+  `min-block-size: 0`), never the column, because a column that scrolls takes the pinned Settings footer
+  with it. Verified live at 320/768/1280 px including a 1280×500 px window where the sixteen destinations
+  do not fit (27/27 checks, `.artifacts/shell-check/`).
+
+- **`viewChild()` is `undefined` in the mounted harness — including when nothing is wrong.** The shell
+  reaches its scroll container with `inject(ElementRef).nativeElement.querySelector('main.content')` for
+  the same reason `assistant.component.ts` does (the entry above): a signal query is not populated under
+  JIT, so a scroll reset written the idiomatic way silently does nothing in exactly the spec meant to
+  prove it. Prefer the host query when the behaviour itself is what a spec asserts.
+
 ## 10. Cross-cutting rules of the codebase
 
 - **A live check that measures the wrong element lies in both directions.** Three times in 4.3.1 a

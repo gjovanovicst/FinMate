@@ -2694,6 +2694,67 @@ three would have been caught by them — `styles.tokens.spec.ts` measures contra
   so the active nav state and the alert severities would stay platform-dependent. That is most of what the
   reference's look is.
 
+#### ADR-039 — amendment (2026-09-19): the frame is literal — the shell is one viewport tall and the content region is the scroller
+
+**Context.** Decision 5 called the shell *a frame*, and the chrome was drawn as one — but the frame was
+only a metaphor. `.shell--authenticated` was a grid of `auto 1fr auto` rows inside a `min-block-size:
+100dvh` box, so the **page** grew with the content and the window scrolled: the topbar and the sidebar
+scrolled away with it. The owner asked for both to stay put, and for Settings to sit at the bottom of the
+sidebar rather than below a scroll. The first half was a real defect rather than a preference — docs/07
+§7.4 (WCAG 2.4.11) requires a focused control never to be obscured by sticky chrome, and a window-scrolled
+shell can only satisfy that by giving every in-page `position: sticky` a hand-measured offset for a topbar
+whose height changes when it wraps.
+
+**Decision.** The signed-in shell is **exactly one viewport tall** (`block-size: 100dvh; overflow: hidden`
+on `.shell--authenticated`) and **`<main class="content">` is the only scrolling box** (`overflow-y: auto`
+plus `min-block-size: 0`, the declaration that lets a `1fr` track shrink below its content — the same
+automatic-minimum trap the shell's `minmax(0, 1fr)` column already existed for). Consequences:
+
+1. **The bar and the navigation cannot scroll away**, because they are rows of a frame that does not
+   scroll — no `position: fixed`, no measured offset, and the chrome stays in flow for focus order.
+2. **An in-page `position: sticky` sticks to the top of the content region**, which begins *below* the
+   bar, so docs/07 §7.4 holds with no per-screen topbar offset. Measured live on `/merchants` at
+   1280×600: the sticky editor card's top is 148 px against a topbar bottom of 61 px.
+3. **The sidebar's destination list scrolls, not the column** (`overflow-y: auto` on `.nav__list` with
+   `flex: 1 1 auto; min-block-size: 0`). This is what keeps the footer — **Settings**, docs/02 §2.1's
+   *Nalog* group — pinned to the bottom of the column: verified at 1280×500 px, where sixteen
+   destinations do not fit and the Settings row is still on screen.
+4. **The reading measure is padding, not `max-inline-size`** — because this element is now the scroll
+   container, and a capped, auto-margined box puts its scrollbar at the edge of the measure, 240 px inside
+   a 1920 px window. `padding-inline: max(var(--space-6), calc((100% - 1440px) / 2))` centres the same
+   1440 px of content (1600 px above that breakpoint) and leaves the scrollbar at the window's edge.
+5. **The shell resets the content region's scroll on `NavigationEnd`.** `withInMemoryScrolling`'s
+   `scrollPositionRestoration: 'top'` moves the **window**, which no longer moves; without the reset,
+   opening a screen from halfway down a long ledger landed halfway down the new one. The pane is reached
+   through the host element rather than a `viewChild()` signal, which is `undefined` under the mounted
+   harness (docs/15) — the same reason `assistant.component.ts` queries its own DOM.
+6. **The public shell is untouched.** The auth screens keep `min-block-size: 100dvh` and window scrolling,
+   because a centred single card is not a frame with chrome.
+7. **A hidden navigation takes its column with it** — a defect the pass above found next door. `/onboarding`
+   renders the authenticated shell with no `<nav>` (docs/02 §4.1 draws the wizard full-screen), but the wide
+   grid still reserved `264px`, so the wizard began at **x = 264 px** with an empty strip beside it and the
+   bar and every card pushed a quarter-window right. The shell now carries **`shell--bare`** whenever
+   `showNav()` is false and the wide rule collapses the grid to one column; measured live on `/onboarding`,
+   content left 264 → **0**, width 1016 → 1280, no overflow, and the same at 320 px.
+
+**Verified live 27/27** against the dev stack at 320×720, 768×1024, 1280×800 and 1280×500 (`.artifacts/
+shell-check/`): the content pane scrolls while the topbar and the sidebar/bottom bar keep identical
+rectangles before and after, no horizontal overflow at any width, the sidebar spans the viewport and its
+Settings row stays on screen, and the in-page sticky card sits below the bar. The instrument's own first
+run reported two failures that were *the instrument*: the 16 px it flagged between the footer and the
+sidebar's bottom edge is the sidebar's own `--space-4` padding, not a gap.
+
+**Alternatives rejected.**
+- **(a) `position: sticky` on the topbar with the window as the scroller** — a sticky grid item is
+  constrained to its own grid area, and the topbar's area is exactly its height, so it has nowhere to
+  move. Making it work needs `position: fixed` plus a measured offset for a wrapping bar, and it leaves
+  every in-page sticky element under the chrome.
+- **(b) A JavaScript topbar-height variable (ResizeObserver) feeding each in-page sticky offset** — more
+  machinery than the frame, and it fails the moment a screen adds a sticky element and forgets the
+  variable.
+- **(c) Constrain only at ≥1024 px** — the compact bar has the same problem, and two scroll models for one
+  shell is the kind of divergence ADR-039 exists to refuse.
+
 ---
 
 ## Part 2 — Risk register
