@@ -237,7 +237,13 @@ interface RecentRowRaw {
         }
 
         <div class="grid">
-          <section class="kpis" [attr.aria-label]="i18n.t('dashboard.summaryLabel')">
+          <!-- One column holding the KPI row and the panels. The rail is its **sibling**, not an item
+               spanning the grid's rows: a spanning item makes the grid size the rows it crosses, and
+               because the panel column already exceeded the rail's height the whole rail height was
+               charged to row 1 — 497 px for a 205 px KPI row, which is the 290 px of empty space this
+               screen showed between the tiles and the charts at 1920 px. -->
+          <div class="main">
+            <section class="kpis" [attr.aria-label]="i18n.t('dashboard.summaryLabel')">
             <!-- The one filled card, and the product's headline: what is left of the month. -->
             <article class="fm-card fm-card--brand hero" [class.hero--over]="d.isOverspent">
               @if (d.monthlyBudget) {
@@ -339,9 +345,9 @@ interface RecentRowRaw {
                 [summary]="i18n.t('dashboard.historyTrend')"
               />
             </article>
-          </section>
+            </section>
 
-          <div class="panels">
+            <div class="panels">
             <section class="fm-card panel panel--donut">
               <div class="fm-card__head">
                 <h2 class="fm-card__title">
@@ -482,7 +488,8 @@ interface RecentRowRaw {
               } @else {
                 <p class="empty">{{ i18n.t('dashboard.noTransactions') }}</p>
               }
-            </section>
+              </section>
+            </div>
           </div>
 
           <aside class="rail">
@@ -606,6 +613,14 @@ interface RecentRowRaw {
         display: grid;
         gap: var(--space-4);
       }
+      /* The left column: the KPI row and the panels, stacked. Its two children are a grid rather than a
+         single flow so their own gaps match the outer one exactly. */
+      .main {
+        display: grid;
+        gap: var(--space-4);
+        align-content: start;
+        min-inline-size: 0;
+      }
       .kpis {
         display: grid;
         gap: var(--space-4);
@@ -616,7 +631,8 @@ interface RecentRowRaw {
          on a 1280 px capture of an overspent month). */
       .kpis > *,
       .panels > *,
-      .rail > * {
+      .rail > *,
+      .main > * {
         min-inline-size: 0;
       }
       .panels {
@@ -649,11 +665,30 @@ interface RecentRowRaw {
       @media (min-width: 1400px) {
         .grid {
           grid-template-columns: minmax(0, 1fr) 21rem;
+          /* The start alignment is what lets the rail be content-height rather than stretched to the panel column,
+             which is in turn what makes it sticky (below). A stretched grid item has nowhere to move. */
           align-items: start;
         }
         .rail {
-          grid-column: 2;
-          grid-row: 1 / -1;
+          /* Second column, first row — placed by the flow, never spanning. It is the shortest column
+             (the assistant and the alert feed against four panel cards), so on a tall window it left a
+             large empty area beside the saving goals and the ledger. Sticking it keeps the composer and
+             the alerts beside whatever is being read instead of scrolling away from them, which is also
+             the only way the leftover space stops reading as a hole. align-self: start is required for
+             that: a stretched grid item has no room to move. */
+          align-self: start;
+          position: sticky;
+          inset-block-start: var(--space-6);
+        }
+      }
+      @media (min-width: 1600px) {
+        /* More of the row to the hero, which is the headline figure and a progress bar, and a slightly
+           wider rail — the panel column is the one that grows with the window. */
+        .kpis {
+          grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr));
+        }
+        .grid {
+          grid-template-columns: minmax(0, 1fr) 22rem;
         }
       }
 
@@ -779,17 +814,17 @@ interface RecentRowRaw {
         margin-block-start: auto;
       }
 
-      /* ---- the donut panel ---- */
+      /* ---- the donut panel ----
+         The ring sits **above** its legend at every width, which is the one arrangement that is honest at
+         all of them. Side by side needs about 544 px of card to give a four-column legend (icon, name,
+         share, amount) a readable name; below that the name was cut to an ellipsis — "Su…", "Gor…" — and
+         above it the same card is never reached, because the shell caps its content at 1600 px. So the
+         breakpoint would have been a rule that never fired in the layout it was written for. */
       .donut {
         display: grid;
         gap: var(--space-4);
         justify-items: center;
       }
-      /* Deliberately **not** side by side. The reference puts the ring and its legend in one row inside
-         a card about 440 px wide; in this layout the same card is ~370 px, and a four-column legend
-         (icon, name, share, amount) beside a 180 px ring clipped every figure in it (measured on the
-         1280 px capture). Stacking gives the legend the card's full width, and the ring only needs to
-         be read as a shape. */
       .donut fm-donut {
         justify-self: center;
       }
@@ -801,11 +836,15 @@ interface RecentRowRaw {
         list-style: none;
         inline-size: 100%;
       }
+      /* Flex with wrapping, not a four-column grid. As a grid the name column took whatever was left —
+         40 px beside a 180 px ring in a 490 px card — and the only way to make "Supermarket" fit that was
+         an ellipsis, which is how it shipped: Su…, Ost…, Gor…, Zdra… (measured at 1920 px). Wrapping moves
+         the amount to its own line instead, and the name keeps its full width. */
       .legend__row {
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr) auto auto;
+        display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        gap: var(--space-3);
+        gap: var(--space-1) var(--space-3);
         font-size: var(--text-sm);
       }
       /* The Category's own icon from the tree, which is what the mockup's coloured chips are: the seed
@@ -822,15 +861,20 @@ interface RecentRowRaw {
         line-height: 1;
       }
       .legend__name {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        /* Grows, but never below a readable word: this is what pushes the amount onto the next line
+           rather than letting the name be cut. */
+        flex: 1 1 6.5rem;
+        min-inline-size: 0;
+        overflow-wrap: anywhere;
       }
       .legend__pct {
+        margin-inline-start: auto;
         color: var(--color-text-muted);
         font-variant-numeric: tabular-nums;
       }
       .legend__amount {
+        flex: 0 0 auto;
+        margin-inline-start: auto;
         color: var(--color-text);
         font-variant-numeric: tabular-nums;
       }

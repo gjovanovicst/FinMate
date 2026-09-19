@@ -823,10 +823,24 @@ import { ThemeToggleComponent } from './shared/ui/theme-toggle/theme-toggle.comp
           padding: var(--space-6);
           /* No pinned bar at this width, so nothing to reserve. */
           padding-block-end: var(--space-6);
-          /* The reading measure. docs/07 §4.3's 1200 px was measured against a sidebar-less shell; at
-             264 px of chrome the content box is the same at 1440 px and narrower below it. */
+          /* The reading measure, **centred**. docs/07 §4.3's 1200 px was measured against a
+             sidebar-less shell; at 264 px of chrome the content box is the same at 1440 px and narrower
+             below it. Without margin-inline: auto the cap did not centre anything — it left the whole
+             page against the sidebar and pushed 216 px of empty background onto the right edge at
+             1920 px (measured), which reads as a layout that failed to fill rather than as a measure. */
           max-inline-size: 1440px;
           inline-size: 100%;
+          margin-inline: auto;
+        }
+      }
+
+      /* A window this wide can carry more than 1440 px of cards without the rows becoming hard to follow:
+         the cap is a reading measure, not a limit (docs/07 §4.3). Placed **after** the 1024 px block on
+         purpose — the first attempt sat above it, so the narrower cap won and the extra room never
+         arrived. */
+      @media (min-width: 1600px) {
+        .content {
+          max-inline-size: 1600px;
         }
       }
 

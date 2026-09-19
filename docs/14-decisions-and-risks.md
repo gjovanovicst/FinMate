@@ -2600,6 +2600,11 @@ invisible to `web:typecheck`, to the unit suite and to a code read:
    rule, which is why the first attempt "did nothing" while the computed style said `relative` and the bar
    sat 3 750 px down a long screen.
 6. **The sidebar's wordmark rendered on a phone**, again because a later rule set `display: flex`.
+7. **At 1920 px the page left 216 px of empty background on the right and 290 px of it between the KPI row
+   and the charts** — the first because the reading measure was never centred, the second because the rail
+   spanned the grid's rows and the grid charged its whole height to row 1. The donut's legend was also cut
+   to an ellipsis ("Su…", "Gor…") in the side-by-side arrangement written for a card width this layout never
+   reaches. All three are fixed, and the pass now captures **1920** as well as 320/768/1280.
 
 **Consequences.**
 - ✅ A person can choose light, dark, or the operating system, and the choice survives a reload without a

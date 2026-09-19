@@ -242,6 +242,23 @@ currency (ADR-003). Every derived figure they show is either the server's (`shar
 `SavingGoalModel.progress`, `BudgetModel.usedRatio`) or `@finmate/domain`'s (`changeRatio`,
 `shareOfTotal`), which is the same code the API's calculators use.
 
+**Wide screens are a layout of their own, not a stretched one.** Three rules were learned at 1920 px, and
+each is a mistake that looks like a cosmetic nit until it is measured:
+
+- **A grid item must not span the rows it is sized against.** The dashboard's rail (assistant + alerts)
+  was placed with `grid-row: 1 / -1` beside a two-row main column. Because the panel column already
+  exceeded the rail's height, the grid charged the **whole** rail height to row 1 — 497 px for a 205 px KPI
+  row — and left 290 px of empty background between the tiles and the charts. The fix is structural: the
+  KPI row and the panels live in one wrapper, and the rail is its **sibling** column.
+- **A reading measure has to be centred, and the cap relaxed once the window can carry it.** The content
+  column carried `max-inline-size: 1440px` with no `margin-inline: auto`, so at 1920 px the whole page sat
+  against the sidebar with 216 px of empty background on the right — a layout that had failed to fill
+  rather than a measure. It is centred, and 1600 px from 1600 px up. The wide rule must come **after** the
+  1024 px block or the narrower cap wins (this bit once, exactly as it did with the pinned compact bar).
+- **A panel should hand its spare height to its content.** Cards in a row are equal height by design, so
+  the chart's card was 342 px tall with a 190 px plot and 150 px of empty card under it. `fm-bar-chart`
+  now grows its plot to whatever the card gives it, keeping `height` as the floor.
+
 **Where the reference is deliberately not followed.** The account block names the **role**, not a person's
 name — `users.display_name` exists but no operation returns it, and inventing one from an email local
 part would be a fabricated identity. The greeting has no name for the same reason. The sidebar footer carries the

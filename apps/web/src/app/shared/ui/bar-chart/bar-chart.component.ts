@@ -58,7 +58,7 @@ export interface BarBucket {
         </figcaption>
       }
 
-      <div class="plot" [style.block-size.px]="height()">
+      <div class="plot" [style.min-block-size.px]="height()">
         @for (line of gridLines; track line) {
           <span class="plot__grid" [style.inset-block-start.%]="line"></span>
         }
@@ -118,6 +118,11 @@ export interface BarBucket {
       .chart {
         margin: 0;
         display: grid;
+        /* The legend, the plot, the axis. The plot takes the free height, so a card that is taller than
+           the plot's floor shows taller bars rather than a band of empty card below them — which is what
+           the dashboard's 1920 px capture showed, with the donut panel beside it setting the row height. */
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        block-size: 100%;
         gap: var(--space-3);
       }
       .legend {
@@ -142,6 +147,9 @@ export interface BarBucket {
         position: relative;
         display: grid;
         align-items: end;
+        /* Grown by the row above; min-block-size comes from the height input, so a caller still
+           states the floor it wants and the card decides whether there is more to give. */
+        min-block-size: 6rem;
       }
       /* The axis floor: without it a chart whose bars all sit at 0 looks identical to an empty one. */
       .plot::after {
