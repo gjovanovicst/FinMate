@@ -5,10 +5,21 @@
  * that the Cyrillic locale is **derived** rather than hand-maintained — two hand-written catalogues
  * drift, and a generated one can never be missing a key.
  *
- * This lives in `@finmate/nlp` rather than in one consumer because **both sides need it**: the browser
- * generates its `sr-Cyrl` catalogue from `sr-Latn` at runtime, and the API transliterates the
+ * This lives in `@finmate/domain` rather than in one consumer because **both sides need it**: the
+ * browser generates its `sr-Cyrl` catalogue from `sr-Latn` at runtime, and the API transliterates the
  * server-rendered copy it sends (assistant answers, notifications, email). A second copy in either
  * place is how the two scripts stop agreeing.
+ *
+ * ## Why it is not in `@finmate/nlp`
+ *
+ * It was, and that broke the bundle budget: `core/i18n/translations/index.ts` is on the **eager** path
+ * (the shell renders a title before any route loads), so importing `@finmate/nlp` from it dragged the
+ * whole package — `extract`, `segment`, `resolve`, the fold — into the initial chunk. The shell went
+ * from ~141 KB to 159.8 KB and `packages/nlp (isolated)` from a few KB to 106.2 KB, both over budget.
+ * docs/07 §11 is explicit that `packages/nlp` is **"one chunk, fetched with the first route that needs
+ * it — not eagerly"**, so the inert data table belongs in the one shared package the shell already
+ * loads, and the matcher stays lazy. If a shared i18n package ever exists, this is what should move
+ * into it.
  *
  * Two things make this safe rather than naive:
  *
@@ -22,7 +33,7 @@
  * The contract this must keep: transliterate the **template**, then interpolate. Transliterating a
  * rendered string would rewrite a user's own Category or Merchant name, which is their data.
  *
- * @module @finmate/nlp
+ * @module @finmate/domain
  */
 
 /** Words and tokens that must survive transliteration unchanged. */

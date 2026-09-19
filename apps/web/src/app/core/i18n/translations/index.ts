@@ -1,4 +1,8 @@
-import { toCyrillic } from '@finmate/nlp';
+// The **narrow** entry, deliberately, not the `@finmate/domain` barrel: this module is on the eager
+// path (the shell renders a title before any route loads), and the barrel re-exports the seed catalogue
+// — 39 categories and 62 merchants, 6.1 KB gzipped of data no first paint needs. Importing the barrel
+// here put it in the initial chunk and broke docs/07 §11's shell budget. See `tsconfig.base.json`.
+import { toCyrillic } from '@finmate/domain/cyrillic';
 
 import { en } from './en';
 import { srLatn } from './sr-latn';

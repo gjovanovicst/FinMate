@@ -41,6 +41,12 @@
 
     "paths": {
       "@finmate/domain": ["./packages/domain/src/index.ts"],
+      /* A **narrow** entry to the one domain module the eager shell needs (ADR-019's Cyrillic
+         catalogue). The barrel above re-exports the seed catalogue, and importing it from
+         `core/i18n/translations/index.ts` pulled 39 categories and 62 merchants into the initial
+         chunk — 6.1 KB of seed data on the pre-network path for a transliteration table
+         (docs/07 §11's shell budget). Anything on the eager path names its module. */
+      "@finmate/domain/cyrillic": ["./packages/domain/src/cyrillic.ts"],
       "@finmate/contracts": ["./packages/contracts/src/index.ts"],
       "@finmate/nlp": ["./packages/nlp/src/index.ts"],
       "@finmate/rules-engine": ["./packages/rules-engine/src/index.ts"],

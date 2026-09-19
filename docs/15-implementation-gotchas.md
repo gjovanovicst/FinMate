@@ -1585,6 +1585,22 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   same pass found the same shape in the **route table**, where every `title` was a Serbian literal that no
   switcher could reach (the browser tab), now `route.*` keys rendered by `LocalizedTitleStrategy`.
 
+- **An eager import of a package's *barrel* drags that barrel's whole re-export graph into the initial
+  chunk.** The i18n catalogue needs one function (`toCyrillic`), so `core/i18n/translations/index.ts` —
+  which is on the eager path, because the shell renders a document title before any route loads —
+  imported `@finmate/domain`… and the barrel re-exports the **seed catalogue**, so 39 categories and 62
+  merchants (6.1 KB gzipped) became part of the pre-network payload for every user. The same mistake from
+  the other direction is worse: importing `@finmate/nlp` there hoisted the whole matcher into the shell
+  and turned `packages/nlp (isolated)` from **2.7 KB** into **106.2 KB**, because the budget tool measures
+  the *chunks* an input lands in and nlp had landed in the shared vendor chunk.
+  **The failure is only visible in `pnpm bundle:budget`** — two rows move together (`App shell + boot`
+  over 100 %, `packages/nlp (isolated)` in the hundreds of percent) — and it reads like a "budget is too
+  tight" problem rather than a wrong-import problem. Import the **module**, not the package: `toCyrillic`
+  is `@finmate/domain/cyrillic`, declared in `tsconfig.base.json`, `apps/web/tsconfig.json` (a child
+  config *replaces* the parent's `paths`, so both) and `apps/web/vitest.config.mts` (where the narrow
+  alias must come **before** the broad one, because the alias plugin matches by prefix). Measured with
+  the fix: shell 151.3 → 151.8 KB against a 156 KB ceiling, nlp back to 2.7 KB.
+
 - **A glob pattern inside a block comment terminates it.** `src/**/*.ts` contains the sequence `*/`, so a
   `/** … */` doc comment that names a glob closes early and the rest of the sentence is parsed as code. The
   error is a bare parse failure pointing at the comment (`[PARSE_ERROR] Unexpected token` / `TS1005`), which

@@ -25,7 +25,7 @@
  * @module apps/api/src/common/i18n
  */
 
-import { toCyrillic } from '@finmate/nlp';
+import { toCyrillic } from '@finmate/domain';
 
 /** The three catalogues the product ships: English, Serbian Latin and Serbian Cyrillic. */
 export type CopyLocale = 'en' | 'sr-Latn' | 'sr-Cyrl';

@@ -2786,8 +2786,12 @@ string it composes and stores or sends.
 1. **Three catalogues, two written.** `CopyLocale` is `en | sr-Latn | sr-Cyrl`. Copy is authored as a pair
    (`{ en, sr }`) and rendered through `tr(locale, pair, params)`, which **transliterates the template first
    and interpolates second** — so a Household's own Category or Merchant name is never rewritten into
-   another script. `sr-Cyrl` is derived with the shared `toCyrillic` from `@finmate/nlp`, which the browser
-   also uses to generate its own Cyrillic catalogue: one transliteration table, not two.
+   another script. `sr-Cyrl` is derived with the shared `toCyrillic`, which both the browser (generating
+   its own Cyrillic catalogue) and the API (transliterating server copy) call: one transliteration table,
+   not two. It lives in `@finmate/domain`, **not** `@finmate/nlp` — the shell needs it on the eager path
+   and docs/07 §11 keeps nlp to one lazy chunk fetched with the first route that needs it. Importing the
+   nlp barrel from `core/i18n/translations/index.ts` put the whole package in the initial chunk and
+   failed both the shell and the `packages/nlp (isolated)` budgets within a minute of being merged.
 2. **English is the fallback.** An unrecognised tag, a missing preference or an absent argument resolves to
    English, the product's primary language (docs/01 §7). `APP_DEFAULT_LOCALE` now defaults to `en` to match
    the client.

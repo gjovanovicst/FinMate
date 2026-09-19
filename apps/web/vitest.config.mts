@@ -17,6 +17,12 @@ export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   resolve: {
     alias: {
+      // The **narrow** domain entry first, because the alias plugin matches a string key by prefix:
+      // `@finmate/domain` would otherwise swallow `@finmate/domain/cyrillic` and rewrite it to the
+      // barrel, which is the very import the eager path must avoid (see `tsconfig.base.json`).
+      '@finmate/domain/cyrillic': fileURLToPath(
+        new URL('../../packages/domain/src/cyrillic.ts', import.meta.url),
+      ),
       // scope:web may depend on scope:domain (docs/05 §2) — the money formatter is shared so the
       // client and server cannot disagree about how an amount is rendered.
       '@finmate/domain': fileURLToPath(new URL('../../packages/domain/src/index.ts', import.meta.url)),

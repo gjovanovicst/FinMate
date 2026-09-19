@@ -26,10 +26,6 @@ export {
   transliterateToLatin,
 } from './transliterate';
 
-// Latin → Cyrillic, for generating the `sr-Cyrl` copy of a catalogue (ADR-019). Shared because the
-// browser derives its catalogue and the API transliterates server-rendered copy with the same rules.
-export { toCyrillic } from './cyrillic';
-
 export {
   foldTokens,
   normalizeFragment,

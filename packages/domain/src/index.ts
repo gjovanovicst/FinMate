@@ -24,6 +24,14 @@ export {
 
 export { uuidv7, uuidv7Timestamp } from './uuid';
 
+/**
+ * Serbian Latin → Cyrillic (ADR-019), for generating the `sr-Cyrl` copy of a catalogue.
+ *
+ * In this package, not `@finmate/nlp`, because the browser needs it on the **eager** path and
+ * docs/07 §11 keeps nlp off it — see the module's own note.
+ */
+export { toCyrillic } from './cyrillic';
+
 export {
   addDays,
   addMonths,

@@ -17,6 +17,10 @@
        workspace aliases are repeated here. They are relative to this file's directory. */
     "baseUrl": ".",
     "paths": {
+      /* The narrow entry, so the eager i18n module does not pull the domain barrel (and its seed
+         catalogue) into the initial chunk — docs/07 §11's shell budget. Mirrored in
+         `tsconfig.base.json` and `vitest.config.mts`. */
+      "@finmate/domain/cyrillic": ["../../packages/domain/src/cyrillic.ts"],
       "@finmate/domain": ["../../packages/domain/src/index.ts"],
       "@finmate/contracts": ["../../packages/contracts/src/index.ts"],
       "@finmate/nlp": ["../../packages/nlp/src/index.ts"],
