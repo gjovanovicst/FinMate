@@ -122,6 +122,17 @@ function type(fixture: ReturnType<typeof mount>['fixture'], selector: string, va
   fixture.detectChanges();
 }
 
+/** Choose a category from the select, the way the sheet's own picker does. */
+function choose(fixture: ReturnType<typeof mount>['fixture'], categoryId: string): void {
+  const select = (fixture.nativeElement as HTMLElement).querySelector<HTMLSelectElement>(
+    'select[formcontrolname="categoryId"]',
+  );
+  if (select === null) throw new Error('no category select');
+  select.value = categoryId;
+  select.dispatchEvent(new Event('change'));
+  fixture.detectChanges();
+}
+
 afterEach(() => TestBed.resetTestingModule());
 
 describe('TransactionDetailComponent — the dirty guard (docs/07 §4.2)', () => {
@@ -197,11 +208,112 @@ describe('TransactionDetailComponent — the dirty guard (docs/07 §4.2)', () =>
     type(m.fixture, 'input[formcontrolname="description"]', 'Lidl');
     expect(m.component.hasUnsaved()).toBe(false);
 
+    // The tick is only offered once the category differs from the stored one (it can be honoured only
+    // then), so enabling it takes a category change — which is then put back, leaving the tick as the
+    // only difference. That is the state this asserts about.
+    choose(m.fixture, 'c2');
     const remember = m.root.querySelector<HTMLInputElement>('input[formcontrolname="remember"]')!;
     remember.click();
     m.fixture.detectChanges();
+    expect(m.component.hasUnsaved()).toBe(true);
 
+    choose(m.fixture, 'c1');
     expect(m.component.hasUnsaved()).toBe(false);
+  });
+});
+
+/**
+ * The learning loop's entry point in this sheet (F-09, ADR-010).
+ *
+ * Three things were silent here and all three read as "the tick does not work": a tick with no category
+ * change (nothing to learn from, and the save never reached the correction at all), a tick whose
+ * correction derived no rule (the sheet closed as if it had), and a proposal rendered at the end of the
+ * scrolling body, where a second press of Save discarded it.
+ */
+describe('TransactionDetailComponent — "Zapamti za buduće"', () => {
+  /** A correction with a rule already created, a proposal to answer, or nothing derivable at all. */
+  function correctionResponse(
+    correction: Record<string, unknown>,
+    rule: Record<string, unknown> | null,
+  ) {
+    return { correctTransaction: { transaction: { id: ROW.id, version: 2 }, correction, ruleConflicts: [], synthesisedRule: rule } };
+  }
+
+  it('offers the tick only once the category differs from the stored one', () => {
+    const m = mount();
+
+    // Nothing changed: the tick could not be honoured, so it is not offered — and the sheet says why
+    // rather than leaving a dead control (docs/02 §2). `/review` gates its own copy the same way.
+    expect(m.root.querySelector('input[formcontrolname="remember"]')).toBeNull();
+    expect(m.text()).toContain('Change the category and the app can learn a rule from it');
+
+    choose(m.fixture, 'c2');
+
+    expect(m.root.querySelector('input[formcontrolname="remember"]')).not.toBeNull();
+    expect(m.text()).toContain('Remember this for next time');
+    // And the explanation of what the tick will do comes back with it.
+    expect(m.text()).toContain('The app learns a rule from the change above');
+  });
+
+  it('keeps the sheet open when a ticked correction has nothing to derive a rule from', async () => {
+    // `captureParse` on `kupovina 500` after a correction: no merchant, no person, no distinctive word.
+    // Verified live against the API, where the mutation answers `ruleCreatedId: null` and
+    // `synthesisedRule: null` — the case the sheet used to close on exactly like a success.
+    const query = vi.fn((document: string) => {
+      if (document.includes('CorrectTransaction')) {
+        return Promise.resolve(correctionResponse({ id: 'cor-1', ruleCreatedId: null }, null));
+      }
+      return Promise.resolve({ updateTransaction: { id: ROW.id, version: 2 } });
+    });
+    const m = mount(query);
+
+    choose(m.fixture, 'c2');
+    m.root.querySelector<HTMLInputElement>('input[formcontrolname="remember"]')!.click();
+    m.fixture.detectChanges();
+    await m.component.save();
+    m.fixture.detectChanges();
+
+    expect(m.component.unlearnable()).toBe(true);
+    expect(m.close).not.toHaveBeenCalled();
+    expect(m.text()).toContain('Nothing to remember from this one');
+    // The way to get the rule anyway, and no false "discard your changes?" on the way out.
+    expect(m.button('Rules') ?? m.root.querySelector('a[href="/rules"]')).toBeTruthy();
+    expect(m.component.hasUnsaved()).toBe(false);
+  });
+
+  it('pins a proposal outside the scrolling body, so it cannot be missed', async () => {
+    const proposal = {
+      name: 'Naučeno: repro → Hrana',
+      priority: 100,
+      conditions: { all: [{ field: 'text', op: 'contains', value: 'repro' }] },
+      actions: { setCategoryId: 'c2' },
+      origin: 'LEARNED',
+      explanation: 'Everything with this word goes here.',
+      explanationCode: 'RULE_SYNTH_TOKEN',
+      trigger: 'DISTINCTIVE_TOKEN',
+      confidence: 0.9,
+    };
+    const query = vi.fn((document: string) => {
+      if (document.includes('CorrectTransaction')) {
+        return Promise.resolve(correctionResponse({ id: 'cor-2', ruleCreatedId: null }, proposal));
+      }
+      return Promise.resolve({ updateTransaction: { id: ROW.id, version: 2 } });
+    });
+    const m = mount(query);
+
+    choose(m.fixture, 'c2');
+    m.root.querySelector<HTMLInputElement>('input[formcontrolname="remember"]')!.click();
+    m.fixture.detectChanges();
+    await m.component.save();
+    m.fixture.detectChanges();
+
+    // The prompt stays, and it is **not** inside the sheet's scrollable body: the body's scroll
+    // position is what hid it, and a second Save then discarded the proposal.
+    expect(m.close).not.toHaveBeenCalled();
+    const prompt = m.root.querySelector('.proposal--pinned');
+    expect(prompt).not.toBeNull();
+    expect(prompt?.closest('.sheet__body')).toBeNull();
+    expect(m.text()).toContain('Remember this?');
   });
 });
 

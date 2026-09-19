@@ -349,17 +349,33 @@ const DELETE_TRANSACTION = /* GraphQL */ `
         />
 
         @if (!hasSplits()) {
-          <!-- The "Zapamti za ubuduće" checkbox (F-09, docs/02 §3). Only meaningful with a category,
-               so it is not offered on a split Transaction, whose categories live on its parts. -->
-          <label class="remember">
-            <input type="checkbox" formControlName="remember" />
-            <span class="remember__label">{{ i18n.t('transactions.remember') }}</span>
-          </label>
-          <p class="hint">{{ i18n.t('transactions.rememberHint') }}</p>
+          <!-- The "Zapamti za ubuduće" checkbox (F-09, docs/02 §3). Offered **only where the tick can be
+               honoured**: correctTransaction is the one path that reads rememberForFuture, and the save
+               only reaches it for a category **change**. With none, the tick recorded no Correction,
+               synthesised nothing and created nothing — a control that promised a rule and silently did
+               none of it (docs/02 §2: a control that cannot work is not shown). The review queue's own
+               copy of this checkbox is gated on the same fact (rememberAvailable).
+               (No backticks in this comment: the template is a JS template literal, and one would end
+               it with a parse error that names the wrong line.) -->
+          @if (canRemember()) {
+            <label class="remember">
+              <input type="checkbox" formControlName="remember" />
+              <span class="remember__label">{{ i18n.t('transactions.remember') }}</span>
+            </label>
+            <p class="hint">{{ i18n.t('transactions.rememberHint') }}</p>
+          } @else {
+            <p class="hint">{{ i18n.t('transactions.rememberNotApplicable') }}</p>
+          }
         }
 
+        </div>
+
         @if (proposal(); as offer) {
-          <section class="proposal" aria-live="polite">
+          <!-- Pinned between the scrolling body and the footer rather than left at the end of the body:
+               this prompt is the whole point of the tick, and a body scrolled back to the top hid it — so
+               a person who saw "nothing happened" pressed Save again, the second save had no category
+               change to correct, and the proposal was discarded with the rule uncreated. -->
+          <section class="proposal proposal--pinned" aria-live="polite">
             <h3 class="proposal__title">{{ i18n.t('transactions.proposalTitle') }}</h3>
             <p class="proposal__text">{{ explain(offer.explanationCode, offer.explanation) }}</p>
 
@@ -388,7 +404,16 @@ const DELETE_TRANSACTION = /* GraphQL */ `
           </section>
         }
 
-        </div>
+        @if (unlearnable()) {
+          <!-- A ticked save that produced **nothing to offer**: the correction is recorded and the
+               category is saved, but synthesis found no merchant, counterparty or distinctive word to
+               build a rule from. Closing on that was the silent no-op the tick was reported as. -->
+          <section class="proposal proposal--pinned" aria-live="polite">
+            <h3 class="proposal__title">{{ i18n.t('transactions.unlearnableTitle') }}</h3>
+            <p class="proposal__text">{{ i18n.t('transactions.unlearnable') }}</p>
+            <a class="proposal__link" routerLink="/rules">{{ i18n.t('nav.rules') }}</a>
+          </section>
+        }
 
         <footer class="sheet__foot">
           <button class="fm-btn fm-btn--primary" type="submit" [disabled]="busy()">
@@ -425,8 +450,9 @@ const DELETE_TRANSACTION = /* GraphQL */ `
       .sheet__form {
         display: grid;
         /* One row that may shrink: minmax(0, 1fr) is what lets the body scroll instead of stretching the
-           dialog past its own max-height. */
-        grid-template-rows: minmax(0, 1fr) auto;
+           dialog past its own max-height. The third auto row is the pinned learning prompt, which
+           collapses to nothing when there is no prompt to answer. */
+        grid-template-rows: minmax(0, 1fr) auto auto;
         max-height: min(90dvh, calc(100dvh - 2rem));
         /* The body is the only scrolling part. Announced as a region by role, not by scrolling: a sheet
            whose fields can move while a finger is on them is a sheet that submits the wrong value. */
@@ -550,6 +576,15 @@ const DELETE_TRANSACTION = /* GraphQL */ `
         border: 1px solid var(--color-primary);
         border-radius: var(--radius-md);
       }
+      /* The pinned variant: in the sheet's own grid between the scrolling body and the footer, so the
+         answer is on screen whatever the body's scroll position is. Bounded and scrollable itself, so a
+         long explanation cannot squeeze the body it sits beside. */
+      .proposal--pinned {
+        margin: 0 var(--space-4) var(--space-3);
+        max-block-size: 40dvh;
+        overflow-y: auto;
+        background: var(--color-surface);
+      }
       .proposal__title {
         margin: 0;
         font-size: var(--text-sm);
@@ -664,6 +699,23 @@ export class TransactionDetailComponent implements OnInit {
 
   readonly hasSplits = computed(() => this.transaction().splits.length > 0);
 
+  /**
+   * Whether the "Zapamti za ubuduće" tick can be honoured at all — the same predicate `/review` gates
+   * its own checkbox on (`rememberAvailable`).
+   *
+   * A **category change** is what makes the save a Correction, and `correctTransaction` is the only
+   * path that reads `rememberForFuture`. With no change there is nothing to learn from, so the tick was
+   * silently dropped: no Correction, no rule, no prompt, no message.
+   *
+   * A method rather than a `computed`: it reads a form control's value, which is not a signal, so a
+   * computed would answer once and never again (the trap `amountHint` above lives next to).
+   */
+  canRemember(): boolean {
+    if (this.hasSplits()) return false;
+    const chosen = this.form.controls.categoryId.value;
+    return (chosen === '' ? null : chosen) !== this.transaction().categoryId;
+  }
+
   readonly form = this.fb.nonNullable.group({
     // The "Zapamti za ubuduće" checkbox (F-09). Non-nullable so `getRawValue()` reads a real boolean
     // rather than `boolean | null`.
@@ -715,6 +767,16 @@ export class TransactionDetailComponent implements OnInit {
    */
   readonly proposal = signal<RuleProposal | null>(null);
   readonly proposalConflicts = signal<readonly RuleConflict[]>([]);
+
+  /**
+   * A ticked save the app could learn **nothing** from.
+   *
+   * The correction is recorded and the category is saved, but synthesis found no merchant, no
+   * counterparty and no distinctive word — so there is no rule to create and none to offer. The sheet
+   * used to close on that exactly as it does on success, which is the silent no-op the tick was
+   * reported as; this keeps it open with the reason and the way to make a rule by hand.
+   */
+  readonly unlearnable = signal(false);
 
   /** The correction the prompt belongs to, set when the correction is saved. */
   private lastCorrectionId: string | null = null;
@@ -872,6 +934,7 @@ export class TransactionDetailComponent implements OnInit {
     this.conflicted.set(false);
     this.proposal.set(null);
     this.proposalConflicts.set([]);
+    this.unlearnable.set(false);
     this.lastCorrectionId = null;
 
     try {
@@ -891,7 +954,7 @@ export class TransactionDetailComponent implements OnInit {
         // The correction bumped the version, so the plain edit below must use the new one — reusing
         // the old value would be a CONFLICT against our own write.
         version = corrected.correctTransaction.transaction.version;
-        this.captureProposal(corrected);
+        this.captureProposal(corrected, remember === true);
       }
 
       // The rest of the fields. `categoryId` is deliberately absent when the correction already
@@ -913,13 +976,18 @@ export class TransactionDetailComponent implements OnInit {
         await this.graphql.query(UPDATE_TRANSACTION, { input: edit });
       }
 
-      if (this.proposal() === null) {
+      if (this.proposal() === null && !this.unlearnable()) {
         this.saved.emit();
         // The write landed, so there is nothing to guard: `dismiss()` would ask about an edit that is
         // already stored.
         this.close();
+        return;
       }
-      // Otherwise the sheet stays open with the prompt, and `acceptProposal` finishes the job.
+
+      // The sheet stays open — with the prompt, or with the reason nothing could be learned — so the
+      // form is now exactly what is stored. Refreshing the snapshot is what stops the discard guard
+      // from asking whether to throw away an edit that already landed.
+      this.loaded = { ...this.form.getRawValue() } as Record<string, unknown>;
     } catch (error) {
       await this.handleSaveFailure(error, {
         ...(amountMinor === null ? {} : { amount: { amountMinor: amountMinor.toString(), currency } }),
@@ -969,7 +1037,7 @@ export class TransactionDetailComponent implements OnInit {
   }
 
   /** Keep whatever the correction offered, so the prompt can be answered after the save. */
-  private captureProposal(response: CorrectResponse): void {
+  private captureProposal(response: CorrectResponse, learnRequested: boolean): void {
     const result = response.correctTransaction;
     this.lastCorrectionId = result.correction.id;
     this.proposalConflicts.set(result.ruleConflicts);
@@ -980,6 +1048,9 @@ export class TransactionDetailComponent implements OnInit {
       return;
     }
     this.proposal.set(result.synthesisedRule);
+    // Ticked, and there is not even a proposal: saying nothing here is what made the feature look
+    // broken, because the save succeeds and the sheet closes as if a rule had been learned.
+    this.unlearnable.set(learnRequested && result.synthesisedRule === null);
   }
 
   /**

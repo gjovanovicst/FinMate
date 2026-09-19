@@ -1851,6 +1851,23 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   offline shell (and the queue) — the exact thing ADR-033's `SIGNED_OUT` arm exists to prevent. `restore()`
   now returns early for `SIGNED_OUT`, so the user's choice stays final for the page load.
 
+- **A "remember this" control has to be gated on the condition its server path needs, and its answer must
+  not live at the end of a scroller.** The edit sheet's *Zapamti za ubuduće* tick writes
+  `rememberForFuture`, which `correctTransaction` reads — and the save only reaches `correctTransaction`
+  for a category **change**. With none, the tick recorded no Correction, synthesised nothing and created
+  nothing, silently: the sheet closed exactly as it does on success. `/review` had gated its own copy of
+  that checkbox on the same fact since it was written (`rememberAvailable`), so the two screens disagreed
+  about when the control works — a fix applied to one of two copies is how that happens. Three silences,
+  all read as "the tick does not work", and all fixed in the sheet: (1) the tick is now offered only when
+  the category differs from the stored one; (2) when the correction derives **no** rule — no merchant, no
+  person and no distinctive word, e.g. `kupovina 500`, verified live as `ruleCreatedId: null` **and**
+  `synthesisedRule: null` — the sheet stays open and says so instead of closing; (3) the proposal prompt
+  moved out of the scrolling body to a pinned row above the footer. That last one mattered most: the body
+  is scrolled wherever the user left it, so a category changed at the top of the form hid a prompt
+  rendered at the bottom, and the natural reaction — press Save again — discarded it (the second save has
+  no category change to correct). ⚠️ Pinning also means the form is what is stored while the sheet stays
+  open, so `loaded` has to be refreshed or the discard guard asks whether to throw away a landed edit.
+
 ## 10. Cross-cutting rules of the codebase
 
 - **A live check that measures the wrong element lies in both directions.** Three times in 4.3.1 a

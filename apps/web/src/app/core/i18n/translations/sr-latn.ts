@@ -1081,6 +1081,11 @@ export const srLatn: Record<keyof typeof en, string> = {
   'transactions.remember': 'Zapamti za ubuduće',
   'transactions.rememberHint':
     'Aplikacija uči pravilo iz ove izmene, pa se isti unos kategorizuje bez ponovnog pitanja.',
+  'transactions.rememberNotApplicable':
+    'Promeni kategoriju pa aplikacija može da nauči pravilo iz toga — bez izmene nema šta da se zapamti.',
+  'transactions.unlearnableTitle': 'Nema šta da se zapamti iz ovoga',
+  'transactions.unlearnable':
+    'Nova kategorija je sačuvana, ali ovaj unos nije razrešio ni prodavca, ni osobu, ni prepoznatljivu reč, pa pravilo nije moglo da se izvede. Možeš ga napisati sam u Pravilima.',
   'transactions.proposalTitle': 'Da zapamtim?',
   'transactions.proposalShadowed':
     'Nije sačuvano: „{rule}” već odgovara prvo i postavlja {category}. Uredi to pravilo umesto ovoga.',

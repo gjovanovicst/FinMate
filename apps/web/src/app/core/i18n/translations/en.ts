@@ -1111,6 +1111,11 @@ export const en = {
   'transactions.remember': 'Remember this for next time',
   'transactions.rememberHint':
     'The app learns a rule from the change above, so the same entry is categorised without asking again.',
+  'transactions.rememberNotApplicable':
+    'Change the category and the app can learn a rule from it — with no change there is nothing to remember.',
+  'transactions.unlearnableTitle': 'Nothing to remember from this one',
+  'transactions.unlearnable':
+    'The new category is saved, but this entry resolved no merchant, no person and no distinctive word, so no rule could be derived. You can write one yourself in Rules.',
   'transactions.proposalTitle': 'Remember this?',
   'transactions.proposalShadowed':
     'Not saved: “{rule}” already answers first and sets {category}. Edit that rule instead.',
