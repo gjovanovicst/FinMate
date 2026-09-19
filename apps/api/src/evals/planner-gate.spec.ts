@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { isRunnable, planQuestion } from '../modules/assistant/query-planner';
+
+// `'sr-Latn'` on every call: this gate reads the Serbian cue vocabulary and the Serbian chips, and the
+// chip language follows the reader since ADR-040. The English chips are covered by their own specs.
 import { declaredRunnable, findWorkspaceRoot, loadAssistantBattery } from './dataset';
 import { evaluatePlannerGates, plannerGaps, plannerMismatches, type PlannerOutcome } from './scoring';
 
@@ -21,7 +24,7 @@ const battery = loadAssistantBattery(root);
 
 const run = (): readonly PlannerOutcome[] =>
   battery.questions.map((declared) => {
-    const plan = planQuestion(declared.question, battery.context);
+    const plan = planQuestion(declared.question, battery.context, 'sr-Latn');
     return {
       question: declared.question,
       declaredIntent: declared.intent,
@@ -74,10 +77,10 @@ describe('what a refusal offers', () => {
     );
     expect(refusals.length).toBeGreaterThan(0);
     for (const refusal of refusals) {
-      const { suggestions = [] } = planQuestion(refusal.question, battery.context);
+      const { suggestions = [] } = planQuestion(refusal.question, battery.context, 'sr-Latn');
       expect(suggestions.length, refusal.question).toBeGreaterThan(0);
       for (const suggestion of suggestions) {
-        const plan = planQuestion(suggestion, battery.context);
+        const plan = planQuestion(suggestion, battery.context, 'sr-Latn');
         expect(plan.intent, `${refusal.question} → ${suggestion}`).not.toBe('NO_TEMPLATE_MATCH');
         expect(isRunnable(plan), `${refusal.question} → ${suggestion}`).toBe(true);
       }
@@ -87,7 +90,7 @@ describe('what a refusal offers', () => {
   it('offers what the ledger can say about an entity the question named', () => {
     // `koliko je bilo za hranu` resolves the `Hrana` Category (through name or keyword) and no template
     // matches, so the first chip is about that Category — a question the assistant *can* answer.
-    const { suggestions = [] } = planQuestion('koliko je bilo za hranu', battery.context);
+    const { suggestions = [] } = planQuestion('koliko je bilo za hranu', battery.context, 'sr-Latn');
     expect(suggestions[0]).toContain('Hrana');
   });
 
@@ -95,7 +98,7 @@ describe('what a refusal offers', () => {
     // `kada mi sledeća plata dolazi` resolves the INCOME Category `Plata` and no template answers a
     // *schedule* question, so the first chip is the amount question for that Category — in the income
     // direction (A-9), because a spend question scoped to an income Category would refuse in turn.
-    const { suggestions = [] } = planQuestion('kada mi sledeća plata dolazi', battery.context);
+    const { suggestions = [] } = planQuestion('kada mi sledeća plata dolazi', battery.context, 'sr-Latn');
     expect(suggestions[0]).toContain('Plata');
     expect(suggestions[0]).toContain('zaradio');
     expect(suggestions.some((suggestion) => suggestion.includes('potrošio na kategoriji „Plata'))).toBe(false);
@@ -109,12 +112,12 @@ describe('what a refusal offers', () => {
       ...battery.context,
       categories: [{ id: 'cat-gorivo', name: 'Gorivo', path: 'Gorivo' }],
     };
-    const { suggestions = [] } = planQuestion('kakvo je vreme sutra', withoutFood);
+    const { suggestions = [] } = planQuestion('kakvo je vreme sutra', withoutFood, 'sr-Latn');
     expect(suggestions.some((suggestion) => suggestion.includes('hranu'))).toBe(false);
     // …and the ones it can answer are still offered.
     expect(suggestions.length).toBeGreaterThan(0);
     for (const suggestion of suggestions) {
-      expect(isRunnable(planQuestion(suggestion, withoutFood))).toBe(true);
+      expect(isRunnable(planQuestion(suggestion, withoutFood, 'sr-Latn'))).toBe(true);
     }
   });
 });

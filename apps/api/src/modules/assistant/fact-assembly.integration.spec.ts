@@ -414,7 +414,10 @@ describe('fact assembly (integration)', () => {
     };
   }
 
-  const assemble = (plan: Plan) => asTenant(() => facts.assemble(householdId, plan, { today: TODAY }));
+  // `locale: 'sr-Latn'` because these assertions read Serbian-grouped amounts (`46.650,00 RSD`), which is
+  // the shape the API produced for everyone before ADR-040 made the grouping follow the reader.
+  const assemble = (plan: Plan) =>
+    asTenant(() => facts.assemble(householdId, plan, { today: TODAY, locale: 'sr-Latn' }));
 
   /** The path the resolver will take: a question in, the facts out. */
   async function ask(question: string) {
@@ -486,18 +489,18 @@ describe('fact assembly (integration)', () => {
     // refused the question while the answer sat in the payload. Measured live before the fix:
     // `koliko sam potrošio u lidlu` answered "the data does not contain the spend for Lidl".
     const merchant = await assemble(planFor('SPEND_BY_MERCHANT', { merchantId: lidlId }));
-    expect(merchant.facts.formatted['scope']).toBe('at Lidl');
-    expect(merchant.facts.totals[0]?.label).toBe('Spending at Lidl');
+    expect(merchant.facts.formatted['scope']).toBe('kod prodavca „Lidl“');
+    expect(merchant.facts.totals[0]?.label).toBe('Trošak kod prodavca „Lidl“');
 
     const category = await assemble(planFor('SPEND_BY_CATEGORY', { categoryId: foodId }));
     // The *named* node, not the subtree's first id: "on Hrana", never "on Hrana / Supermarket".
-    expect(category.facts.formatted['scope']).toBe('on Hrana');
+    expect(category.facts.formatted['scope']).toBe('na kategoriji „Hrana“');
 
     const account = await assemble(planFor('SPEND_BY_ACCOUNT', { accountId }));
-    expect(account.facts.formatted['scope']).toBe('from Tekući');
+    expect(account.facts.formatted['scope']).toBe('sa računa „Tekući“');
 
     const tag = await assemble(planFor('SPEND_BY_TAG', { tagId }));
-    expect(tag.facts.formatted['scope']).toBe('tagged Putovanje');
+    expect(tag.facts.formatted['scope']).toBe('sa oznakom „Putovanje“');
   });
 
   it('labels the scope the routed template used, not every slot the question resolved (A-13a)', async () => {
@@ -510,12 +513,12 @@ describe('fact assembly (integration)', () => {
     const both = { categoryId: foodId, merchantId: lidlId };
 
     const byMerchant = await assemble(planFor('SPEND_BY_MERCHANT', both));
-    expect(byMerchant.facts.formatted['scope']).toBe('at Lidl');
-    expect(byMerchant.facts.totals[0]?.label).toBe('Spending at Lidl');
+    expect(byMerchant.facts.formatted['scope']).toBe('kod prodavca „Lidl“');
+    expect(byMerchant.facts.totals[0]?.label).toBe('Trošak kod prodavca „Lidl“');
 
     const byCategory = await assemble(planFor('SPEND_BY_CATEGORY', both));
-    expect(byCategory.facts.formatted['scope']).toBe('on Hrana');
-    expect(byCategory.facts.totals[0]?.label).toBe('Spending on Hrana');
+    expect(byCategory.facts.formatted['scope']).toBe('na kategoriji „Hrana“');
+    expect(byCategory.facts.totals[0]?.label).toBe('Trošak na kategoriji „Hrana“');
     // The two scopes are genuinely different figures, which is what made the mislabel a wrong answer
     // rather than a cosmetic one.
     expect(totalMinor(byMerchant)).not.toBe(totalMinor(byCategory));
@@ -525,7 +528,7 @@ describe('fact assembly (integration)', () => {
     const result = await assemble(planFor('SPEND_TOTAL'));
 
     expect(result.facts.formatted['scope']).toBeUndefined();
-    expect(result.facts.totals[0]?.label).toBe('Spending');
+    expect(result.facts.totals[0]?.label).toBe('Trošak');
   });
 
   it('names the top Categories with their full path and their machine value', async () => {
@@ -599,9 +602,9 @@ describe('fact assembly (integration)', () => {
 
     const net = await assemble(planFor('NET_CASHFLOW'));
     const totals = new Map(net.facts.totals.map((total) => [total.label, total.money.amountMinor]));
-    expect(totals.get('Income')).toBe('15000000');
-    expect(totals.get('Spending')).toBe('4665000');
-    expect(totals.get('Net')).toBe('10335000');
+    expect(totals.get('Prihod')).toBe('15000000');
+    expect(totals.get('Trošak')).toBe('4665000');
+    expect(totals.get('Neto')).toBe('10335000');
   });
 
   it('reports balances from AccountsService, never by re-deriving them (I-4)', async () => {
@@ -659,19 +662,19 @@ describe('fact assembly (integration)', () => {
   it('compares this period with the previous one, both figures computed', async () => {
     const result = await assemble(planFor('TREND_VS_LAST_MONTH'));
     const totals = new Map(result.facts.totals.map((total) => [total.label, total.money.amountMinor]));
-    expect(totals.get('This period')).toBe('4665000');
-    expect(totals.get('Previous period')).toBe('1000000');
-    expect(totals.get('Change')).toBe('3665000');
+    expect(totals.get('Ovaj period')).toBe('4665000');
+    expect(totals.get('Prethodni period')).toBe('1000000');
+    expect(totals.get('Promena')).toBe('3665000');
     expect(result.facts.formatted['previousPeriod']).toContain('2026-08');
   });
 
   it('compares this period with the Household\'s own three-month average', async () => {
     const result = await assemble(planFor('TREND_VS_AVERAGE'));
     const totals = new Map(result.facts.totals.map((total) => [total.label, total.money.amountMinor]));
-    expect(totals.get('This period')).toBe('4665000');
+    expect(totals.get('Ovaj period')).toBe('4665000');
     // June and July are zero, August is 10.000 ⇒ 10.000/3 = 3.333,33, truncated to minor units.
-    expect(totals.get('Usual')).toBe('333333');
-    expect(totals.get('Difference')).toBe('4331667');
+    expect(totals.get('Uobičajeno')).toBe('333333');
+    expect(totals.get('Razlika')).toBe('4331667');
     expect(result.facts.formatted['periodsCompared']).toBe('3');
   });
 
@@ -792,8 +795,8 @@ describe('fact assembly (integration)', () => {
     // 150.000 of September income is filed under `Plata`; the expense categories are a different kind,
     // so the same call with `kind: 'INCOME'` cannot pick them up.
     expect(result.facts.totals[0]?.money.amountMinor).toBe('15000000');
-    expect(result.facts.totals[0]?.label).toBe('Income on Plata');
-    expect(result.facts.formatted['scope']).toBe('on Plata');
+    expect(result.facts.totals[0]?.label).toBe('Prihod na kategoriji „Plata“');
+    expect(result.facts.formatted['scope']).toBe('na kategoriji „Plata“');
     expect(result.provenance.sourceQuery).toBe('income.byCategory.v1');
     // …and an EXPENSE Category has nothing to contribute to it.
     const wrongDirection = await assemble(planFor('INCOME_BY_CATEGORY', { categoryId: foodId }));
@@ -806,9 +809,9 @@ describe('fact assembly (integration)', () => {
     expect(result.available).toBe(true);
     // 25.000 contributed (15.000 + 10.000) of a 100.000 target, from `goalProgress` in the domain.
     const totals = new Map(result.facts.totals.map((total) => [total.label, total.money.amountMinor]));
-    expect(totals.get('Saved')).toBe('2500000');
-    expect(totals.get('Target')).toBe('10000000');
-    expect(totals.get('Remaining')).toBe('7500000');
+    expect(totals.get('Sačuvano')).toBe('2500000');
+    expect(totals.get('Cilj')).toBe('10000000');
+    expect(totals.get('Preostalo')).toBe('7500000');
     expect(result.facts.formatted['progressPercent']).toBe('25');
     expect(result.facts.formatted['goal']).toBe('Letovanje');
     expect(result.facts.formatted['targetDate']).toBe('2027-06-01');
@@ -897,9 +900,9 @@ describe('fact assembly (integration)', () => {
       ['Gorivo', '151000'],
     ]);
     const totals = new Map(result.facts.totals.map((total) => [total.label, total.money.amountMinor]));
-    expect(totals.get('Target')).toBe('500000');
-    expect(totals.get('Proposed')).toBe('500000');
-    expect(totals.get('Shortfall')).toBe('0');
+    expect(totals.get('Cilj')).toBe('500000');
+    expect(totals.get('Predloženo')).toBe('500000');
+    expect(totals.get('Nedostaje')).toBe('0');
     expect(result.facts.formatted['meetsTarget']).toBe('true');
     expect(result.facts.formatted['capPercent']).toBe('20');
   });
@@ -911,8 +914,8 @@ describe('fact assembly (integration)', () => {
 
     expect(result.available).toBe(true);
     const totals = new Map(result.facts.totals.map((total) => [total.label, total.money.amountMinor]));
-    expect(totals.get('Proposed')).toBe('533000');
-    expect(totals.get('Shortfall')).toBe('1467000');
+    expect(totals.get('Predloženo')).toBe('533000');
+    expect(totals.get('Nedostaje')).toBe('1467000');
     expect(result.facts.formatted['meetsTarget']).toBe('false');
   });
 
@@ -1007,8 +1010,9 @@ describe('fact assembly (integration)', () => {
       requestId: 'facts-it-negative',
     };
     const asNegTenant = <T>(fn: () => Promise<T>): Promise<T> => runWithTenant(negContext, fn);
+    // `sr-Latn` for the same reason as the main helper: the assertions read the Serbian labels.
     const assembleNeg = (plan: Plan) =>
-      asNegTenant(() => facts.assemble(negHouseholdId, plan, { today: TODAY }));
+      asNegTenant(() => facts.assemble(negHouseholdId, plan, { today: TODAY, locale: 'sr-Latn' }));
 
     beforeAll(async () => {
       const stamp = Date.now();
@@ -1108,9 +1112,9 @@ describe('fact assembly (integration)', () => {
       const result = await assembleNeg(planFor('NET_CASHFLOW'));
 
       expect(result.available).toBe(true);
-      expect(totalValue(result, 'Income')).toBe('0');
-      expect(totalValue(result, 'Spending')).toBe('5000000');
-      expect(totalValue(result, 'Net')).toBe('-5000000');
+      expect(totalValue(result, 'Prihod')).toBe('0');
+      expect(totalValue(result, 'Trošak')).toBe('5000000');
+      expect(totalValue(result, 'Neto')).toBe('-5000000');
       // The rendered sentence carries the sign: a figure the narrator may quote verbatim.
       expect(result.facts.formatted['headline']).toContain('-');
       expect(result.facts.totals[2]?.formatted).toContain('-');
@@ -1118,13 +1122,13 @@ describe('fact assembly (integration)', () => {
 
     it('renders a negative period-over-period change in both trend templates', async () => {
       const previous = await assembleNeg(planFor('TREND_VS_LAST_MONTH'));
-      expect(totalValue(previous, 'Change')).toBe('-15000000');
+      expect(totalValue(previous, 'Promena')).toBe('-15000000');
       expect(previous.facts.formatted['headline']).toContain('-');
 
       const average = await assembleNeg(planFor('TREND_VS_AVERAGE'));
       // 50.000 against the 66.666,66 mean of the three months before it (200.000, 0, 0), floored to
       // whole para: 200.000 / 3 = 66.666,66, so the difference is −16.666,66.
-      expect(totalValue(average, 'Difference')).toBe('-1666666');
+      expect(totalValue(average, 'Razlika')).toBe('-1666666');
       expect(average.facts.formatted['headline']).toContain('-');
     });
 
@@ -1153,7 +1157,7 @@ describe('fact assembly (integration)', () => {
       // so there is no overspend to report. Emitting the signed value under the label "Projected
       // overrun" would assert one, and the template frame reads this total by exactly that label:
       // it would have said "over by -25.000,00 RSD".
-      expect(result.facts.totals.map((total) => total.label)).toEqual(['Projected total']);
+      expect(result.facts.totals.map((total) => total.label)).toEqual(['Predviđeno ukupno']);
       expect(result.facts.formatted['headline']).not.toContain('-');
     });
   });

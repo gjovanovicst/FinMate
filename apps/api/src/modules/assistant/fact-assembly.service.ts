@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 import {
   balance,
@@ -10,7 +10,8 @@ import {
   type LocalDate,
 } from '@finmate/domain';
 
-import { CONFIG, type AppConfig } from '../../config/config';
+import { copyIntlLocale, tr, type CopyLocale } from '../../common/i18n/copy';
+import { FACT_LABELS } from '../../common/i18n/fact-labels';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { BudgetsService } from '../budgeting/budgets.service';
@@ -133,7 +134,6 @@ const MAX_ROWS = 50;
 @Injectable()
 export class FactAssemblyService {
   private readonly logger = new Logger(FactAssemblyService.name);
-  private readonly locale: string;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -143,18 +143,13 @@ export class FactAssemblyService {
     private readonly merchants: MerchantsService,
     private readonly goals: GoalsService,
     private readonly recurring: RecurringService,
-    @Inject(CONFIG) config: AppConfig,
-  ) {
-    // The catalogue's primary language is English; money is rendered in the Serbian locale by
-    // `formatBalance`'s default, which is what every other surface in the product already shows.
-    this.locale = config.APP_DEFAULT_LOCALE;
-  }
+  ) {}
 
   /** Assemble the facts for one plan. Never throws for a template that is merely unimplemented. */
   async assemble(
     householdId: string,
     plan: Plan,
-    options: { readonly today: LocalDate },
+    options: { readonly today: LocalDate; readonly locale?: CopyLocale },
   ): Promise<AssemblyResult> {
     const currency = await this.ledgerCurrency(householdId);
     const context: Context = {
@@ -163,6 +158,8 @@ export class FactAssemblyService {
       today: options.today,
       period: plan.slots.period,
       plan,
+      // Defaults to English, the product's primary language, for the callers that do not carry one.
+      locale: options.locale ?? 'en',
     };
 
     // The refusal is enforced **here**, not only by the caller. `isRunnable` is the planner's own
@@ -319,9 +316,9 @@ export class FactAssemblyService {
     const goal = await this.goal(context);
     if (goal === null) return this.unavailable(context, 'UNRUNNABLE:goalId');
 
-    const contributed = this.format(goal.contributedMinor, goal.currency);
-    const target = this.format(goal.targetMinor, goal.currency);
-    const remaining = this.format(goal.remainingMinor, goal.currency);
+    const contributed = this.format(context, goal.contributedMinor, goal.currency);
+    const target = this.format(context, goal.targetMinor, goal.currency);
+    const remaining = this.format(context, goal.remainingMinor, goal.currency);
     // A **rounded** percentage, and the rounding is the only arithmetic this builder does: it is a
     // display ratio `@finmate/domain` already computed (capped at 1 — a bar cannot be 140 % full).
     const progressPercent = String(Math.round(goal.progress * 100));
@@ -330,17 +327,17 @@ export class FactAssemblyService {
       rows: [{ label: goal.name, value: goal.contributedMinor.toString(), formatted: contributed }],
       totals: [
         {
-          label: 'Saved',
+          label: tr(context.locale, FACT_LABELS.saved),
           money: { amountMinor: goal.contributedMinor.toString(), currency: goal.currency },
           formatted: contributed,
         },
         {
-          label: 'Target',
+          label: tr(context.locale, FACT_LABELS.target),
           money: { amountMinor: goal.targetMinor.toString(), currency: goal.currency },
           formatted: target,
         },
         {
-          label: 'Remaining',
+          label: tr(context.locale, FACT_LABELS.remaining),
           money: { amountMinor: goal.remainingMinor.toString(), currency: goal.currency },
           formatted: remaining,
         },
@@ -379,13 +376,13 @@ export class FactAssemblyService {
       return this.unavailable(context, 'NO_TARGET_DATE');
     }
 
-    const monthly = this.format(goal.requiredPerMonthMinor, goal.currency);
+    const monthly = this.format(context, goal.requiredPerMonthMinor, goal.currency);
 
     return {
       rows: [],
       totals: [
         {
-          label: 'Per month',
+          label: tr(context.locale, FACT_LABELS.perMonth),
           money: { amountMinor: goal.requiredPerMonthMinor.toString(), currency: goal.currency },
           formatted: monthly,
         },
@@ -394,8 +391,8 @@ export class FactAssemblyService {
         goal: goal.name,
         headline: monthly,
         monthly,
-        remaining: this.format(goal.remainingMinor, goal.currency),
-        target: this.format(goal.targetMinor, goal.currency),
+        remaining: this.format(context, goal.remainingMinor, goal.currency),
+        target: this.format(context, goal.targetMinor, goal.currency),
         monthsRemaining: String(goal.monthsRemaining),
         targetDate: goal.targetDate,
         currency: goal.currency,
@@ -431,7 +428,7 @@ export class FactAssemblyService {
           ? `${rule.description} (next ${rule.nextOccurrenceOn})`
           : `${rule.description} (paused)`,
         value: rule.amountMinor.toString(),
-        formatted: this.format(rule.amountMinor, rule.currency),
+        formatted: this.format(context, rule.amountMinor, rule.currency),
       })),
       totals: [],
       formatted: {
@@ -476,7 +473,7 @@ export class FactAssemblyService {
       rows: shown.map((occurrence) => ({
         label: `${occurrence.description} (${occurrence.occurredOn})`,
         value: occurrence.amountMinor.toString(),
-        formatted: this.format(occurrence.amountMinor, context.currency),
+        formatted: this.format(context, occurrence.amountMinor, context.currency),
         ...(occurrence.categoryId === null ? {} : { categoryId: occurrence.categoryId }),
       })),
       totals: [],
@@ -526,8 +523,8 @@ export class FactAssemblyService {
       this.spendModel.total(context.householdId, this.window(context), { ...scope, kind }),
       this.scopePhrase(context),
     ]);
-    const formatted = this.format(totals.minor, context.currency);
-    const base = kind === 'INCOME' ? 'Income' : 'Spending';
+    const formatted = this.format(context, totals.minor, context.currency);
+    const base = tr(context.locale, kind === 'INCOME' ? FACT_LABELS.income : FACT_LABELS.spending);
     const label = scopePhrase === null ? base : `${base} ${scopePhrase}`;
 
     return {
@@ -576,19 +573,19 @@ export class FactAssemblyService {
     const required = context.plan.template.requiredSlots;
     if (required.includes('merchantId') && slots.merchantId !== undefined) {
       const name = await this.merchantName(slots.merchantId);
-      return name === null ? null : `at ${name}`;
+      return name === null ? null : tr(context.locale, { en: 'at {name}', sr: 'kod prodavca „{name}“' }, { name });
     }
     if (required.includes('accountId') && slots.accountId !== undefined) {
       const name = await this.accountName(context.householdId, slots.accountId);
-      return name === null ? null : `from ${name}`;
+      return name === null ? null : tr(context.locale, { en: 'from {name}', sr: 'sa računa „{name}“' }, { name });
     }
     if (required.includes('tagId') && slots.tagId !== undefined) {
       const name = await this.tagName(slots.tagId);
-      return name === null ? null : `tagged ${name}`;
+      return name === null ? null : tr(context.locale, { en: 'tagged {name}', sr: 'sa oznakom „{name}“' }, { name });
     }
     if (required.includes('categoryId') && slots.categoryId !== undefined) {
       const path = await this.categoryPath(context.householdId, slots.categoryId);
-      return path === null ? null : `on ${path}`;
+      return path === null ? null : tr(context.locale, { en: 'on {name}', sr: 'na kategoriji „{name}“' }, { name: path });
     }
     return null;
   }
@@ -641,7 +638,7 @@ export class FactAssemblyService {
       .map(([categoryId, minor]) => ({
         label: this.pathOf(categoryId, spend.byId),
         value: minor.toString(),
-        formatted: this.format(minor, context.currency),
+        formatted: this.format(context, minor, context.currency),
         categoryId,
       }));
 
@@ -650,7 +647,7 @@ export class FactAssemblyService {
       totals: [],
       formatted: {
         period: `${context.period.start} – ${context.period.end}`,
-        headline: rows[0]?.formatted ?? this.format(0n, context.currency),
+        headline: rows[0]?.formatted ?? this.format(context, 0n, context.currency),
         topLabel: rows[0]?.label ?? '',
       },
       transactionCount: spend.transactionCount,
@@ -685,29 +682,29 @@ export class FactAssemblyService {
     const rows = proposal.lines.map((line) => ({
       label: this.pathOf(line.categoryId, spend.byId),
       value: line.reductionMinor.toString(),
-      formatted: this.format(line.reductionMinor, context.currency),
+      formatted: this.format(context, line.reductionMinor, context.currency),
       categoryId: line.categoryId,
     }));
 
-    const target = this.format(proposal.targetMinor, context.currency);
-    const proposed = this.format(proposal.proposedMinor, context.currency);
-    const shortfall = this.format(proposal.shortfallMinor, context.currency);
+    const target = this.format(context, proposal.targetMinor, context.currency);
+    const proposed = this.format(context, proposal.proposedMinor, context.currency);
+    const shortfall = this.format(context, proposal.shortfallMinor, context.currency);
 
     return {
       rows,
       totals: [
         {
-          label: 'Target',
+          label: tr(context.locale, FACT_LABELS.target),
           money: { amountMinor: proposal.targetMinor.toString(), currency: context.currency },
           formatted: target,
         },
         {
-          label: 'Proposed',
+          label: tr(context.locale, FACT_LABELS.proposed),
           money: { amountMinor: proposal.proposedMinor.toString(), currency: context.currency },
           formatted: proposed,
         },
         {
-          label: 'Shortfall',
+          label: tr(context.locale, FACT_LABELS.shortfall),
           money: { amountMinor: proposal.shortfallMinor.toString(), currency: context.currency },
           formatted: shortfall,
         },
@@ -782,7 +779,7 @@ export class FactAssemblyService {
     const rows = grouped.map((row) => ({
       label: row.merchantId === null ? (row.description ?? '—') : (names.get(row.merchantId) ?? '—'),
       value: row.minor.toString(),
-      formatted: this.format(row.minor, context.currency),
+      formatted: this.format(context, row.minor, context.currency),
       ...(row.merchantId === null ? {} : { merchantId: row.merchantId }),
     }));
 
@@ -791,7 +788,7 @@ export class FactAssemblyService {
       totals: [],
       formatted: {
         period: `${context.period.start} – ${context.period.end}`,
-        headline: rows[0]?.formatted ?? this.format(0n, context.currency),
+        headline: rows[0]?.formatted ?? this.format(context, 0n, context.currency),
         topLabel: rows[0]?.label ?? '',
       },
       transactionCount: grouped.reduce((sum, row) => sum + row.transactionCount, 0),
@@ -817,13 +814,13 @@ export class FactAssemblyService {
       rows: rows.map((row) => ({
         label: row.description,
         value: row.amount_minor.toString(),
-        formatted: this.format(row.amount_minor, context.currency),
+        formatted: this.format(context, row.amount_minor, context.currency),
         ...(row.category_id === null ? {} : { categoryId: row.category_id }),
       })),
       totals: [],
       formatted: {
         period: `${context.period.start} – ${context.period.end}`,
-        headline: rows[0] === undefined ? this.format(0n, context.currency) : this.format(rows[0].amount_minor, context.currency),
+        headline: rows[0] === undefined ? this.format(context, 0n, context.currency) : this.format(context, rows[0].amount_minor, context.currency),
       },
       transactionCount: rows.length,
       filters: { kind },
@@ -841,15 +838,15 @@ export class FactAssemblyService {
       rows: [],
       totals: [
         {
-          label: 'Average per day',
+          label: tr(context.locale, FACT_LABELS.averagePerDay),
           money: { amountMinor: perDay.toString(), currency: context.currency },
-          formatted: this.format(perDay, context.currency),
+          formatted: this.format(context, perDay, context.currency),
         },
       ],
       formatted: {
         period: `${context.period.start} – ${context.period.end}`,
         days: String(days),
-        headline: this.format(perDay, context.currency),
+        headline: this.format(context, perDay, context.currency),
         total: total.formatted['headline'] ?? '',
       },
       transactionCount: total.transactionCount,
@@ -901,7 +898,7 @@ export class FactAssemblyService {
       rows: rows.map((row) => ({
         label: row.description,
         value: row.amount_minor.toString(),
-        formatted: this.format(row.amount_minor, context.currency),
+        formatted: this.format(context, row.amount_minor, context.currency),
         ...(row.category_id === null ? {} : { categoryId: row.category_id }),
       })),
       totals: [],
@@ -924,7 +921,7 @@ export class FactAssemblyService {
       rows: rows.map((row) => ({
         label: row.description,
         value: row.amount_minor.toString(),
-        formatted: this.format(row.amount_minor, context.currency),
+        formatted: this.format(context, row.amount_minor, context.currency),
         ...(row.category_id === null ? {} : { categoryId: row.category_id }),
       })),
       totals: [],
@@ -951,26 +948,26 @@ export class FactAssemblyService {
       rows: [],
       totals: [
         {
-          label: 'Income',
+          label: tr(context.locale, FACT_LABELS.income),
           money: { amountMinor: incomeMinor.toString(), currency: context.currency },
-          formatted: this.format(incomeMinor, context.currency),
+          formatted: this.format(context, incomeMinor, context.currency),
         },
         {
-          label: 'Spending',
+          label: tr(context.locale, FACT_LABELS.spending),
           money: { amountMinor: expenseMinor.toString(), currency: context.currency },
-          formatted: this.format(expenseMinor, context.currency),
+          formatted: this.format(context, expenseMinor, context.currency),
         },
         {
-          label: 'Net',
+          label: tr(context.locale, FACT_LABELS.net),
           money: { amountMinor: netMinor.toString(), currency: context.currency },
-          formatted: this.format(netMinor, context.currency),
+          formatted: this.format(context, netMinor, context.currency),
         },
       ],
       formatted: {
         period: `${context.period.start} – ${context.period.end}`,
-        headline: this.format(netMinor, context.currency),
-        income: this.format(incomeMinor, context.currency),
-        spending: this.format(expenseMinor, context.currency),
+        headline: this.format(context, netMinor, context.currency),
+        income: this.format(context, incomeMinor, context.currency),
+        spending: this.format(context, expenseMinor, context.currency),
       },
       transactionCount: expense.transactionCount + income.transactionCount,
       filters: {},
@@ -990,11 +987,11 @@ export class FactAssemblyService {
       rows: accounts.map((account) => ({
         label: account.name,
         value: String(account.balance.amountMinor),
-        formatted: this.format(BigInt(account.balance.amountMinor), account.balance.currency),
+        formatted: this.format(context, BigInt(account.balance.amountMinor), account.balance.currency),
       })),
       totals: [],
       formatted: {
-        headline: accounts[0] === undefined ? this.format(0n, context.currency) : this.format(BigInt(accounts[0].balance.amountMinor), accounts[0].balance.currency),
+        headline: accounts[0] === undefined ? this.format(context, 0n, context.currency) : this.format(context, BigInt(accounts[0].balance.amountMinor), accounts[0].balance.currency),
         count: String(accounts.length),
         asOf: context.today,
       },
@@ -1016,21 +1013,21 @@ export class FactAssemblyService {
 
     return {
       rows: chosen.map((budget) => ({
-        label: budget.categoryName ?? 'Household',
+        label: budget.categoryName ?? tr(context.locale, FACT_LABELS.household),
         value: String(budget.remaining.amountMinor),
-        formatted: this.format(budget.remaining.amountMinor, budget.remaining.currency),
+        formatted: this.format(context, budget.remaining.amountMinor, budget.remaining.currency),
         ...(budget.categoryId === null ? {} : { categoryId: budget.categoryId }),
       })),
       totals: chosen.slice(0, 1).map((budget) => ({
-        label: budget.categoryName ?? 'Household',
+        label: budget.categoryName ?? tr(context.locale, FACT_LABELS.household),
         money: { amountMinor: budget.remaining.amountMinor.toString(), currency: budget.remaining.currency },
-        formatted: this.format(budget.remaining.amountMinor, budget.remaining.currency),
+        formatted: this.format(context, budget.remaining.amountMinor, budget.remaining.currency),
       })),
       formatted: {
         period: `${context.period.start} – ${context.period.end}`,
-        headline: chosen[0] === undefined ? this.format(0n, context.currency) : this.format(chosen[0].remaining.amountMinor, chosen[0].remaining.currency),
-        spent: chosen[0] === undefined ? this.format(0n, context.currency) : this.format(chosen[0].spent.amountMinor, chosen[0].spent.currency),
-        limit: chosen[0] === undefined || chosen[0].amount === undefined ? '' : this.format(BigInt(chosen[0].amount.amountMinor), chosen[0].amount.currency),
+        headline: chosen[0] === undefined ? this.format(context, 0n, context.currency) : this.format(context, chosen[0].remaining.amountMinor, chosen[0].remaining.currency),
+        spent: chosen[0] === undefined ? this.format(context, 0n, context.currency) : this.format(context, chosen[0].spent.amountMinor, chosen[0].spent.currency),
+        limit: chosen[0] === undefined || chosen[0].amount === undefined ? '' : this.format(context, BigInt(chosen[0].amount.amountMinor), chosen[0].amount.currency),
         asOf: context.today,
       },
       transactionCount: 0,
@@ -1048,9 +1045,9 @@ export class FactAssemblyService {
     const span = this.span(budgets);
     return {
       rows: budgets.map((budget) => ({
-        label: budget.categoryName ?? 'Household',
+        label: budget.categoryName ?? tr(context.locale, FACT_LABELS.household),
         value: String(budget.remaining.amountMinor),
-        formatted: this.format(budget.remaining.amountMinor, budget.remaining.currency),
+        formatted: this.format(context, budget.remaining.amountMinor, budget.remaining.currency),
         ...(budget.categoryId === null ? {} : { categoryId: budget.categoryId }),
       })),
       totals: [],
@@ -1068,14 +1065,14 @@ export class FactAssemblyService {
       rows: [],
       totals: [
         {
-          label: 'Safe to spend today',
+          label: tr(context.locale, FACT_LABELS.safeToSpendToday),
           money: { amountMinor: safe.amountMinor.toString(), currency: safe.currency },
-          formatted: this.format(safe.amountMinor, safe.currency),
+          formatted: this.format(context, safe.amountMinor, safe.currency),
         },
       ],
       formatted: {
-        headline: this.format(safe.amountMinor, safe.currency),
-        spent: this.format(dashboard.spentThisMonth.amountMinor, dashboard.spentThisMonth.currency),
+        headline: this.format(context, safe.amountMinor, safe.currency),
+        spent: this.format(context, dashboard.spentThisMonth.amountMinor, dashboard.spentThisMonth.currency),
         asOf: dashboard.today,
       },
       transactionCount: 0,
@@ -1094,9 +1091,9 @@ export class FactAssemblyService {
       rows: [],
       totals: [
         {
-          label: 'Projected total',
+          label: tr(context.locale, FACT_LABELS.projectedTotal),
           money: { amountMinor: projected.amountMinor.toString(), currency: projected.currency },
-          formatted: this.format(projected.amountMinor, projected.currency),
+          formatted: this.format(context, projected.amountMinor, projected.currency),
         },
         // ⚠️ Only when the month is genuinely **over**: `projectedOverrun` is a signed Balance, so a
         // negative one means the projection is *under* budget. Emitting it under the label "Projected
@@ -1109,14 +1106,14 @@ export class FactAssemblyService {
           ? []
           : [
               {
-                label: 'Projected overrun',
+                label: tr(context.locale, FACT_LABELS.projectedOverrun),
                 money: { amountMinor: overrun.amountMinor.toString(), currency: overrun.currency },
-                formatted: this.format(overrun.amountMinor, overrun.currency),
+                formatted: this.format(context, overrun.amountMinor, overrun.currency),
               },
             ]),
       ],
       formatted: {
-        headline: this.format(projected.amountMinor, projected.currency),
+        headline: this.format(context, projected.amountMinor, projected.currency),
         reliable: String(dashboard.paceIsReliable),
         asOf: dashboard.today,
       },
@@ -1132,9 +1129,9 @@ export class FactAssemblyService {
     const rows = budgets
       .filter((budget) => budget.isAheadOfPace)
       .map((budget) => ({
-        label: budget.categoryName ?? 'Household',
+        label: budget.categoryName ?? tr(context.locale, FACT_LABELS.household),
         value: String(budget.spent.amountMinor),
-        formatted: this.format(budget.spent.amountMinor, budget.spent.currency),
+        formatted: this.format(context, budget.spent.amountMinor, budget.spent.currency),
         ...(budget.categoryId === null ? {} : { categoryId: budget.categoryId }),
       }));
 
@@ -1168,16 +1165,16 @@ export class FactAssemblyService {
     return {
       rows: [],
       totals: [
-        { label: 'This period', money: { amountMinor: currentMinor.toString(), currency: context.currency }, formatted: this.format(currentMinor, context.currency) },
-        { label: 'Previous period', money: { amountMinor: beforeMinor.toString(), currency: context.currency }, formatted: this.format(beforeMinor, context.currency) },
-        { label: 'Change', money: { amountMinor: deltaMinor.toString(), currency: context.currency }, formatted: this.format(deltaMinor, context.currency) },
+        { label: tr(context.locale, FACT_LABELS.thisPeriod), money: { amountMinor: currentMinor.toString(), currency: context.currency }, formatted: this.format(context, currentMinor, context.currency) },
+        { label: tr(context.locale, FACT_LABELS.previousPeriod), money: { amountMinor: beforeMinor.toString(), currency: context.currency }, formatted: this.format(context, beforeMinor, context.currency) },
+        { label: tr(context.locale, FACT_LABELS.change), money: { amountMinor: deltaMinor.toString(), currency: context.currency }, formatted: this.format(context, deltaMinor, context.currency) },
       ],
       formatted: {
         period: `${context.period.start} – ${context.period.end}`,
         previousPeriod: `${previous.start} – ${previous.end}`,
-        headline: this.format(deltaMinor, context.currency),
-        current: this.format(currentMinor, context.currency),
-        previous: this.format(beforeMinor, context.currency),
+        headline: this.format(context, deltaMinor, context.currency),
+        current: this.format(context, currentMinor, context.currency),
+        previous: this.format(context, beforeMinor, context.currency),
       },
       transactionCount: current.transactionCount,
       filters: {},
@@ -1205,16 +1202,16 @@ export class FactAssemblyService {
     return {
       rows: [],
       totals: [
-        { label: 'This period', money: { amountMinor: currentMinor.toString(), currency: context.currency }, formatted: this.format(currentMinor, context.currency) },
-        { label: 'Usual', money: { amountMinor: mean.toString(), currency: context.currency }, formatted: this.format(mean, context.currency) },
-        { label: 'Difference', money: { amountMinor: deltaMinor.toString(), currency: context.currency }, formatted: this.format(deltaMinor, context.currency) },
+        { label: tr(context.locale, FACT_LABELS.thisPeriod), money: { amountMinor: currentMinor.toString(), currency: context.currency }, formatted: this.format(context, currentMinor, context.currency) },
+        { label: tr(context.locale, FACT_LABELS.usual), money: { amountMinor: mean.toString(), currency: context.currency }, formatted: this.format(context, mean, context.currency) },
+        { label: tr(context.locale, FACT_LABELS.difference), money: { amountMinor: deltaMinor.toString(), currency: context.currency }, formatted: this.format(context, deltaMinor, context.currency) },
       ],
       formatted: {
         period: `${context.period.start} – ${context.period.end}`,
         periodsCompared: String(baselines.length),
-        headline: this.format(deltaMinor, context.currency),
-        current: this.format(currentMinor, context.currency),
-        average: this.format(mean, context.currency),
+        headline: this.format(context, deltaMinor, context.currency),
+        current: this.format(context, currentMinor, context.currency),
+        average: this.format(context, mean, context.currency),
       },
       transactionCount: current.transactionCount,
       filters: { baselinePeriods: String(baselines.length) },
@@ -1288,8 +1285,10 @@ export class FactAssemblyService {
    * minus instead of throwing. The client already handles both (`fm-money` formats through
    * `formatBalance`, docs/07 §4.5), and `money-text.overrunText` gates on the sign.
    */
-  private format(minor: bigint, currency: string): string {
-    return formatBalance(balance(minor, currency as CurrencyCode), this.locale);
+  private format(context: Context, minor: bigint, currency: string): string {
+    // The reader's own locale: an amount inside a Serbian sentence must be grouped the Serbian way, and
+    // one inside an English sentence the English way (docs/15 — the money and the words around it agree).
+    return formatBalance(balance(minor, currency as CurrencyCode), copyIntlLocale(context.locale));
   }
 
   private filtersOf(context: Context, scope: SpendScope, kind: string): Readonly<Record<string, string>> {
@@ -1344,4 +1343,12 @@ interface Context {
   readonly today: LocalDate;
   readonly period: { readonly start: LocalDate; readonly end: LocalDate };
   readonly plan: Plan;
+  /**
+   * The reader's language, resolved from the request (ADR-040).
+   *
+   * It rides on the context rather than on a service field on purpose: `FactAssemblyService` is a
+   * Nest singleton and every builder awaits the database, so a field would let two concurrent requests
+   * format each other's money.
+   */
+  readonly locale: CopyLocale;
 }

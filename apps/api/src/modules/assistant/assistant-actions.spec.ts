@@ -120,9 +120,14 @@ describe('the action registry (ADR-035)', () => {
     // A chip is a promise, and the promise is only true while `planAction`'s cue vocabulary still routes
     // the sentence to the same action — so a cue edit that breaks a chip fails here rather than on a
     // screen nobody re-reads. It is also why `ACTION_EXAMPLES` is not a client-side constant.
+    //
+    // **Both languages** (ADR-040): the chip is printed in the reader's language, so an English chip
+    // whose cue list stopped matching is the same broken promise as a Serbian one.
     for (const example of ACTION_EXAMPLES) {
-      expect(ASSISTANT_ACTIONS, example.question).toContain(example.action);
-      expect(planAction(example.question)?.action, example.question).toBe(example.action);
+      for (const question of [example.question.en, example.question.sr]) {
+        expect(ASSISTANT_ACTIONS, question).toContain(example.action);
+        expect(planAction(question)?.action, question).toBe(example.action);
+      }
     }
     // The **rule** action is deliberately absent, and the reason is a first click: it derives from a
     // Correction the reader made earlier, so on a Household that has corrected nothing the only honest

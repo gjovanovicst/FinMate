@@ -1207,8 +1207,11 @@ export class AssistantComponent {
    */
   private async loadStarters(): Promise<void> {
     try {
+      // The chips are printed verbatim, so the reader's language travels with the request: a Serbian
+      // reader must not be handed an English question to click (ADR-040).
       const result = await this.graphql.query<{ assistantSuggestions: readonly string[] }>(
         STARTERS_QUERY,
+        { locale: this.i18n.tag() },
       );
       this.starters.set(result.assistantSuggestions ?? []);
     } catch {
@@ -1217,7 +1220,7 @@ export class AssistantComponent {
     try {
       const result = await this.graphql.query<{
         assistantActionExamples?: readonly AssistantActionExample[];
-      }>(ACTION_EXAMPLES_QUERY);
+      }>(ACTION_EXAMPLES_QUERY, { locale: this.i18n.tag() });
       this.actionExamples.set(result.assistantActionExamples ?? []);
     } catch {
       this.actionExamples.set([]);
@@ -1275,8 +1278,8 @@ const ASSISTANT_QUERY = /* GraphQL */ `
 `;
 
 const ACTION_EXAMPLES_QUERY = /* GraphQL */ `
-  query AssistantActionExamples {
-    assistantActionExamples {
+  query AssistantActionExamples($locale: String) {
+    assistantActionExamples(locale: $locale) {
       action
       question
     }
@@ -1284,8 +1287,8 @@ const ACTION_EXAMPLES_QUERY = /* GraphQL */ `
 `;
 
 const STARTERS_QUERY = /* GraphQL */ `
-  query AssistantSuggestions {
-    assistantSuggestions
+  query AssistantSuggestions($locale: String) {
+    assistantSuggestions(locale: $locale)
   }
 `;
 

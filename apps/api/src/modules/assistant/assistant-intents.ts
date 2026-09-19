@@ -16,6 +16,8 @@
  * @module apps/api/src/modules/assistant
  */
 
+import type { CopyPair } from '../../common/i18n/copy';
+
 /** docs/06 §8.1's `AssistantIntent`, verbatim and in the same order. */
 export const ASSISTANT_INTENTS = [
   // spending
@@ -351,16 +353,52 @@ export const INTENT_TEMPLATES: Readonly<Record<AssistantIntent, IntentTemplate>>
   },
 };
 
-/** The intents a Household can be offered as suggestions when nothing matched (docs/06 §8.4). */
-export const SUGGESTED_QUESTIONS: readonly { readonly intent: AssistantIntent; readonly question: string }[] =
-  [
-    { intent: 'SPEND_TOTAL', question: 'Koliko sam potrošio ovog meseca?' },
-    { intent: 'SPEND_BY_CATEGORY', question: 'Koliko sam potrošio na hranu ovog meseca?' },
-    { intent: 'TOP_CATEGORIES', question: 'Na šta mi odlazi najviše novca ovog meseca?' },
-    { intent: 'BUDGET_STATUS', question: 'Koliko mi je ostalo od budžeta?' },
-    { intent: 'SAFE_TO_SPEND', question: 'Koliko mogu da potrošim danas?' },
-    { intent: 'TREND_VS_LAST_MONTH', question: 'Kako stojim u odnosu na prošli mesec?' },
-  ];
+/**
+ * The intents a Household can be offered as suggestions when nothing matched (docs/06 §8.4).
+ *
+ * Each question is a **copy pair**: the chips are printed verbatim by the client, so they are written
+ * in the reader's language and planned in it too — the English chip has to route through the same cue
+ * vocabulary as the Serbian one, or the client would offer a question the planner then refuses
+ * (ADR-040; `planner-gate.spec.ts` asserts every one routes in **both** languages).
+ */
+export const SUGGESTED_QUESTIONS: readonly {
+  readonly intent: AssistantIntent;
+  readonly question: CopyPair;
+}[] = [
+  {
+    intent: 'SPEND_TOTAL',
+    question: { en: 'How much did I spend this month?', sr: 'Koliko sam potrošio ovog meseca?' },
+  },
+  {
+    intent: 'SPEND_BY_CATEGORY',
+    question: {
+      en: 'How much did I spend on food this month?',
+      sr: 'Koliko sam potrošio na hranu ovog meseca?',
+    },
+  },
+  {
+    intent: 'TOP_CATEGORIES',
+    question: {
+      en: 'What do I spend the most on this month?',
+      sr: 'Na šta mi odlazi najviše novca ovog meseca?',
+    },
+  },
+  {
+    intent: 'BUDGET_STATUS',
+    question: { en: 'How much is left of my budget?', sr: 'Koliko mi je ostalo od budžeta?' },
+  },
+  {
+    intent: 'SAFE_TO_SPEND',
+    question: { en: 'How much can I spend today?', sr: 'Koliko mogu da potrošim danas?' },
+  },
+  {
+    intent: 'TREND_VS_LAST_MONTH',
+    question: {
+      en: 'How am I doing against last month?',
+      sr: 'Kako stojim u odnosu na prošli mesec?',
+    },
+  },
+];
 
 /** Every template's repository method, in registry order — the allow-list a reviewer can read. */
 export function registeredSourceQueries(): readonly string[] {

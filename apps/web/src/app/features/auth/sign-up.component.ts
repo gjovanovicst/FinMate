@@ -120,7 +120,7 @@ export class SignUpComponent {
     this.error.set(null);
     try {
       const { email, password, displayName } = this.form.getRawValue();
-      await this.auth.signUp(email, password, displayName);
+      await this.auth.signUp(email, password, displayName, this.i18n.tag());
       await this.router.navigateByUrl('/');
     } catch (error) {
       this.error.set(this.errors.for(error));

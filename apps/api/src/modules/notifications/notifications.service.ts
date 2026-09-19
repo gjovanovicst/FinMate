@@ -14,6 +14,7 @@ import {
 
 import { CONFIG, type AppConfig } from '../../config/config';
 import { ApiError } from '../../common/filters/all-exceptions.filter';
+import { resolveCopyLocale } from '../../common/i18n/copy';
 import { Prisma } from '../../generated/prisma/client';
 import type { CursorPage } from '../../graphql/pagination';
 import { normalisePageSize } from '../../graphql/pagination';
@@ -255,7 +256,7 @@ export class NotificationsService {
     const generated = await this.insights.generate(householdId, asOf);
     await this.ensureDefaultRules(householdId);
 
-    const [insights, rules, notifications, localTime, preferences] = await Promise.all([
+    const [insights, rules, notifications, localTime, preferences, recipient] = await Promise.all([
       this.insights.list(householdId, { includeDismissed: true }, 200),
       this.alerts(householdId),
       this.prisma.client.notifications.findMany({
@@ -264,7 +265,13 @@ export class NotificationsService {
       }),
       this.localTime(householdId),
       this.preferences(householdId),
+      // The **recipient's** language, not the caller's: a notification is stored once and read later,
+      // and the person who reads it is the row's own user (ADR-040). The column defaults to `en`, so a
+      // reader who has never chosen keeps the product's primary language.
+      this.prisma.client.users.findFirst({ where: { id: userId }, select: { locale: true } }),
     ]);
+    // Resolved once per run: every row this pass writes belongs to the same reader.
+    const copyLocale = resolveCopyLocale(recipient?.locale ?? this.config.APP_DEFAULT_LOCALE);
 
     const candidates: AlertCandidate[] = [];
     const insightById = new Map<string, (typeof insights.items)[number]>();
@@ -306,6 +313,7 @@ export class NotificationsService {
         insight.payload,
         decision.channel,
         this.config.APP_NAME,
+        copyLocale,
       );
       // The evaluator's `SENT` means "deliverable". Only `IN_APP` can actually be delivered in this
       // build — email/push is 3.1.3 — so a non-in-app row is stored `QUEUED` rather than claiming a

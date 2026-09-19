@@ -2,6 +2,7 @@ import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 
 import { CurrentHouseholdId, CurrentTenant } from '../../common/auth/current-tenant.decorator';
 import { ApiError } from '../../common/filters/all-exceptions.filter';
+import { resolveCopyLocale, tr } from '../../common/i18n/copy';
 import type { MemberRole, TenantContext } from '../../common/tenancy/tenant-context';
 import { CategoryKind } from '../taxonomy/category.model';
 import {
@@ -81,8 +82,13 @@ export class AssistantResolver {
   @Query(() => [String], {
     description: 'The answerable starter questions (docs/06 §8.1), for the assistant screen.',
   })
-  assistantSuggestions(): readonly string[] {
-    return SUGGESTED_QUESTIONS.map((suggestion) => suggestion.question);
+  assistantSuggestions(
+    // The chips are printed verbatim, so they are written in the reader's language (ADR-040). Nullable
+    // and optional: a client that sends nothing gets the product's primary language.
+    @Args('locale', { type: () => String, nullable: true }) locale?: string,
+  ): readonly string[] {
+    const copyLocale = resolveCopyLocale(locale);
+    return SUGGESTED_QUESTIONS.map((suggestion) => tr(copyLocale, suggestion.question));
   }
 
   /**
@@ -100,10 +106,13 @@ export class AssistantResolver {
     description:
       'Example requests that propose a registered write, for the assistant screen’s starter chips.',
   })
-  assistantActionExamples(): readonly AssistantActionExampleModel[] {
+  assistantActionExamples(
+    @Args('locale', { type: () => String, nullable: true }) locale?: string,
+  ): readonly AssistantActionExampleModel[] {
+    const copyLocale = resolveCopyLocale(locale);
     return ACTION_EXAMPLES.map((example) => ({
       action: example.action,
-      question: example.question,
+      question: tr(copyLocale, example.question),
     }));
   }
 

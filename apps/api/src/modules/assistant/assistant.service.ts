@@ -5,6 +5,7 @@ import { todayIn, uuidv7, DEFAULT_TIME_ZONE, type CurrencyCode, type LocalDate }
 import { ApiError } from '../../common/filters/all-exceptions.filter';
 import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import { CONFIG, type AppConfig } from '../../config/config';
+import { resolveCopyLocale } from '../../common/i18n/copy';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { GoalsService } from '../goals/goals.service';
@@ -207,7 +208,7 @@ export class AssistantService {
       today,
       household.ledger_currency as CurrencyCode,
     );
-    let plan = planQuestion(question, context);
+    let plan = planQuestion(question, context, locale);
 
     // **The routing rung, and only after the cues have missed** (ADR-036 decision 1). Two things are
     // checked before it is asked, and both matter:
@@ -237,7 +238,9 @@ export class AssistantService {
       }
     }
 
-    const assembled = await this.facts.assemble(householdId, plan, { today });
+    // The reader's language travels with the facts: the row labels and the money inside them are
+    // rendered once, here, and the client prints them verbatim (ADR-040).
+    const assembled = await this.facts.assemble(householdId, plan, { today, locale: resolveCopyLocale(locale) });
 
     // **A command is not a question** (B-4a).
     //
@@ -269,7 +272,7 @@ export class AssistantService {
         // would put a template's name on a refusal.
         intent: claimedByAction === null && !routedAction ? plan.intent : 'NO_TEMPLATE_MATCH',
         answered: false,
-        answerText: renderRefusal(reason),
+        answerText: renderRefusal(reason, resolveCopyLocale(locale)),
         facts: assembled.facts,
         provenance: assembled.provenance,
         drillThrough: null,
@@ -301,6 +304,7 @@ export class AssistantService {
         template: plan.template,
         facts: assembled.facts,
         provenance: assembled.provenance,
+        locale: resolveCopyLocale(locale),
       },
     });
 

@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { uuidv7 } from '@finmate/domain';
 
 import { ApiError } from '../../common/filters/all-exceptions.filter';
+import { resolveCopyLocale, tr } from '../../common/i18n/copy';
 import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import { runWithTenant } from '../../common/tenancy/tenant-context';
 import { CONFIG, type AppConfig } from '../../config/config';
@@ -61,11 +62,17 @@ export class AuthService {
     email: string;
     password: string;
     displayName: string;
+    /** The reader's language, from the client that signed up. Absent means the product default. */
+    locale?: string | null;
     userAgentHash: string | null;
     ipHash: string | null;
   }): Promise<AuthTokens> {
     const strength = this.passwords.validateStrength(params.password);
     if (!strength.ok) throw new ApiError('VALIDATION_FAILED', strength.reason);
+
+    // Resolved once, here: it names the Household below and it is what every later email and
+    // notification is written in (ADR-040). Stored as our own locale code rather than the raw tag.
+    const copyLocale = resolveCopyLocale(params.locale, resolveCopyLocale(this.config.APP_DEFAULT_LOCALE));
 
     const email = params.email.trim().toLowerCase();
     const existing = await this.prisma.client.users.findFirst({ where: { email } });
@@ -91,10 +98,19 @@ export class AuthService {
               email,
               password_hash: passwordHash,
               display_name: params.displayName.trim(),
+              // Stored so a later email or notification can be written in the reader's language.
+              locale: copyLocale,
             },
           });
           await tx.households.create({
-            data: { id: householdId, name: 'Moje domaćinstvo', ledger_currency: 'RSD', owner_user_id: userId },
+            // Named in the signer's own language. This was the literal `Moje domaćinstvo`, so every
+            // English Household was born with a Serbian name that lives in `households.name` forever.
+            data: {
+              id: householdId,
+              name: tr(copyLocale, { en: 'My household', sr: 'Moje domaćinstvo' }),
+              ledger_currency: 'RSD',
+              owner_user_id: userId,
+            },
           });
           await tx.household_members.create({
             data: { id: uuidv7(), household_id: householdId, user_id: userId, role: 'OWNER' },
@@ -111,6 +127,18 @@ export class AuthService {
       userAgentHash: params.userAgentHash,
       ipHash: params.ipHash,
     });
+  }
+
+  /**
+   * Remember the reader's language.
+   *
+   * The language switcher is client-side (ADR-019), so without this the API never learns the choice and
+   * every message it composes later — a verification mail, a password reset, an alert from the daily
+   * job — is written in the server's default. The client calls this when the choice changes.
+   */
+  async updateLocale(userId: string, locale: string): Promise<void> {
+    const resolved = resolveCopyLocale(locale, resolveCopyLocale(this.config.APP_DEFAULT_LOCALE));
+    await this.prisma.client.users.update({ where: { id: userId }, data: { locale: resolved } });
   }
 
   // -------------------------------------------------------------------------------------------
@@ -362,8 +390,11 @@ export class AuthService {
     const user = await this.prisma.client.users.findFirst({ where: { id: userId } });
     if (!user) throw new ApiError('NOT_FOUND', 'User not found.');
 
-    if (purpose === 'VERIFY_EMAIL') await this.mail.sendEmailVerification(user.email, token);
-    else if (purpose === 'RESET_PASSWORD') await this.mail.sendPasswordReset(user.email, token);
+    // The recipient's stored language: an email is composed once and read later, by someone who may
+    // not be the caller. `en` is the column default, so a reader who never chose keeps the primary.
+    const locale = resolveCopyLocale(user.locale, resolveCopyLocale(this.config.APP_DEFAULT_LOCALE));
+    if (purpose === 'VERIFY_EMAIL') await this.mail.sendEmailVerification(user.email, token, locale);
+    else if (purpose === 'RESET_PASSWORD') await this.mail.sendPasswordReset(user.email, token, locale);
   }
 
   private async consumeEmailToken(

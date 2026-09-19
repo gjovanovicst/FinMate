@@ -2757,6 +2757,88 @@ sidebar's bottom edge is the sidebar's own `--space-4` padding, not a gap.
 
 ---
 
+### ADR-040 — Server-composed copy is written in the *reader's* language, from one small catalogue
+
+**Status:** Accepted · **Amends:** ADR-019 (which said the API never localises)
+
+**Context.** ADR-019 made the **client** the owner of interface wording and said a server message carries a
+stable code rather than a sentence. That is right for anything a screen can phrase itself, and wrong for
+three kinds of text that a screen cannot: a **notification** (stored in `notifications.title/body`, then
+rendered in-app, emailed and pushed), an **email**, and a **stored name** (a synthesised Rule, a default
+Household, a Receipt's fallback description). Those are composed once, server-side, and rendered verbatim
+later — no client ever has the chance to translate them.
+
+The result was a two-way leak, found by audit:
+
+- **Serbian for English readers**: the signup Household was named `Moje domaćinstvo`, every learned Rule was
+  named `Naučeno: …`, both auth emails were Serbian-only, and `/assistant` offered six Serbian question
+  chips and five Serbian write chips that the client prints verbatim.
+- **English for Serbian readers**: `notification-copy.ts` and `assistant/narration-template.ts` were
+  English-only, so every notification and every template-rendered assistant answer was in the wrong
+  language for a Serbian Household.
+
+`APP_DEFAULT_LOCALE` made it worse rather than better: it defaulted to `sr-Latn-RS` while the web client's
+`DEFAULT_LOCALE` is `en`, so the two ends disagreed about what "no preference" means.
+
+**Decision.** The API gains **one** copy mechanism, `apps/api/src/common/i18n/`, and uses it for every
+string it composes and stores or sends.
+
+1. **Three catalogues, two written.** `CopyLocale` is `en | sr-Latn | sr-Cyrl`. Copy is authored as a pair
+   (`{ en, sr }`) and rendered through `tr(locale, pair, params)`, which **transliterates the template first
+   and interpolates second** — so a Household's own Category or Merchant name is never rewritten into
+   another script. `sr-Cyrl` is derived with the shared `toCyrillic` from `@finmate/nlp`, which the browser
+   also uses to generate its own Cyrillic catalogue: one transliteration table, not two.
+2. **English is the fallback.** An unrecognised tag, a missing preference or an absent argument resolves to
+   English, the product's primary language (docs/01 §7). `APP_DEFAULT_LOCALE` now defaults to `en` to match
+   the client.
+3. **The recipient decides, not the caller.** Where the composition happens **later** than the request —
+   notifications, verification and reset mail, the daily job — the locale comes from the recipient's stored
+   `users.locale`. Where it happens **in** the request — the assistant, a Receipt commit — it comes from the
+   `locale` the client sends. `POST /auth/locale` (and an optional `locale` on signup) is how that column
+   is written; the client calls it from the language switcher.
+4. **Interaction copy is unchanged.** `assistant-action.service.ts` keeps its propose→confirm card copy and
+   now shares the same helper. English-only `ApiError` prose stays as it is: the client localises by
+   `error.<CODE>`, which is ADR-019's original decision working as intended.
+5. **A stored string carries no language.** The synthesised Rule name is `${entity} → ${category}` with no
+   `Naučeno:` prefix — the client already renders `rules.origin.LEARNED` for that, and a prefix baked into a
+   row is a language the reader cannot change.
+
+**Consequences.**
+- ✅ A Household that switches language gets notifications, emails, assistant answers, chips and stored
+  names in that language from then on, in either script.
+- ✅ One place decides how a missing or unknown locale behaves, so the two ends can no longer disagree.
+- ✅ The transliteration defects the audit found are fixed at the shared function: `dj` is `ђ` except after a
+  prefix that ends in `d` (`Odjavi se` was shipping as **`Ођави се`** on the sign-out control), and the
+  Latin letters Serbian does not use (`w`, `q`, `x`, `y`) no longer survive inside Cyrillic text.
+- ⚠️ **Rows already written keep their old language.** A Rule named `Naučeno: …` or a Household named
+  `Moje domaćinstvo` before this change stays that way; there is no backfill, because rewriting a user's own
+  data on a language change is worse than the inconsistency (and `households.name` is editable).
+- ⚠️ **This is a second catalogue.** It is deliberately tiny and only covers copy the client cannot see
+  before it is stored, but a string can now be authored twice — once here and once in the web catalogue. The
+  rule that keeps it honest is the one ADR-019 already states: if a screen could have rendered it, the
+  screen owns the wording.
+- ⚠️ **`sr-Cyrl` copy is generated, not reviewed.** Same trade ADR-019 made for the client catalogue:
+  correctness of the table over a second hand-written set.
+- ⚠️ **Two stored columns are still not translated**: seed content (`packages/domain/src/seed/` ships a
+  Serbian category and merchant tree) and `classification_decisions.rationale` (English diagnostic prose the
+  client does not render). Both are named here rather than left to be rediscovered.
+
+**Alternatives rejected.**
+- **(a) Move every server-rendered sentence to the client** (return codes plus facts, let the client render
+  the assistant answer and the notification body) — the ADR-019-consistent end state, and too large a change
+  to make safely at once: it rewrites the assistant's answer path and the notification model together, and
+  a notification row has to be readable by a channel (email, push) that has no client at all.
+- **(b) Keep the API English-only and translate on read in the client** — impossible for notifications and
+  emails, which are delivered outside any client.
+- **(c) A full i18n library (`nestjs-i18n`, ICU messages)** — a new dependency for one pair of languages and
+  no plural machinery, needing an ADR of its own (ADR-004). The two-language helper is smaller than the
+  configuration the library would need.
+- **(d) Translate all 222 `ApiError` messages** — the client already localises them by code; the two paths
+  that render a raw message are the `/capture` row error and the `/pending` refusal, and a message there is
+  a server diagnostic the reader can act on with the generic sentence beside it.
+
+---
+
 ## Part 2 — Risk register
 
 Scored as **Likelihood (L)** and **Impact (I)** on 1–5; **Exposure = L × I**. Anything ≥ 12 gets an
@@ -2806,6 +2888,7 @@ owner and a checkpoint in [09](09-implementation-plan.md).
 | **R-31** | **Reading a receipt on the node is slow enough to look broken** (ADR-037). Measured on this repository's machine (3 CPU cores, no GPU, `qwen2.5vl:3b`): one 46 KB receipt photograph did not finish inside 5 minutes, and a 768 px downscale took **4 m 18 s**. The documented budget is 20 s, so with the shipped default every local read is a timeout — the feature exists and is unusable, which is worse than absent if the UI does not say so | 4 | 3 | 12 | The screen reports the **reason** rather than spinning (4.1.6), `AI_OCR_TIMEOUT_MS` lets a local deployment size the budget to its hardware, the route is `LOCAL`-first so a slow read never becomes a cloud transfer, and the cloud EEA path is now genuinely configurable (`AI_OCR_PRIMARY=OPENAI_EU` + `AI_OCR_MODEL`, ADR-038's `CLOUD_OCR` consent) for anyone who wants a receipt in seconds. ⚠️ **Named residual**: the compiled-in local model is a *quality* default, not a *latency* one, and production sizing (GPU, more cores, or an EEA endpoint) is a deployment decision this task does not make for the operator |
 | **R-32** | **A cloud OCR route that is configured but unnamed looks live and fails at the first receipt.** `supportsOcr: true` with no model is precisely how OCR was dead in every deployment (ADR-037's context), and the same shape is reachable again by naming `AI_OCR_PRIMARY=OPENAI_EU` and forgetting `AI_OCR_MODEL` | 2 | 2 | 4 | `assembleAi` now asks the constructed adapter `supports(task)` before writing a route, so the task is **skipped with an actionable reason** in the boot log, the seam stays `UNCONFIGURED_OCR`, and `aiEgress` does not disclose a transfer that cannot happen. Asserted in `ai-providers.spec.ts` for both the cloud and the text-only-endpoint cases |
 | **R-33** | **The redesign restyles twenty screens at once through the token layer, and only two of them had a reference to check against.** A single token value or a shared primitive therefore changes every screen's appearance, and a regression on a screen nobody opened is invisible in the diff — the same shape as 4.3.1d's contrast defect, which shipped because nothing *rendered* the pair anybody had changed | 3 | 2 | 6 | The token pairs are measured by `styles.tokens.spec.ts` in **both** themes rather than eyeballed; the shell and the dashboard were captured at 320/768/1280 px in each theme and compared against the references; a screen can still be restyled without touching a primitive, because the primitives are global classes rather than encapsulated component styles. ⚠️ **Named, not closed**: `/analytics` and `/assistant` had still had no human pass at any width before this change, and the redesign does not fix that — it makes the standing gap in docs/02 §9 wider by changing what they look like | The human visual pass docs/02 §9 already schedules |
+| **R-34** | **The API now has a second copy catalogue, and a string the client could have rendered can drift into it** (ADR-040). ADR-019 put wording in the client; server-composed copy had to move to the API because a notification, an email and a stored name are rendered by no client — but the boundary between "the server must say this" and "the screen should say this" is a judgement, and a later task can put a screen's sentence in the API and lose it from the switcher without any test failing | 3 | 2 | 6 | The server catalogue only holds copy that is **stored or delivered** (`notification-copy.ts`, `mail.service.ts`, the assistant's answer templates, the rule/household/receipt names); every interactive surface still calls `i18n.t()` and `app.routes.spec.ts`/`translations.spec.ts` fail on a key that is missing or duplicated across locales. The English/Serbian copy pair is asserted by `common/i18n/copy.spec.ts` across all three locales, and the transliteration it depends on is the shared `@finmate/nlp` function the browser also uses, so a Cyrillic catalogue cannot drift from the Latin one. ⚠️ **Named residuals**: rows written before the change keep their old language (`Naučeno: …`, `Moje domaćinstvo`), seed content is still Serbian for every Household, and `classification_decisions.rationale` is still English | Re-checked when a new server-composed message is added; the web catalogue's own guard is `translations.spec.ts` |
 
 ### Top five by exposure
 1. **R-01 onboarding cold-start (20)** — the single biggest threat, and the one the plan spends the most disproportionate effort on.

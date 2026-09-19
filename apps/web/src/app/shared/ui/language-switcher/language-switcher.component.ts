@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 
+import { AuthStore } from '../../../core/auth/auth.store';
 import { I18nService } from '../../../core/i18n/i18n.service';
 import type { LocaleCode } from '../../../core/i18n/locales';
 import { IconComponent } from '../icon/icon.component';
@@ -73,9 +74,14 @@ import { IconComponent } from '../icon/icon.component';
 })
 export class LanguageSwitcherComponent {
   readonly i18n = inject(I18nService);
+  private readonly auth = inject(AuthStore);
 
   onChange(event: Event): void {
     const value = (event.target as HTMLSelectElement).value as LocaleCode;
     this.i18n.setLocale(value);
+    // The switch itself is a signal write and needs no round trip (ADR-019). This tells the **server**
+    // which language to write a later email or notification in, so it is skipped when nobody is signed
+    // in — there is no User row to remember it on (ADR-040).
+    if (this.auth.isAuthenticated()) void this.auth.rememberLocale(this.i18n.tag());
   }
 }

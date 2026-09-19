@@ -156,6 +156,7 @@ export class ReceiptsResolver {
     const view = await this.receiptsService.commit(householdId, input.receiptId, {
       accountId: input.accountId,
       description: input.description ?? null,
+      locale: input.locale ?? null,
     });
     return toReceiptModel(view);
   }
@@ -177,6 +178,7 @@ export class ReceiptsResolver {
       setMinor:
         input.amount === undefined || input.amount === null ? null : BigInt(input.amount.amountMinor),
       absorbCategoryId: input.absorbCategoryId ?? null,
+      locale: input.locale ?? null,
     });
     return toReceiptModel(view);
   }

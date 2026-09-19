@@ -1,4 +1,5 @@
-import { toCyrillic } from '../transliterate';
+import { toCyrillic } from '@finmate/nlp';
+
 import { en } from './en';
 import { srLatn } from './sr-latn';
 

@@ -67,4 +67,51 @@ describe('translation catalogues', () => {
     expect(srCyrl['accounts.title']).not.toBe(srLatn['accounts.title']);
     expect(srCyrl['accounts.title']).toMatch(/[\u0400-\u04FF]/);
   });
+
+  /**
+   * The wrong-language guard.
+   *
+   * A value copied from one catalogue into another is invisible to every other test here — the key
+   * sets match, the placeholders match, nothing is empty — and it is exactly the defect that shipped:
+   * `onboarding.accounts.defaultName` was `Gotovina` in **English**, so a new English account was named
+   * in Serbian. Serbian had the same string, which is what made it look translated.
+   *
+   * So identity is not assumed: a value that is byte-for-byte the same in both languages must be named
+   * in {@link IDENTICAL_BY_DESIGN} with a reason. A new one fails this test until somebody decides,
+   * which is the point — the alternative is a human reading 1 195 pairs in a diff.
+   */
+  it('only repeats a value across locales when that repetition is deliberate', () => {
+    const IDENTICAL_BY_DESIGN = new Set([
+      // The brand is not translated (ADR-014, and the `app.name` assertion above).
+      'app.name',
+      // Placeholder-only values: nothing to translate.
+      'analytics.comparisonNow',
+      'capture.rowError',
+      // Loanwords and codes that Serbian writes the same way.
+      'notifications.channel.EMAIL',
+      'notifications.channel.PUSH',
+      'consent.title',
+      'pending.field.status',
+      'role.ADMIN',
+      'signIn.email',
+      'reset.email',
+      'signUp.email',
+      'transactions.status',
+      'budgets.period',
+      // A merchant name and an amount: the capture example is the same input in both languages.
+      'capture.example1',
+    ]);
+
+    const unexplained = englishKeys.filter(
+      (key) => en[key as keyof typeof en] === srLatn[key as keyof typeof srLatn] && !IDENTICAL_BY_DESIGN.has(key),
+    );
+
+    expect(unexplained).toEqual([]);
+  });
+
+  it('ships a real English default account name and a Serbian one', () => {
+    // The regression this whole pass exists for, asserted by name so it cannot come back.
+    expect(en['onboarding.accounts.defaultName']).toBe('Cash');
+    expect(srLatn['onboarding.accounts.defaultName']).toBe('Gotovina');
+  });
 });

@@ -9,6 +9,7 @@ import {
   type LocalDate,
 } from '@finmate/domain';
 
+import { resolveCopyLocale, tr, type CopyLocale } from '../../common/i18n/copy';
 import { normaliseForMatching } from '../../common/text/normalise';
 import { findNumeralTokens } from './numeric-validator';
 import {
@@ -187,10 +188,16 @@ const MAX_LIMIT = 50;
  * total), and the kind is resolved **before** the shape so an income question can never be answered by
  * an expense aggregate.
  */
-export function planQuestion(question: string, context: PlannerContext): Plan {
+export function planQuestion(
+  question: string,
+  context: PlannerContext,
+  localeTag?: string,
+): Plan {
   const { plan, resolved } = planQuestionCore(question, context);
   if (plan.intent !== 'NO_TEMPLATE_MATCH') return plan;
-  return { ...plan, suggestions: refusalSuggestions(context, resolved) };
+  // The chip is printed verbatim by the client and then planned by this same planner, so it has to be
+  // written in the language it is read in (ADR-040).
+  return { ...plan, suggestions: refusalSuggestions(context, resolved, resolveCopyLocale(localeTag)) };
 }
 
 /**
@@ -368,6 +375,7 @@ const MAX_SUGGESTIONS = 6;
 function refusalSuggestions(
   context: PlannerContext,
   resolved: ResolvedEntities,
+  locale: CopyLocale,
 ): readonly string[] {
   const offered: string[] = [];
   const add = (question: string): void => {
@@ -377,30 +385,71 @@ function refusalSuggestions(
     offered.push(question);
   };
 
-  // The name is quoted and introduced by a noun (`na kategoriji „X"`) rather than inflected into the
-  // sentence: generating the accusative of an arbitrary Household name is how a suggestion ends up
-  // reading like `na odeća i obuću`.
+  // The name is quoted and introduced by a noun (Serbian `na kategoriji „X"`, English `in the category
+  // "X"`) rather than inflected into the sentence: generating the accusative of an arbitrary Household
+  // name is how a suggestion ends up reading like `na odeća i obuću`.
   if (resolved.category !== null) {
     // The verb follows the Category's **direction**: offering a spend question about an income Category
     // would offer a chip that refuses in turn (the routability filter below would drop it anyway, and
     // then the refusal would say nothing about the entity the user asked about).
-    const path = resolved.category.path ?? resolved.category.name;
+    const name = resolved.category.path ?? resolved.category.name;
     add(
       resolved.category.kind === 'INCOME'
-        ? `Koliko sam zaradio na kategoriji „${path}" ovog meseca?`
-        : `Koliko sam potrošio na kategoriji „${path}" ovog meseca?`,
+        ? tr(
+            locale,
+            {
+              en: 'How much did I earn in the category “{name}” this month?',
+              sr: 'Koliko sam zaradio na kategoriji „{name}“ ovog meseca?',
+            },
+            { name },
+          )
+        : tr(
+            locale,
+            {
+              en: 'How much did I spend in the category “{name}” this month?',
+              sr: 'Koliko sam potrošio na kategoriji „{name}“ ovog meseca?',
+            },
+            { name },
+          ),
     );
   }
   if (resolved.merchant !== null) {
-    add(`Koliko sam potrošio kod prodavca „${resolved.merchant.name}" ovog meseca?`);
+    add(
+      tr(
+        locale,
+        {
+          en: 'How much did I spend at “{name}” this month?',
+          sr: 'Koliko sam potrošio kod prodavca „{name}“ ovog meseca?',
+        },
+        { name: resolved.merchant.name },
+      ),
+    );
   }
   if (resolved.account !== null) {
-    add(`Koliko iznosi stanje na računu „${resolved.account.name}"?`);
+    add(
+      tr(
+        locale,
+        {
+          en: 'What is the balance on “{name}”?',
+          sr: 'Koliko iznosi stanje na računu „{name}“?',
+        },
+        { name: resolved.account.name },
+      ),
+    );
   }
   if (resolved.tag !== null) {
-    add(`Koliko sam potrošio sa oznakom „${resolved.tag.name}" ovog meseca?`);
+    add(
+      tr(
+        locale,
+        {
+          en: 'How much did I spend tagged “{name}” this month?',
+          sr: 'Koliko sam potrošio sa oznakom „{name}“ ovog meseca?',
+        },
+        { name: resolved.tag.name },
+      ),
+    );
   }
-  for (const entry of SUGGESTED_QUESTIONS) add(entry.question);
+  for (const entry of SUGGESTED_QUESTIONS) add(tr(locale, entry.question));
 
   return offered;
 }

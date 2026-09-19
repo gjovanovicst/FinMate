@@ -22,8 +22,29 @@ export const signupSchema = z.object({
   // Length bounds only; `PasswordService.validateStrength` owns the policy and its message.
   password: z.string().min(1).max(256),
   displayName: z.string().trim().min(1).max(80),
+  // The language the client is showing. Optional: a client that does not send one leaves the User on
+  // the product's primary language, which is what every notification and email then uses (ADR-040).
+  locale: z.string().trim().min(2).max(35).optional(),
 });
 export type SignupInput = z.infer<typeof signupSchema>;
+
+/**
+ * The signed-in reader's language.
+ *
+ * Persisted so copy composed **after** the request — a verification mail, a password reset, an alert
+ * from the daily job — is written in the language the reader chose rather than in whichever one the
+ * server happened to default to. Same bounds as the assistant's locale argument, and rejected the same
+ * way rather than trusted, because it reaches a stored column and later a prompt.
+ */
+export const updateLocaleSchema = z.object({
+  locale: z
+    .string()
+    .trim()
+    .min(2)
+    .max(35)
+    .regex(/^[a-z]{2,3}(?:-[A-Za-z]{2,8})*$/, 'Unsupported locale.'),
+});
+export type UpdateLocaleInput = z.infer<typeof updateLocaleSchema>;
 
 export const loginSchema = z.object({
   email,

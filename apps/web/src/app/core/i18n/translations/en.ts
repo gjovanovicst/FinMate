@@ -61,6 +61,40 @@ export const en = {
   'nav.assistant': 'Assistant',
   'nav.recurring': 'Recurring',
 
+  // ---- document titles (the browser tab) ----
+  // One key per route, and every `title` in `app.routes.ts` names one of these. They are deliberately
+  // **not** the `nav.*` labels: a tab title and a navigation label answer different questions, and the
+  // two detail routes (`/transactions/:id`, `/receipts/:id`) have no navigation entry at all. A title
+  // written straight into the route table is invisible to the language switcher — `LocalizedTitleStrategy`
+  // is what reads these, and `app.routes.spec.ts` fails if a route names a key that does not exist.
+  'route.signIn': 'Sign in',
+  'route.signUp': 'Create account',
+  'route.resetPassword': 'Reset password',
+  'route.verifyEmail': 'Confirm your email',
+  'route.onboarding': 'Setup',
+  'route.dashboard': 'Overview',
+  'route.accounts': 'Accounts',
+  'route.capture': 'New entry',
+  'route.transactions': 'Transactions',
+  'route.transaction': 'Transaction',
+  'route.goals': 'Goals',
+  'route.recurring': 'Recurring',
+  'route.analytics': 'Analytics',
+  'route.assistant': 'Assistant',
+  'route.review': 'Review',
+  'route.counterparties': 'People and companies',
+  'route.tags': 'Tags',
+  'route.merchants': 'Merchants',
+  'route.categories': 'Categories',
+  'route.rules': 'Rules',
+  'route.receipts': 'Receipts',
+  'route.receipt': 'Receipt',
+  'route.settings': 'Settings',
+  'route.notifications': 'Notifications',
+  'route.pending': 'Waiting to send',
+  'route.budgets': 'Budgets',
+  'route.notFound': 'Page not found',
+
   // ---- recurring rules (F-16) ----
   'recurring.title': 'Recurring',
   'recurring.subtitle': 'Bills and income that repeat. The app works out the dates; you decide what gets confirmed automatically.',
@@ -284,7 +318,7 @@ export const en = {
   'assistant.action.undoneBudget': 'Undone — the budget for “{name}” was removed.',
   'assistant.action.openBudgets': 'Open the budgets',
   'assistant.action.needBudgetCategory':
-    'Tell me which category the budget is for — for example, “postavi budžet za hranu na 20000”.',
+    'Tell me which category the budget is for — for example, “set a budget for food at 20000”.',
   'assistant.action.budgetExists':
     'You already have a budget for that category this month, and I will not overwrite it here — change it on the budgets screen.',
   'assistant.action.undoneGoal': 'Undone — the goal “{name}” was removed.',
@@ -296,7 +330,7 @@ export const en = {
   // B-5's refusals. The first is the one that keeps a **wrong** proposal off the card: a correction has
   // no name, so the action can only use the most recent one and says so instead of guessing.
   'assistant.action.needCorrection':
-    'I can only build a rule from your most recent correction — say “zapamti ovu ispravku”.',
+    'I can only build a rule from your most recent correction — say “remember this correction”.',
   'assistant.action.noCorrection':
     'There is no correction to learn from yet. Correct a transaction first, then ask me again.',
   'assistant.action.noRule':
@@ -307,8 +341,8 @@ export const en = {
     'A rule you already have covers that, so a new one would never fire. Edit the rule that wins instead.',
   'assistant.action.uncategorised': 'no category yet',
   'assistant.action.lineReview': 'goes to the review queue',
-  'assistant.action.needText': 'Tell me what to record — for example, “dodaj trošak kafa 180”.',
-  'assistant.action.needAmount': 'I could not find an amount in that. Say it like “kafa 180”.',
+  'assistant.action.needText': 'Tell me what to record — for example, “add expense coffee 180”.',
+  'assistant.action.needAmount': 'I could not find an amount in that. Say it like “coffee 180”.',
   'assistant.action.ambiguousAmount':
     'That amount reads two ways and the wrong one is ten times off, so I will not guess — add it on the capture screen, where you can pick the reading.',
   'assistant.action.multipleRows':
@@ -809,8 +843,8 @@ export const en = {
   'categories.selectPrompt': 'Choose a category to edit it.',
   'categories.keywords': 'Keywords',
   'categories.keywordsHint':
-    'Words that suggest this category. An excluded word blocks it — that is how "ulje" is kept out of Fuel.',
-  'categories.keywordPlaceholder': 'e.g. septička',
+    'Words that suggest this category. An excluded word blocks it — that is how “oil” is kept out of Fuel.',
+  'categories.keywordPlaceholder': 'e.g. fuel',
   'categories.keywordNormalised':
     'Saved in lower case without accents, so it matches however you type it later.',
   'categories.addKeyword': 'Add',
@@ -862,7 +896,7 @@ export const en = {
   'merchants.aliases': 'Aliases',
   'merchants.aliasesHint':
     'Other ways this merchant is written. Saved without accents or capitals, so what comes back may look different from what you typed.',
-  'merchants.aliasPlaceholder': 'e.g. lidl dorcol',
+  'merchants.aliasPlaceholder': 'e.g. lidl downtown',
   'merchants.addAlias': 'Add',
   'merchants.noAliases': 'No aliases yet.',
   'merchants.removeAlias': 'Remove alias {alias}',
@@ -936,7 +970,7 @@ export const en = {
   'counterparties.aliases': 'Aliases',
   'counterparties.aliasesHint':
     'Other ways this name is written. Saved without accents or capitals, so what comes back may look different.',
-  'counterparties.aliasPlaceholder': 'e.g. dejan roda',
+  'counterparties.aliasPlaceholder': 'e.g. joe, short for Joseph',
   'counterparties.addAlias': 'Add',
   'counterparties.noAliases': 'No aliases yet.',
   'counterparties.removeAlias': 'Remove alias {alias}',
@@ -963,11 +997,11 @@ export const en = {
   // ---- tags ----
   'tags.title': 'Tags',
   'tags.subtitle':
-    'Labels across categories — #vanredno, #odrzavanje. A transaction can carry several.',
+    'Labels across categories — #urgent, #maintenance. A transaction can carry several.',
   'tags.add': 'Add',
   'tags.addTitle': 'New tag',
   'tags.name': 'Name',
-  'tags.namePlaceholder': 'e.g. #vanredno',
+  'tags.namePlaceholder': 'e.g. #urgent',
   'tags.color': 'Colour',
   'tags.create': 'Create',
   'tags.creating': 'Creating…',
@@ -1073,6 +1107,11 @@ export const en = {
   // ADR-027 decisions 2 and 4: the one provenance label a snapshot-served figure carries. Mandatory
   // for any cached figure (docs/02 section 4.2, and section 10's money.asOf row).
   'money.asOf': 'as of {time}',
+  // `fm-money`'s spoken direction. Two whole words rather than a bare `+`/`−`: a screen reader reads
+  // "minus two thousand" for an income that way, and these are the only strings the component renders
+  // that a language can change.
+  'money.income': 'income',
+  'money.expense': 'expense',
   'pending.title': 'Waiting to send',
   'pending.subtitleDurable':
     'Captures that have not reached the server yet. On this device they survive a reload.',
@@ -1384,12 +1423,12 @@ export const en = {
   'onboarding.accounts.currencyHint': 'One currency per household (RSD).',
   'onboarding.accounts.name': 'Name',
   'onboarding.accounts.kind': 'Kind',
-  'onboarding.accounts.defaultName': 'Gotovina',
+  'onboarding.accounts.defaultName': 'Cash',
   'onboarding.accounts.have': 'You already have {count} account(s).',
   'onboarding.people.title': 'Who do you pay regularly?',
   'onboarding.people.lede': 'Separate them with commas. The app suggests a category for each one and remembers the name.',
   'onboarding.people.label': 'People and regular bills',
-  'onboarding.people.placeholder': 'e.g. Dejan rođa, septička jama',
+  'onboarding.people.placeholder': 'e.g. Joe, the plumber',
   'onboarding.people.suggest': 'Suggest',
   'onboarding.people.category': 'Category',
   'onboarding.people.add': 'Add',

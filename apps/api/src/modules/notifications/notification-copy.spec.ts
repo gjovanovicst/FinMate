@@ -159,6 +159,45 @@ describe('composeNotification', () => {
   });
 });
 
+/**
+ * ADR-040: the row is composed in the recipient's language, and T-09 holds in every one of them.
+ *
+ * The lock-screen sweep is the part worth having: a translation is exactly where somebody spells a
+ * number out ("dva dana"), so the digit test has to run over the Serbian copy too and not only over the
+ * English it was written against.
+ */
+describe('composeNotification in the reader’s language', () => {
+  it('renders the whole row in Serbian Latin and derives the Cyrillic one', () => {
+    const latin = composeNotification('RECURRING_DUE', duePayload, 'IN_APP', 'Ostava', 'sr-Latn');
+    expect(latin.title).toBe('Račun dospeva sutra: Netflix');
+    expect(latin.body).toBe('1299.00 se naplaćuje sutra.');
+
+    const cyrillic = composeNotification('RECURRING_DUE', duePayload, 'IN_APP', 'Ostava', 'sr-Cyrl');
+    expect(cyrillic.title).toBe('Рачун доспева сутра: Netflix');
+    expect(cyrillic.body).toBe('1299.00 се наплаћује сутра.');
+  });
+
+  it('keeps a lock screen free of digits in every locale', () => {
+    for (const locale of ['en', 'sr-Latn', 'sr-Cyrl'] as const) {
+      for (const channel of ['EMAIL', 'PUSH', 'WEB_PUSH'] as const) {
+        for (const payload of [pacePayload, spikePayload, duePayload, { currency: 'RSD' }]) {
+          const copy = composeNotification('BUDGET_PACE', payload, channel, 'Ostava', locale);
+          expect(isLockScreenSafe(copy.title), `${locale} title: ${copy.title}`).toBe(true);
+          expect(isLockScreenSafe(copy.body), `${locale} body: ${copy.body}`).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('translates the template but never the reader’s own Category name', () => {
+    // The category path is interpolated **after** transliteration, so a Household's own words survive
+    // exactly as they typed them. Transliterating the rendered string would rewrite their data.
+    const copy = composeNotification('BUDGET_PACE', pacePayload, 'WEB_PUSH', 'Ostava', 'sr-Cyrl');
+    expect(copy.body).toContain('отвори');
+    expect(copy.body).toContain('Hrana / Supermarket');
+  });
+});
+
 describe('isLockScreenSafe', () => {
   it('rejects anything with a digit, whatever the digit means', () => {
     expect(isLockScreenSafe('Budget overrun ahead')).toBe(true);

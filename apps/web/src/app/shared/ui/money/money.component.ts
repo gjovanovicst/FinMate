@@ -39,7 +39,7 @@ export type MoneyDirection = 'INCOME' | 'EXPENSE' | 'NEUTRAL';
       [attr.aria-label]="accessibleLabel()"
       role="text"
     >
-      <!-- The sign is decorative: the accessible label already says "prihod"/"trošak", and a
+      <!-- The sign is decorative: the accessible label already says money.income/money.expense, and a
            screen reader announcing "minus two thousand" for income would be wrong. -->
       @if (showSign()) {
         <span class="amount__sign" aria-hidden="true">{{ signGlyph() }}</span>
@@ -114,7 +114,14 @@ export class MoneyComponent {
 
   /** Spoken form: screen readers handle "2.000 RSD" poorly, so spell out the direction too. */
   readonly accessibleLabel = computed(() => {
-    const spoken = this.direction() === 'INCOME' ? 'prihod' : this.direction() === 'EXPENSE' ? 'trošak' : '';
+    // The words come from the catalogue, not this file. They were the literals `prihod`/`trošak`, so a
+    // screen reader announced a Serbian word on an English page — invisible to every visual review.
+    const spoken =
+      this.direction() === 'INCOME'
+        ? this.i18n.t('money.income')
+        : this.direction() === 'EXPENSE'
+          ? this.i18n.t('money.expense')
+          : '';
     return spoken ? `${this.formatted()} (${spoken})` : this.formatted();
   });
 }

@@ -58,11 +58,16 @@ export const envSchema = z
      */
     APP_NAME: z.string().default('FinMate'),
     /**
-     * The locale money and dates are formatted in for server-rendered copy (notifications, assistant
-     * facts). The product's *copy* is English (ADR-019); money follows the Serbian convention the rest
-     * of the app renders, and `formatMoney`'s own default is this value.
+     * The locale money and dates are formatted in for server-rendered copy, and the language that copy
+     * is written in when nothing more specific is known (a User's stored `locale`, or the `locale` a
+     * client sends).
+     *
+     * Defaults to **English**, which is the product's primary language (docs/01 §7) and the web
+     * client's own default (`DEFAULT_LOCALE` in `core/i18n/locales.ts`). It used to default to
+     * `sr-Latn-RS`, which meant every server-composed message disagreed with the interface an English
+     * reader was looking at (ADR-040).
      */
-    APP_DEFAULT_LOCALE: z.string().default('sr-Latn-RS'),
+    APP_DEFAULT_LOCALE: z.string().default('en'),
     /**
      * The path prefix the **browser** reaches this API under, or `''` when it is mounted at the root.
      *

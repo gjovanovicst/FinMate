@@ -178,6 +178,13 @@ export interface RuleProposal {
  * `null` means "there is nothing to propose" — no resolved entity and no distinctive token — which is
  * a legitimate outcome for a correction on a bare amount. The caller shows no prompt rather than a
  * useless one.
+ *
+ * ## The name carries no language
+ *
+ * It used to be `Naučeno: <merchant> → <category>`, which baked a Serbian word into `rules.name` for
+ * every Household — a stored string the reader can never re-language (ADR-040). The name is now just
+ * the mapping, and the fact that the app learned it is what `origin: LEARNED` is for; `/rules` already
+ * renders `rules.origin.LEARNED` beside the name.
  */
 export function synthesiseRule(subject: CorrectionSubject): RuleSynthesis | null {
   const repeated =
@@ -187,7 +194,7 @@ export function synthesiseRule(subject: CorrectionSubject): RuleSynthesis | null
   if (repeated && subject.merchantId !== null) {
     return {
       proposal: proposal({
-        name: `Naučeno: ${subject.merchantName ?? subject.merchantId} → ${subject.categoryName}`,
+        name: `${subject.merchantName ?? subject.merchantId} → ${subject.categoryName}`,
         conditions: { all: [{ field: 'merchant', op: 'eq', value: subject.merchantId }] },
         actions: { setCategoryId: subject.categoryId },
         trigger: 'REPEATED_MERCHANT_CORRECTION',
@@ -205,7 +212,7 @@ export function synthesiseRule(subject: CorrectionSubject): RuleSynthesis | null
   if (subject.counterpartyId !== null) {
     return {
       proposal: proposal({
-        name: `Naučeno: ${subject.counterpartyName ?? subject.counterpartyId} → ${subject.categoryName}`,
+        name: `${subject.counterpartyName ?? subject.counterpartyId} → ${subject.categoryName}`,
         conditions: { all: [{ field: 'counterparty', op: 'eq', value: subject.counterpartyId }] },
         actions: { setCategoryId: subject.categoryId },
         trigger: 'COUNTERPARTY_RESOLVED',
@@ -226,7 +233,7 @@ export function synthesiseRule(subject: CorrectionSubject): RuleSynthesis | null
   if (subject.merchantId !== null) {
     return {
       proposal: proposal({
-        name: `Naučeno: ${subject.merchantName ?? subject.merchantId} → ${subject.categoryName}`,
+        name: `${subject.merchantName ?? subject.merchantId} → ${subject.categoryName}`,
         conditions: { all: [{ field: 'merchant', op: 'eq', value: subject.merchantId }] },
         actions: { setCategoryId: subject.categoryId },
         trigger: 'MERCHANT_RESOLVED',
@@ -245,7 +252,7 @@ export function synthesiseRule(subject: CorrectionSubject): RuleSynthesis | null
 
   return {
     proposal: proposal({
-      name: `Naučeno: ${token} → ${subject.categoryName}`,
+      name: `${token} → ${subject.categoryName}`,
       conditions: { all: [{ field: 'text', op: 'contains', value: token }] },
       actions: { setCategoryId: subject.categoryId },
       trigger: 'DISTINCTIVE_TOKEN',

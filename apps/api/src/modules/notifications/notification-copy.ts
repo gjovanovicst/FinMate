@@ -1,5 +1,7 @@
 import { money, toMajorString, type CurrencyCode, type NotificationChannel } from '@finmate/domain';
 
+import { tr, type CopyLocale } from '../../common/i18n/copy';
+
 /**
  * Notification copy, composed per **channel** — docs/02 §7.1, docs/08 §6.5, threat **T-09**.
  *
@@ -28,7 +30,16 @@ import { money, toMajorString, type CurrencyCode, type NotificationChannel } fro
  * The distinction is asserted both ways in `notification-copy.spec.ts`: an in-app body must contain
  * the figures, and a lock-screen body must contain **no digit at all**. That second assertion is the
  * one that keeps working when somebody adds a generator, because it does not depend on remembering
- * which payload keys exist.
+ * which payload keys exist. It is also asserted **in every locale** — a Serbian translation that
+ * spelled a number out would defeat the check, so the sweep runs over all three catalogues.
+ *
+ * ## The copy is bilingual, and the row is stored once
+ *
+ * This file used to be English-only, while `mail.service.ts` was Serbian-only and
+ * `assistant-action.service.ts` was the one module with both — so a reader's notifications arrived in
+ * whichever language the module's author happened to write (ADR-040). The copy is now a pair and the
+ * caller resolves the locale from the **recipient's** stored preference, which is what makes the
+ * stored `title`/`body` readable by the person who receives them.
  *
  * ## The app name is a parameter
  *
@@ -55,6 +66,7 @@ export function composeNotification(
   payload: Readonly<Record<string, unknown>>,
   channel: NotificationChannel,
   appName: string,
+  locale: CopyLocale = 'en',
 ): NotificationCopy {
   const categoryPath = typeof payload['categoryPath'] === 'string' ? payload['categoryPath'] : null;
   // A recurring rule's own words (`Netflix`). Free text, and usually the payee, so it is in-app only.
@@ -64,23 +76,32 @@ export function composeNotification(
     // Lock-screen safe (T-09): no amounts, no entity names. The subject is the user's own category
     // name, which is why it may stay — it is not a third party and it discloses nothing about who
     // they paid.
-    const subject = categoryPath;
     return {
-      title: titleFor(kind, subject),
+      title: titleFor(kind, categoryPath, locale),
       body:
-        subject === null
-          ? `Open ${appName} to see the details.`
-          : `${subject}: open ${appName} to see the details.`,
+        categoryPath === null
+          ? tr(locale, LOCK_SCREEN_BODY, { app: appName })
+          : tr(locale, LOCK_SCREEN_BODY_SUBJECT, { app: appName, subject: categoryPath }),
       full: false,
     };
   }
 
   return {
-    title: inAppTitle(kind, categoryPath, description, payload),
-    body: inAppBody(kind, payload),
+    title: inAppTitle(kind, categoryPath, description, payload, locale),
+    body: inAppBody(kind, payload, locale),
     full: true,
   };
 }
+
+const LOCK_SCREEN_BODY = {
+  en: 'Open {app} to see the details.',
+  sr: 'Otvori {app} da vidiš detalje.',
+};
+
+const LOCK_SCREEN_BODY_SUBJECT = {
+  en: '{subject}: open {app} to see the details.',
+  sr: '{subject}: otvori {app} da vidiš detalje.',
+};
 
 /** The in-app title, which is the only place a rule's own (free-text) name may appear. */
 function inAppTitle(
@@ -88,50 +109,84 @@ function inAppTitle(
   categoryPath: string | null,
   description: string | null,
   payload: Readonly<Record<string, unknown>>,
+  locale: CopyLocale,
 ): string {
   if (kind === 'RECURRING_DUE') {
-    const who = description ?? categoryPath ?? 'a scheduled payment';
-    return `Bill due${dueDayWord(payload)}: ${who}`;
+    const who = description ?? categoryPath ?? tr(locale, A_SCHEDULED_PAYMENT);
+    const day = dueDay(payload);
+    if (day === 'today') return tr(locale, BILL_DUE_TODAY, { who });
+    if (day === 'tomorrow') return tr(locale, BILL_DUE_TOMORROW, { who });
+    return tr(locale, BILL_DUE, { who });
   }
-  return titleFor(kind, categoryPath);
+  return titleFor(kind, categoryPath, locale);
 }
 
-function titleFor(kind: string, subject: string | null): string {
+function titleFor(kind: string, subject: string | null, locale: CopyLocale): string {
   switch (kind) {
     case 'BUDGET_PACE':
-      return subject === null ? 'Budget overrun ahead' : `Budget overrun ahead: ${subject}`;
+      return subject === null
+        ? tr(locale, { en: 'Budget overrun ahead', sr: 'Prekoračenje budžeta' })
+        : tr(locale, { en: 'Budget overrun ahead: {subject}', sr: 'Prekoračenje budžeta: {subject}' }, { subject });
     case 'CATEGORY_SPIKE':
-      return `Spending spike: ${subject ?? 'a category'}`;
+      return tr(
+        locale,
+        { en: 'Spending spike: {subject}', sr: 'Skok potrošnje: {subject}' },
+        { subject: subject ?? tr(locale, A_CATEGORY) },
+      );
     case 'UNUSUAL_SPEND':
-      return `Unusual amount: ${subject ?? 'a category'}`;
+      return tr(
+        locale,
+        { en: 'Unusual amount: {subject}', sr: 'Neobičan iznos: {subject}' },
+        { subject: subject ?? tr(locale, A_CATEGORY) },
+      );
     case 'POSITIVE_TREND':
-      return subject === null ? 'Good news' : `Good news: ${subject}`;
+      return subject === null
+        ? tr(locale, { en: 'Good news', sr: 'Dobre vesti' })
+        : tr(locale, { en: 'Good news: {subject}', sr: 'Dobre vesti: {subject}' }, { subject });
     case 'RECURRING_DUE':
       // Reached only for a non-in-app channel: the payee's name is deliberately not repeated there.
       return subject === null
-        ? 'A scheduled payment is due'
-        : `A scheduled payment is due: ${subject}`;
+        ? tr(locale, A_SCHEDULED_PAYMENT_DUE)
+        : tr(locale, A_SCHEDULED_PAYMENT_DUE_SUBJECT, { subject });
     default:
-      return `Insight: ${kind}`;
+      return tr(locale, { en: 'Insight: {kind}', sr: 'Uvid: {kind}' }, { kind });
   }
 }
 
+const A_SCHEDULED_PAYMENT = { en: 'a scheduled payment', sr: 'zakazano plaćanje' };
+const A_SCHEDULED_PAYMENT_DUE = {
+  en: 'A scheduled payment is due',
+  sr: 'Dospeva zakazano plaćanje',
+};
+const A_SCHEDULED_PAYMENT_DUE_SUBJECT = {
+  en: 'A scheduled payment is due: {subject}',
+  sr: 'Dospeva zakazano plaćanje: {subject}',
+};
+const A_CATEGORY = { en: 'a category', sr: 'kategorija' };
+const BILL_DUE = { en: 'Bill due: {who}', sr: 'Dospeva račun: {who}' };
+const BILL_DUE_TODAY = { en: 'Bill due today: {who}', sr: 'Račun dospeva danas: {who}' };
+const BILL_DUE_TOMORROW = { en: 'Bill due tomorrow: {who}', sr: 'Račun dospeva sutra: {who}' };
+
 /**
- * ` today` / ` tomorrow`, and an empty string for anything else.
+ * `today` / `tomorrow`, and `null` for anything else.
  *
  * Words, never a figure: the in-app title must not be the reason a lock screen learns a date, and the
  * generator's horizon is one day so nothing further is expected. The function stays total anyway, so a
  * widened horizon can never smuggle a digit into a title.
  */
-function dueDayWord(payload: Readonly<Record<string, unknown>>): string {
+function dueDay(payload: Readonly<Record<string, unknown>>): 'today' | 'tomorrow' | null {
   const daysUntil = payload['daysUntil'];
-  if (daysUntil === 0) return ' today';
-  if (daysUntil === 1) return ' tomorrow';
-  return '';
+  if (daysUntil === 0) return 'today';
+  if (daysUntil === 1) return 'tomorrow';
+  return null;
 }
 
 /** The in-app body: the figures, formatted in the ledger currency. */
-function inAppBody(kind: string, payload: Readonly<Record<string, unknown>>): string {
+function inAppBody(
+  kind: string,
+  payload: Readonly<Record<string, unknown>>,
+  locale: CopyLocale,
+): string {
   const currency = typeof payload['currency'] === 'string' ? payload['currency'] : 'RSD';
   const amount = (key: string): string => {
     const raw = payload[key];
@@ -141,34 +196,69 @@ function inAppBody(kind: string, payload: Readonly<Record<string, unknown>>): st
 
   switch (kind) {
     case 'BUDGET_PACE':
-      return (
-        `Projected ${amount('projectedTotalMinor')} against a ${amount('limitMinor')} limit — ` +
-        `${amount('projectedOverrunMinor')} over.`
+      return tr(
+        locale,
+        {
+          en: 'Projected {projected} against a {limit} limit — {over} over.',
+          sr: 'Predviđeno {projected} uz limit {limit} — {over} više.',
+        },
+        {
+          projected: amount('projectedTotalMinor'),
+          limit: amount('limitMinor'),
+          over: amount('projectedOverrunMinor'),
+        },
       );
     case 'CATEGORY_SPIKE':
-      return (
-        `${amount('currentMinor')} so far, against a usual ${amount('baselineMeanMinor')} ` +
-        `(${String(payload['multiple'] ?? '—')}×).`
+      return tr(
+        locale,
+        {
+          en: '{current} so far, against a usual {usual} ({multiple}×).',
+          sr: 'Do sada {current}, u odnosu na uobičajenih {usual} ({multiple}×).',
+        },
+        {
+          current: amount('currentMinor'),
+          usual: amount('baselineMeanMinor'),
+          multiple: String(payload['multiple'] ?? '—'),
+        },
       );
     case 'UNUSUAL_SPEND':
-      return (
-        `${amount('amountMinor')} is ${String(payload['multiple'] ?? '—')}× the usual ` +
-        `${amount('medianMinor')} here.`
+      return tr(
+        locale,
+        {
+          en: '{amount} is {multiple}× the usual {median} here.',
+          sr: '{amount} je {multiple}× uobičajenih {median} ovde.',
+        },
+        {
+          amount: amount('amountMinor'),
+          multiple: String(payload['multiple'] ?? '—'),
+          median: amount('medianMinor'),
+        },
       );
     case 'POSITIVE_TREND':
-      return `${amount('savedMinor')} less than usual this month.`;
+      return tr(
+        locale,
+        {
+          en: '{saved} less than usual this month.',
+          sr: '{saved} manje nego obično ovog meseca.',
+        },
+        { saved: amount('savedMinor') },
+      );
     case 'RECURRING_DUE': {
-      const when = dueDayWord(payload);
+      const day = dueDay(payload);
       // No day word means a horizon this build does not produce; "is scheduled" still reads honestly
       // rather than claiming "today".
-      return when === ''
-        ? `${amount('amountMinor')} is scheduled.`
-        : `${amount('amountMinor')} is charged${when}.`;
+      if (day === 'today') {
+        return tr(locale, { en: '{amount} is charged today.', sr: '{amount} se naplaćuje danas.' }, { amount: amount('amountMinor') });
+      }
+      if (day === 'tomorrow') {
+        return tr(locale, { en: '{amount} is charged tomorrow.', sr: '{amount} se naplaćuje sutra.' }, { amount: amount('amountMinor') });
+      }
+      return tr(locale, { en: '{amount} is scheduled.', sr: '{amount} je zakazano.' }, { amount: amount('amountMinor') });
     }
     default:
       // A kind added to the vocabulary but not to this switch still produces a usable row rather than
       // an empty notification body.
-      return `${kind}: ${amount('currentMinor')}`;
+      return tr(locale, { en: '{kind}: {current}', sr: '{kind}: {current}' }, { kind, current: amount('currentMinor') });
   }
 }
 

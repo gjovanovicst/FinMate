@@ -52,7 +52,10 @@ const CONTEXT: PlannerContext = {
 };
 
 function plan(question: string) {
-  return planQuestion(question, CONTEXT);
+  // Serbian by default: these assertions read the Serbian cue vocabulary and the Serbian suggestions,
+  // and the chip language now follows the reader (ADR-040). The English suggestions have their own
+  // cases below.
+  return planQuestion(question, CONTEXT, 'sr-Latn');
 }
 
 describe('the template registry', () => {
@@ -411,7 +414,7 @@ describe('income scoped by Category (A-9)', () => {
 
   it('offers an income question about an income Category', () => {
     // The chip follows the Category's direction too, or it would be a chip that refuses in turn.
-    const { suggestions = [] } = planQuestion('kada mi sledeća plata dolazi', CONTEXT);
+    const { suggestions = [] } = planQuestion('kada mi sledeća plata dolazi', CONTEXT, 'sr-Latn');
     expect(suggestions[0]).toContain('Plata');
     expect(suggestions[0]).toContain('zaradio');
   });

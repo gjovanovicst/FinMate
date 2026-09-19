@@ -417,8 +417,9 @@ export class AssistantActionPreviewModel {
  *
  * It carries the `action` as well as the sentence so the chip is *filed* under something a client can
  * trust: a list of bare strings would let the screen group or label an example by guessing, and the
- * enum is the same closed vocabulary `assistantProposeAction` answers with. The sentence is Serbian
- * (like `SUGGESTED_QUESTIONS`) because the API has no i18n layer — docs/06 §5.14's recorded breach.
+ * enum is the same closed vocabulary `assistantProposeAction` answers with. The sentence is rendered in
+ * the reader's language from a copy pair, like `SUGGESTED_QUESTIONS` — the chip is printed verbatim, so
+ * the API composes it (ADR-040).
  */
 @ObjectType({
   description:

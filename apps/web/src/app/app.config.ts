@@ -7,13 +7,14 @@ import {
   provideZonelessChangeDetection,
   type ApplicationConfig,
 } from '@angular/core';
-import { provideRouter, withComponentInputBinding, withInMemoryScrolling } from '@angular/router';
+import { provideRouter, withComponentInputBinding, withInMemoryScrolling, TitleStrategy } from '@angular/router';
 import { provideServiceWorker } from '@angular/service-worker';
 
 import { routes } from './app.routes';
 import { AppLockService } from './core/app-lock/app-lock.service';
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { credentialsInterceptor } from './core/auth/credentials.interceptor';
+import { LocalizedTitleStrategy } from './core/i18n/title.strategy';
 
 /**
  * Application providers.
@@ -41,6 +42,9 @@ export const appConfig: ApplicationConfig = {
       // Restore scroll on navigation, and anchor to the top on a fresh route.
       withInMemoryScrolling({ scrollPositionRestoration: 'top', anchorScrolling: 'enabled' }),
     ),
+    // Route `title`s are `route.*` translation keys; this is what renders them in the reader's language
+    // and what re-renders the tab when the language switcher changes locale (ADR-019).
+    { provide: TitleStrategy, useClass: LocalizedTitleStrategy },
     provideHttpClient(
       withFetch(),
       // Order matters: credentials first (so cookies ride along), then bearer-token attachment.

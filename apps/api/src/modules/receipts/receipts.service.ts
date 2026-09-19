@@ -10,6 +10,7 @@ import {
 
 import { CONFIG, type AppConfig } from '../../config/config';
 import { ApiError } from '../../common/filters/all-exceptions.filter';
+import { resolveCopyLocale, tr, type CopyLocale } from '../../common/i18n/copy';
 import type { CursorPage } from '../../graphql/pagination';
 import { normalisePageSize } from '../../graphql/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -131,6 +132,8 @@ export interface CommitReceiptInput {
   readonly accountId: string;
   /** Overrides the description derived from the Merchant or the items. */
   readonly description?: string | null;
+  /** The reader's language, for the fallback description a receipt with no Merchant gets (ADR-040). */
+  readonly locale?: string | null;
 }
 
 export interface ReconcileInput {
@@ -145,6 +148,8 @@ export interface ReconcileInput {
   /** The new **absolute** amount for ADJUST_ITEM / ADJUST_TOTAL (never a signed delta; see the model). */
   readonly setMinor?: bigint | null;
   readonly absorbCategoryId?: string | null;
+  /** The reader's language, for the filler line an ADD_ROUNDING_LINE writes (ADR-040). */
+  readonly locale?: string | null;
 }
 
 interface ReceiptRow {
@@ -534,7 +539,11 @@ export class ReceiptsService {
       }
     }
 
-    const description = await this.descriptionFor(receipt, input.description ?? null);
+    const description = await this.descriptionFor(
+      receipt,
+      input.description ?? null,
+      resolveCopyLocale(input.locale),
+    );
     const transaction = await this.transactions.create(householdId, {
       accountId: input.accountId,
       kind: TransactionKind.EXPENSE,
@@ -750,7 +759,7 @@ export class ReceiptsService {
             household_id: householdId,
             receipt_id: receipt.id,
             line_no: (last?.line_no ?? 0) + 1,
-            raw_text: 'Rounding',
+            raw_text: tr(resolveCopyLocale(input.locale), { en: 'Rounding', sr: 'Zaokruživanje' }),
             amount_minor: amount,
             category_id: input.absorbCategoryId ?? null,
             confidence: 1,
@@ -878,7 +887,11 @@ export class ReceiptsService {
    * the list; then a neutral fallback. It is never a model's sentence and never a Category's name —
    * a description is the user's own record of what they bought.
    */
-  private async descriptionFor(receipt: ReceiptRow, override: string | null): Promise<string> {
+  private async descriptionFor(
+    receipt: ReceiptRow,
+    override: string | null,
+    locale: CopyLocale,
+  ): Promise<string> {
     const trimmed = override?.trim() ?? '';
     if (trimmed.length > 0) return trimmed;
     if (receipt.merchant_id !== null) {
@@ -888,7 +901,9 @@ export class ReceiptsService {
       });
       if (merchant !== null) return merchant.name;
     }
-    return 'Receipt';
+    // Stored on the Transaction, so it is written in the reader's language rather than in the
+    // server's — this fallback used to be the English word for every Household (ADR-040).
+    return tr(locale, { en: 'Receipt', sr: 'Prijem' });
   }
 
   private async assertCategory(householdId: string, categoryId: string): Promise<void> {

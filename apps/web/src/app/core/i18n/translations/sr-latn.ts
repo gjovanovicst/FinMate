@@ -59,6 +59,36 @@ export const srLatn: Record<keyof typeof en, string> = {
   'nav.assistant': 'Asistent',
   'nav.recurring': 'Ponavljajuće',
 
+  // ---- document titles (the browser tab) ----
+  // One key per route, read by `LocalizedTitleStrategy`. `sr-Cyrl` is derived from these at runtime.
+  'route.signIn': 'Prijava',
+  'route.signUp': 'Registracija',
+  'route.resetPassword': 'Nova lozinka',
+  'route.verifyEmail': 'Potvrda email adrese',
+  'route.onboarding': 'Podešavanje',
+  'route.dashboard': 'Pregled',
+  'route.accounts': 'Računi',
+  'route.capture': 'Novi unos',
+  'route.transactions': 'Transakcije',
+  'route.transaction': 'Transakcija',
+  'route.goals': 'Ciljevi',
+  'route.recurring': 'Ponavljajuće',
+  'route.analytics': 'Analitika',
+  'route.assistant': 'Asistent',
+  'route.review': 'Provera',
+  'route.counterparties': 'Osobe i firme',
+  'route.tags': 'Oznake',
+  'route.merchants': 'Prodavci',
+  'route.categories': 'Kategorije',
+  'route.rules': 'Pravila',
+  'route.receipts': 'Prijemi',
+  'route.receipt': 'Prijem',
+  'route.settings': 'Podešavanja',
+  'route.notifications': 'Obaveštenja',
+  'route.pending': 'Čeka slanje',
+  'route.budgets': 'Budžeti',
+  'route.notFound': 'Stranica nije pronađena',
+
   // ---- recurring rules (F-16) ----
   'recurring.title': 'Ponavljajuće',
   'recurring.subtitle': 'Računi i primanja koji se ponavljaju. Aplikacija računa datume; ti odlučuješ šta se potvrđuje automatski.',
@@ -104,8 +134,8 @@ export const srLatn: Record<keyof typeof en, string> = {
   'recurring.everyNWeeksOn': 'svakih {count} nedelja: {days}',
   'recurring.everyMonth': 'svakog meseca',
   'recurring.everyNMonths': 'svakih {count} meseci',
-  'recurring.everyMonthOn': 'svakog meseca {day}. dana',
-  'recurring.everyNMonthsOn': 'svakih {count} meseci {day}. dana',
+  'recurring.everyMonthOn': 'svakog {day}. dana u mesecu',
+  'recurring.everyNMonthsOn': 'svakih {count} meseci, {day}. dana u mesecu',
   'recurring.everyYear': 'svake godine',
   'recurring.everyNYears': 'svakih {count} godina',
   'recurring.frequency.DAILY': 'Dnevno',
@@ -140,7 +170,7 @@ export const srLatn: Record<keyof typeof en, string> = {
 
   // ---- saving goals (F-18) ----
   'goals.title': 'Ciljevi',
-  'goals.subtitle': 'Cilj, rok i mesečni iznos koji backend izračunava za tebe.',
+  'goals.subtitle': 'Cilj, rok i mesečni iznos koji server izračunava za tebe.',
   'goals.new': 'Novi cilj',
   'goals.cancel': 'Otkaži',
   'goals.save': 'Sačuvaj',
@@ -181,7 +211,7 @@ export const srLatn: Record<keyof typeof en, string> = {
 
   // ---- analytics (F-20) ----
   'analytics.title': 'Analitika',
-  'analytics.subtitle': 'Gde je novac otišao. Svaki broj izračunava backend.',
+  'analytics.subtitle': 'Gde je novac otišao. Svaki broj izračunava server.',
   'analytics.period': 'Mesec',
   'analytics.compareTo': 'Uporedi sa',
   'analytics.previous': 'Prethodni mesec',
@@ -205,7 +235,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'analytics.changeFlat': 'nepromenjeno',
   'analytics.noBasis': 'nema osnova za poređenje',
   'analytics.uncategorised': 'Neraspoređeno',
-  'analytics.topMerchants': 'Vrh prodavaca',
+  'analytics.topMerchants': 'Najveći prodavci',
   'analytics.merchantsEmpty': 'Nema prodavaca u {period}.',
   'analytics.merchantUnresolved': 'bez prodavca',
   'analytics.comparison': 'U odnosu na {period}',
@@ -267,7 +297,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'assistant.action.confirm': 'Potvrdi',
   'assistant.action.confirming': 'Primenjujem…',
   'assistant.action.kind': 'Vrsta',
-  'assistant.action.kindExpense': 'Rashod',
+  'assistant.action.kindExpense': 'Trošak',
   'assistant.action.kindIncome': 'Prihod',
   'assistant.action.defaulted': 'izabrano umesto tebe',
   'assistant.action.expires': 'Ova ponuda važi do {time}; pitaj ponovo i napraviću novu.',
@@ -299,7 +329,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'assistant.action.shadowed':
     'Pravilo koje već imaš pokriva to, pa novo nikada ne bi važilo. Izmeni pravilo koje pobeđuje.',
   'assistant.action.uncategorised': 'još bez kategorije',
-  'assistant.action.lineReview': 'ide na pregled',
+  'assistant.action.lineReview': 'ide na proveru',
   'assistant.action.needText': 'Reci mi šta da zabeležim — na primer: „dodaj trošak kafa 180”.',
   'assistant.action.needAmount': 'U tome nisam našao iznos. Reci ga ovako: „kafa 180”.',
   'assistant.action.ambiguousAmount':
@@ -308,8 +338,8 @@ export const srLatn: Record<keyof typeof en, string> = {
     'To izgleda kao više od jednog unosa. Ekran za unos prima više njih; ja nudim jedan po jedan.',
   'assistant.action.needAccount': 'Nema računa na koji bi to otišlo. Napravi račun pa me pitaj ponovo.',
   'assistant.action.done': 'Urađeno',
-  'assistant.action.undo': 'Opozovi',
-  'assistant.action.undoing': 'Opozivam…',
+  'assistant.action.undo': 'Poništi',
+  'assistant.action.undoing': 'Poništavam…',
   'assistant.action.undone': 'Opozvano — „{name}” više nije među tvojim kategorijama.',
   'assistant.action.replayed': 'Ovo je već primenjeno, pa ništa nije urađeno dvaput.',
   'assistant.action.taken': 'Već postoji nešto s tim imenom, pa ništa nije napravljeno.',
@@ -362,7 +392,7 @@ export const srLatn: Record<keyof typeof en, string> = {
 
   // ---- push na ovom uređaju (F-22, zadatak 4.2.5) ----
   'notifications.push.title': 'Obaveštenja na ovom uređaju',
-  'notifications.push.explain': 'Dobijaj kratko obaveštenje ovde. Poruka na zaključanom ekranu nikad ne prikazuje iznose ni nazive.',
+  'notifications.push.explain': 'Primaj kratko obaveštenje ovde. Poruka na zaključanom ekranu nikad ne prikazuje iznose ni nazive.',
   'notifications.push.unsupported': 'Ovaj pregledač ne može da prikaže obaveštenja iz aplikacije.',
   'notifications.push.serverOff': 'Push nije podešen na ovom serveru, pa obaveštenja čekaju u aplikaciji.',
   'notifications.push.iosInstall': 'Na iPhone-u i iPad-u obaveštenja rade samo iz aplikacije dodate na početni ekran (Podeli → Dodaj na početni ekran).',
@@ -392,7 +422,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'lock.screen.pinLabel': 'Tvoj PIN od 6 cifara',
   'lock.screen.unlock': 'Otključaj',
   'lock.screen.working': 'Proveravam…',
-  'lock.screen.signOut': 'Radije se odjavi',
+  'lock.screen.signOut': 'Umesto toga se odjavi',
   'consent.title': 'AI',
   'consent.ask.title': 'Sme li aplikacija ovde da koristi AI model?',
   'consent.ask.whyText':
@@ -446,7 +476,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'settings.security.turnOffHint': 'Isključivanje brave briše sve sačuvano na ovom uređaju, uključujući unose koji nisu poslati.',
   'settings.security.queueFirst': 'Imaš {count} unosa koji čekaju slanje. Pošalji ih prvo, da uključivanje brave ne može da ih izgubi.',
   'settings.security.queueLink': 'Otvori red',
-  'settings.notifications.body': 'Šta dobijaš i gde te te poruke nalaze.',
+  'settings.notifications.body': 'Šta dobijaš i gde te obaveštenja stižu.',
   'settings.notifications.open': 'Otvori obaveštenja',
 
   // ---- queued edits and their conflicts (task 4.2.7b) ----
@@ -469,8 +499,8 @@ export const srLatn: Record<keyof typeof en, string> = {
   // ---- session ----
   'session.signOut': 'Odjavi se',
   'session.signingOut': 'Odjavljivanje…',
-  'session.signedInAs': 'Prijavljeni ste kao {role}',
-  'session.account': 'Prijavljeni ste',
+  'session.signedInAs': 'Prijavljen si kao {role}',
+  'session.account': 'Prijavljen si',
 
   // ---- roles ----
   'role.OWNER': 'Vlasnik',
@@ -570,7 +600,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'dashboard.assistantPlaceholder': 'Ukucaj svoje pitanje…',
   'dashboard.uncategorised': 'Bez kategorije',
   'dashboard.noSpending': 'Ovog meseca još ništa nije potrošeno.',
-  'dashboard.panelsOffline': 'Pregledi po kategorijama traže vezu. Iznosi iznad su poslednji koje je server izračunao.',
+  'dashboard.panelsOffline': 'Razrada po kategorijama traži vezu. Iznosi iznad su poslednji koje je server izračunao.',
   'dashboard.noGoals': 'Još nema ciljeva štednje.',
   'dashboard.noTransactions': 'Još nema transakcija.',
   'dashboard.noAlerts': 'Ništa ne traži tvoju pažnju.',
@@ -750,7 +780,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   // ---- categories ----
   'categories.title': 'Kategorije',
   'categories.subtitle':
-    'Vaša sopstvena struktura. Budžet se može postaviti na svaki čvor i pokriva sve ispod njega.',
+    'Tvoja sopstvena struktura. Budžet se može postaviti na svaki čvor i pokriva sve ispod njega.',
   'categories.expenses': 'Troškovi',
   'categories.income': 'Prihodi',
   'categories.add': 'Dodaj',
@@ -764,7 +794,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'categories.color': 'Boja',
   'categories.aiDescription': 'Opis za klasifikator',
   'categories.aiDescriptionHint':
-    'Nagoveštaj za automatsko kategorisanje. Napišite ga onako kako bi pisalo na računu.',
+    'Nagoveštaj za automatsko kategorisanje. Napiši ga onako kako bi pisalo na računu.',
   'categories.save': 'Sačuvaj izmene',
   'categories.saving': 'Čuvanje…',
   'categories.create': 'Napravi',
@@ -774,17 +804,17 @@ export const srLatn: Record<keyof typeof en, string> = {
   'categories.deleting': 'Brisanje…',
   'categories.deleteRefusedTitle': 'Ova kategorija se još koristi',
   'categories.deleteRefusedBody':
-    'Ništa nije obrisano. Izaberite gde da odu njeni sadržaji, pa pokušajte ponovo.',
+    'Ništa nije obrisano. Izaberi gde da odu njeni sadržaji, pa pokušaj ponovo.',
   'categories.reassignTo': 'Prebaci sadržaj u',
   'categories.reassignAndDelete': 'Prebaci i obriši',
-  'categories.chooseTarget': 'Izaberite kategoriju…',
+  'categories.chooseTarget': 'Izaberi kategoriju…',
   'categories.usage': '{count} transakcija koristi ovu kategoriju direktno',
   'categories.usageNone': 'Nijedna transakcija ne koristi ovu kategoriju direktno',
   'categories.usageNote': 'Ne računa potkategorije ni delove podele.',
   'categories.starter': 'početna',
   'categories.empty': 'Još nema kategorija',
-  'categories.emptyBody': 'Dodajte prvu, ili počnite od ponuđenog stabla.',
-  'categories.selectPrompt': 'Izaberite kategoriju da je izmenite.',
+  'categories.emptyBody': 'Dodaj prvu, ili počni od ponuđenog stabla.',
+  'categories.selectPrompt': 'Izaberi kategoriju da je izmeniš.',
   'categories.keywords': 'Ključne reči',
   'categories.keywordsHint':
     'Reči koje upućuju na ovu kategoriju. Isključena reč je blokira — tako „ulje“ ne završi u Gorivu.',
@@ -804,7 +834,7 @@ export const srLatn: Record<keyof typeof en, string> = {
     'Poklapanje bilo gde je namerno slabo i može da prevuče nepovezane prodavce.',
   'categories.removeKeyword': 'Ukloni ključnu reč {keyword}',
   'categories.collapse': 'Skupi',
-  'categories.expand': 'Razgranaj',
+  'categories.expand': 'Proširi',
   'categories.moveUp': 'Pomeri gore',
   'categories.moveDown': 'Pomeri dole',
   'categories.nest': 'Napravi potkategoriju od reda iznad',
@@ -815,7 +845,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'categories.refusalCYCLE': 'Kategorija ne može da se premesti u sopstvenu potkategoriju.',
   'categories.refusalTOO_DEEP': 'To bi ugnjezdilo kategorije više od 5 nivoa.',
   'categories.tooDeepTitle': 'Previše nivoa',
-  'categories.tooDeepBody': 'Kategorije se ugnježđuju najviše 5 nivoa. Uklonite prvo jedan nivo.',
+  'categories.tooDeepBody': 'Kategorije se ugnježđuju najviše 5 nivoa. Ukloni prvo jedan nivo.',
   'categories.moved': 'Premešteno {name} u {path}.',
   'categories.moveFailed': 'To premeštanje je odbijeno.',
 
@@ -849,19 +879,19 @@ export const srLatn: Record<keyof typeof en, string> = {
   'merchants.starter': 'isporučen',
   'merchants.usage': '{count} transakcija',
   'merchants.usageNone': 'još se ne koristi',
-  'merchants.selectPrompt': 'Izaberite prodavca da ga izmenite.',
+  'merchants.selectPrompt': 'Izaberi prodavca da ga izmeniš.',
   'merchants.empty': 'Još nema prodavaca',
-  'merchants.emptyBody': 'Dodajte jednog, ili pretražite isporučeni katalog.',
+  'merchants.emptyBody': 'Dodaj jednog, ili pretraži isporučeni katalog.',
   'merchants.emptySearch': 'Ništa ne odgovara toj pretrazi',
-  'merchants.truncated': 'Prikazano je prvih 200. Pretražite da suzite listu.',
+  'merchants.truncated': 'Prikazano je prvih 200. Pretraži da suziš listu.',
   'merchants.copyOnWrite':
-    'Ovo je isporučen prodavac. Čuvanjem pravite svoju kopiju i vaše transakcije se prebacuju na nju, pa zajednički katalog ostaje nepromenjen.',
-  'merchants.duplicateName': 'Drugi prodavac već ima taj naziv. Spojite ga sa njim.',
+    'Ovo je isporučen prodavac. Čuvanjem praviš svoju kopiju i tvoje transakcije se prebacuju na nju, pa zajednički katalog ostaje nepromenjen.',
+  'merchants.duplicateName': 'Drugi prodavac već ima taj naziv. Spoji ga sa njim.',
   'merchants.merge': 'Spoji sa drugim prodavcem',
   'merchants.mergeHint':
     'Prebacuje sve zabeleženo ovde na izabranog prodavca, spaja alijase, pa uklanja ovog.',
   'merchants.mergeTarget': 'Spoji sa',
-  'merchants.chooseTarget': 'Izaberite prodavca…',
+  'merchants.chooseTarget': 'Izaberi prodavca…',
   'merchants.mergePreviewAliases': 'Alijasi nakon spajanja',
   'merchants.mergePreviewCount': '{count} transakcija će se premestiti',
   'merchants.mergePreviewNone': 'Nema transakcija za premeštanje.',
@@ -872,11 +902,11 @@ export const srLatn: Record<keyof typeof en, string> = {
   'merchants.deleteConfirm': 'Obrisati ovog prodavca?',
   'merchants.refusalSAME': 'Prodavac ne može da se spoji sam sa sobom.',
   'merchants.refusalSHIPPED_SOURCE':
-    'Isporučen prodavac ne može da se spoji i ukloni. Spojite svog prodavca sa njim.',
+    'Isporučen prodavac ne može da se spoji i ukloni. Spoji svog prodavca sa njim.',
   'merchants.deleteRefusalSHIPPED':
-    'Isporučeni prodavci ne mogu da se brišu. Sačuvajte izmenu da napravite svoju kopiju.',
+    'Isporučeni prodavci ne mogu da se brišu. Sačuvaj izmenu da napraviš svoju kopiju.',
   'merchants.deleteRefusalIN_USE':
-    'Transakcije još koriste ovog prodavca. Spojite ga sa drugim da ih prvo premestite.',
+    'Transakcije još koriste ovog prodavca. Spoji ga sa drugim da ih prvo premestiš.',
 
   // ---- counterparties ----
   'counterparties.title': 'Osobe i firme',
@@ -902,15 +932,15 @@ export const srLatn: Record<keyof typeof en, string> = {
   'counterparties.delete': 'Obriši',
   'counterparties.deleting': 'Brisanje…',
   'counterparties.deleteConfirm': 'Obrisati ovu osobu ili firmu?',
-  'counterparties.selectPrompt': 'Izaberite osobu ili firmu da je izmenite.',
+  'counterparties.selectPrompt': 'Izaberi osobu ili firmu da je izmeniš.',
   'counterparties.empty': 'Još nikoga nema',
-  'counterparties.emptyBody': 'Dodajte osobu ili firmu kojoj je novac otišao.',
+  'counterparties.emptyBody': 'Dodaj osobu ili firmu kojoj je novac otišao.',
   'counterparties.emptyFiltered': 'Ništa ne odgovara',
-  'counterparties.truncated': 'Prikazano je prvih 200. Pretražite da suzite listu.',
+  'counterparties.truncated': 'Prikazano je prvih 200. Pretraži da suziš listu.',
   'counterparties.usage': '{count} transakcija',
   'counterparties.usageNone': 'još se ne koristi',
   'counterparties.duplicateName':
-    'Nešto sa tim imenom već postoji. Dodajte ovaj način pisanja kao alijas, ili spojite njih dvoje.',
+    'Nešto sa tim imenom već postoji. Dodaj ovaj način pisanja kao alijas, ili spoji njih dvoje.',
   'counterparties.aliases': 'Alijasi',
   'counterparties.aliasesHint':
     'Drugi načini na koje se ovo ime piše. Čuva se bez kvačica i velikih slova, pa ono što se vrati može da izgleda drugačije.',
@@ -922,7 +952,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'counterparties.mergeHint':
     'Prebacuje sve transakcije zabeležene ovde na izabrani unos, spaja alijase, pa uklanja ovaj.',
   'counterparties.mergeTarget': 'Spoji sa',
-  'counterparties.chooseTarget': 'Izaberite nekoga…',
+  'counterparties.chooseTarget': 'Izaberi nekoga…',
   'counterparties.mergePreviewAliases': 'Alijasi nakon spajanja',
   'counterparties.mergePreviewCount': '{count} transakcija će se premestiti',
   'counterparties.mergePreviewNone': 'Nema transakcija za premeštanje.',
@@ -930,7 +960,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'counterparties.merging': 'Spajanje…',
   'counterparties.refusalSAME': 'Ovaj unos ne može da se spoji sam sa sobom.',
   'counterparties.deleteRefusalIN_USE':
-    'Transakcije još koriste ovaj unos. Spojite ga sa drugim da ih prvo premestite.',
+    'Transakcije još koriste ovaj unos. Spoji ga sa drugim da ih prvo premestiš.',
 
   // ---- counterparty types ----
   'counterpartyType.PERSON': 'Osoba',
@@ -941,7 +971,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   // ---- tags ----
   'tags.title': 'Oznake',
   'tags.subtitle':
-    'Oznake preko kategorija — #vanredno, #odrzavanje. Transakcija može da nosi više njih.',
+    'Oznake preko kategorija — #vanredno, #održavanje. Transakcija može da nosi više njih.',
   'tags.add': 'Dodaj',
   'tags.addTitle': 'Nova oznaka',
   'tags.name': 'Naziv',
@@ -985,7 +1015,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'capture.remove': 'Ukloni ovaj red',
   'capture.restore': 'Vrati ga',
   'capture.removed': 'Uklonjeno iz ovog unosa',
-  'capture.ambiguous': 'Koje čitanje si mislio?',
+  'capture.ambiguous': 'Na koje čitanje si mislio?',
   'capture.directionUnsure': 'Proveri smer — tekst može da bude povraćaj.',
   'capture.account': 'Račun',
   'capture.date': 'Datum',
@@ -1039,11 +1069,14 @@ export const srLatn: Record<keyof typeof en, string> = {
   // ---- čeka slanje (F-26; ADR-026) ----
   'sync.chip': 'Čeka slanje ({count})',
   'offline.sessionNote':
-    'Server nije dostupan, pa ste i dalje odjavljeni. Sačuvani unosi su na ovom uređaju i biće poslati kada se ponovo povežete i prijavite.',
+    'Server nije dostupan, pa si i dalje odjavljen. Sačuvani unosi su na ovom uređaju i biće poslati kada se ponovo povežeš i prijaviš.',
   'offline.signIn': 'Prijavi se',
   'sync.chipLabel': 'Čeka slanje, {count} stavke',
   // ADR-027: the wording docs/02 section 4.2 already uses for a figure that came from the snapshot.
   'money.asOf': 'podaci od {time}',
+  // `fm-money`'s spoken direction — the words docs/02 §2.3 has always used for the accessible label.
+  'money.income': 'prihod',
+  'money.expense': 'trošak',
   'pending.title': 'Čeka slanje',
   'pending.subtitleDurable':
     'Unosi koji još nisu stigli na server. Na ovom uređaju prežive ponovno učitavanje.',
@@ -1072,7 +1105,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'pending.errorUnknown': 'Pokušaj nije prošao.',
   'pending.nextAttempt': 'Sledeći pokušaj čeka oko {seconds} s.',
   'pending.diffTitle': 'Pregledaj razlike ({count})',
-  'pending.diffBody': 'Server je drugačije svrstao neki red iz reda čekanja. Ništa nije promenjeno tiho.',
+  'pending.diffBody': 'Server je drugačije svrstao neku stavku iz reda čekanja. Ništa nije promenjeno tiho.',
   'pending.diffBefore': 'Pre',
   'pending.diffAfter': 'Posle',
   'pending.diffWhy': 'Zašto: {why}',
@@ -1377,7 +1410,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'onboarding.plan.invalid': 'Iznos nije mogao da se pročita.',
   'onboarding.firstEntry.title': 'Tvoj prvi unos',
   'onboarding.firstEntry.lede': 'Upiši nešto stvarno — ono što si zaista potrošio. Aplikacija pokazuje zašto je izabrala kategoriju.',
-  'onboarding.firstEntry.hint': 'Ništa se ne čuva dok ne potvrdiši.',
+  'onboarding.firstEntry.hint': 'Ništa se ne čuva dok ne potvrdiš.',
   'error.UNAUTHENTICATED': 'Pogrešan email ili lozinka.',
   'error.FORBIDDEN': 'Nemaš dozvolu za ovu radnju.',
   'error.NOT_FOUND': 'Traženi podatak ne postoji.',

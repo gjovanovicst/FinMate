@@ -25,6 +25,8 @@
  * @module apps/api/src/modules/assistant
  */
 
+import type { CopyPair } from '../../common/i18n/copy';
+
 /**
  * The closed set of writes the assistant may **propose**.
  *
@@ -277,15 +279,32 @@ export const ACTION_TEMPLATES: Readonly<Record<AssistantAction, ActionTemplate>>
  */
 export const ACTION_EXAMPLES: readonly {
   readonly action: AssistantAction;
-  readonly question: string;
+  readonly question: CopyPair;
 }[] = [
   // Ordered by how likely a reader is to want it, because the chips are read top to bottom: recording
   // an entry is the product's one-line promise, and naming a Category is the next thing somebody wants.
-  { action: 'ADD_TRANSACTION', question: 'dodaj trošak kafa 180' },
-  { action: 'ADD_CATEGORY', question: 'dodaj kategoriju Putovanja' },
-  { action: 'SET_BUDGET', question: 'postavi budžet za hranu na 20000' },
-  { action: 'ADD_GOAL', question: 'napravi cilj Letovanje 200000' },
-  { action: 'ADD_TAG', question: 'dodaj tag Odmor' },
+  // Each is a **copy pair**: a chip is printed verbatim and is a promise the sentence plans to its
+  // action, so both languages are asserted against `planAction`'s cue vocabulary (ADR-040).
+  {
+    action: 'ADD_TRANSACTION',
+    question: { en: 'add expense coffee 180', sr: 'dodaj trošak kafa 180' },
+  },
+  {
+    action: 'ADD_CATEGORY',
+    question: { en: 'add a new category Travel', sr: 'dodaj kategoriju Putovanja' },
+  },
+  {
+    action: 'SET_BUDGET',
+    question: { en: 'set a budget for food at 20000', sr: 'postavi budžet za hranu na 20000' },
+  },
+  {
+    action: 'ADD_GOAL',
+    question: { en: 'create a goal Vacation 200000', sr: 'napravi cilj Letovanje 200000' },
+  },
+  {
+    action: 'ADD_TAG',
+    question: { en: 'add a tag Holiday', sr: 'dodaj tag Odmor' },
+  },
 ];
 
 /** The next free action id, so a caller can assert the registry is closed rather than discover it. */

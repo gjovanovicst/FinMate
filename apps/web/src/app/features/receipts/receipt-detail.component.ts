@@ -1132,6 +1132,9 @@ export class ReceiptDetailComponent {
         input: {
           receiptId: current.id,
           action: 'ADJUST_TOTAL',
+          // The reader's language, so the fallback description and the rounding line are stored in it
+          // (ADR-040).
+          locale: this.i18n.tag(),
           amount: {
             amountMinor: parsed.money.amountMinor.toString(),
             currency: parsed.money.currency,
@@ -1155,6 +1158,7 @@ export class ReceiptDetailComponent {
         input: {
           receiptId: current.id,
           action: 'ADD_ROUNDING_LINE',
+          locale: this.i18n.tag(),
           ...(absorbCategoryId === '' ? {} : { absorbCategoryId }),
         },
       },
@@ -1169,7 +1173,7 @@ export class ReceiptDetailComponent {
     if (current === null || this.busy() || !this.canAccept()) return;
     await this.mutate(
       RECONCILE,
-      { input: { receiptId: current.id, action: 'ACCEPT_MATCH' } },
+      { input: { receiptId: current.id, action: 'ACCEPT_MATCH', locale: this.i18n.tag() } },
       'receipts.error.reconcile',
       null,
     );
@@ -1181,7 +1185,7 @@ export class ReceiptDetailComponent {
     if (current === null || current.transactionId === null || this.busy()) return;
     await this.mutate(
       RECONCILE,
-      { input: { receiptId: current.id, action: 'DETACH_TRANSACTION' } },
+      { input: { receiptId: current.id, action: 'DETACH_TRANSACTION', locale: this.i18n.tag() } },
       'receipts.error.detach',
       'receipts.detail.detached',
     );
@@ -1205,7 +1209,7 @@ export class ReceiptDetailComponent {
 
     await this.mutate(
       COMMIT_RECEIPT,
-      { input: { receiptId: current.id, accountId } },
+      { input: { receiptId: current.id, accountId, locale: this.i18n.tag() } },
       'receipts.error.commit',
       'receipts.detail.committed',
     );

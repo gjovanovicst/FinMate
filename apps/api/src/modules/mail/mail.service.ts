@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { createTransport, type Transporter } from 'nodemailer';
 
 import { CONFIG, type AppConfig } from '../../config/config';
+import { tr, type CopyLocale } from '../../common/i18n/copy';
 
 /**
  * Outbound email: verification, password reset, and later budget alerts.
@@ -9,6 +10,14 @@ import { CONFIG, type AppConfig } from '../../config/config';
  * In development `SMTP_URL` points at Mailhog, so nothing leaves the machine and every message is
  * inspectable at http://localhost:8025. When `SMTP_URL` is unset the service logs instead of
  * sending, which keeps tests and local runs free of a mail dependency.
+ *
+ * ## The reader's language, not the writer's
+ *
+ * These two messages used to be Serbian-only, so an English reader's first contact with the product —
+ * the verification mail — was in a language they had not chosen. They are now a catalogue pair and the
+ * caller passes the **recipient's** stored locale (ADR-040). The subject and body are whole sentences:
+ * docs/13 §8.1 puts the Serbian voice in the second person singular, and a sentence assembled from
+ * fragments cannot agree in a language that inflects.
  *
  * Templates are plain text here on purpose: Phase 0 needs the flows to work, not to look good.
  * HTML templates land with the notification work in Phase 3 (docs/05 §9).
@@ -22,35 +31,61 @@ export class MailService {
     this.transporter = config.SMTP_URL ? createTransport(config.SMTP_URL) : null;
   }
 
-  async sendEmailVerification(to: string, token: string): Promise<void> {
+  async sendEmailVerification(
+    to: string,
+    token: string,
+    locale: CopyLocale = 'en',
+  ): Promise<void> {
     const link = `${this.config.APP_BASE_URL}/verify-email?token=${encodeURIComponent(token)}`;
+    const minutes = Math.round(this.config.EMAIL_TOKEN_TTL_SECONDS / 60);
     await this.send(
       to,
-      'Potvrdite svoju email adresu',
+      tr(locale, { en: 'Confirm your email address', sr: 'Potvrdite svoju email adresu' }),
       [
-        'Dobrodošli!',
+        tr(locale, { en: 'Welcome!', sr: 'Dobrodošli!' }),
         '',
-        'Potvrdite svoju email adresu klikom na link ispod:',
+        tr(locale, {
+          en: 'Confirm your email address by clicking the link below:',
+          sr: 'Potvrdite svoju email adresu klikom na link ispod:',
+        }),
         link,
         '',
-        `Link ističe za ${Math.round(this.config.EMAIL_TOKEN_TTL_SECONDS / 60)} minuta.`,
-        'Ako niste vi napravili nalog, slobodno ignorišite ovu poruku.',
+        tr(
+          locale,
+          { en: 'The link expires in {minutes} minutes.', sr: 'Link ističe za {minutes} minuta.' },
+          { minutes },
+        ),
+        tr(locale, {
+          en: 'If you did not create this account, you can ignore this message.',
+          sr: 'Ako niste vi napravili nalog, slobodno ignorišite ovu poruku.',
+        }),
       ].join('\n'),
     );
   }
 
-  async sendPasswordReset(to: string, token: string): Promise<void> {
+  async sendPasswordReset(to: string, token: string, locale: CopyLocale = 'en'): Promise<void> {
     const link = `${this.config.APP_BASE_URL}/reset-password?token=${encodeURIComponent(token)}`;
+    const minutes = Math.round(this.config.EMAIL_TOKEN_TTL_SECONDS / 60);
     await this.send(
       to,
-      'Reset lozinke',
+      tr(locale, { en: 'Reset your password', sr: 'Reset lozinke' }),
       [
-        'Zatražen je reset lozinke za vaš nalog.',
+        tr(locale, {
+          en: 'A password reset was requested for your account.',
+          sr: 'Zatražen je reset lozinke za vaš nalog.',
+        }),
         '',
         link,
         '',
-        `Link ističe za ${Math.round(this.config.EMAIL_TOKEN_TTL_SECONDS / 60)} minuta.`,
-        'Ako niste vi zatražili reset, ignorišite ovu poruku — lozinka ostaje nepromenjena.',
+        tr(
+          locale,
+          { en: 'The link expires in {minutes} minutes.', sr: 'Link ističe za {minutes} minuta.' },
+          { minutes },
+        ),
+        tr(locale, {
+          en: 'If you did not request this, ignore this message — your password stays unchanged.',
+          sr: 'Ako niste vi zatražili reset, ignorišite ovu poruku — lozinka ostaje nepromenjena.',
+        }),
       ].join('\n'),
     );
   }
@@ -74,6 +109,13 @@ export class MailService {
       this.logger.warn(`SMTP_URL is unset — not sending "${subject}" to ${to}. Body:\n${text}`);
       return;
     }
-    await this.transporter.sendMail({ from: 'FinMate <noreply@finmate.local>', to, subject, text });
+    // The display name is `APP_NAME`, never a literal: AGENTS.md forbids hardcoding the brand, which
+    // is a working title (ADR-014). This header used to spell the brand out.
+    await this.transporter.sendMail({
+      from: `${this.config.APP_NAME} <noreply@finmate.local>`,
+      to,
+      subject,
+      text,
+    });
   }
 }

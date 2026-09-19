@@ -63,7 +63,7 @@ const DASHBOARD_QUERY = /* GraphQL */ `
 
 /** Everything below the KPI row, in one round trip once the period is known. */
 const PANELS_QUERY = /* GraphQL */ `
-  query DashboardPanels($range: DateRangeInput!, $history: DateRangeInput!) {
+  query DashboardPanels($range: DateRangeInput!, $history: DateRangeInput!, $locale: String) {
     # includeSubcategories: false, deliberately. With subtrees included, a parent's figure contains its
     # children's and the ring's shares overlap — the live capture showed six rows summing to 122 % with
     # overlapping arcs. Direct spend per Category cannot overlap, and the uncategorised row is in the
@@ -127,7 +127,7 @@ const PANELS_QUERY = /* GraphQL */ `
         }
       }
     }
-    assistantSuggestions
+    assistantSuggestions(locale: $locale)
   }
 `;
 
@@ -1424,6 +1424,8 @@ export class DashboardComponent {
       const panels = await this.graphql.query<Panels>(PANELS_QUERY, {
         range: { start: periodStart, end: periodEnd },
         history: { start: historyStart, end: periodEnd },
+        // The suggestion chips are printed verbatim, so they follow the interface language (ADR-040).
+        locale: this.i18n.tag(),
       });
       this.panels.set(panels);
     } catch {

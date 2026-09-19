@@ -27,12 +27,14 @@ import {
   resetPasswordSchema,
   signupSchema,
   tokenSchema,
+  updateLocaleSchema,
   type LoginInput,
   type RefreshInput,
   type RequestPasswordResetInput,
   type ResetPasswordInput,
   type SignupInput,
   type TokenInput,
+  type UpdateLocaleInput,
 } from './auth.dto';
 import { AuthService, type AuthTokens } from './auth.service';
 
@@ -67,6 +69,7 @@ export class AuthController {
       email: body.email,
       password: body.password,
       displayName: body.displayName,
+      locale: body.locale ?? null,
       userAgentHash: fingerprint(request.headers['user-agent']),
       ipHash: fingerprint(request.ip),
     });
@@ -165,6 +168,23 @@ export class AuthController {
     @Body(new ZodValidationPipe(requestPasswordResetSchema)) body: RequestPasswordResetInput,
   ): Promise<void> {
     await this.auth.requestPasswordReset(body.email);
+  }
+
+  /**
+   * Persist the signed-in reader's language (ADR-040).
+   *
+   * The switcher itself is a client signal (ADR-019) and needs no round trip to work; this exists so
+   * the copy the **server** composes later is written in the same language. 204: there is nothing to
+   * return, and a failure is a plain validation error.
+   */
+  @Post('locale')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(AuthenticatedGuard)
+  async updateLocale(
+    @Body(new ZodValidationPipe(updateLocaleSchema)) body: UpdateLocaleInput,
+    @CurrentTenant() tenant: TenantContext,
+  ): Promise<void> {
+    await this.auth.updateLocale(tenant.userId, body.locale);
   }
 
 @Public()

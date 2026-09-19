@@ -352,7 +352,7 @@ describe('ReceiptDetailComponent (mounted)', () => {
     const call = client.query.mock.calls.find((entry) =>
       String(entry[0]).includes('mutation CommitReceipt'),
     );
-    expect(call?.[1]).toEqual({ input: { receiptId: 'r1', accountId: 'a1' } });
+    expect(call?.[1]).toEqual({ input: { receiptId: 'r1', accountId: 'a1', locale: 'en' } });
     expect(text(fixture)).toContain('Posted as one transaction.');
     // The link opens the row itself (`/transactions/:id`), not the unfiltered list.
     expect(root(fixture).querySelector('a[href="/transactions/tx-9"]')).not.toBeNull();
@@ -384,6 +384,9 @@ describe('ReceiptDetailComponent (mounted)', () => {
         input: {
           receiptId: 'r1',
           action: 'ADJUST_TOTAL',
+          // The reader's language travels with the write (ADR-040), so the stored fallback description
+          // and rounding line are written in it.
+          locale: 'en',
           amount: { amountMinor: '205000', currency: 'RSD' },
         },
       },
@@ -397,7 +400,7 @@ describe('ReceiptDetailComponent (mounted)', () => {
 
     rounding.click();
     await settle(fixture);
-    expect(reconciles[0]).toEqual({ input: { receiptId: 'r1', action: 'ADD_ROUNDING_LINE' } });
+    expect(reconciles[0]).toEqual({ input: { receiptId: 'r1', action: 'ADD_ROUNDING_LINE', locale: 'en' } });
   });
 
   it('does not offer the absorbing line when the lines overshoot the total', async () => {
@@ -418,7 +421,7 @@ describe('ReceiptDetailComponent (mounted)', () => {
     button(fixture, 'Detach').click();
     await settle(fixture);
 
-    expect(reconciles[0]).toEqual({ input: { receiptId: 'r1', action: 'DETACH_TRANSACTION' } });
+    expect(reconciles[0]).toEqual({ input: { receiptId: 'r1', action: 'DETACH_TRANSACTION', locale: 'en' } });
     expect(text(fixture)).toContain('The transaction itself is unchanged');
   });
 

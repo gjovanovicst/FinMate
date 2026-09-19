@@ -1578,10 +1578,12 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   spec asserted `aria-labelledby` equals the heading's `id` (5.2a). Prefer the property form where one
   exists, and assert the DOM value — not the component field — for any id/`aria-*` pair that must agree.
 
-- **`fm-money`'s `accessibleLabel` hardcodes the Serbian words `prihod`/`trošak`.** Found while reading the
-  component in 2.3.2b; **not fixed**, because it is a shipped component on the money path and the fix (two
-  `confidence`-style catalogue keys plus `i18n.t`) deserves its own change and its own test run. It violates
-  the DoD's "no hardcoded user-facing strings" rule, and it is the only known instance.
+- **`fm-money`'s `accessibleLabel` hardcoded the Serbian words `prihod`/`trošak`.** Found while reading the
+  component in 2.3.2b and **fixed in the ADR-040 i18n pass**: the words are now `money.income`/`money.expense`
+  catalogue keys, so a screen reader on an English page no longer hears Serbian. It was the only known
+  instance of the DoD's "no hardcoded user-facing strings" rule being broken in a *shared* component — the
+  same pass found the same shape in the **route table**, where every `title` was a Serbian literal that no
+  switcher could reach (the browser tab), now `route.*` keys rendered by `LocalizedTitleStrategy`.
 
 - **A glob pattern inside a block comment terminates it.** `src/**/*.ts` contains the sequence `*/`, so a
   `/** … */` doc comment that names a glob closes early and the rest of the sentence is parsed as code. The

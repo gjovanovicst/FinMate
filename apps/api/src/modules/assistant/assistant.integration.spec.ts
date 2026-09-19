@@ -268,10 +268,10 @@ describe('the assistant (integration)', () => {
    */
   const plain = (text: string): string => text.replace(/\u00a0|\u202f/g, ' ');
 
-  const ask = (question: string, locale?: string) =>
-    asTenant(() =>
-      assistant.answer(householdId, { question, ...(locale === undefined ? {} : { locale }) }),
-    );
+  const ask = (question: string, locale: string | null = 'sr-Latn-RS') =>
+    // Serbian by default: these assertions read Serbian-grouped amounts and the Serbian cue vocabulary.
+    // The reader's language decides the grouping since ADR-040, and `null locale` has its own case below.
+    asTenant(() => assistant.answer(householdId, { question, locale }));
 
   // ---------------------------------------------------------------------------------------------
   // The narration path
@@ -288,8 +288,9 @@ describe('the assistant (integration)', () => {
     expect(answer.narrationMode).toBe('TEMPLATE_FALLBACK');
     expect(answer.reason).toBe('AI_UNAVAILABLE:no-provider-configured');
     expect(answer.costMicros).toBeNull();
-    // 20.000 + 5.000 confirmed expenses; the 999.000 PENDING row is excluded (I-7).
-    expect(plain(answer.answerText)).toBe('You spent 25.000,00 RSD.');
+    // 20.000 + 5.000 confirmed expenses; the 999.000 PENDING row is excluded (I-7). The template is
+    // rendered in the reader's language, which is Serbian in these cases (ADR-040).
+    expect(plain(answer.answerText)).toBe('Potrošio si 25.000,00 RSD.');
     expect(calls).toHaveLength(0);
   });
 
@@ -319,7 +320,7 @@ describe('the assistant (integration)', () => {
     expect(calls[1]?.request.strict).toBe(true);
     // The user gets the right answer, rendered deterministically, and the reason names what happened.
     expect(answer.narrationMode).toBe('TEMPLATE_FALLBACK');
-    expect(plain(answer.answerText)).toBe('You spent 25.000,00 RSD.');
+    expect(plain(answer.answerText)).toBe('Potrošio si 25.000,00 RSD.');
     // The reason names the **decisive** rejection: the second one, after which the fallback is taken.
     expect(answer.reason).toContain('UNACCOUNTED_NUMERALS:88.000,00');
     // Both attempts were paid for, so both are reported.
@@ -348,7 +349,7 @@ describe('the assistant (integration)', () => {
     expect(calls).toHaveLength(1);
     expect(answer.narrationMode).toBe('TEMPLATE_FALLBACK');
     expect(answer.reason).toBe('PROVIDER_UNAVAILABLE:TRANSIENT_HTTP');
-    expect(plain(answer.answerText)).toBe('You spent 25.000,00 RSD.');
+    expect(plain(answer.answerText)).toBe('Potrošio si 25.000,00 RSD.');
   });
 
   it('never returns a narration the validator has not checked, in any scripted sequence', async () => {
@@ -530,7 +531,8 @@ describe('the assistant (integration)', () => {
     expect(answer.intent).toBe('GOAL_PROGRESS');
     expect(answer.answered).toBe(false);
     expect(answer.reason).toBe('UNRUNNABLE:goalId');
-    expect(answer.answerText).toContain('goal');
+    // The refusal is rendered in the reader's language too, so the noun is Serbian.
+    expect(answer.answerText).toContain('cilj');
     expect(calls).toHaveLength(0);
   });
 
@@ -595,13 +597,16 @@ describe('the assistant (integration)', () => {
   it('treats an explicit null locale as absent, because that is what GraphQL sends', async () => {
     // Found live: a question asked with no `locale` field arrives as `null`, and handling only
     // `undefined` threw an INTERNAL for every such question.
-    scriptNarrations(['You spent 25.000,00 RSD.']);
+    //
+    // The fallback is the product's primary language (`en-US` grouping), which is what the narrator
+    // receives and what the scripted sentence is written in (ADR-040).
+    scriptNarrations(['You spent RSD 25,000.00.']);
 
     const answer = await asTenant(() => assistant.answer(householdId, { question: 'koliko sam potrošio', locale: null }));
 
     expect(answer.answered).toBe(true);
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.request.locale.length).toBeGreaterThan(0);
+    expect(calls[0]?.request.locale).toBe('en');
   });
 
   it('accepts a real locale tag and passes it to the narrator', async () => {
@@ -655,9 +660,9 @@ describe('the assistant (integration)', () => {
     // This-month spend is 20.000 on Supermarket plus 5.000 uncategorised (which has no Category to
     // cut), so 20 % of it is 4.000 — the 5.000 target is not reachable and the answer says so.
     const totals = new Map(answer.facts.totals.map((total) => [total.label, total.money.amountMinor]));
-    expect(totals.get('Target')).toBe('500000');
-    expect(totals.get('Proposed')).toBe('400000');
-    expect(totals.get('Shortfall')).toBe('100000');
+    expect(totals.get('Cilj')).toBe('500000');
+    expect(totals.get('Predloženo')).toBe('400000');
+    expect(totals.get('Nedostaje')).toBe('100000');
     expect(answer.facts.rows.map((row) => row.label)).toEqual(['Hrana / Supermarket']);
     // Provenance names the method and the period, so the plan is checkable like any other answer.
     expect(answer.provenance.sourceQuery).toBe('savings.proposal.v1');
@@ -724,7 +729,10 @@ describe('the assistant (integration)', () => {
     consumed = [];
 
     const answer = await runWithTenant(otherContext, () =>
-      assistant.answer(otherHouseholdId, { question: 'koliko sam potrošio ovog meseca' }),
+      assistant.answer(otherHouseholdId, {
+        question: 'koliko sam potrošio ovog meseca',
+        locale: 'sr-Latn-RS',
+      }),
     );
 
     expect(answer.answered).toBe(true);

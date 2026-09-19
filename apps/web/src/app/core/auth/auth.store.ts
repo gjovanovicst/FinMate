@@ -60,9 +60,21 @@ export class AuthStore {
    */
   readonly role = computed(() => this.sessionSignal()?.role ?? null);
 
-  async signUp(email: string, password: string, displayName: string): Promise<void> {
+  async signUp(
+    email: string,
+    password: string,
+    displayName: string,
+    // The language the visitor is signing up in, stored so the verification mail and every later
+    // notification are written in it (ADR-040).
+    locale?: string,
+  ): Promise<void> {
     const tokens = await firstValueFrom(
-      this.http.post<AuthTokensResponse>('/api/auth/signup', { email, password, displayName }),
+      this.http.post<AuthTokensResponse>('/api/auth/signup', {
+        email,
+        password,
+        displayName,
+        ...(locale === undefined ? {} : { locale }),
+      }),
     );
     this.accessTokenSignal.set(tokens.accessToken);
     await this.loadSession();
@@ -108,6 +120,23 @@ export class AuthStore {
    */
   async verifyEmail(token: string): Promise<void> {
     await firstValueFrom(this.http.post('/api/auth/verify-email', { token }));
+  }
+
+  /**
+   * Tell the API which language this reader chose (ADR-040).
+   *
+   * The switcher itself is a client signal (ADR-019) and works with no round trip — this exists so the
+   * copy the **server** composes later (a verification mail, a password reset, an alert from the daily
+   * job) is written in the same language. A failure is swallowed on purpose: the interface already
+   * switched, and a language preference that could not be saved is not worth an error banner. It is
+   * retried the next time the switcher is used, and the stored column keeps its previous value.
+   */
+  async rememberLocale(tag: string): Promise<void> {
+    try {
+      await firstValueFrom(this.http.post('/api/auth/locale', { locale: tag }));
+    } catch {
+      // Deliberately silent: see the doc comment.
+    }
   }
 
   async signOut(): Promise<void> {

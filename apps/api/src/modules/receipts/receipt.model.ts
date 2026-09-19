@@ -228,6 +228,13 @@ export class CommitReceiptInput {
     description: 'Overrides the description derived from the Merchant, or from the receipt itself.',
   })
   description?: string | null;
+
+  @Field(() => String, {
+    nullable: true,
+    description:
+      'The reader’s language, for the fallback description a receipt with no Merchant gets (ADR-040).',
+  })
+  locale?: string | null;
 }
 
 @InputType()
@@ -252,6 +259,12 @@ export class ReconcileReceiptInput {
 
   @Field(() => UuidScalar, { nullable: true })
   absorbCategoryId?: string | null;
+
+  @Field(() => String, {
+    nullable: true,
+    description: 'The reader’s language, for the filler line an ADD_ROUNDING_LINE writes (ADR-040).',
+  })
+  locale?: string | null;
 }
 
 export function toReceiptItemModel(view: ReceiptItemView, currency: string): ReceiptItemModel {

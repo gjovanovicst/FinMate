@@ -523,7 +523,15 @@ export class OnboardingComponent {
   readonly rows = computed(() => previewRows());
   readonly visibleRows = computed(() => this.rows().filter((row) => row.kind === this.tab()));
 
-  accountName = 'Keš';
+  /**
+   * The account-name field's starting value.
+   *
+   * Seeded from the catalogue rather than typed here: it used to be the literal `Keš`, so an English
+   * reader was handed a Serbian account name before typing a character. Assigned **once** in the
+   * constructor, because from then on it is the user's own text — re-seeding it on a locale change
+   * would overwrite what they typed.
+   */
+  accountName: string;
   accountKind: 'CASH' | 'BANK' | 'CARD' | 'OTHER' = 'CASH';
 
   peopleInput = '';
@@ -557,6 +565,7 @@ export class OnboardingComponent {
   readonly canContinue = computed(() => canContinueStep(this.step(), this.draft()));
 
   constructor() {
+    this.accountName = this.i18n.t('onboarding.accounts.defaultName');
     void this.load();
   }
 
