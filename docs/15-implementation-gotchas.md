@@ -244,6 +244,19 @@ Everything here has cost time at least once, and most of it fails in a way that 
   `SELECT count(*) FILTER (WHERE t.description LIKE 'Probni %')`. Better still, drive such a path against
   a Household of its own.
 
+- **`nx run <project>:<target> | tail` hides both the failure and the exit code — and a FAILING nx run
+  ends with the same three summary lines a passing one does.** `Run duration` / `Critical path` /
+  `Recoverable time` are printed by `NX Successfully ran target …` **and** by
+  `NX Running target … failed`; the errors and the failure block sit *above* them, so `tail -3` shows a
+  green-looking tail either way. Worse, the pipeline's status is `tail`'s, so `nx … | tail -3 && echo OK`
+  prints `OK` on a failed check — which is how a spec file with a real `TS2345` was reported as a green
+  `web:typecheck`. Use `set -o pipefail` (or `; echo "exit=${PIPESTATUS[0]}"`), or do not pipe:
+  nx's own output already says `Successfully ran` or lists `Failed tasks:`. The same trap applies to
+  `vitest | tail` — there the give-away is that vitest prints `Tests N passed` / `N failed` itself, so
+  read that line rather than the exit code. ⚠️ And `web:typecheck` **does** check specs (`tsconfig.json`
+  includes them on purpose), which is exactly where this class of error lives: it is `tsc` that sees a
+  test double's inferred signature, never the test run.
+
 ## 2. Prisma and the database
 
 Prisma 7 plus a tenancy extension plus hand-written SQL means the driver is not the only thing deciding what a query does.

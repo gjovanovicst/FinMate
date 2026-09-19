@@ -55,7 +55,16 @@ const CATEGORIES = [
   { id: 'c2', name: 'Auto', kind: 'EXPENSE' as const, path: ['Auto'] },
 ];
 
-function mount(query = vi.fn(() => Promise.resolve({}))) {
+/**
+ * The GraphQL stub the sheet talks through.
+ *
+ * Typed by its **arguments**, not by a bare `vi.fn`: the sheet selects its document by substring, so a
+ * stub has to accept one, and a `vi.fn(() => …)` infers a zero-argument mock that nothing with a
+ * parameter can be assigned to (TS2345). Caught only by `tsc` — the spec runs fine.
+ */
+type GraphqlStub = (document: string, variables?: Record<string, unknown>) => Promise<unknown>;
+
+function mount(query: GraphqlStub = vi.fn(() => Promise.resolve({}))) {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     imports: [TransactionDetailComponent],
