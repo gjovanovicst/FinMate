@@ -1816,6 +1816,17 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   (`/receipts` over a future `/receipts/new`) needs the same field; `navigation.spec.ts` pins the set to
   exactly `['/']`, and `app.component.spec.ts` navigates twice to prove both directions.
 
+- **The shell's other sidebar row — Settings — never bound `routerLinkActive` at all, so it could not be
+  active anywhere.** `docs/02` §2.1 files Settings under **Nalog**, which is why it lives in the sidebar
+  **footer** rather than in `NAV_ITEMS`; and because it is not in that array, the template that renders the
+  fifteen destinations and the footer are two different pieces of markup, so "add an entry" and "make it
+  show as current" are two separate edits. The symptom is the opposite of the prefix bug above and looks
+  the same to a user: every row says where you are except the one you are on. Any link in the chrome that
+  names a destination — nav list, More panel, footer — needs `routerLinkActive` **and** an active rule in
+  the same stylesheet, plus `aria-current="page"` from the directive's own `isActive`, or a screen-reader
+  user gets no current-page signal for it either. `app.component.spec.ts` asserts the footer entry both
+  before and after navigating to `/settings`.
+
 ## 10. Cross-cutting rules of the codebase
 
 - **A live check that measures the wrong element lies in both directions.** Three times in 4.3.1 a

@@ -72,12 +72,13 @@ async function mount(
     imports: [AppComponent],
     providers: [
       provideZonelessChangeDetection(),
-      // The offline shell navigates to `/pending` (ADR-033); these two paths exist so that navigation
+      // The offline shell navigates to `/pending` (ADR-033); these paths exist so that navigation
       // resolves in the spec instead of rejecting as an unmatched URL. The empty path stands in for the
-      // dashboard, so the active-state spec can sit on `/` as well as on a child destination.
+      // dashboard, so the active-state specs can sit on `/` as well as on a child destination.
       provideRouter([
         { path: '', children: [] },
         { path: 'pending', children: [] },
+        { path: 'settings', children: [] },
         { path: 'transactions', children: [] },
       ]),
       // The shell renders `fm-app-update` (ADR-024), which injects `SwUpdate`. A stub keeps this spec
@@ -396,6 +397,29 @@ describe('AppComponent nav (mounted)', () => {
     expect(navLink(fixture, '/').classList).not.toContain('nav__link--active');
     expect(navLink(fixture, '/').getAttribute('aria-current')).toBeNull();
     expect(navLink(fixture, '/transactions').getAttribute('aria-current')).toBe('page');
+  });
+
+  it('marks the sidebar footer Settings entry active on /settings', async () => {
+    // Settings is the last sidebar row but **not** a nav destination — docs/02 §2.1 files it under
+    // Nalog, which the shell renders in the footer. The footer link carried no `routerLinkActive` at
+    // all, so the one row that was the current page was the one row that never said so.
+    const { fixture } = await mount(0);
+    const router = TestBed.inject(Router);
+    const settings = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>(
+      'a.nav__footer-link',
+    );
+
+    expect(settings).not.toBeNull();
+    expect(settings?.classList).not.toContain('nav__footer-link--active');
+    expect(settings?.getAttribute('aria-current')).toBeNull();
+
+    await router.navigateByUrl('/settings');
+    fixture.detectChanges();
+
+    expect(settings?.classList).toContain('nav__footer-link--active');
+    expect(settings?.getAttribute('aria-current')).toBe('page');
+    // The route is `/settings`, not a prefix of another destination, so no nav row lights up with it.
+    expect(navLink(fixture, '/').classList).not.toContain('nav__link--active');
   });
 
   it('renders ONLY the lock screen while the app lock is locked', async () => {

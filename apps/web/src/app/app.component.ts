@@ -181,7 +181,13 @@ import { ThemeToggleComponent } from './shared/ui/theme-toggle/theme-toggle.comp
                    worth more than a sentence that does not, and on a wide screen this is the largest
                    target in the chrome for the one screen that is not a destination. -->
               <div class="nav__footer">
-                <a class="nav__footer-link" routerLink="/settings">
+                <a
+                  class="nav__footer-link"
+                  routerLink="/settings"
+                  routerLinkActive="nav__footer-link--active"
+                  #settingsRla="routerLinkActive"
+                  [attr.aria-current]="settingsRla.isActive ? 'page' : null"
+                >
                   <fm-icon name="settings" [size]="18" />
                   <span>{{ i18n.t('settings.title') }}</span>
                 </a>
@@ -786,6 +792,16 @@ import { ThemeToggleComponent } from './shared/ui/theme-toggle/theme-toggle.comp
         .nav__footer-link:hover {
           background: var(--color-surface-raised);
           color: var(--color-text);
+        }
+        .nav__footer-link--active {
+          /* The same active language as the nav list above: brand text on the brand tint, which is the
+             contrast fix 4.3.4b landed (--color-primary-text, 6.47:1 on it). Settings is not a nav
+             destination — docs/02 §2.1 files it under **Nalog** in the footer — so it was the one
+             sidebar row that never said it was the current page. The leading marker bar is deliberately
+             not repeated: it exists so a tint is not lost among sixteen rows, and the footer is a single
+             row behind its own divider. */
+          color: var(--color-primary-text);
+          background: var(--color-primary-soft);
         }
         .content {
           padding: var(--space-6);
