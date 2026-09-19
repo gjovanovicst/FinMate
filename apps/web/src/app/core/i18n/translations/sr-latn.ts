@@ -40,6 +40,9 @@ export const srLatn: Record<keyof typeof en, string> = {
   'install.understood': 'Razumem',
   'install.failed': 'Pregledač nije otvorio svoj dijalog za instalaciju. Aplikaciju možeš instalirati iz menija pregledača.',
 
+  // ---- shared loading skeleton (ui-avatar-loader) ----
+  'loader.rows': 'Učitavanje…',
+
   // ---- navigation ----
   'nav.dashboard': 'Pregled',
   'nav.accounts': 'Računi',

@@ -9,6 +9,7 @@ import { I18nService } from '../../core/i18n/i18n.service';
 import { SnapshotService, type DashboardFigures } from '../../core/offline/snapshot.service';
 import { syncedAtLabel } from '../../core/offline/sync.view';
 import { moneyText, overrunText, overspendText } from '../../shared/money-text';
+import { AvatarLoaderComponent } from '../../shared/ui/avatar-loader/avatar-loader.component';
 import { AvatarComponent } from '../../shared/ui/avatar/avatar.component';
 import { BarChartComponent, type BarBucket, type BarSeries } from '../../shared/ui/bar-chart/bar-chart.component';
 import { DonutComponent, type DonutSegment } from '../../shared/ui/donut/donut.component';
@@ -204,6 +205,7 @@ interface RecentRowRaw {
     DonutComponent,
     BarChartComponent,
     AvatarComponent,
+    AvatarLoaderComponent,
   ],
   template: `
     <div class="fm-page">
@@ -228,7 +230,9 @@ interface RecentRowRaw {
       }
 
       @if (loading()) {
-        <p class="muted">{{ i18n.t('accounts.loading') }}</p>
+        <!-- The dashboard is a column of panels; the placeholder stands in for the panels, not for one
+             line of text, so the page keeps its shape while the read is in flight. -->
+        <fm-avatar-loader variant="card" [rows]="4" />
       } @else if (data(); as d) {
         @if (staleLabel(); as asOf) {
           <!-- ADR-027 decision 4: ONE label for the serving mode, covering every figure on the screen.

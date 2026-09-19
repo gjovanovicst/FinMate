@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { AvatarLoaderComponent } from '../../shared/ui/avatar-loader/avatar-loader.component';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import { todayLocally } from '../capture/capture.view';
@@ -63,7 +64,7 @@ import {
 @Component({
   selector: 'fm-analytics',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, IconComponent, MoneyComponent],
+  imports: [RouterLink, IconComponent, MoneyComponent, AvatarLoaderComponent],
   template: `
     <div class="fm-page">
       <header class="fm-page__head">
@@ -296,7 +297,8 @@ import {
           }
         </section>
       } @else if (loading()) {
-        <p class="muted">{{ i18n.t('analytics.loading') }}</p>
+        <!-- The analysis arrives as panels, so the placeholder is panel-shaped rather than one line. -->
+        <fm-avatar-loader variant="card" [rows]="4" labelKey="analytics.loading" />
       }
     </div>
   `,

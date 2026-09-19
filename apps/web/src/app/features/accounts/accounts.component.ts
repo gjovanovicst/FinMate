@@ -5,6 +5,7 @@ import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
+import { AvatarLoaderComponent } from '../../shared/ui/avatar-loader/avatar-loader.component';
 import { MoneyComponent, type MoneyWire } from '../../shared/ui/money/money.component';
 
 interface AccountNode {
@@ -70,7 +71,7 @@ const CREATE_ACCOUNT_MUTATION = /* GraphQL */ `
 @Component({
   selector: 'fm-accounts',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MoneyComponent],
+  imports: [ReactiveFormsModule, MoneyComponent, AvatarLoaderComponent],
   template: `
     <div class="fm-page">
       <header class="fm-page__head">
@@ -98,17 +99,22 @@ const CREATE_ACCOUNT_MUTATION = /* GraphQL */ `
         </div>
       }
 
-      <ul class="list">
-        @for (account of accounts(); track account.id) {
-          <li class="fm-card card">
-            <div class="card__main">
-              <span class="card__name">{{ account.name }}</span>
-              <span class="card__kind">{{ kindLabel(account.kind) }}</span>
-            </div>
-            <fm-money class="card__amount" [amount]="account.balance" />
-          </li>
-        }
-      </ul>
+      @if (loading()) {
+        <!-- Card-shaped: an Account row is its own surface, so the placeholder promises the real layout. -->
+        <fm-avatar-loader variant="card" />
+      } @else {
+        <ul class="list">
+          @for (account of accounts(); track account.id) {
+            <li class="fm-card card">
+              <div class="card__main">
+                <span class="card__name">{{ account.name }}</span>
+                <span class="card__kind">{{ kindLabel(account.kind) }}</span>
+              </div>
+              <fm-money class="card__amount" [amount]="account.balance" />
+            </li>
+          }
+        </ul>
+      }
 
       <section class="create">
         <h2 class="create__title">{{ i18n.t('accounts.newTitle') }}</h2>

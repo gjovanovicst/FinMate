@@ -6,6 +6,7 @@ import { foldForMatching } from '@finmate/nlp';
 import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { AvatarLoaderComponent } from '../../shared/ui/avatar-loader/avatar-loader.component';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
 
 interface TagNode {
@@ -68,7 +69,7 @@ const DELETE_TAG = /* GraphQL */ `
 @Component({
   selector: 'fm-tags',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, IconComponent],
+  imports: [ReactiveFormsModule, IconComponent, AvatarLoaderComponent],
   template: `
     <div class="fm-page">
     <header class="fm-page__head">
@@ -116,7 +117,7 @@ const DELETE_TAG = /* GraphQL */ `
     </section>
 
     @if (loading()) {
-      <p class="muted">{{ i18n.t('accounts.loading') }}</p>
+      <fm-avatar-loader />
     } @else if (tags().length === 0) {
       <div class="empty">
         <p class="empty__title">{{ i18n.t('tags.empty') }}</p>

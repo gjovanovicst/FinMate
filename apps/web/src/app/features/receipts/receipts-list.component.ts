@@ -19,6 +19,7 @@ import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient, GraphQLRequestError } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
+import { AvatarLoaderComponent } from '../../shared/ui/avatar-loader/avatar-loader.component';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { MoneyComponent, type MoneyWire } from '../../shared/ui/money/money.component';
 import {
@@ -68,7 +69,7 @@ import {
 @Component({
   selector: 'fm-receipts-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, MoneyComponent, IconComponent],
+  imports: [RouterLink, MoneyComponent, IconComponent, AvatarLoaderComponent],
   template: `
     <main class="fm-page">
       <header class="fm-page__head">
@@ -165,7 +166,7 @@ import {
       </section>
 
       @if (loading()) {
-        <p class="muted" role="status">{{ i18n.t('receipts.library.loading') }}</p>
+        <fm-avatar-loader [rows]="4" labelKey="receipts.library.loading" />
       } @else if (loadError(); as message) {
         <p class="alert" role="alert">{{ message }}</p>
       } @else if (rows().length === 0) {

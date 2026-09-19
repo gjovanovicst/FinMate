@@ -8,6 +8,7 @@ import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import { moneyText, toMajorString } from '../../shared/money-text';
+import { AvatarLoaderComponent } from '../../shared/ui/avatar-loader/avatar-loader.component';
 import { MoneyComponent, type MoneyWire } from '../../shared/ui/money/money.component';
 
 type BudgetPeriod = 'WEEKLY' | 'MONTHLY' | 'YEARLY';
@@ -97,7 +98,7 @@ const DELETE_BUDGET = /* GraphQL */ `
 @Component({
   selector: 'fm-budgets',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MoneyComponent],
+  imports: [ReactiveFormsModule, RouterLink, MoneyComponent, AvatarLoaderComponent],
   template: `
     <div class="fm-page">
       <header class="fm-page__head">
@@ -161,7 +162,8 @@ const DELETE_BUDGET = /* GraphQL */ `
     </section>
 
     @if (loading()) {
-      <p class="muted">{{ i18n.t('accounts.loading') }}</p>
+      <!-- A Budget row is its own card (.card below), so the placeholder is card-shaped too. -->
+      <fm-avatar-loader variant="card" />
     } @else if (budgets().length === 0) {
       <div class="empty">
         <p class="empty__title">{{ i18n.t('budgets.none') }}</p>

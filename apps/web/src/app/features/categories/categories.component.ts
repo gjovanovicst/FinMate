@@ -5,6 +5,7 @@ import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient, GraphQLRequestError } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
+import { AvatarLoaderComponent } from '../../shared/ui/avatar-loader/avatar-loader.component';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
 import {
   buildTree,
@@ -147,7 +148,7 @@ const CATEGORY_USAGE = /* GraphQL */ `
 @Component({
   selector: 'fm-categories',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, IconComponent],
+  imports: [ReactiveFormsModule, IconComponent, AvatarLoaderComponent],
   template: `
     <div class="fm-page">
       <header class="fm-page__head">
@@ -223,7 +224,7 @@ const CATEGORY_USAGE = /* GraphQL */ `
       <div class="editor">
         <section class="pane">
           @if (loading()) {
-            <p class="muted">{{ i18n.t('accounts.loading') }}</p>
+            <fm-avatar-loader [rows]="7" />
           } @else if (rows().length === 0) {
             <div class="empty">
               <p class="empty__title">{{ i18n.t('categories.empty') }}</p>

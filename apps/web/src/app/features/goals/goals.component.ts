@@ -5,6 +5,7 @@ import { type CurrencyCode, uuidv7 } from '@finmate/domain';
 import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { AvatarLoaderComponent } from '../../shared/ui/avatar-loader/avatar-loader.component';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import type { TranslationKey } from '../../core/i18n/translations';
@@ -58,7 +59,7 @@ import {
 @Component({
   selector: 'fm-goals',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [IconComponent, MoneyComponent],
+  imports: [IconComponent, MoneyComponent, AvatarLoaderComponent],
   template: `
     <div class="fm-page">
       <header class="fm-page__head">
@@ -139,14 +140,7 @@ import {
       @if (loading()) {
         <!-- A read in flight renders a card-shaped skeleton, never a blank page: the empty message and
              the list both used to wait for the response, so the screen said nothing at all. -->
-        <div class="fm-card" aria-hidden="true">
-          <div class="fm-skeleton skeleton__line"></div>
-          <div class="fm-skeleton skeleton__line skeleton__line--short"></div>
-        </div>
-        <div class="fm-card" aria-hidden="true">
-          <div class="fm-skeleton skeleton__line"></div>
-          <div class="fm-skeleton skeleton__line skeleton__line--short"></div>
-        </div>
+        <fm-avatar-loader variant="card" [rows]="2" />
       } @else if (goals().length === 0) {
         <p class="muted">{{ i18n.t('goals.empty') }}</p>
       }
@@ -429,14 +423,6 @@ import {
       }
       .payments__remove {
         margin-inline-start: auto;
-      }
-      /* Loading placeholders: card-shaped blocks with two shimmering lines, so a read in flight looks
-         like a read in flight rather than an empty page. */
-      .skeleton__line {
-        block-size: var(--space-4);
-      }
-      .skeleton__line--short {
-        inline-size: 60%;
       }
     `,
   ],

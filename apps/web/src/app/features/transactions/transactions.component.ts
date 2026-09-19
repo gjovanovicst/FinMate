@@ -14,6 +14,7 @@ import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
 import { moneyText, toMajorString } from '../../shared/money-text';
+import { AvatarLoaderComponent } from '../../shared/ui/avatar-loader/avatar-loader.component';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import {
@@ -217,7 +218,14 @@ const SEARCH_DEBOUNCE_MS = 300;
 @Component({
   selector: 'fm-transactions',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, MoneyComponent, IconComponent, TransactionDetailComponent],
+  imports: [
+    ReactiveFormsModule,
+    RouterLink,
+    MoneyComponent,
+    IconComponent,
+    TransactionDetailComponent,
+    AvatarLoaderComponent,
+  ],
   template: `
     <div class="fm-page">
       <header class="fm-page__head">
@@ -575,7 +583,10 @@ const SEARCH_DEBOUNCE_MS = 300;
         }
 
         @if (loading()) {
-          <p class="muted">{{ i18n.t('accounts.loading') }}</p>
+          <!-- The ledger's rows share one card, so the placeholder does too. -->
+          <div class="fm-card">
+            <fm-avatar-loader [rows]="5" />
+          </div>
         } @else if (rows().length === 0) {
           <div class="empty">
             @if (hasFilters()) {

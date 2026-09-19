@@ -24,12 +24,13 @@ import { nextAttemptDelay, type OutboxEntry } from '../../core/offline/outbox';
 import { SyncService } from '../../core/offline/sync.service';
 import type { SyncDiff } from '../../core/offline/sync.types';
 import { categoryLabel, rawInputs, syncedAtLabel, whyKey } from '../../core/offline/sync.view';
+import { AvatarLoaderComponent } from '../../shared/ui/avatar-loader/avatar-loader.component';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
 
 @Component({
   selector: 'fm-pending',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [IconComponent],
+  imports: [IconComponent, AvatarLoaderComponent],
   template: `
     <div class="fm-page">
       <header class="fm-page__head">
@@ -83,7 +84,7 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
       }
 
       @if (loading()) {
-        <p class="status" role="status">{{ i18n.t('pending.loading') }}</p>
+        <fm-avatar-loader variant="card" [rows]="3" labelKey="pending.loading" />
       } @else if (empty() && !sync.busy()) {
         <section class="fm-card empty">
           <p class="empty__title">{{ i18n.t('pending.empty') }}</p>

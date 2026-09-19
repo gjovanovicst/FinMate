@@ -6,6 +6,7 @@ import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
+import { AvatarLoaderComponent } from '../../shared/ui/avatar-loader/avatar-loader.component';
 import { MoneyComponent } from '../../shared/ui/money/money.component';
 import { todayLocally } from '../capture/capture.view';
 import {
@@ -60,7 +61,7 @@ import {
 @Component({
   selector: 'fm-recurring',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MoneyComponent],
+  imports: [MoneyComponent, AvatarLoaderComponent],
   template: `
     <div class="fm-page">
       <header class="fm-page__head">
@@ -248,7 +249,7 @@ import {
         @if (loading()) {
           <!-- The query is in flight: "nothing is due" is a claim about the Household's bills, so it
                must not be made before the response arrives. -->
-          <div class="fm-skeleton skeleton__line" aria-hidden="true"></div>
+          <fm-avatar-loader [rows]="2" />
         } @else if (upcoming().length === 0) {
           <p class="muted">{{ i18n.t('recurring.upcomingEmpty', { days: 30 }) }}</p>
         } @else {
@@ -265,14 +266,7 @@ import {
       </section>
 
       @if (loading()) {
-        <div class="fm-card" aria-hidden="true">
-          <div class="fm-skeleton skeleton__line"></div>
-          <div class="fm-skeleton skeleton__line skeleton__line--short"></div>
-        </div>
-        <div class="fm-card" aria-hidden="true">
-          <div class="fm-skeleton skeleton__line"></div>
-          <div class="fm-skeleton skeleton__line skeleton__line--short"></div>
-        </div>
+        <fm-avatar-loader variant="card" [rows]="2" />
       } @else {
         @if (rules().length === 0) {
           <p class="muted">{{ i18n.t('recurring.empty') }}</p>
@@ -462,13 +456,6 @@ import {
       .plain__name {
         min-inline-size: 0;
         overflow-wrap: anywhere;
-      }
-      /* Loading placeholders for a read in flight, so the screen never sits blank. */
-      .skeleton__line {
-        block-size: var(--space-4);
-      }
-      .skeleton__line--short {
-        inline-size: 60%;
       }
     `,
   ],

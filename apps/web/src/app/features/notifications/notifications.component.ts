@@ -6,6 +6,7 @@ import { I18nService } from '../../core/i18n/i18n.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { PushService } from '../../core/push/push.service';
 import { offersEmailFallback, pushActionKey, pushMessageKey } from '../../core/push/push.view';
+import { AvatarLoaderComponent } from '../../shared/ui/avatar-loader/avatar-loader.component';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
 import {
   CHANNELS,
@@ -56,7 +57,7 @@ import {
 @Component({
   selector: 'fm-notifications',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, IconComponent],
+  imports: [RouterLink, IconComponent, AvatarLoaderComponent],
   template: `
     <main class="fm-page">
       <header class="fm-page__head">
@@ -94,7 +95,7 @@ import {
         </div>
 
         @if (loading()) {
-          <p class="muted">{{ i18n.t('notifications.loading') }}</p>
+          <fm-avatar-loader labelKey="notifications.loading" />
         } @else if (rows().length === 0) {
           <p class="muted">
             {{ unreadOnly() ? i18n.t('notifications.emptyUnread') : i18n.t('notifications.empty') }}

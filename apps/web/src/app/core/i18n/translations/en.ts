@@ -42,6 +42,11 @@ export const en = {
   'install.understood': 'Got it',
   'install.failed': 'The browser did not open its install prompt. You can install the app from the browser menu instead.',
 
+  // ---- shared loading skeleton (ui-avatar-loader) ----
+  // One key for every list that is honestly in flight: the skeleton is decoration, so the only words
+  // that have to be translated are the ones a screen reader hears.
+  'loader.rows': 'Loading…',
+
   // ---- navigation ----
   'nav.dashboard': 'Overview',
   'nav.accounts': 'Accounts',

@@ -6,6 +6,7 @@ import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
+import { AvatarLoaderComponent } from '../../shared/ui/avatar-loader/avatar-loader.component';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
 import {
   deleteRefusal,
@@ -150,7 +151,7 @@ const PAGE_SIZE = 200;
 @Component({
   selector: 'fm-counterparties',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, IconComponent],
+  imports: [ReactiveFormsModule, IconComponent, AvatarLoaderComponent],
   template: `
     <div class="fm-page">
     <header class="fm-page__head">
@@ -244,7 +245,7 @@ const PAGE_SIZE = 200;
         </div>
 
         @if (loading()) {
-          <p class="muted">{{ i18n.t('accounts.loading') }}</p>
+          <fm-avatar-loader [rows]="6" />
         } @else if (visible().length === 0) {
           <div class="empty">
             <p class="empty__title">

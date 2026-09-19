@@ -243,10 +243,18 @@ toggle, the bell).
 
 **Primitives are global classes.** `.fm-card` (with `--brand`, `--tight`, `--flush`, `--interactive`),
 `.fm-page`/`.fm-page__head`/`.fm-page__title`, `.fm-btn`, `.fm-chip`, `.fm-icon-btn`, `.fm-progress`,
-`.fm-skeleton`, `.fm-table`, plus the components `fm-icon`, `fm-avatar`, `fm-progress`, `fm-sparkline`,
-`fm-donut`, `fm-bar-chart` and `fm-theme-toggle`. They are deliberately **not** encapsulated component
+`.fm-skeleton`, `.fm-table`, plus the components `fm-icon`, `fm-avatar`, `fm-avatar-loader`,
+`fm-progress`, `fm-sparkline`, `fm-donut`, `fm-bar-chart` and `fm-theme-toggle`. They are deliberately
+**not** encapsulated component
 styles: twenty screens had each rolled a slightly different `.card`, and a class a screen can vary is what
 stops that returning.
+
+**A list that is honestly in flight is a skeleton, not a sentence.** `fm-avatar-loader` is the one
+placeholder: a shimmering avatar disc with two text lines, `variant="card"` where the loaded rows are
+each their own surface, and a single polite `role="status"` sentence for a screen reader while the discs
+are `aria-hidden`. It replaced the `<p>Loading…</p>` most screens printed — which made the page jump
+when the rows landed — and the two hand-rolled skeletons (`/goals`, `/recurring`) that had already
+drifted from each other, which is the ADR-039 argument applied to the loading state.
 
 **Charts carry no money formatting.** `fm-donut`, `fm-bar-chart` and `fm-sparkline` take ratios, drawing
 coordinates, token names and **pre-formatted strings**; they never divide two amounts and never render a

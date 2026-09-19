@@ -5,6 +5,7 @@ import { ErrorMessageService } from '../../core/api/error-message.service';
 import { GraphqlClient } from '../../core/graphql/graphql.client';
 import { I18nService } from '../../core/i18n/i18n.service';
 import type { TranslationKey } from '../../core/i18n/translations';
+import { AvatarLoaderComponent } from '../../shared/ui/avatar-loader/avatar-loader.component';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
 import {
   actionsOf,
@@ -48,7 +49,7 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush,
   // `NgTemplateOutlet` keeps ONE definition of a rule row while three groups render it. The
   // alternative — the same forty lines three times — is how the groups start drifting apart.
-  imports: [NgTemplateOutlet, IconComponent],
+  imports: [NgTemplateOutlet, IconComponent, AvatarLoaderComponent],
   template: `
     <div class="fm-page">
     <header class="fm-page__head">
@@ -64,7 +65,7 @@ import {
     <p class="fm-visually-hidden" aria-live="polite">{{ announcement() }}</p>
 
     @if (loading()) {
-      <p class="muted">{{ i18n.t('accounts.loading') }}</p>
+      <fm-avatar-loader [rows]="6" />
     } @else if (rules().length === 0) {
       <div class="empty">
         <p class="empty__title">{{ i18n.t('rules.empty') }}</p>
