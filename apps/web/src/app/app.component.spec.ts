@@ -18,7 +18,13 @@ import type { InstallPromptKind } from './core/install/install.view';
 import { SyncService } from './core/offline/sync.service';
 import { AppLockService } from './core/app-lock/app-lock.service';
 import { PushService } from './core/push/push.service';
+import { AppLockScreenComponent } from './shared/ui/app-lock/app-lock-screen.component';
+import { AppUpdateComponent } from './shared/ui/app-update/app-update.component';
+import { AvatarComponent } from './shared/ui/avatar/avatar.component';
+import { IconComponent } from './shared/ui/icon/icon.component';
 import { InstallSheetComponent } from './shared/ui/install-sheet/install-sheet.component';
+import { LanguageSwitcherComponent } from './shared/ui/language-switcher/language-switcher.component';
+import { ThemeToggleComponent } from './shared/ui/theme-toggle/theme-toggle.component';
 import { AppComponent } from './app.component';
 
 initAngularTesting();
@@ -134,12 +140,25 @@ async function mount(
     ],
   });
 
-  // `fm-install-sheet` is a custom element here, for the reason `setSignalInput`'s doc records: the JIT
-  // renderer cannot bind a signal-input child inside a parent template, so a mounted sheet would throw
-  // NG0950. Its own copy and verbs are `install-sheet.component.spec.ts`'s subject; what the shell owns
-  // is *where* the chrome goes and when it is drawn at all.
+  // Every child component is removed, for the reason `setSignalInput`'s doc records: the JIT renderer
+  // cannot bind a signal input inside a parent template, so any mounted child that has one throws NG0950
+  // before the shell's own markup is reachable. Their copy and behaviour are their own specs' subjects;
+  // what *this* spec owns is where the chrome goes and what the navigation is.
+  //
+  // `SyncChipComponent` stays, because the header assertions are about what it renders (a link to the
+  // tray, and nothing at all at zero), and it has no inputs to bind.
   TestBed.overrideComponent(AppComponent, {
-    remove: { imports: [InstallSheetComponent] },
+    remove: {
+      imports: [
+        InstallSheetComponent,
+        IconComponent,
+        AvatarComponent,
+        ThemeToggleComponent,
+        LanguageSwitcherComponent,
+        AppUpdateComponent,
+        AppLockScreenComponent,
+      ],
+    },
     add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
 

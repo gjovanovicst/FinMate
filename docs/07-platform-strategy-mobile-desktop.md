@@ -195,6 +195,62 @@ A screen may be two-pane only if this table says so; changing it is a change to 
 
 ---
 
+### 3.6 The visual system, both themes (ADR-039)
+
+**One token layer, two themes, one writer.** Every colour role is declared twice in
+`apps/web/src/styles.css` — dark in `:root`, light in `:root[data-theme='light']` — and `ThemeService`
+(`core/theme/`) is the only thing that writes the attribute. It holds a **preference**
+(`system | light | dark`, persisted under `fm.theme`) and a **resolved** theme; while the preference is
+`system` it follows `prefers-color-scheme` and re-resolves when the OS flips. It also repaints
+`<meta name="theme-color">` and sets `color-scheme`, without which a light theme still draws dark
+scrollbars and dark autofill. A four-line script in `index.html` applies the stored value **before first
+paint**, because a signal-driven effect runs after the bundle boots — late enough for a dark-theme user to
+see a white flash on every load. `system` with no OS signal resolves to **dark**, which keeps the
+house default.
+
+**Roles, not palette entries.** Components reference `--color-surface`, `--color-text-muted`,
+`--color-primary-text` and so on; `--chart-1…7`, `--gradient-hero` and `--color-*-soft` exist so a chart,
+the hero card and a status chip cannot invent a colour. Three rules the file states in its own header and
+this document repeats because they are the ones broken by accident: money is **ink, never colour** (a
+tile's chip may be tinted; the amount may not — docs/13 §9); `--color-primary-text` is the brand as
+**text** and `--color-primary` is the brand as a **fill**, because the fill is 4.14:1 on its own tinted
+active state; and the two hero inks are measured against **every** gradient stop, because a gradient has
+no single background to measure.
+
+**Contrast is a test.** `apps/web/src/styles.tokens.spec.ts` reads `styles.css` and re-measures every
+text pair in both themes at WCAG AA, including text on the 10–14 % brand tint, the badge count on its
+danger fill, the chart axis and tooltip, and the hero's ink over each gradient stop. 4.3.1d and 4.3.4b
+each shipped one token value that made text unreadable and that no other test could see; this is the
+guard that makes the next one fail in CI.
+
+**Icons are paths, not glyphs.** `shared/ui/icon` holds ~40 stroke paths on one 24×24 grid, drawn inline
+so they inherit `currentColor`, need no request in an offline-first app, and cannot drift in weight the
+way a platform's emoji can. `NavItem.icon` is typed as an icon name, so a rename fails the build. An icon
+is `aria-hidden` by default and becomes a named image only when it is a control's whole meaning (the theme
+toggle, the bell).
+
+**Primitives are global classes.** `.fm-card` (with `--brand`, `--tight`, `--flush`, `--interactive`),
+`.fm-page`/`.fm-page__head`/`.fm-page__title`, `.fm-btn`, `.fm-chip`, `.fm-icon-btn`, `.fm-progress`,
+`.fm-skeleton`, `.fm-table`, plus the components `fm-icon`, `fm-avatar`, `fm-progress`, `fm-sparkline`,
+`fm-donut`, `fm-bar-chart` and `fm-theme-toggle`. They are deliberately **not** encapsulated component
+styles: twenty screens had each rolled a slightly different `.card`, and a class a screen can vary is what
+stops that returning.
+
+**Charts carry no money formatting.** `fm-donut`, `fm-bar-chart` and `fm-sparkline` take ratios, drawing
+coordinates, token names and **pre-formatted strings**; they never divide two amounts and never render a
+currency (ADR-003). Every derived figure they show is either the server's (`shareOfTotal`,
+`SavingGoalModel.progress`, `BudgetModel.usedRatio`) or `@finmate/domain`'s (`changeRatio`,
+`shareOfTotal`), which is the same code the API's calculators use.
+
+**Where the reference is deliberately not followed.** The account block names the **role**, not a person's
+name — `users.display_name` exists but no operation returns it, and inventing one from an email local
+part would be a fabricated identity. The greeting has no name for the same reason. The sidebar footer carries the
+settings entry rather than a marketing line, because a control that works is worth more than a sentence
+that does not. The search field performs a **real** search: it navigates to `/transactions?search=…`, a
+key `FILTER_QUERY_KEYS` now carries, because docs/02 §2 forbids a control that only looks like one.
+
+---
+
 ## 4. Mobile-specific concerns
 
 ### 4.1 Thumb-zone reachability
@@ -1021,16 +1077,23 @@ delivered. Two reading decisions are load-bearing, both learned by measuring —
   `dynamic-import`, so following all edges makes the whole application "the shell" and every route's
   marginal cost zero. Only `import-statement` edges are followed.
 
-Measured at 4.3.4a (production, gzipped — the numbers this table's budgets are read against):
+Measured at ADR-039's visual pass (production, gzipped — the numbers this table's budgets are read against).
+The 4.3.4a figures are in parentheses where they moved, so the cost of the design system is visible rather
+than inferred:
 
 | Route | Cold cost | Budget |
 |---|---|---|
-| App shell + boot | **137.9 KB** (92 % — the warning threshold fires) | ≤ 150 KB |
-| Capture | 159.9 KB | ≤ 180 KB |
-| Transaction list | 174.9 KB | ≤ 260 KB |
-| Dashboard / Review / Receipts / Analytics / Assistant | 147.8 / 150.7 / 150.6 / 154.2 / 151.7 KB | 220 / 220 / 240 / 300 / 280 KB |
-| The 17 routes §11 does not name | 138–178 KB | held to the 320 KB total |
-| `packages/nlp` | **2.5 KB** (one chunk, fetched with the first route that needs it — not eagerly) | ≤ 40 KB |
+| App shell + boot | **149.9 KB** (was 137.9 — the icon registry, the theme service, the account block and the shell's own styles; **99.9 % of the budget**) | ≤ 150 KB |
+| Capture | 172.2 KB (was 159.9) | ≤ 180 KB |
+| Transaction list | 187.0 KB (was 174.9) | ≤ 260 KB |
+| Dashboard / Review / Receipts / Analytics / Assistant | 168.6 / 162.7 / 162.7 / 166.4 / 167.9 KB | 220 / 220 / 240 / 300 / 280 KB |
+| The 17 routes §11 does not name | 163–190 KB | held to the 320 KB total |
+| `packages/nlp` | **2.7 KB** (one chunk, fetched with the first route that needs it — not eagerly) | ≤ 40 KB |
+
+**The shell has no real headroom left.** Fourteen unused icon paths were deleted to bring it back under
+150 KB, and every path in `shared/ui/icon` lands in the initial chunk because the shell renders `fm-icon`.
+The next addition there should either move the lazy-chunk icons behind a dynamic import **or** raise this
+budget in this table with a stated reason — never silently.
 
 **4.3.4b measured the accessibility half with axe** (injected from a fetched copy, so the client takes
 no dependency) across all 20 routes of the served production build: it found **20 serious

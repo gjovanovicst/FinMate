@@ -14,13 +14,22 @@
  * @module apps/web/src/app/core
  */
 
+import type { IconName } from '../shared/ui/icon/icon-paths';
 import type { TranslationKey } from './i18n/translations';
 
 export interface NavItem {
   readonly path: string;
   /** A translation key, not a label: the nav re-renders when the language changes. */
   readonly labelKey: TranslationKey;
-  readonly icon: string;
+  /**
+   * A name from the icon registry, not a glyph.
+   *
+   * This was an emoji (`📊`, `🧾`, …) until ADR-039. An emoji is drawn in colour by the platform, at the
+   * platform's own size and style, so the sidebar could not tint it for the active state, its weight did
+   * not match the rest of the icon set, and it looked like a different product on every OS. Typing it as
+   * {@link IconName} is what makes a rename fail the build instead of rendering an empty box.
+   */
+  readonly icon: IconName;
   /**
    * Whether the item sits in the compact bottom bar. Non-primary items live behind **More** on
    * compact screens and are listed in full in the sidebar, so the sidebar is never a reduced view.
@@ -37,26 +46,26 @@ export interface NavItem {
  * screen lives.
  */
 export const NAV_ITEMS: readonly NavItem[] = [
-  { path: '/', labelKey: 'nav.dashboard', icon: '📊', primary: true },
-  { path: '/transactions', labelKey: 'nav.transactions', icon: '🧾', primary: true },
-  { path: '/capture', labelKey: 'nav.capture', icon: '➕', primary: true },
-  { path: '/review', labelKey: 'nav.review', icon: '🔎', primary: true, badged: true },
-  { path: '/budgets', labelKey: 'nav.budgets', icon: '🎯', primary: false },
+  { path: '/', labelKey: 'nav.dashboard', icon: 'overview', primary: true },
+  { path: '/transactions', labelKey: 'nav.transactions', icon: 'transactions', primary: true },
+  { path: '/capture', labelKey: 'nav.capture', icon: 'capture', primary: true },
+  { path: '/review', labelKey: 'nav.review', icon: 'review', primary: true, badged: true },
+  { path: '/budgets', labelKey: 'nav.budgets', icon: 'budgets', primary: false },
   // docs/02 §2.1 files goals, budgets and recurring rules under `Više › Plan`.
-  { path: '/goals', labelKey: 'nav.goals', icon: '🐖', primary: false },
-  { path: '/recurring', labelKey: 'nav.recurring', icon: '🔁', primary: false },
+  { path: '/goals', labelKey: 'nav.goals', icon: 'piggy', primary: false },
+  { path: '/recurring', labelKey: 'nav.recurring', icon: 'recurring', primary: false },
   // docs/02 §2.2's **Uvid** group (Analitika, Asistent), right after Plan and before the library.
-  { path: '/analytics', labelKey: 'nav.analytics', icon: '📈', primary: false },
-  { path: '/assistant', labelKey: 'nav.assistant', icon: '💬', primary: false },
-  { path: '/accounts', labelKey: 'nav.accounts', icon: '🏦', primary: false },
-  { path: '/categories', labelKey: 'nav.categories', icon: '🗂️', primary: false },
-  { path: '/merchants', labelKey: 'nav.merchants', icon: '🏪', primary: false },
-  { path: '/counterparties', labelKey: 'nav.counterparties', icon: '👤', primary: false },
-  { path: '/tags', labelKey: 'nav.tags', icon: '🏷️', primary: false },
-  { path: '/rules', labelKey: 'nav.rules', icon: '⚙️', primary: false },
+  { path: '/analytics', labelKey: 'nav.analytics', icon: 'analytics', primary: false },
+  { path: '/assistant', labelKey: 'nav.assistant', icon: 'assistant', primary: false },
+  { path: '/accounts', labelKey: 'nav.accounts', icon: 'accounts', primary: false },
+  { path: '/categories', labelKey: 'nav.categories', icon: 'categories', primary: false },
+  { path: '/merchants', labelKey: 'nav.merchants', icon: 'merchants', primary: false },
+  { path: '/counterparties', labelKey: 'nav.counterparties', icon: 'people', primary: false },
+  { path: '/tags', labelKey: 'nav.tags', icon: 'tags', primary: false },
+  { path: '/rules', labelKey: 'nav.rules', icon: 'rules', primary: false },
   // docs/02 §2.2's **Biblioteka** group ends with Prijemi (Kategorije, Prodavci, Osobe, Pravila,
   // Prijemi), so the receipt library sits last in the list rather than beside the ledger it feeds.
-  { path: '/receipts', labelKey: 'nav.receipts', icon: '📷', primary: false },
+  { path: '/receipts', labelKey: 'nav.receipts', icon: 'receipts', primary: false },
 ];
 
 export const PRIMARY_ITEMS: readonly NavItem[] = NAV_ITEMS.filter((item) => item.primary);

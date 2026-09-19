@@ -375,6 +375,27 @@ into capture.
 - **Pending strip.** While a `PENDING` Transaction exists, a non-blocking strip reads *2 transakcije
   čekaju odluku · ne ulaze u obračun* → `/review`. PENDING rows contribute to no figure (I-7); the
   strip exists so the numbers are never mysterious.
+- **Rebuilt from a reference design in ADR-039, with four recorded deviations.** The screen is now a
+  greeting, a KPI row (available to spend · income · spent · projected), a spending-by-category donut, a
+  daily income/expense chart, saving goals, recent transactions, the assistant card and the alerts rail.
+  Where it disagrees with the wireframe above, and why:
+  - **The greeting has no name.** The reference reads *"Good evening, Goran!"*; `users.display_name`
+    exists but **no operation returns it** — a session carries an id, a household and a role — and
+    deriving a name from an email local part would be a fabricated identity. The account block names the
+    **role** for the same reason, and exposing the column on `/auth/me` is the one-field API change that
+    would let this line read like the reference.
+  - **Safe-to-spend did not lose its place.** The wireframe's hero is the safe-to-spend disclosure and the
+    reference's first card is the month's *available*, so the hero carries **both**: `available` as the
+    figure, the budget as its denominator, the progress bar over the month, and safe-to-spend today on the
+    footnote line. Neither number is invented and neither replaced the other.
+  - **The breakdown is not expanded on the screen.** §4.2's plain-language disclosure of every input is
+    still a docs/02 §4.2 requirement the screen does not meet; the figures and their denominators are
+    shown, the formula in words is not.
+  - **The panels are a second round trip, and a failure is not an empty chart.** They are asked for over
+    the period **the server named** (a month boundary is the Household's local calendar, docs/03 §3.2),
+    and with no payload the screen says the breakdowns need a connection rather than drawing an empty
+    donut that reads as "you spent nothing" (ADR-027's 4.2.8b amendment).
+
 
 ### 4.3 Capture — F-05, F-06, F-14
 

@@ -312,6 +312,11 @@ export const FILTER_QUERY_KEYS = [
   'accountId',
   'kind',
   'needsReview',
+  // The one text key, added by ADR-039 for the shell's search field. It is a real `transactions`
+  // argument (`search:` in docs/06 §4.4), so the list is still exactly that contract — but it is the
+  // only member a *person* types rather than a link generates, which is why the screen's own box and
+  // the URL have to agree on it.
+  'search',
 ] as const;
 
 export type FilterQueryKey = (typeof FILTER_QUERY_KEYS)[number];
@@ -364,6 +369,7 @@ export function filtersFromQuery(
     ...(bag.accountId === undefined ? {} : { accountId: bag.accountId }),
     ...(kind === undefined || (kind !== 'EXPENSE' && kind !== 'INCOME') ? {} : { kind }),
     ...(bag.needsReview === undefined ? {} : { needsReviewOnly: bag.needsReview === 'true' }),
+    ...(bag.search === undefined ? {} : { search: bag.search }),
   };
 }
 

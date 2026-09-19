@@ -1,21 +1,29 @@
 /* =============================================================================
-   Design tokens (docs/05 §5.4, docs/07 §3)
+   Design tokens (docs/05 §5.4, docs/07 §3, ADR-039)
 
    Rules this file exists to enforce:
-    1. **Tokens, not magic values.** One spacing scale, one type scale, semantic
-       colour roles. Components reference roles, never raw palette entries, so
-       dark mode is a token swap rather than a component rewrite.
-    2. **Semantic status colours are reserved.** `--color-danger`, `--color-warning`
-       and `--color-success` belong to validation and to the ADR-009 confidence
-       bands. The brand palette deliberately avoids red/amber/green so it cannot
-       collide with them (docs/13 §9).
-    3. **Money is ink, not colour.** Expense is NOT red and income is NOT green —
-       that would collide with the status colours above and imply judgement the
-       product has no business making. Direction is a sign and a label.
-    4. **Logical properties only** (`margin-inline-start`, not `margin-left`) so a
-       future RTL locale is not a rewrite (ADR-019).
-    5. **Dark-first.** This is a money app used in the evening; the dark theme is
-       the default and light is the override.
+     1. **Tokens, not magic values.** One spacing scale, one type scale, semantic
+        colour roles. Components reference roles, never raw palette entries, so
+        dark mode is a token swap rather than a component rewrite.
+     2. **Semantic status colours are reserved.** `--color-danger`, `--color-warning`
+        and `--color-success` belong to validation and to the ADR-009 confidence
+        bands. The brand palette deliberately avoids red/amber/green so it cannot
+        collide with them (docs/13 §9).
+     3. **Money is ink, not colour.** Expense is NOT red and income is NOT green —
+        that would collide with the status colours above and imply judgement the
+        product has no business making. Direction is a sign and a label. Inside a
+        chart or a KPI tile the *tile* may be tinted (the mockup's green income card
+        does exactly this), but the amount itself stays in the surrounding ink.
+     4. **Logical properties only** (`margin-inline-start`, not `margin-left`) so a
+        future RTL locale is not a rewrite (ADR-019).
+     5. **Both themes are first-class.** Every role below is defined twice — once in
+        `:root` (dark) and once in `:root[data-theme='light']` — and `ThemeService`
+        is the only thing that writes the attribute. Contrast is asserted by
+        `styles.tokens.spec.ts`, which re-measures every pair this file names.
+
+   The palette is ADR-039's: a deep navy dark theme and a cool off-white light one,
+   both with a single violet brand ramp. Where a value has been measured against a
+   WCAG threshold the ratio is in the comment beside it.
    ============================================================================= */
 
 :root {
@@ -27,6 +35,7 @@
   --space-5: 1.5rem;
   --space-6: 2rem;
   --space-7: 3rem;
+  --space-8: 4rem;
 
   /* ---- type scale ---- */
   --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
@@ -42,14 +51,26 @@
   --text-3xl: 2.25rem;
   --leading-tight: 1.2;
   --leading-normal: 1.5;
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  /* Headings and amounts are tightened a little; at 1.75rem+ the default tracking
+     reads loose next to the mockup's numeric tiles. */
+  --tracking-tight: -0.01em;
 
   /* ---- radius, elevation, motion ---- */
-  --radius-sm: 6px;
-  --radius-md: 10px;
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
   --radius-lg: 16px;
+  --radius-xl: 22px;
   --radius-pill: 999px;
-  --shadow-1: 0 1px 2px rgb(0 0 0 / 24%);
-  --shadow-2: 0 4px 12px rgb(0 0 0 / 32%);
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 28%);
+  --shadow-2: 0 6px 20px rgb(0 0 0 / 34%);
+  /* Reserved for things that float above the page (menus, sheets) and for the hero card. */
+  --shadow-3: 0 18px 48px rgb(0 0 0 / 46%);
+  --shadow-glow: 0 12px 32px rgb(109 92 246 / 34%);
   --motion-fast: 120ms;
   --motion-base: 200ms;
 
@@ -62,37 +83,87 @@
      fails it in either pointer context. */
   --control-size: 2rem;
   --control-size-compact: 2.75rem;
+  /* The comfortable control height at large sizes (topbar buttons, form fields): one number so a
+     search box, a select and an icon button line up on the same baseline. */
+  --control-size-comfortable: 2.5rem;
+  /* docs/07 §3.1 names this one: the compact bottom bar's height, which the content must reserve so the
+     last row of a long screen is not hidden behind a pinned bar. */
+  --nav-bottom-h: 3.75rem;
 
   /* ---- dark theme (default) ---- */
-  --color-bg: #101014;
-  --color-surface: #17171d;
-  --color-surface-raised: #1e1e26;
-  --color-border: #2b2b36;
-  --color-text: #ececf1;
-  --color-text-muted: #a0a0b0;
-  /* 4.3.1d. Was #6e6e80 — 3.31:1 on `--color-surface-raised`, i.e. below the 4.5:1 docs/02 §9
-     requires, across 153 element-route pairs measured on 20 screens (hints, row metadata, the
-     role label, the capture examples label, account/merchant row badges). Subtle means "dimmer
-     than muted", not "unreadable": this still sits below `--color-text-muted` (6.42:1) at 5.1:1
-     on the lightest surface it is used on. */
-  --color-text-subtle: #8f8fa4;
+  --color-bg: #0a0e18;
+  /* The chrome around the content (sidebar, topbar). One step below `--color-bg` so the shell reads
+     as a frame rather than as a second page. */
+  --color-chrome: #0d1220;
+  --color-surface: #121828;
+  /* Hover / raised rows inside a card, and the "sunken" fill for inset areas (chart wells, code). */
+  --color-surface-raised: #1a2136;
+  --color-surface-sunken: #0a0e18;
+  --color-border: #242e45;
+  --color-border-strong: #33405c;
+  --color-text: #eef2fa;
+  --color-text-muted: #9aa8c0;
+  /* "Dimmer than muted", never "unreadable": 5.16:1 on `--color-surface` and 4.66:1 on the lightest
+     surface it is used on (`--color-surface-raised`). 4.3.1d found the old value at 3.31:1 across 153
+     element-route pairs; `styles.tokens.spec.ts` now re-measures the pair on every run. */
+  --color-text-subtle: #7e8ba5;
 
   /* Brand: indigo-violet, chosen to stay clear of the reserved status hues. */
-  --color-primary: #7c6cf5;
-  --color-primary-hover: #8f81f7;
-  /* 4.3.4b: the brand colour as **text**. `#7c6cf5` is 3.85:1 on the 14 %-tinted active surface it
-     is used on (`#25233b`) and 4.19:1 on `--color-surface-raised`, both below 4.5:1 for body text;
-     axe found it on every route's active nav item after 4.3.1d's instrument reported no contrast
-     failures. This is 6.43:1 on that worst case and 7.55:1 on `--color-bg`. Backgrounds keep
-     `--color-primary`, where the near-black `--color-primary-contrast` sits on it. */
+  --color-primary: #6d5cf6;
+  --color-primary-hover: #7d6ef8;
+  --color-primary-soft: rgb(109 92 246 / 14%);
+  /* The brand colour as **text**. `--color-primary` is 4.14:1 on the tinted active surface and
+     `--color-primary-text` is 6.47:1 on it (7.49:1 on `--color-surface`), which is why links, active
+     nav items and anything else that renders brand-coloured *text* uses this and never the fill. */
   --color-primary-text: #a99cff;
-  --color-primary-contrast: #0d0d12;
+  /* Text painted **on** a primary fill. White on `--color-primary` is 4.65:1. */
+  --color-primary-contrast: #ffffff;
+  /* Text painted on a `--color-danger` fill (badge counts). Near-black on the bright rose is 6.45:1;
+     white would be 2.99:1. */
+  --color-on-danger: #0a0e18;
 
   /* ---- reserved semantic status ---- */
-  --color-danger: #f2555a;
-  --color-warning: #f0a02e;
-  --color-success: #3fbf7f;
+  --color-danger: #ff5c72;
+  --color-warning: #f5a524;
+  --color-success: #2fd08a;
   --color-info: #4aa8f0;
+  /* 10–14 % tints for chip and tile backgrounds. Kept as tokens so a component never invents one. */
+  --color-danger-soft: rgb(255 92 114 / 14%);
+  --color-warning-soft: rgb(245 165 36 / 14%);
+  --color-success-soft: rgb(47 208 138 / 14%);
+  --color-info-soft: rgb(74 168 240 / 14%);
+
+  /* ---- brand gradients ----
+     The KPI hero is the mockup's one filled card. In dark it is the violet ramp; in light it is the
+     mint ramp (the reference's light theme turns the same card pale green), so the two themes are two
+     gradients rather than one gradient with a filter over it. */
+  --gradient-brand: linear-gradient(135deg, #5b6cf9 0%, #8b5cf6 100%);
+  /* The three stops are chosen so **white** clears 4.5:1 on every one of them (4.91 / 5.31 / 5.07),
+     because the hero's ink sits over whichever stop it lands on and a gradient has no single
+     background to measure. A lighter end stop (`#8f5cf7`) put white at 4.17 and had to go. */
+  --gradient-hero: linear-gradient(135deg, #4f5ef7 0%, #6a4df2 52%, #7550ee 100%);
+  --gradient-hero-ink: #ffffff;
+  /* 95 %, not 78 %: at 78 % the composite was 3.64:1 on the lightest stop. De-emphasis on this card is
+     carried by size and weight instead. */
+  --gradient-hero-ink-muted: rgb(255 255 255 / 95%);
+  /* A hairline that reads as a light source rather than as a border. */
+  --hairline: inset 0 1px 0 rgb(255 255 255 / 6%);
+
+  /* ---- chart series ----
+     One ramp, used by the donut, the grouped bars and the sparklines, in the mockup's order. */
+  --chart-1: #6366f1;
+  --chart-2: #22c55e;
+  --chart-3: #f43f5e;
+  --chart-4: #f59e0b;
+  --chart-5: #a855f7;
+  --chart-6: #06b6d4;
+  --chart-7: #ec4899;
+  --chart-income: #2fd08a;
+  --chart-expense: #a855f7;
+  --chart-grid: rgb(255 255 255 / 8%);
+  --chart-axis: #7e8ba5;
+  --chart-tooltip-bg: #1a2136;
+  --chart-tooltip-ink: #eef2fa;
 
   /* ---- focus ---- */
   --focus-ring: 0 0 0 3px rgb(124 108 245 / 55%);
@@ -100,21 +171,62 @@
 
 /* Light theme: a token swap only — no component knows which theme is active. */
 :root[data-theme='light'] {
-  --color-bg: #f6f6f9;
+  --color-bg: #f4f6fb;
+  --color-chrome: #ffffff;
   --color-surface: #ffffff;
-  --color-surface-raised: #ffffff;
-  --color-border: #dcdce5;
-  --color-text: #16161c;
-  --color-text-muted: #5a5a6b;
-  /* 4.3.1d: #85859a was 3.35:1 on white; this is 4.93:1 and still dimmer than muted (6.26:1). */
-  --color-text-subtle: #6a6a78;
-  --color-primary: #5b48e0;
-  --color-primary-hover: #4b39cf;
-  /* 4.3.4b: 6.09:1 on white, and legible on the light theme's tinted active surface too. */
-  --color-primary-text: #5b48e0;
+  --color-surface-raised: #f7f9fd;
+  --color-surface-sunken: #eef2f9;
+  --color-border: #e4e9f2;
+  --color-border-strong: #cfd8e8;
+  --color-text: #101828;
+  /* 6.36:1 on white, 5.88:1 on `--color-bg`. */
+  --color-text-muted: #526078;
+  /* 5.06:1 on white, 4.68:1 on `--color-bg`, 4.80:1 on `--color-surface-raised` — the old #85859a was
+     3.35:1 (4.3.1d). */
+  --color-text-subtle: #626f88;
+  --color-primary: #4f46e5;
+  --color-primary-hover: #4338ca;
+  --color-primary-soft: rgb(79 70 229 / 10%);
+  /* 6.29:1 on white, 5.82:1 on `--color-bg`. */
+  --color-primary-text: #4f46e5;
   --color-primary-contrast: #ffffff;
-  --shadow-1: 0 1px 2px rgb(16 16 20 / 8%);
-  --shadow-2: 0 4px 12px rgb(16 16 20 / 12%);
+  /* White on the light theme's `--color-danger` is 4.70:1. */
+  --color-on-danger: #ffffff;
+
+  --color-danger: #cf2545;
+  --color-warning: #b45309;
+  --color-success: #067647;
+  --color-info: #0b6bcb;
+  --color-danger-soft: rgb(207 37 69 / 10%);
+  --color-warning-soft: rgb(180 83 9 / 10%);
+  --color-success-soft: rgb(6 118 71 / 10%);
+  --color-info-soft: rgb(11 107 203 / 10%);
+
+  --gradient-brand: linear-gradient(135deg, #5b6cf9 0%, #8b5cf6 100%);
+  --gradient-hero: linear-gradient(135deg, #e7f8ef 0%, #eefaf2 45%, #f2fbf5 100%);
+  --gradient-hero-ink: #0f5132;
+  --gradient-hero-ink-muted: #456f5b;
+  --hairline: inset 0 1px 0 rgb(255 255 255 / 70%);
+
+  --chart-1: #4f46e5;
+  --chart-2: #16a34a;
+  --chart-3: #e11d48;
+  --chart-4: #d97706;
+  --chart-5: #9333ea;
+  --chart-6: #0891b2;
+  --chart-7: #db2777;
+  --chart-income: #16a34a;
+  --chart-expense: #7c3aed;
+  --chart-grid: rgb(16 24 40 / 8%);
+  --chart-axis: #626f88;
+  --chart-tooltip-bg: #101828;
+  --chart-tooltip-ink: #f8fafc;
+
+  --shadow-1: 0 1px 2px rgb(16 24 40 / 6%);
+  --shadow-2: 0 4px 14px rgb(16 24 40 / 8%);
+  --shadow-3: 0 18px 44px rgb(16 24 40 / 14%);
+  --shadow-glow: 0 12px 28px rgb(79 70 229 / 18%);
+  --focus-ring: 0 0 0 3px rgb(79 70 229 / 35%);
 }
 
 /* =============================================================================
@@ -169,6 +281,7 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -193,6 +306,9 @@ body {
 .pager__button,
 .topbar__button,
 .skip-link,
+.fm-btn,
+.fm-chip,
+.fm-icon-btn,
 select,
 input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='file']) {
   min-block-size: var(--control-size);
@@ -207,7 +323,10 @@ input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type=
 .bar__label,
 .pager__button,
 .topbar__button,
-.skip-link {
+.skip-link,
+.fm-btn,
+.fm-chip,
+.fm-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -215,7 +334,8 @@ input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type=
 
 /* Icon-only controls need the width too, or a 36×44 bell still misses the floor. */
 .pager__button,
-.topbar__button {
+.topbar__button,
+.fm-icon-btn {
   min-inline-size: var(--control-size);
 }
 
@@ -246,4 +366,269 @@ a[role='button'],
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+/* =============================================================================
+   Shared primitives (ADR-039)
+
+   These are **global, `fm-`-prefixed classes** rather than components, deliberately: twenty screens
+   had each rolled their own `.card` with slightly different padding, radius and border, which is how
+   the app drifted into looking like twenty apps. A component with an encapsulated style block cannot
+   be restyled by a screen that needs a variant; a class can, and it keeps the diff on the screens
+   that adopt it. Screen-scoped rules still win where a screen genuinely needs something else, because
+   Angular's attribute selector outranks these.
+   ============================================================================= */
+
+/* ---- page scaffold ---- */
+.fm-page {
+  display: grid;
+  gap: var(--space-5);
+  align-content: start;
+}
+.fm-page__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.fm-page__title {
+  margin: 0;
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-tight);
+}
+.fm-page__sub {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+/* A cluster of controls that belongs to the page head (a range chip, a filter, "view all"). */
+.fm-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ---- card ---- */
+.fm-card {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+}
+.fm-card--flush {
+  padding: 0;
+  overflow: hidden;
+}
+.fm-card--tight {
+  padding: var(--space-4);
+  gap: var(--space-3);
+}
+/* The one filled card (the KPI hero). Ink is inverted by the gradient tokens, not by a filter. */
+.fm-card--brand {
+  background: var(--gradient-hero);
+  border-color: transparent;
+  color: var(--gradient-hero-ink);
+  box-shadow: var(--shadow-glow);
+}
+.fm-card--interactive {
+  transition:
+    border-color var(--motion-fast) ease,
+    transform var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease;
+}
+.fm-card--interactive:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-2);
+}
+.fm-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.fm-card__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+}
+.fm-card__action {
+  color: var(--color-primary-text);
+  font-size: var(--text-sm);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.fm-card__action:hover {
+  text-decoration: underline;
+}
+
+/* ---- buttons ---- */
+.fm-btn {
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
+}
+.fm-btn:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+}
+.fm-btn--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+.fm-btn--primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+.fm-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text-muted);
+}
+.fm-btn--ghost:hover:not(:disabled) {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+.fm-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* A square icon control: the topbar's bell/theme/settings, a card's overflow. */
+.fm-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--control-size-comfortable);
+  min-block-size: var(--control-size-comfortable);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    color var(--motion-fast) ease;
+}
+.fm-icon-btn:hover {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+.fm-icon-btn--active {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-text);
+}
+
+/* ---- chip ---- */
+.fm-chip {
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-raised);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fm-chip--active {
+  background: var(--color-primary-soft);
+  border-color: transparent;
+  color: var(--color-primary-text);
+}
+/* A read-only chip: a range, a period, a count. No pointer affordance. */
+.fm-chip--static {
+  cursor: default;
+}
+
+/* ---- progress ---- */
+.fm-progress {
+  display: block;
+  block-size: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-sunken);
+  overflow: hidden;
+}
+.fm-progress__bar {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--color-primary);
+  transition: inline-size var(--motion-base) ease;
+}
+
+/* ---- skeleton ----
+   Only ever shown where a read is honestly in flight; a skeleton that outlives its request is a lie
+   with a nicer costume. */
+.fm-skeleton {
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-raised) 0%,
+    var(--color-border) 50%,
+    var(--color-surface-raised) 100%
+  );
+  background-size: 200% 100%;
+  animation: fm-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes fm-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ---- table ----
+   Shared by the ledger-shaped screens. The card that holds one is `--flush`. */
+.fm-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.fm-table th {
+  padding: var(--space-3) var(--space-4);
+  border-block-end: 1px solid var(--color-border);
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-align: start;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.fm-table td {
+  padding: var(--space-3) var(--space-4);
+  border-block-end: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+.fm-table tbody tr:last-child td {
+  border-block-end: none;
+}
+.fm-table tbody tr:hover {
+  background: var(--color-surface-raised);
 }

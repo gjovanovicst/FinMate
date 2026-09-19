@@ -7,7 +7,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import { uuidv7 } from '@finmate/domain';
 
@@ -793,6 +793,7 @@ export class AssistantComponent {
   private turnCount = 0;
 
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
+  private readonly route = inject(ActivatedRoute);
 
   constructor() {
     // docs/02 §9, FL-09: *"Composer takes focus on route entry (it is a chat)"*. The capture field is
@@ -804,9 +805,22 @@ export class AssistantComponent {
     // query is not populated when this hook runs — it returned `undefined` in both `afterNextRender`
     // and `ngAfterViewInit` under the test harness — and a focus that silently does nothing is worse
     // than one `querySelector` (docs/15).
-    afterNextRender(() =>
-      this.host.nativeElement.querySelector<HTMLInputElement>('#assistant-question')?.focus(),
-    );
+    //
+    // `?q=` is the dashboard's assistant card (ADR-039): the card's chips and its field **ask** the
+    // question rather than only opening the screen, because a chip reading "How much did I spend on
+    // groceries?" that lands on an empty composer has not answered anything. A question arriving this
+    // way is asked once, on entry, and is not re-asked when the route's other params change.
+    const asked = this.route.snapshot.queryParamMap.get('q')?.trim() ?? '';
+
+    afterNextRender(() => {
+      if (asked === '') {
+        this.host.nativeElement.querySelector<HTMLInputElement>('#assistant-question')?.focus();
+        return;
+      }
+      this.question.set(asked);
+      void this.ask();
+    });
+
     void this.loadStarters();
   }
 

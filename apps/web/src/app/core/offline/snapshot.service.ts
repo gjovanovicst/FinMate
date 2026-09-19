@@ -46,6 +46,15 @@ export interface SnapshotMoney {
  */
 export interface DashboardFigures {
   readonly today: string;
+  /**
+   * The Household's own month, as the server named it.
+   *
+   * Carried in the snapshot because ADR-039's panels need a range and the range has to be the server's
+   * calendar rather than the browser's (docs/03 §3.2). A cached reading of them keeps its own period, so
+   * an offline dashboard labels the month its figures are actually about.
+   */
+  readonly periodStart: string;
+  readonly periodEnd: string;
   readonly daysElapsed: number;
   readonly daysInMonth: number;
   readonly safeToSpendToday: SnapshotMoney;

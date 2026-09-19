@@ -2515,6 +2515,141 @@ not. Text tasks are unchanged: they ask only when they would leave the EEA.
 
 ---
 
+### ADR-039 — The UI is one token layer with two themes, and the shell is a frame rather than a list
+
+**Status:** Accepted
+
+**Context.** The owner supplied two design references — the same dashboard in a dark and a light theme —
+and asked for the app to look like them. Reconnaissance found three things the documents did not:
+
+1. **There was no light theme in any build.** `styles.css` had carried a `:root[data-theme='light']` token
+   block since task 0.8 and **nothing wrote that attribute**. Every audit that reported "the light theme is
+   clean" (4.3.1d, 4.3.4b, 4.3.1e) had set it by hand in a browser instrument. A user could not reach it.
+   A theme nobody can select is not a theme; it is a stylesheet branch with no caller.
+2. **The chrome was a list of sixteen emoji.** `core/navigation.ts` stored `📊 🧾 ➕ …` as the icon
+   vocabulary. An emoji is drawn in colour by the platform, at the platform's own size and stroke, so the
+   active nav state could not tint it, its weight never matched the rest of the icon set, and the same
+   sidebar looked like a different product on every OS.
+3. **Twenty screens had each rolled their own `.card`**, with slightly different padding, radius and
+   border. The drift was invisible per screen and obvious across them, which is precisely the failure a
+   reference design exposes.
+
+**Decision.**
+
+1. **One token layer, both themes, one writer.** `apps/web/src/styles.css` defines every colour role twice
+   (dark in `:root`, light in `:root[data-theme='light']`) and nothing else in the app sets `data-theme`.
+   `ThemeService` is the only writer: it holds a **preference** (`system | light | dark`, persisted under
+   `fm.theme`) and a **resolved** theme, follows `prefers-color-scheme` while the preference is `system`,
+   repaints `<meta name="theme-color">`, and sets `color-scheme` so native scrollbars and autofill follow.
+   A four-line script in `index.html` applies the stored value **before first paint**; the service owns
+   every change after that. `system` with no OS signal resolves to **dark**, which keeps the house default.
+2. **The topbar control toggles; `/settings` offers three states.** The glyph shows the current theme and
+   the accessible name states the action, because a button whose third press means "follow the operating
+   system" is a puzzle.
+3. **A hand-drawn icon set replaces the emoji.** `shared/ui/icon` holds ~40 stroke paths on one 24×24 grid,
+   inheriting `currentColor`; `NavItem.icon` is typed as an icon name, so a rename fails the build.
+4. **Shared primitives are global `fm-`-prefixed classes, not components.** `.fm-card`, `.fm-page`,
+   `.fm-btn`, `.fm-chip`, `.fm-icon-btn`, `.fm-progress`, `.fm-skeleton`, `.fm-table` — a component's
+   encapsulated styles cannot be varied by a screen that needs a variant, a class can, and the token layer
+   remains the only place a colour is chosen.
+5. **The shell is a frame.** Brand block, destination list with an active pill and a leading marker, a
+   real search field, a theme toggle, the bell, an account block, and a sidebar footer. Three things the
+   reference draws are deliberately absent: the **user's name** (`users.display_name` exists and is
+   `NOT NULL`, but **no operation returns it**: `/auth/me` answers with an id, a household, a role and a
+   session id only, and no GraphQL query exposes a member. The account block therefore names the role
+   and the greeting has no name; exposing the column on `/auth/me` is a one-field API task if the
+   owner wants the reference's greeting), the **marketing card** in the sidebar footer (replaced by the settings entry, which is a control
+   the shell owes the user), and a decorative control that does nothing.
+6. **The search field is a real search.** It navigates to `/transactions?search=…`, and `search` was added
+   to `FILTER_QUERY_KEYS` — the URL contract the assistant's drill-throughs already use. docs/02 §2 forbids
+   a control that only looks like one, and a global search that searched nothing would be exactly that.
+7. **The dashboard is rebuilt from the reference, with no invented figure.** The KPI row reads
+   `available`, `incomeThisMonth`, `spentThisMonth` and `projectedTotal`; the donut's shares are the
+   server's `shareOfTotal`; the goals' progress is `SavingGoalModel.progress`; the chart is
+   `spendOverTime`; the alerts are the notification centre's own rows. The two derived figures — the
+   budget-used bar and the month-over-month deltas — go through `@finmate/domain`'s `shareOfTotal` and
+   `changeRatio`, which is where every other ratio in this product is computed (ADR-001, ADR-003). The
+   panels are a **second round trip begun from the period the server named**, because a month boundary is
+   the Household's local calendar and not the browser's (docs/03 §3.2).
+8. **A panel that failed is not a panel that is empty.** With no panel payload the screen says the
+   breakdowns need a connection; it never draws an empty donut, which reads as "you spent nothing". This
+   extends ADR-027's 4.2.8b amendment — an analysis has no honest offline form — from `/analytics` to the
+   dashboard's own panels.
+9. **Contrast is now a test, not an audit.** `styles.tokens.spec.ts` reads `styles.css` and re-measures
+   every text pair in **both** themes at WCAG AA. 4.3.1d and 4.3.4b each shipped a single token value that
+   made text unreadable and that nothing else could catch; this is the guard that makes the third one fail
+   in CI instead of in a screenshot.
+
+**What the live pass found, and why it is part of this decision.** The redesign was verified against the
+running API in both themes at 320/768/1280 px (`.artifacts/visual-audit/redesign/`, regenerated by the
+scratch scripts in `.artifacts/tools/`), and that pass paid for itself six times. Every one of these was
+invisible to `web:typecheck`, to the unit suite and to a code read:
+
+1. **`Money` is a GraphQL scalar, so the panel query was invalid.** Selecting `total { amountMinor }` is
+   a validation error at runtime, not a type error — the whole panel round trip failed and the screen said
+   the breakdowns needed a connection. A stubbed client in a unit test would have called it a success.
+2. **The available-to-spend warning never rendered.** `available` is negative when the month is over and
+   `overrunText` gates on a positive value, so the hero's "over budget by" line was dead code; the capture
+   showed a month 9,4 M RSD over with no warning. Fixed with `overspendText` and covered in
+   `money-text.spec.ts`.
+3. **The donut double-counted.** `includeSubcategories: true` returns a parent's subtree total *and* its
+   children's, so six rows summed to 122 % and the arcs overlapped. The query now asks for direct spend.
+4. **The compact shell had no grid areas**, so the topbar, content and navigation all auto-placed into one
+   cell: the capture showed a search field floating inside the monthly chart and no bar above the content.
+5. **The compact navigation was not pinned** — and the fix was defeated by a later `position: relative`
+   rule, which is why the first attempt "did nothing" while the computed style said `relative` and the bar
+   sat 3 750 px down a long screen.
+6. **The sidebar's wordmark rendered on a phone**, again because a later rule set `display: flex`.
+
+**Consequences.**
+- ✅ A person can choose light, dark, or the operating system, and the choice survives a reload without a
+  flash of the wrong theme.
+- ✅ A new screen picks up both themes and the shared look by using tokens and `fm-` primitives; the twenty
+  private card styles can be retired as screens are touched.
+- ✅ The icon set is one dependency-free file that cannot drift in weight, and it costs ~3 KB against ~30 KB
+  for an icon package (ADR-004 would have required an ADR for the dependency first).
+- ⚠️ **The reference's brand is not this product's brand.** The mockups are titled "Spendora"; the wordmark
+  here reads `app.name` from the catalogue (ADR-014), and the mark is a new inline SVG. **R-28 (no
+  trademark or domain check) is unchanged by this ADR and still blocks launch.**
+- ⚠️ The greeting has no name, and the sidebar footer carries no marketing line. Both are visible
+  deviations from the reference, recorded in docs/02 §4.2 rather than silently "fixed" later.
+- ⚠️ Notification copy on the dashboard's alerts card is **server-rendered English** — the known DoD breach
+  in docs/06 §5.14, now visible on a second screen. It is not made worse here, but it is more visible.
+- ⚠️ The **app-shell bundle budget is now 149.9 KB of its 150 KB** (docs/07 §11). The design system costs
+  real bytes in the initial chunk — the icon registry is imported by `fm-icon`, which the shell uses, so
+  every path lands there. Unused icons were deleted to get back under it, and the next addition to the
+  registry should either split the lazy-chunk icons out or raise the budget **in docs/07 §11 with a
+  reason**, not silently.
+- ⚠️ Two round trips instead of one on the dashboard. The alternative — computing the month client-side —
+  is silently wrong for a Household in another timezone, which is the bug this ordering exists to avoid.
+- ⚠️ `FILTER_QUERY_KEYS` gained a member that a person types rather than a link generates. The screen's own
+  search box and the chrome's field write to two different things (local state versus the URL), so the
+  screen still does not write its filters back to the URL; a future change that makes it do so must
+  reconcile the two.
+
+**Alternatives rejected.**
+- **(a) Keep the light theme as a stylesheet-only branch** — it already was, and that is why nobody could
+  reach it. Rejected as a non-fix.
+- **(b) `prefers-color-scheme` alone, with no stored preference** — cheapest, and it removes the user's
+  ability to override their OS for one app, which is the single most-requested thing a dark mode does.
+- **(c) An icon package** (Lucide, Heroicons) — a dependency for ~40 glyphs whose shapes are on one grid;
+  ADR-004 requires an ADR for any new dependency, and the maintenance argument does not survive counting
+  the icons this app actually uses.
+- **(d) A charting library for the donut, the bars and the sparklines** — three components, ~250 lines
+  total, no interactivity beyond a tooltip; a charting dependency would add more code than it removes and
+  would carry its own colour decisions, which is the one thing the token layer must own.
+- **(e) Extend `DashboardModel` with the ratios the tiles need** — legitimate, and the reason it is not done
+  here is that `@finmate/domain` already owns exactly these two functions and the API's own calculators use
+  them. Adding a GraphQL field for `shareOfTotal(spent, budget)` would be a second implementation of a
+  function that exists.
+- **(f) Cache the panel payload too, for offline** — rejected by ADR-027's 4.2.8b amendment, and a cached
+  analysis is staler than safe-to-spend while driving no decision.
+- **(g) Keep the emoji icons and restyle around them** — they cannot inherit a colour or a stroke weight,
+  so the active nav state and the alert severities would stay platform-dependent. That is most of what the
+  reference's look is.
+
+---
+
 ## Part 2 — Risk register
 
 Scored as **Likelihood (L)** and **Impact (I)** on 1–5; **Exposure = L × I**. Anything ≥ 12 gets an
@@ -2563,6 +2698,7 @@ owner and a checkpoint in [09](09-implementation-plan.md).
 
 | **R-31** | **Reading a receipt on the node is slow enough to look broken** (ADR-037). Measured on this repository's machine (3 CPU cores, no GPU, `qwen2.5vl:3b`): one 46 KB receipt photograph did not finish inside 5 minutes, and a 768 px downscale took **4 m 18 s**. The documented budget is 20 s, so with the shipped default every local read is a timeout — the feature exists and is unusable, which is worse than absent if the UI does not say so | 4 | 3 | 12 | The screen reports the **reason** rather than spinning (4.1.6), `AI_OCR_TIMEOUT_MS` lets a local deployment size the budget to its hardware, the route is `LOCAL`-first so a slow read never becomes a cloud transfer, and the cloud EEA path is now genuinely configurable (`AI_OCR_PRIMARY=OPENAI_EU` + `AI_OCR_MODEL`, ADR-038's `CLOUD_OCR` consent) for anyone who wants a receipt in seconds. ⚠️ **Named residual**: the compiled-in local model is a *quality* default, not a *latency* one, and production sizing (GPU, more cores, or an EEA endpoint) is a deployment decision this task does not make for the operator |
 | **R-32** | **A cloud OCR route that is configured but unnamed looks live and fails at the first receipt.** `supportsOcr: true` with no model is precisely how OCR was dead in every deployment (ADR-037's context), and the same shape is reachable again by naming `AI_OCR_PRIMARY=OPENAI_EU` and forgetting `AI_OCR_MODEL` | 2 | 2 | 4 | `assembleAi` now asks the constructed adapter `supports(task)` before writing a route, so the task is **skipped with an actionable reason** in the boot log, the seam stays `UNCONFIGURED_OCR`, and `aiEgress` does not disclose a transfer that cannot happen. Asserted in `ai-providers.spec.ts` for both the cloud and the text-only-endpoint cases |
+| **R-33** | **The redesign restyles twenty screens at once through the token layer, and only two of them had a reference to check against.** A single token value or a shared primitive therefore changes every screen's appearance, and a regression on a screen nobody opened is invisible in the diff — the same shape as 4.3.1d's contrast defect, which shipped because nothing *rendered* the pair anybody had changed | 3 | 2 | 6 | The token pairs are measured by `styles.tokens.spec.ts` in **both** themes rather than eyeballed; the shell and the dashboard were captured at 320/768/1280 px in each theme and compared against the references; a screen can still be restyled without touching a primitive, because the primitives are global classes rather than encapsulated component styles. ⚠️ **Named, not closed**: `/analytics` and `/assistant` had still had no human pass at any width before this change, and the redesign does not fix that — it makes the standing gap in docs/02 §9 wider by changing what they look like | The human visual pass docs/02 §9 already schedules |
 
 ### Top five by exposure
 1. **R-01 onboarding cold-start (20)** — the single biggest threat, and the one the plan spends the most disproportionate effort on.

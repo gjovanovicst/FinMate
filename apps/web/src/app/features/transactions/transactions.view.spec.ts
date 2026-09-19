@@ -396,7 +396,14 @@ describe('the drill-through a link carries', () => {
     expect(filtersFromQuery({})).toEqual(emptyFilters());
   });
 
-  it('round-trips the six keys a drill-through can carry', () => {
+  it('reads the shell search field into the screen it navigates to', () => {
+    // ADR-039: the search box in the app chrome submits `?search=`, so this key is the whole contract
+    // between the two. Without it the field would be a control that looks like it works.
+    expect(filtersFromQuery({ search: 'lidl' }).search).toBe('lidl');
+    expect(hasActiveFilters(filtersFromQuery({ search: 'lidl' }))).toBe(true);
+  });
+
+  it('round-trips the seven keys a drill-through or the shell can carry', () => {
     const original = {
       from: '2026-09-01',
       to: '2026-09-30',
@@ -404,6 +411,7 @@ describe('the drill-through a link carries', () => {
       categoryId: 'c1',
       accountId: 'a1',
       needsReview: 'true',
+      search: 'lidl',
     };
     const parsed = new URLSearchParams(filterQueryString(original));
     const readBack: Record<string, string | null> = {};

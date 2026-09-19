@@ -6,9 +6,29 @@
     <title>FinMate</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <!-- Matches --color-bg so the browser chrome does not flash white on load. -->
-    <meta name="theme-color" content="#101014" />
+    <!-- Matches --color-bg in the dark theme; ThemeService rewrites it on every theme change. -->
+    <meta name="theme-color" content="#0a0e18" />
     <meta name="description" content="AI-first household budgeting." />
+    <!-- The theme is applied **before first paint**, not by the bundle: a signal-driven effect runs after
+         Angular boots, which is late enough for a dark-theme user to see a white flash on every load.
+         Four lines, no dependency, reading the same key and the same three values as
+         `core/theme/theme.view.ts`, with the same "no OS signal means dark" fallback. Wrapped so a
+         blocked storage cannot break the boot. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('fm.theme');
+          var followsSystem = stored !== 'light' && stored !== 'dark';
+          var dark = followsSystem
+            ? !window.matchMedia || !window.matchMedia('(prefers-color-scheme: light)').matches
+            : stored === 'dark';
+          document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        } catch (error) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
     <!-- The brand is written here, in the manifest and in the apple title because a static asset cannot
          read APP_NAME (docs/15). A rename is a find-and-replace over these plus one config value. -->
     <link rel="manifest" href="manifest.webmanifest" />

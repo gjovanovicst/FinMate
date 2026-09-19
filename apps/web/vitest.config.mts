@@ -31,5 +31,11 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.spec.ts'],
     passWithNoTests: true,
+    // CSS is not processed by default, because standing up a style pipeline for a suite that hardly
+    // imports any is wasted work. `styles.tokens.spec.ts` is the exception, and it is the reason this is
+    // a filter rather than `true`: it asserts the contrast of the design tokens **as written**, so it has
+    // to read `styles.css` itself — and an unprocessed CSS import resolves to an empty string, which made
+    // the first version of that spec pass zero tests against zero bytes.
+    css: { include: [/styles\.css/] },
   },
 });

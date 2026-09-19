@@ -28,6 +28,8 @@ initAngularTesting();
  */
 const FIGURES: DashboardFigures = {
   today: '2026-09-14',
+  periodStart: '2026-09-01',
+  periodEnd: '2026-09-30',
   daysElapsed: 14,
   daysInMonth: 30,
   safeToSpendToday: { amountMinor: '235000', currency: 'RSD' },

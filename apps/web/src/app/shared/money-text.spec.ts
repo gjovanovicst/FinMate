@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { moneyText, overrunText, toMajorString } from './money-text';
+import { moneyText, overrunText, overspendText, toMajorString } from './money-text';
 
 const rsd = (amountMinor: string) => ({ amountMinor, currency: 'RSD' });
 
@@ -34,6 +34,25 @@ describe('moneyText', () => {
   it('renders nothing when the value is absent, so no stray "0.00" implies a budget of zero', () => {
     expect(moneyText(null)).toBe('');
     expect(moneyText(undefined)).toBe('');
+  });
+});
+
+describe('overspendText', () => {
+  it('reports the magnitude of a negative available, which is what "over budget" means', () => {
+    // The bug this exists for: `available` is negative when the month is over, and `overrunText`'s own
+    // sign gate returns null for it — so the dashboard's over-budget line never rendered. Found by the
+    // visual pass with a month 9,4 M RSD over its available budget and no warning on screen.
+    expect(overspendText(rsd('-946112900'))).toBe('9461129.00 RSD');
+  });
+
+  it('is silent while the month is inside its available budget', () => {
+    expect(overspendText(rsd('1455000'))).toBeNull();
+    expect(overspendText(rsd('0'))).toBeNull();
+    expect(overspendText(null)).toBeNull();
+  });
+
+  it('never prints a minus sign: the direction is the sentence, not the number', () => {
+    expect(overspendText(rsd('-1'))).not.toContain('-');
   });
 });
 

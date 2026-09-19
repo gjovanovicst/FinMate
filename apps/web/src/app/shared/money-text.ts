@@ -48,3 +48,22 @@ export function overrunText(value: MoneyWire | null | undefined): string | null 
   if (minor <= 0n) return null;
   return `${domainMajorString(moneyFromWire(value))} ${value.currency}`;
 }
+
+/**
+ * The overspend as text, from a figure that is **negative when over budget**: `available`.
+ *
+ * The two signs are opposite and that is not a detail — `projectedOverrun` is positive when the month
+ * will overshoot, while `budget.safeToSpend`'s `available` is negative when it already has. Calling
+ * {@link overrunText} on `available` therefore returns `null` for exactly the case it is meant to
+ * report, which is how the dashboard shipped a hero whose "over budget" line never rendered: the value
+ * is negative, the helper's gate rejects it, and nothing appears. Found by the ADR-039 visual pass,
+ * which rendered a month 9,4 M RSD over its available budget with no warning on screen.
+ *
+ * The returned text is the **magnitude**, because "over budget by −9.461.129,00 RSD" is not a sentence.
+ */
+export function overspendText(value: MoneyWire | null | undefined): string | null {
+  if (!value) return null;
+  const minor = BigInt(value.amountMinor);
+  if (minor >= 0n) return null;
+  return `${domainMajorString({ amountMinor: -minor, currency: value.currency })} ${value.currency}`;
+}

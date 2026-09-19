@@ -550,6 +550,17 @@ Code-first GraphQL with custom scalars: most of these are registration problems 
   raw-envelope helper for exactly this. And the integration suite sees the same fact from the other side:
   it asserts the resolver **rejects** (task B-4c).
 
+- **`Money` is a GraphQL **scalar**, so a client must not select subfields — and the failure is at runtime,
+  not at compile time.** `total { amountMinor currency }` is a *validation* error: `Field "total" must not
+  have a selection since type "Money!" has no subfields`, and the query returns `errors` with no `data`. The
+  wire shape is still `{ amountMinor: "200000", currency: "RSD" }`, because the scalar serialises to that
+  object — which is exactly what makes the mistake natural to write. It reached a shipped screen in ADR-039:
+  the dashboard's panel query selected subfields, the whole round trip failed, and the screen showed "the
+  breakdowns need a connection" over six empty panels. `web:typecheck` cannot see a GraphQL document, and a
+  spec with a stubbed `GraphqlClient` asserts whatever the stub was told to return, so **only a run against
+  a real API catches it**. Write `total`, not `total { … }`, and when a screen's panels are empty while its
+  headline figures are fine, print the API's `errors` array before touching the component.
+
 ## 5. Domain: money, dates and Serbian input
 
 The rules the domain exists to keep (ADR-003, ADR-016, I-1, I-2).
@@ -1451,6 +1462,21 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   shorthand, which looks like a `template:` property, and then cheerfully reports zero strays on a file
   that has one. Two habits still worth having: describe an example in words (a bill such as septicka
   jama), and write CSS/HTML comment prose with no backticks at all.
+
+  **Six more times in ADR-039** — one `styles:` comment naming a CSS unit, one naming a pseudo-class, one
+  naming a CSS property, one quoting a class name, one naming a grid property and one naming a display
+  value — while a shell, seven primitives and a dashboard were written in one sitting. The cost that time
+  was not the parse error but the **silence**: with `nx run web:build` never run between edits, `ng serve`
+  kept serving the **last successful bundle**, so each of the six looked like a layout regression (a
+  clipped amount, a compact bar that would not pin) and was chased in CSS until the dev-server log was
+  read. Two rules follow. Run `nx run web:lint` after editing a template or style comment, and when a
+  change appears to have no effect at all, read the dev server's output before touching the CSS again.
+
+  **Guarded since ADR-039 by a test as well.** `apps/web/src/template-literal.spec.ts` scans every file
+  under `src` for a backtick inside a `template:`/`styles:` literal and fails with the path and line. It
+  is the same check as the lint rule, in the `test` target, which is the one people run without thinking
+  about it — the lint rule was already in place for all six of the ADR-039 offences, and none of them was
+  caught because `pnpm lint` was not run. A guard only counts if something runs it.
 
   **Guarded since 4.3.1.** `eslint.config.mjs` carries a local rule, `local/no-interpolation`, which
   errors on any `template:` or `styles:` literal containing an interpolation — precisely what the

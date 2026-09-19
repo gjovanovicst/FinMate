@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 
 import { I18nService } from '../../../core/i18n/i18n.service';
 import type { LocaleCode } from '../../../core/i18n/locales';
+import { IconComponent } from '../icon/icon.component';
 
 /**
  * Language switcher.
@@ -12,14 +13,19 @@ import type { LocaleCode } from '../../../core/i18n/locales';
  *
  * Option labels are written in their own language — a language list you cannot read is useless to
  * the person who needs it.
+ *
+ * The globe beside it is `fm-icon`, not the `🌐` emoji this shipped with: chrome must not depend on a
+ * platform's emoji font, which is the rule ADR-039 applied to the navigation (the emoji rendered as a
+ * blank box in this project's own headless captures).
  */
 @Component({
   selector: 'fm-language-switcher',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [IconComponent],
   template: `
     <label class="switcher">
       <span class="fm-visually-hidden">{{ i18n.t('app.language') }}</span>
-      <span class="switcher__globe" aria-hidden="true">🌐</span>
+      <span class="switcher__globe" aria-hidden="true"><fm-icon name="globe" [size]="16" /></span>
       <select
         class="switcher__select"
         [value]="i18n.locale()"
@@ -42,8 +48,9 @@ import type { LocaleCode } from '../../../core/i18n/locales';
         gap: var(--space-1);
       }
       .switcher__globe {
-        font-size: var(--text-sm);
-        line-height: 1;
+        display: inline-flex;
+        color: var(--color-text-subtle);
+        line-height: 0;
       }
       .switcher__select {
         /* Inherits the surrounding type so it sits comfortably in both the sidebar and the
