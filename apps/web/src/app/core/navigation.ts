@@ -37,6 +37,15 @@ export interface NavItem {
   readonly primary: boolean;
   /** The only badged slot (docs/02 §2.2). */
   readonly badged?: boolean;
+  /**
+   * Whether the active highlight must match the **whole** URL rather than its beginning.
+   *
+   * `routerLinkActive` defaults to a prefix match, which is what makes `/transactions` stay lit on
+   * `/transactions/:id`. It is wrong for the root for the same reason it is right everywhere else:
+   * `/` is a prefix of *every* URL, so the dashboard entry — **Overview** — was highlighted on all
+   * 16 destinations and carried `aria-current="page"` on each of them. Only that one entry sets this.
+   */
+  readonly exact?: boolean;
 }
 
 /**
@@ -46,7 +55,9 @@ export interface NavItem {
  * screen lives.
  */
 export const NAV_ITEMS: readonly NavItem[] = [
-  { path: '/', labelKey: 'nav.dashboard', icon: 'overview', primary: true },
+  // The root is the one destination whose path is a prefix of the others, so it is the one that
+  // asks for an exact match (see `NavItem.exact`).
+  { path: '/', labelKey: 'nav.dashboard', icon: 'overview', primary: true, exact: true },
   { path: '/transactions', labelKey: 'nav.transactions', icon: 'transactions', primary: true },
   { path: '/capture', labelKey: 'nav.capture', icon: 'capture', primary: true },
   { path: '/review', labelKey: 'nav.review', icon: 'review', primary: true, badged: true },

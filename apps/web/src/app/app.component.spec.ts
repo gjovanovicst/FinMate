@@ -73,8 +73,10 @@ async function mount(
     providers: [
       provideZonelessChangeDetection(),
       // The offline shell navigates to `/pending` (ADR-033); these two paths exist so that navigation
-      // resolves in the spec instead of rejecting as an unmatched URL.
+      // resolves in the spec instead of rejecting as an unmatched URL. The empty path stands in for the
+      // dashboard, so the active-state spec can sit on `/` as well as on a child destination.
       provideRouter([
+        { path: '', children: [] },
         { path: 'pending', children: [] },
         { path: 'transactions', children: [] },
       ]),
@@ -183,6 +185,13 @@ function primaryLinks(fixture: { nativeElement: unknown }): HTMLAnchorElement[] 
 function reviewLink(fixture: { nativeElement: unknown }): HTMLAnchorElement {
   const link = navLinks(fixture, 'a[href="/review"]')[0];
   if (!link) throw new Error('no review nav link');
+  return link;
+}
+
+/** One `nav__link` by its path, for the active-state assertions. */
+function navLink(fixture: { nativeElement: unknown }, href: string): HTMLAnchorElement {
+  const link = navLinks(fixture, `a.nav__link[href="${href}"]`)[0];
+  if (!link) throw new Error(`no nav link for ${href}`);
   return link;
 }
 
@@ -365,6 +374,28 @@ describe('AppComponent nav (mounted)', () => {
       // The receipt library closes the Biblioteka group (docs/02 §2.2).
       '/receipts',
     ]);
+  });
+
+  it('highlights only the destination the URL is actually on', async () => {
+    // The regression this exists for: the dashboard's path is `/`, and `routerLinkActive`
+    // prefix-matches by default — so `/` was a prefix of every URL and the Overview entry stayed lit,
+    // with `aria-current="page"`, on all 16 screens. Only the root asks for an exact match
+    // (`NavItem.exact`), because `/transactions` must keep highlighting itself on `/transactions/:id`.
+    const { fixture } = await mount(0);
+    const router = TestBed.inject(Router);
+
+    await router.navigateByUrl('/');
+    fixture.detectChanges();
+    expect(navLink(fixture, '/').classList).toContain('nav__link--active');
+    expect(navLink(fixture, '/transactions').classList).not.toContain('nav__link--active');
+
+    await router.navigateByUrl('/transactions');
+    fixture.detectChanges();
+    expect(navLink(fixture, '/transactions').classList).toContain('nav__link--active');
+    // Overview is off, and it is not announced as the current page either.
+    expect(navLink(fixture, '/').classList).not.toContain('nav__link--active');
+    expect(navLink(fixture, '/').getAttribute('aria-current')).toBeNull();
+    expect(navLink(fixture, '/transactions').getAttribute('aria-current')).toBe('page');
   });
 
   it('renders ONLY the lock screen while the app lock is locked', async () => {

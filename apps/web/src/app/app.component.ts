@@ -125,6 +125,7 @@ import { ThemeToggleComponent } from './shared/ui/theme-toggle/theme-toggle.comp
                       class="nav__more-link"
                       [routerLink]="item.path"
                       routerLinkActive="nav__link--active"
+                      [routerLinkActiveOptions]="{ exact: item.exact === true }"
                       (click)="moreOpen.set(false)"
                     >
                       <fm-icon [name]="item.icon" [size]="18" />
@@ -142,6 +143,7 @@ import { ThemeToggleComponent } from './shared/ui/theme-toggle/theme-toggle.comp
                     class="nav__link"
                     [routerLink]="item.path"
                     routerLinkActive="nav__link--active"
+                    [routerLinkActiveOptions]="{ exact: item.exact === true }"
                     #rla="routerLinkActive"
                     [attr.aria-current]="rla.isActive ? 'page' : null"
                     [attr.aria-label]="item.badged ? badgeName() : null"

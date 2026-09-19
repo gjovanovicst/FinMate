@@ -1805,6 +1805,17 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   the general rule and in that action's own description, because the per-action line is what a model
   attends to. Pin both (`route-prompt.spec.ts`), since no type, lint or eval gate reads prompt prose.
 
+- **`routerLinkActive` prefix-matches, so the shell's root link is active on every screen.** The dashboard's
+  destination is `/`, and `/` is a prefix of every URL, so the sidebar's **Overview** entry stayed
+  highlighted — and carried `aria-current="page"` — on all 16 destinations. It reads as a styling bug and
+  is an information bug: the nav tells a screen-reader user they are on Overview while they are on
+  `/analytics`. The prefix match is *right* for every other entry (it is what keeps `/transactions` lit on
+  `/transactions/:id`), so the fix is not a global `{ exact: true }` — it is `NavItem.exact`, set on the root
+  alone, and `[routerLinkActiveOptions]="{ exact: item.exact === true }"` on both the nav list and the More
+  panel so the two renderings cannot disagree. A nav entry added later whose path prefixes another
+  (`/receipts` over a future `/receipts/new`) needs the same field; `navigation.spec.ts` pins the set to
+  exactly `['/']`, and `app.component.spec.ts` navigates twice to prove both directions.
+
 ## 10. Cross-cutting rules of the codebase
 
 - **A live check that measures the wrong element lies in both directions.** Three times in 4.3.1 a

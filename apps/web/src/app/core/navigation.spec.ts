@@ -60,6 +60,14 @@ describe('navigation destinations', () => {
     expect(PRIMARY_ITEMS.length + OVERFLOW_ITEMS.length).toBe(NAV_ITEMS.length);
     expect(new Set(NAV_ITEMS.map((item) => item.path)).size).toBe(NAV_ITEMS.length);
   });
+
+  it('exact-matches only the root, because / is a prefix of every other path', () => {
+    // `routerLinkActive` prefix-matches by default, which is what keeps `/transactions` lit on
+    // `/transactions/:id`. The root is the exception: `/` prefixes every URL, so without this the
+    // dashboard entry stayed highlighted on all 16 destinations. No other path may ask for it, or a
+    // screen would stop highlighting itself on its own child routes.
+    expect(NAV_ITEMS.filter((item) => item.exact === true).map((item) => item.path)).toEqual(['/']);
+  });
 });
 
 describe('badgeText', () => {
