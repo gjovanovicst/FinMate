@@ -81,6 +81,16 @@ export const AUTH_STYLES = `
     color: var(--color-danger);
     font-size: var(--text-sm);
   }
+  /* The submit's progress state, in place of the form. Sign-in and sign-up navigate to a **lazy** route
+     on success, and the router keeps the component mounted until that route is ready — so the form was
+     the only thing on screen for the whole of the load with a disabled button as its only signal. */
+  .auth__progress {
+    margin: 0;
+    padding-block: var(--space-6);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    text-align: center;
+  }
   .auth__submit {
     padding: var(--space-3);
     font: inherit;

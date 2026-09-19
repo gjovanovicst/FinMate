@@ -26,46 +26,61 @@ import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from './password-policy';
       <h1 class="auth__title">{{ i18n.t('signUp.title') }}</h1>
       <p class="auth__hint">{{ i18n.t('signUp.intro') }}</p>
 
-      <form class="auth__form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
-        <label class="field">
-          <span class="field__label">{{ i18n.t('signUp.displayName') }}</span>
-          <input class="field__input" type="text" formControlName="displayName" autocomplete="name" required />
-        </label>
+      <!-- Same reason as sign-in: the destination is a lazy route, so the form is replaced for the whole
+           of the submit rather than left on screen while the dashboard's chunk loads. -->
+      @if (submitting()) {
+        <p class="auth__progress" role="status">{{ i18n.t('signUp.submitting') }}</p>
+      } @else {
+        <form class="auth__form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+          <label class="field">
+            <span class="field__label">{{ i18n.t('signUp.displayName') }}</span>
+            <input
+              class="field__input"
+              type="text"
+              formControlName="displayName"
+              autocomplete="name"
+              required
+            />
+          </label>
 
-        <label class="field">
-          <span class="field__label">{{ i18n.t('signUp.email') }}</span>
-          <input
-            class="field__input"
-            type="email"
-            formControlName="email"
-            autocomplete="username"
-            inputmode="email"
-            required
-          />
-        </label>
+          <label class="field">
+            <span class="field__label">{{ i18n.t('signUp.email') }}</span>
+            <input
+              class="field__input"
+              type="email"
+              formControlName="email"
+              autocomplete="username"
+              inputmode="email"
+              required
+            />
+          </label>
 
-        <label class="field">
-          <span class="field__label">{{ i18n.t('signUp.password') }}</span>
-          <input
-            class="field__input"
-            type="password"
-            formControlName="password"
-            autocomplete="new-password"
-            required
-          />
-          <span class="field__hint">{{ i18n.t('signUp.passwordHint', { min: minLength }) }}</span>
-        </label>
+          <label class="field">
+            <span class="field__label">{{ i18n.t('signUp.password') }}</span>
+            <input
+              class="field__input"
+              type="password"
+              formControlName="password"
+              autocomplete="new-password"
+              required
+            />
+            <span class="field__hint">{{ i18n.t('signUp.passwordHint', { min: minLength }) }}</span>
+          </label>
 
-        @if (error()) {
-          <p class="auth__error" role="alert">{{ error() }}</p>
-        }
+          @if (error()) {
+            <p class="auth__error" role="alert">{{ error() }}</p>
+          }
 
-        <button class="auth__submit" type="submit" [disabled]="submitting()">
-          {{ submitting() ? i18n.t('signUp.submitting') : i18n.t('signUp.submit') }}
-        </button>
-      </form>
+          <button class="auth__submit" type="submit" [disabled]="submitting()">
+            {{ submitting() ? i18n.t('signUp.submitting') : i18n.t('signUp.submit') }}
+          </button>
+        </form>
 
-      <p class="auth__alt">{{ i18n.t('signUp.haveAccount') }} <a routerLink="/sign-in">{{ i18n.t('signUp.signIn') }}</a></p>
+        <p class="auth__alt">
+          {{ i18n.t('signUp.haveAccount') }}
+          <a routerLink="/sign-in">{{ i18n.t('signUp.signIn') }}</a>
+        </p>
+      }
     </section>
   `,
   styles: [AUTH_STYLES],

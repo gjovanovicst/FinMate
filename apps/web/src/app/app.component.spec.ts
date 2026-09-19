@@ -62,23 +62,36 @@ async function mount(
   installKind: InstallPromptKind | null = null,
 ): Promise<{
   fixture: ReturnType<typeof TestBed.createComponent<AppComponent>>;
+  /**
+   * The stub store's own signals, writable so a test can end a session **in place** — which is what
+   * sign-out does, and what the shell's redirect reacts to.
+   */
+  sessionFailure: ReturnType<typeof signal<'UNREACHABLE' | 'REFUSED' | 'SIGNED_OUT' | null>>;
+  authenticated: ReturnType<typeof signal<boolean>>;
 }> {
   const query = vi.fn((document: string) => {
     if (document.includes('ReviewQueueCount')) return Promise.resolve({ reviewQueueCount: count });
     return Promise.reject(new Error(`unexpected document: ${document.slice(0, 60)}`));
   });
 
+  // The stub's session state lives in signals a test can move: `restoreFailure` is how the shell learns
+  // that the *user* ended the session, and it has to be settable after mount to reproduce that.
+  const sessionFailure = signal<'UNREACHABLE' | 'REFUSED' | 'SIGNED_OUT' | null>(restoreFailure);
+  const authenticated = signal(restoreFailure === null);
+
   TestBed.configureTestingModule({
     imports: [AppComponent],
     providers: [
       provideZonelessChangeDetection(),
-      // The offline shell navigates to `/pending` (ADR-033); these paths exist so that navigation
-      // resolves in the spec instead of rejecting as an unmatched URL. The empty path stands in for the
-      // dashboard, so the active-state specs can sit on `/` as well as on a child destination.
+      // The offline shell navigates to `/pending` (ADR-033) and sign-out navigates to `/sign-in`; these
+      // paths exist so that navigation resolves in the spec instead of rejecting as an unmatched URL.
+      // The empty path stands in for the dashboard, so the active-state specs can sit on `/` as well as
+      // on a child destination.
       provideRouter([
         { path: '', children: [] },
         { path: 'pending', children: [] },
         { path: 'settings', children: [] },
+        { path: 'sign-in', children: [] },
         { path: 'transactions', children: [] },
       ]),
       // The shell renders `fm-app-update` (ADR-024), which injects `SwUpdate`. A stub keeps this spec
@@ -133,10 +146,10 @@ async function mount(
       {
         provide: AuthStore,
         useValue: {
-          isAuthenticated: signal(restoreFailure === null),
+          isAuthenticated: authenticated,
           role: signal(SESSION.role),
           session: signal(restoreFailure === null ? SESSION : null),
-          restoreFailure: signal(restoreFailure),
+          restoreFailure: sessionFailure,
           signOut: vi.fn(),
         },
       },
@@ -168,7 +181,7 @@ async function mount(
   const fixture = TestBed.createComponent(AppComponent);
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture };
+  return { fixture, sessionFailure, authenticated };
 }
 
 function navLinks(fixture: { nativeElement: unknown }, selector: string): HTMLAnchorElement[] {
@@ -420,6 +433,43 @@ describe('AppComponent nav (mounted)', () => {
     expect(settings?.getAttribute('aria-current')).toBe('page');
     // The route is `/settings`, not a prefix of another destination, so no nav row lights up with it.
     expect(navLink(fixture, '/').classList).not.toContain('nav__link--active');
+  });
+
+  it('moves to the login form when the session ends in place', async () => {
+    // The regression this exists for: sign-out only cleared the session. The guards run on *navigation*,
+    // so the route the person was on stayed mounted with its chrome gone — they were left looking at the
+    // ledger (or whatever screen) they had just signed out of, instead of at the login form. `SIGNED_OUT`
+    // is the trigger, which is what both Sign-out controls set and nothing else does.
+    const { fixture, sessionFailure, authenticated } = await mount(0);
+    const router = TestBed.inject(Router);
+
+    await router.navigateByUrl('/transactions');
+    fixture.detectChanges();
+    expect(router.url).toBe('/transactions');
+
+    // What `AuthStore.signOut()` does to the store, in the order it does it.
+    authenticated.set(false);
+    sessionFailure.set('SIGNED_OUT');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+
+    expect(router.url).toBe('/sign-in');
+  });
+
+  it('leaves a page-load failure to the guards, not to the sign-out redirect', async () => {
+    // A refused restore is not the user ending anything: the guards already own where a signed-out
+    // visitor belongs, and the wildcard route deliberately redirects nobody (docs/02 §2). Starting at
+    // `/` keeps this explicit — the redirect must come from the guard, not from the shell's effect.
+    const { fixture, sessionFailure, authenticated } = await mount(0);
+    const router = TestBed.inject(Router);
+
+    await router.navigateByUrl('/');
+    authenticated.set(false);
+    sessionFailure.set('REFUSED');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+
+    expect(router.url).toBe('/');
   });
 
   it('renders ONLY the lock screen while the app lock is locked', async () => {

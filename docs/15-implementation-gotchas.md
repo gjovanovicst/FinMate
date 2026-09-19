@@ -1827,6 +1827,30 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   user gets no current-page signal for it either. `app.component.spec.ts` asserts the footer entry both
   before and after navigating to `/settings`.
 
+- **The router keeps the outgoing screen mounted until the incoming one is ready, so a form stays on
+  screen through a lazy load.** Sign-in succeeded, then `router.navigateByUrl('/')` — and because `/` is a
+  lazy route behind `onboardingGuard`, which may fetch — the login form was the only thing on screen for
+  the whole load, with a disabled button as its only signal that anything was happening. Angular does not
+  render a blank in between: the current component stays up until the new route activates. The fix is to
+  treat the submit as covering the **navigation** as well as the request (`submitting` already spans both)
+  and swap the form for a `role="status"` line, which returns only if the submit fails. ⚠️ No test can see
+  the timing — jsdom has no chunk boundary — so a spec has to assert the *state* ("the form is gone while
+  `submitting`") and leave the duration to a live pass. Sign-up navigates to the same lazy route and needs
+  the same shape; a fix applied to one of two copies is how the two drift.
+
+- **A guard runs on navigation, not when the state it reads changes.** Clearing the session in place left
+  the last screen mounted with its chrome gone: after Sign out the person was still looking at the ledger
+  they had just signed out of, and the lock screen's own Sign out did the same. No guard can fix that,
+  because no navigation happens — the shell itself has to react. It watches
+  `restoreFailure() === 'SIGNED_OUT'`, which is set by the user's own sign-out and nothing else, and
+  navigates to `/sign-in`. The trigger is deliberately **not** "no session": a page load that never had one
+  is the guards' business — including the wildcard route, which redirects nobody — and a `401` self-heals on
+  the next navigation, which is a different decision. ⚠️ One ordering trap found while fixing it:
+  `anonymousGuard` calls `restore()` unconditionally on `/sign-in`, so navigating there after a sign-out
+  re-asked the server; **offline** that answered `UNREACHABLE`, flipping the reason and reopening the
+  offline shell (and the queue) — the exact thing ADR-033's `SIGNED_OUT` arm exists to prevent. `restore()`
+  now returns early for `SIGNED_OUT`, so the user's choice stays final for the page load.
+
 ## 10. Cross-cutting rules of the codebase
 
 - **A live check that measures the wrong element lies in both directions.** Three times in 4.3.1 a

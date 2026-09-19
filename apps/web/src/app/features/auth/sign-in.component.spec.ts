@@ -60,4 +60,30 @@ describe('SignInComponent', () => {
 
     expect(screen.text()).toContain('Incorrect email or password');
   });
+
+  it('replaces the form while the sign-in and the navigation are in flight', async () => {
+    // The dashboard is a lazy route and the router keeps this component mounted until its chunk and
+    // guards are ready — so the form used to sit on screen for the whole load, with a disabled button as
+    // its only signal. `submitting` spans the credentials call *and* `navigateByUrl`, so the form is gone
+    // for both.
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const screen = await mount({ signIn: vi.fn(() => pending) });
+
+    screen.component.form.setValue({ email: 'someone@example.test', password: 'correct-horse' });
+    const submitting = screen.component.submit();
+    screen.fixture.detectChanges();
+
+    expect(screen.root.querySelector('form')).toBeNull();
+    expect(screen.root.querySelectorAll('input')).toHaveLength(0);
+    // Announced rather than silent, and drawn in the form's own place.
+    expect(screen.root.querySelector('[role="status"]')?.textContent).toContain('Signing in');
+    // The way out to sign-up goes with the form: it is a navigation away from a submit in flight.
+    expect(screen.root.querySelector('a[href="/sign-up"]')).toBeNull();
+
+    release();
+    await submitting;
+  });
 });

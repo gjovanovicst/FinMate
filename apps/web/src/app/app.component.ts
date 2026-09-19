@@ -33,6 +33,16 @@ import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
 import { ThemeToggleComponent } from './shared/ui/theme-toggle/theme-toggle.component';
 
 /**
+ * The routes a signed-out visitor belongs on (docs/02 §2), as paths.
+ *
+ * Read by the shell's sign-out redirect: a session the user ended moves to `/sign-in`, but only when it
+ * is not already on one of these. `/reset-password` and `/verify-email` are in the list because they are
+ * deliberately reachable while signed in — a person who clicks the emailed link is exactly who is signed
+ * in — so a reset that clears the session must not have its own screen navigated out from under it.
+ */
+const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password', '/verify-email'];
+
+/**
  * The application shell: brand, navigation, search, account and a content outlet.
  *
  * **One component, two layouts** (docs/07 §3). The navigation is the same data rendered differently by
@@ -978,6 +988,20 @@ export class AppComponent {
       const path = this.url();
       if (path.startsWith('/pending') || path.startsWith('/transactions')) return;
       void this.router.navigateByUrl('/pending');
+    });
+
+    // A session the **user** ended must take the screen with it. The guards run on *navigation*, never on
+    // a state change, so clearing the session in place left the last screen mounted with its chrome gone:
+    // after Sign out the person was looking at the ledger they had just left, and the lock screen's own
+    // Sign out did the same. `SIGNED_OUT` is the trigger rather than "no session", because it is set by
+    // those two actions alone — a page load that never had a session is the guards' business (including
+    // the "not found" route, which deliberately redirects nobody), and a 401 self-heals on the next
+    // navigation, which is a different decision from this one.
+    effect(() => {
+      if (this.auth.restoreFailure() !== 'SIGNED_OUT') return;
+      if (this.isAuthenticated()) return;
+      if (AUTH_PATHS.some((path) => this.url().startsWith(path))) return;
+      void this.router.navigateByUrl('/sign-in');
     });
 
     // Idle tracking (docs/08 §3.9's five minutes). Activity is noted on the events a person actually

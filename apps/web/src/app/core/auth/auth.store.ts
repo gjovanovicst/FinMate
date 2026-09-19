@@ -132,6 +132,13 @@ export class AuthStore {
    * need to tell "nothing answered" from "the server said no" (ADR-033).
    */
   async restore(): Promise<void> {
+    // A session the **user** ended is not re-attempted. ADR-033 makes that choice final for the page
+    // load, and `anonymousGuard` calls this unconditionally on `/sign-in` — which is where sign-out now
+    // navigates — so without this guard an offline sign-out would answer `UNREACHABLE`, flip
+    // `restoreFailure` back and put the person in the offline shell (with the queue they just left)
+    // instead of on the login form.
+    if (this.restoreFailureSignal() === 'SIGNED_OUT') return;
+
     try {
       const tokens = await firstValueFrom(
         this.http.post<AuthTokensResponse>('/api/auth/refresh', {}),
