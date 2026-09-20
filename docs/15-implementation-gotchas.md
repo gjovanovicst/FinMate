@@ -1267,6 +1267,21 @@ The tables hold platform content beside the Household’s own rows, which is whe
   `var(--…)` in the component sources and fails on one the token layer does not declare. **Write the
   fallback only when you mean it** — a fallback is a claim that the token is optional.
 
+- **The control that seeds a fresh Household's category tree was disabled until the tree existed.** On a
+  real signup `onboardingState.categories` is `0` — signup seeds nothing and `/categories` is empty — and
+  onboarding step 1's Continue was gated on exactly that count (`canContinue`'s `case 'categories'`), so
+  the button whose whole job is to call `seedStarterCategories` could never be pressed. *Skip* is the
+  only other control and it does not seed (docs/02 §4.1: an empty tree), so a Household that finished the
+  wizard had **no categories at all** and the keyword rung had nothing to match — `Lidl 2000` was
+  uncategorisable, which is the product promise. It survived from 2.3.3b because every verification path
+  — the demo Household, `db:seed`, `run-evals.ts` — writes the tree directly (or calls
+  `seedStarterCategories`) and never walks the wizard, and the mounted spec asserted the deadlock by
+  reporting the tree as already seeded (`component_treeSeeded`, since removed). The gate now reads the
+  **preview's** count as well (`tree().categories`, the shipped document) — what pressing Continue would
+  write. **When one write is the only way a precondition can become true, the gate must not read that
+  precondition**, and a cold-start claim has to be verified through a fresh signup rather than a fixture
+  that pre-satisfies it.
+
 ## 9. Web UI, templates and i18n
 
 - **A spec that uses `TestBed` needs BOTH `// @vitest-environment jsdom` as its first line AND

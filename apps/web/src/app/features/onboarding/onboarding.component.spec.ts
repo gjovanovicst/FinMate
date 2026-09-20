@@ -197,19 +197,18 @@ describe('OnboardingComponent (mounted)', () => {
     expect(text(fixture)).not.toContain('Supermarket');
   });
 
-  it('disables Continue on step 1 until the tree exists, because Continue is what writes it', async () => {
+  it('enables Continue on step 1 for a fresh Household, because Continue is what writes the tree', async () => {
+    // The server reports zero categories for a Household that has never seeded, which is the state
+    // every real signup starts in. Continue is the control that writes them (docs/02 §4.1), so it
+    // must be live — the regression this guards disabled it until the tree existed, which a fresh
+    // Household could never reach, leaving Skip (which does not seed) as the only way forward.
     const { fixture, component } = await mount();
-    expect(buttonByText(fixture, 'Continue').disabled).toBe(true);
-
-    // The gate is the pure decision, so assert it directly too: with no tree there is nothing to write.
-    expect(component.canContinue()).toBe(false);
+    expect(buttonByText(fixture, 'Continue').disabled).toBe(false);
+    expect(component.canContinue()).toBe(true);
   });
 
   it('writes the tree on Continue, then advances', async () => {
     const { fixture, stub } = await mount();
-    // The server reports a tree after seeding, which is what re-enables Continue in a real run.
-    component_treeSeeded(fixture);
-    fixture.detectChanges();
 
     buttonByText(fixture, 'Continue').click();
     await fixture.whenStable();
@@ -487,9 +486,3 @@ describe('OnboardingComponent (mounted)', () => {
     expect(sent(stub, 'SetOnboardingStep')).toBe(0);
   });
 });
-
-/** Drive the component to a state where the tree exists, as the server would report after seeding. */
-function component_treeSeeded(fixture: { componentInstance: OnboardingComponent }): void {
-  const component = fixture.componentInstance as unknown as { categoryCount: { set(value: number): void } };
-  component.categoryCount.set(39);
-}
