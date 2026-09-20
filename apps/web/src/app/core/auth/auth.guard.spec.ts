@@ -5,7 +5,7 @@
 import { initAngularTesting } from '@web-test/angular-testing';
 
 import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { Router, type ActivatedRouteSnapshot, type RouterStateSnapshot } from '@angular/router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AppLockService } from '../app-lock/app-lock.service';
@@ -56,8 +56,11 @@ async function run(options: {
     ],
   });
 
+  // Both arguments, because `CanActivateFn` is a two-argument type and the guard keeps its arity even
+  // though it no longer reads the route (ADR-033 amended: every route is admitted). Passing none is a
+  // `TS2554`, and an empty implementation is what made CodeQL call these arguments superfluous.
   const result = await TestBed.runInInjectionContext(() =>
-    authenticatedGuard(),
+    authenticatedGuard({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot),
   );
   return { restore, result };
 }

@@ -320,6 +320,18 @@ Everything here has cost time at least once, and most of it fails in a way that 
   dependencies of X … in the Y module"*. Found while chasing the CI failure above; the diagnosis cost
   more than the fix.
 
+- **A CodeQL autofix can satisfy the alert and break the compiler, because it reads the *implementation's*
+  parameter list rather than the function's declared type.** `authenticatedGuard` is a `CanActivateFn`
+  (`(route, state) => …`), so every call site must pass two arguments — but its implementation had become
+  `async () => {…}` after the guard stopped reading `route` (ADR-033's amendment). CodeQL's
+  *"Superfluous trailing arguments"* fired against the zero-parameter callee, GitHub's Copilot Autofix
+  dutifully deleted the two arguments from the **spec**, and `web:typecheck` went red with
+  `TS2554: Expected 2 arguments, but got 0` — a green-looking autofix commit that fails CI. The fix is to
+  give the implementation its arity back (`async (_route, _state) => {…}`), not to strip the call: the
+  signature is what makes the arguments real, and `_` keeps `noUnusedParameters` and
+  `@typescript-eslint/no-unused-vars` (`argsIgnorePattern: '^_'`) quiet. **Read what an autofix changed
+  before accepting it — and when a typed function is left with no parameters, that is the smell.**
+
 ## 2. Prisma and the database
 
 Prisma 7 plus a tenancy extension plus hand-written SQL means the driver is not the only thing deciding what a query does.

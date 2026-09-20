@@ -18,8 +18,16 @@ import { AuthStore } from './auth.store';
  * state. What the unlock does **not** authorise is a session: `isAuthenticated()` stays false and
  * nothing is sent (ADR-033 decision 4), so a revoked session is never kept alive on the device.
  * A session the server actually refused still goes to `/sign-in`.
+ *
+ * **The two parameters are deliberately unused and deliberately present.** This guard stopped reading
+ * `route` when the `data: { offline: true }` allow-list was removed, and the implementation was left as
+ * `async () => {…}`. `CanActivateFn` still declares `(route, state)`, so every call site must pass two
+ * arguments — and a callee that accepts none makes those arguments *superfluous* to CodeQL, which then
+ * "fixed" the spec by deleting them and broke `web:typecheck` (`TS2554: Expected 2 arguments, but got
+ * 0`). Keeping the arity is what makes the signature true; the leading underscore is what keeps
+ * `noUnusedParameters` and `@typescript-eslint/no-unused-vars` quiet.
  */
-export const authenticatedGuard: CanActivateFn = async () => {
+export const authenticatedGuard: CanActivateFn = async (_route, _state) => {
   const auth = inject(AuthStore);
   const router = inject(Router);
   const lock = inject(AppLockService);
