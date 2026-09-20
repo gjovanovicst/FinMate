@@ -41,7 +41,16 @@ describe('the worker (integration)', () => {
   beforeAll(async () => {
     // Booting the same way the process boots is the point: a provider the worker's module graph cannot
     // resolve fails here, which is exactly the risk ADR-022 records.
-    app = await NestFactory.createApplicationContext(WorkerModule, { logger: false });
+    //
+    // `abortOnError: false` is what makes that failure **readable**. It defaults to true, and Nest then
+    // answers an unresolvable provider with `process.abort()` — a native stack trace, no message, and a
+    // worker the pool reports only as "Channel closed". CI failed exactly that way and the cause had to
+    // be recovered by hand (docs/15). With it false, the failure throws the readable
+    // "Nest can't resolve dependencies of X" error naming the module.
+    app = await NestFactory.createApplicationContext(WorkerModule, {
+      logger: false,
+      abortOnError: false,
+    });
     prisma = app.get(PrismaService);
 
     const stamp = Date.now();

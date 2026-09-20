@@ -2976,6 +2976,43 @@ desktop browser, a screen reader, and any app that only offers manual entry. The
 
 ---
 
+### ADR-043 — Peer-dependent packages are deduplicated across the workspace, because the worker boots the API's source
+
+**Status:** Accepted
+
+**Context.** `apps/worker` boots the API's own feature modules (**ADR-022**), so a single process loads
+files resolved from `apps/worker/node_modules` *and* files resolved from `apps/api/node_modules`. pnpm
+resolves peer dependencies **per importer**, and the two apps' Nest chains differed (each had its own
+`@nestjs/platform-express` instance), so `@nestjs/core` existed as **two physical copies**. Nest compares
+injected tokens by **class identity**, so the API's `AuthenticatedGuard` — whose `design:paramtypes`
+pointed at the API's `Reflector` — could not be constructed by the worker's container, which provided its
+own. `nx run worker:serve` failed with *"Nest can't resolve dependencies of the AuthenticatedGuard (?) …
+available in the FilesModule module"*, and CI showed only a native stack trace because Nest answers an
+unresolvable provider with `process.abort()` (docs/15). This is the classic singleton-under-peer-resolution
+hazard: correct for a hoisted `node_modules`, broken by an isolated one.
+
+**Decision.** Set **`dedupePeers: true`** in `pnpm-workspace.yaml` (pnpm 10.33+, which collapses nested
+peer suffixes to version-only identifiers), and commit the resulting `pnpm-lock.yaml` — CI installs with
+`--frozen-lockfile`, so the resolution is part of the build, not a local accident. These settings live in
+`pnpm-workspace.yaml`, **not** `.npmrc`, under pnpm 11. Verified by class identity rather than by
+inspection: `Reflect.getMetadata('design:paramtypes', AuthenticatedGuard)[0] === Reflector` went from
+`false` to `true`, the worker's 6 integration tests pass, and `worker:serve` boots and stays up.
+
+**Consequences.**
+
+- ✅ One `@nestjs/core`, `@nestjs/common` and `@nestjs/platform-express` per project, so DI works across
+  the project boundary ADR-022 deliberately creates.
+- ✅ The same setting protects the next peer-dependent singleton a workspace-imported package needs.
+- ⚠️ A lockfile-wide change (693 lines) from the suffix format alone; nothing else re-resolved, and the
+  full suite, lint, typecheck, bundle budgets and the eval gates were re-run uncached after it.
+- ⚠️ Two stale copies remain in the store's `.pnpm` directory from the previous resolution. They are
+  unreferenced; `pnpm install` prunes them on the next lockfile change.
+- ⚠️ **The lesson generalises**: anything a project imports *across* project boundaries that resolves
+  peers must not be peer-duplicated. `dedupePeers` is the workspace-wide answer; a test that boots the
+  composed graph — as the worker's does — is what catches the next one.
+
+---
+
 ## Part 2 — Risk register
 
 Scored as **Likelihood (L)** and **Impact (I)** on 1–5; **Exposure = L × I**. Anything ≥ 12 gets an

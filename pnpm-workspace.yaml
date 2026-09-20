@@ -25,3 +25,16 @@ allowBuilds:
   '@apollo/protobufjs': true
   lmdb: true
   msgpackr-extract: true
+
+# One instance of a peer-dependent package per workspace, not one per resolution path.
+#
+# `@nestjs/core` had resolved to **two** physical copies: apps/api and apps/worker each got their own
+# `@nestjs/platform-express` chain, so each got its own core. That is fatal for Nest's DI, which
+# compares injected tokens by class identity — and the worker loads the API's source through the
+# module graph on purpose (ADR-022), so one process holds both copies. Its guards inject `Reflector`,
+# and `AuthenticatedGuard`'s constructor metadata pointed at the API's copy while the worker's
+# container provided its own: the worker failed to boot with "Nest can't resolve dependencies of the
+# AuthenticatedGuard (?) ... in the FilesModule module" — and Nest answers that with `process.abort()`,
+# so CI showed only a native stack trace. `dedupePeers` (pnpm 10.33+) collapses the nested peer
+# suffixes (`..._@nestjs+core@12.0.1`) that produced the second instance.
+dedupePeers: true

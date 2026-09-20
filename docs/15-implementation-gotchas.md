@@ -287,6 +287,39 @@ Everything here has cost time at least once, and most of it fails in a way that 
   `ng serve --poll <ms>` is for; here the tree is inside the Linux filesystem, so a poll interval costs
   latency for nothing.
 
+- **A workspace project that consumes another project's source can hold two copies of a package that
+  must be a singleton, and Nest's DI is where it explodes.** `apps/worker` boots the API's feature
+  modules by design (ADR-022), so one process contains files resolved from `apps/worker/node_modules`
+  **and** files resolved from `apps/api/node_modules`. pnpm resolves peers per importer, so
+  `@nestjs/core` existed as two physical copies — each app had its own `@nestjs/platform-express`
+  chain — and Nest compares injected tokens **by class identity**. The API's `AuthenticatedGuard`
+  injects `Reflector`; its `design:paramtypes` pointed at the API's `Reflector` while the worker's
+  container provided its own, so the worker died with *"Nest can't resolve dependencies of the
+  AuthenticatedGuard (?) … available in the FilesModule module"*. Measured directly in a Vitest probe:
+  `Reflect.getMetadata('design:paramtypes', AuthenticatedGuard)[0] === Reflector` was **false**, and
+  `import.meta.resolve('@nestjs/core')` named the worker's copy. Two ways to see it without a test:
+  `ls -d node_modules/.pnpm/@nestjs+core@*` (two+ hashes) and `readlink -f apps/*/node_modules/@nestjs/core`
+  (different store paths). This is **not** test-only — `nx run worker:serve` failed the same way, so the
+  scheduled worker was broken, not just its spec. ⚠️ **The fix is `dedupePeers: true` in
+  `pnpm-workspace.yaml`** (pnpm 10.33+; note that pnpm 11 reads most settings there, not `.npmrc` —
+  `resolvePeersFromWorkspaceRoot` is already `true` by default, so adding it changes nothing). It
+  collapses the nested peer suffixes (`..._@nestjs+core@12.0.1`) that produced the second instance; it
+  is a lockfile-wide change (693 lines) and must be committed with the lockfile, because CI installs
+  `--frozen-lockfile`. Rule of thumb: **anything a workspace imports across project boundaries that
+  resolves peers must not be peer-duplicated** — Nest, React, and any DI container are the usual
+  suspects.
+
+- **A Nest boot failure in a test is unreadable by default, because Nest answers it with
+  `process.abort()`.** `NestFactory.createApplicationContext` (and `create`) take `abortOnError`, which
+  defaults to **true**: when a provider cannot be resolved, `handleInitializationError` calls
+  `process.abort()` instead of throwing. The worker spec passed `{ logger: false }` — so the error was
+  never logged either — and CI showed only `----- Native stack trace -----`, two addresses, and vitest's
+  `Error: Channel closed` from the dead pool worker. Nothing named the module or the provider. Pass
+  `{ logger: false, abortOnError: false }` in specs (it is a public option on
+  `NestApplicationContextOptions`), and the same failure throws the readable *"Nest can't resolve
+  dependencies of X … in the Y module"*. Found while chasing the CI failure above; the diagnosis cost
+  more than the fix.
+
 ## 2. Prisma and the database
 
 Prisma 7 plus a tenancy extension plus hand-written SQL means the driver is not the only thing deciding what a query does.
