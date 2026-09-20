@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  IDLE_LOCK_DEVICE_MS,
   IDLE_LOCK_MS,
+  idleLockMs,
   isValidPin,
   isGated,
   lockFailureKey,
@@ -61,6 +63,17 @@ describe('app lock policy', () => {
   it('does not lock an app that has not been touched since it was opened', () => {
     // `null` is "just unlocked", which is not idleness: locking immediately would be a loop.
     expect(shouldLockOnIdle(null, 9_999_999)).toBe(false);
+  });
+
+  it('gives the device-armed lock a longer idle window than the PIN one', () => {
+    // ADR-029's amendment: the idle rule protects an unattended session, and a platform authenticator
+    // already refuses the next person to pick the device up. Five minutes of reading a page re-prompting
+    // is what made people turn the lock off — which loses the durability the queue needs.
+    expect(idleLockMs('PIN')).toBe(IDLE_LOCK_MS);
+    expect(idleLockMs('WEBAUTHN')).toBe(IDLE_LOCK_DEVICE_MS);
+    expect(IDLE_LOCK_DEVICE_MS).toBeGreaterThan(IDLE_LOCK_MS);
+    // No lock configured: the strict window is the safe default, and it is never consulted in this state.
+    expect(idleLockMs(null)).toBe(IDLE_LOCK_MS);
   });
 
   it('gives every state and every failure a sentence', () => {

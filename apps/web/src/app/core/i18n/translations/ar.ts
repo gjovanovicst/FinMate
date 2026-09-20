@@ -420,6 +420,9 @@ export const ar: Record<keyof typeof en, string> = {
   'settings.security.title': "قفل التطبيق",
   'settings.security.why': "مع تفعيل قفل التطبيق، تبقى القيود التي تسجّلها دون اتصال بعد إغلاق التطبيق. كما يحفظ ما هو مخزَّن مشفَّرًا بقفل جهازك أو برمز PIN.",
   'settings.security.withDevice': "استخدام قفل هذا الجهاز",
+  'settings.security.deviceHint':
+    "لمسة واحدة ببصمتك أو وجهك أو رمز الجهاز — وتبقى بياناتك المحفوظة مشفَّرة على هذا الجهاز. يسأل التطبيق مرة أخرى بعد ساعة من عدم النشاط، لا كل بضع دقائق.",
+  'settings.security.usePinInstead': "استخدام رمز PIN بدلًا من ذلك",
   'settings.security.withPin': "استخدام رمز PIN",
   'settings.security.pinLabel': "اختر رمز PIN من 6 أرقام",
   'settings.security.pinHint': "يمكن لمن يملك الهاتف والوقت تخمين رمز PIN من 6 أرقام. وقفل الجهاز هو الخيار الأقوى.",

@@ -191,27 +191,39 @@ import { TotpQrComponent } from '../../shared/ui/totp-qr/totp-qr.component';
           >
             {{ i18n.t('settings.security.withDevice') }}
           </button>
+          <p class="muted small">{{ i18n.t('settings.security.deviceHint') }}</p>
         }
 
-        <form class="pin" (submit)="armWithPin($event)">
-          <label class="fm-field__label" for="new-pin">
-            {{ i18n.t('settings.security.pinLabel') }}
-          </label>
-          <input
-            class="fm-field__input pin__input"
-            id="new-pin"
-            type="password"
-            inputmode="numeric"
-            autocomplete="new-password"
-            maxlength="6"
-            [value]="pin()"
-            (input)="setPin($event)"
-          />
-          <button type="submit" class="fm-btn fm-btn--primary" [disabled]="lock.busy() || !isValidPin(pin())">
-            {{ i18n.t('settings.security.withPin') }}
+        <!-- The PIN is the **fallback** docs/08 §3.9 names, and the card reads as one: with a platform
+             authenticator available it sits behind a disclosure, so the stronger tap-only path is what is
+             offered. Without one it is the only path and shows directly. Both arm exactly the same lock —
+             what changes is how often the person is asked, which is why the idle window follows the
+             method (ADR-029's amendment). -->
+        @if (!lock.webauthnPossible || pinOpen()) {
+          <form class="pin" (submit)="armWithPin($event)">
+            <label class="fm-field__label" for="new-pin">
+              {{ i18n.t('settings.security.pinLabel') }}
+            </label>
+            <input
+              class="fm-field__input pin__input"
+              id="new-pin"
+              type="password"
+              inputmode="numeric"
+              autocomplete="new-password"
+              maxlength="6"
+              [value]="pin()"
+              (input)="setPin($event)"
+            />
+            <button type="submit" class="fm-btn fm-btn--primary" [disabled]="lock.busy() || !isValidPin(pin())">
+              {{ i18n.t('settings.security.withPin') }}
+            </button>
+          </form>
+          <p class="muted small">{{ i18n.t('settings.security.pinHint') }}</p>
+        } @else {
+          <button type="button" class="fm-btn" [disabled]="lock.busy()" (click)="pinOpen.set(true)">
+            {{ i18n.t('settings.security.usePinInstead') }}
           </button>
-        </form>
-        <p class="muted small">{{ i18n.t('settings.security.pinHint') }}</p>
+        }
       }
 
       @if (lock.state() === 'UNLOCKED') {
@@ -430,6 +442,13 @@ export class SecuritySettingsComponent {
   readonly failureKey = lockFailureKey;
 
   readonly pin = signal('');
+  /**
+   * Whether the PIN fallback has been asked for.
+   *
+   * Only consulted when a platform authenticator exists — without one the PIN form is the only path and
+   * renders unconditionally, because a fallback nobody can reach is not a fallback.
+   */
+  readonly pinOpen = signal(false);
 
   readonly busy = signal(false);
   readonly message = signal<string | null>(null);

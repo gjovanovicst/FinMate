@@ -313,7 +313,7 @@ so the browser profile is a data store.
 
 | Control | Detail |
 |---|---|
-| App lock | Re-auth on cold start and after **5 minutes** idle. Preferred: WebAuthn platform authenticator. Fallback: 6-digit app PIN |
+| App lock | Re-auth on cold start, and after idle: **5 minutes** for a PIN, **60 minutes** for the WebAuthn platform authenticator ([ADR-029's 2026-09-20 amendment](14-decisions-and-risks.md) — the device lock already refuses the next person to pick the device up, where a 6-digit PIN does not). Preferred: WebAuthn platform authenticator. Fallback: 6-digit app PIN |
 | Cache encryption | Records AES-GCM encrypted under a **non-extractable, in-memory** `CryptoKey`, unwrapped by the app-lock check (a random key wrapped by a WebAuthn secret, or derived from the PIN). A filesystem dump of the browser profile yields ciphertext. **PBKDF2-SHA-256, not Argon2** ([ADR-025](14-decisions-and-risks.md)): a 6-digit PIN is ~20 bits and brute-forceable offline either way, so WebAuthn is the control and the PIN is a speed bump — the wording here used to imply a stronger guarantee than the secret supports |
 | What is cached | Pending captures (outbox), last-synced ledger snapshot, taxonomy cache. **No Receipt images** — blob URLs are short-lived and revoked |
 | Snapshot minimisation | Only `amount_minor`, `kind`, `occurred_local_date`, `description`, category id/name. Never `transactions.note`, `raw_input`, counterparty notes, or unbounded history |

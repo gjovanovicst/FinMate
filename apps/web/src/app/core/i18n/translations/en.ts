@@ -499,6 +499,9 @@ export const en = {
   'settings.security.title': 'App lock',
   'settings.security.why': 'With the app lock on, captures you make without a connection survive closing the app. It also keeps what is stored encrypted with your device’s lock or a PIN.',
   'settings.security.withDevice': 'Use this device’s lock',
+  'settings.security.deviceHint':
+    'One tap with your fingerprint, face or device passcode — and your saved data stays encrypted on this device. The app asks again after an hour idle, not every few minutes.',
+  'settings.security.usePinInstead': 'Use a PIN instead',
   'settings.security.withPin': 'Use a PIN',
   'settings.security.pinLabel': 'Choose a 6-digit PIN',
   'settings.security.pinHint': 'A 6-digit PIN can be guessed by somebody who has the phone and time. The device lock is the stronger option.',

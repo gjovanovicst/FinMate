@@ -125,16 +125,23 @@ describe('SecuritySettingsComponent — the app lock', () => {
 
     expect(text(fixture)).toContain('App lock');
     expect(button(fixture, 'Use this device’s lock')).toBeDefined();
-    expect(button(fixture, 'Use a PIN')).toBeDefined();
     // The panel has to say what arming buys, because it is the reason to do it at all.
     expect(text(fixture)).toContain('survive closing the app');
+    // And what the device path buys over the PIN: one tap, and a longer idle window (ADR-029's
+    // amendment). The PIN is the *fallback* docs/08 §3.9 names, so it sits behind this.
+    expect(text(fixture)).toContain('One tap');
+    expect(button(fixture, 'Use a PIN instead')).toBeDefined();
+    expect((fixture.nativeElement as HTMLElement).querySelector('#new-pin')).toBeNull();
   });
 
   it('offers only the PIN when the browser has no credential API', async () => {
     const { fixture } = await mount('OFF', { webauthn: false });
 
     expect(button(fixture, 'Use this device’s lock')).toBeUndefined();
+    // No platform authenticator means no fallback to hide: the PIN is the only path and shows itself.
     expect(button(fixture, 'Use a PIN')).toBeDefined();
+    expect((fixture.nativeElement as HTMLElement).querySelector('#new-pin')).not.toBeNull();
+    expect(button(fixture, 'Use a PIN instead')).toBeUndefined();
   });
 
   it('tells the user to drain the queue first instead of refusing silently', async () => {
@@ -147,8 +154,12 @@ describe('SecuritySettingsComponent — the app lock', () => {
     expect(lock.enableWithPin).not.toHaveBeenCalled();
   });
 
-  it('arms with a PIN and clears the field', async () => {
+  it('arms with a PIN, once the fallback has been asked for', async () => {
     const { fixture, lock } = await mount('OFF');
+
+    button(fixture, 'Use a PIN instead')!.click();
+    fixture.detectChanges();
+
     const input = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>('#new-pin')!;
     input.value = '246810';
     input.dispatchEvent(new Event('input'));

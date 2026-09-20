@@ -479,6 +479,9 @@ export const srLatn: Record<keyof typeof en, string> = {
   'settings.security.title': 'Brava',
   'settings.security.why': 'Sa uključenom bravom, unosi koje napraviš bez veze prežive zatvaranje aplikacije. I ono što je sačuvano ostaje šifrovano bravom uređaja ili PIN-om.',
   'settings.security.withDevice': 'Koristi bravu uređaja',
+  'settings.security.deviceHint':
+    'Jedan dodir uz otisak, lice ili šifru uređaja — a sačuvani podaci ostaju šifrovani na ovom uređaju. Aplikacija pita ponovo posle sat vremena mirovanja, ne svakih nekoliko minuta.',
+  'settings.security.usePinInstead': 'Koristi PIN umesto toga',
   'settings.security.withPin': 'Koristi PIN',
   'settings.security.pinLabel': 'Izaberi PIN od 6 cifara',
   'settings.security.pinHint': 'PIN od 6 cifara može da pogodi neko ko ima telefon i vremena. Brava uređaja je jača opcija.',

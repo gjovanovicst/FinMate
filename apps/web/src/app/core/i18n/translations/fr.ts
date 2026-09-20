@@ -474,6 +474,9 @@ export const fr: Record<keyof typeof en, string> = {
   'settings.security.title': 'Verrouillage de l’application',
   'settings.security.why': 'Avec le verrouillage de l’application activé, les saisies que tu fais sans connexion survivent à la fermeture de l’application. Il garde aussi ce qui est stocké chiffré avec le verrouillage de ton appareil ou un code PIN.',
   'settings.security.withDevice': 'Utiliser le verrouillage de cet appareil',
+  'settings.security.deviceHint':
+    'Une seule touche avec ton empreinte, ton visage ou le code de l’appareil — et tes données enregistrées restent chiffrées sur cet appareil. L’application redemande après une heure d’inactivité, pas toutes les quelques minutes.',
+  'settings.security.usePinInstead': 'Utiliser plutôt un code PIN',
   'settings.security.withPin': 'Utiliser un code PIN',
   'settings.security.pinLabel': 'Choisis un code PIN à 6 chiffres',
   'settings.security.pinHint': 'Un code PIN à 6 chiffres peut être deviné par quelqu’un qui a le téléphone et du temps. Le verrouillage de l’appareil est l’option la plus sûre.',

@@ -1710,6 +1710,58 @@ Two things neither document says, and both are load-bearing:
   re-election rule to survive a closed tab — a distributed-systems problem for a mutex the platform
   already provides.
 
+---
+
+#### ADR-029 — amendment (2026-09-20, task 4.3.8): the idle window follows the secret, and the device lock is the offer
+
+**Status:** Accepted. Amends the *policy* half of the title ("its policy is five idle minutes") and the
+settings card's presentation. **Decision 1 does not change**: the WebAuthn secret is the PRF extension,
+and the PIN remains the fallback.
+
+**Context.** The owner hit the lock by hand while testing offline and asked the fair question: *why does an
+offline reload ask for a PIN instead of loading the cached data?* The literal answer is that the cache is
+ciphertext and the PIN unwraps the key — the lock screen **is** the decryption step, not a gate in front of
+it. But the question exposed two real problems in how the policy was presented:
+
+1. **The five-minute window was applied to both secrets alike**, and it is load-bearing for only one of
+   them. Its purpose is to stop an unattended session being read by whoever picks the device up. A
+   WebAuthn-armed lock is already gated by the platform authenticator — the next person cannot pass it, and
+   the device's own lock screen covers the phone in a pocket. A **six-digit PIN is the weaker secret**
+   (docs/08 §3.9's own note: ~20 bits, guessable by somebody with the phone and time), so the short window
+   belongs there. Applied to the device path, five minutes meant that reading a page, taking a call or
+   copying an amount for longer than that re-prompted on **every** return — and a prompt people learn to
+   resent is a prompt they disable the feature to avoid, which costs the queue the durability it exists for.
+2. **The settings card offered the two paths as equals.** docs/08 §3.9 already says *"Preferred: WebAuthn
+   platform authenticator. Fallback: 6-digit app PIN"* — the build had both controls side by side under
+   one primary style, so nothing said which was which. An owner choosing between them chose on the labels
+   alone.
+
+**Decision.**
+
+1. **`idleLockMs(method)` is the single definition**: **60 minutes** for `WEBAUTHN`, **5 minutes** for
+   `PIN`, and 5 minutes when no lock is configured (never consulted in that state). One exported pure
+   function, because the service, the shell's idle gate and docs/08 must not be able to disagree.
+2. **The device path is what the card offers.** With a platform authenticator present, *Use this device's
+   lock* is the primary control with a sentence saying what it buys (one tap, data still encrypted, asked
+   again after an hour), and the PIN form sits behind *Use a PIN instead*. Without one the PIN form shows
+   directly — a fallback nobody can reach is not a fallback.
+3. **Nothing about the cryptographic design changes.** Same wrapped data key, same PRF-derived secret,
+   same wipe on `purge()`, same "nothing on disk without a lock".
+
+**Consequences.**
+- ✅ Offline use after a cold start costs **one biometric gesture** on a device-armed install, which is what
+  makes the offline capture path usable rather than merely present.
+- ✅ `navigator.onLine`-independent and unchanged: the lock is still the only thing that decides whether
+  anything is persisted (ADR-025 decision 3), and the new offline banner says which of the two states the
+  install is in.
+- ⚠️ **An armed install can now sit readable for up to an hour** with nobody touching it. Accepted: the
+  device's own lock screen is the control for the physical-device case, and the alternative is a feature
+  people turn off. The PIN keeps the five minutes because it is the secret that does not have that backstop.
+- ⚠️ **A device-armed lock has no PIN fallback by design** (decision 3's `unlockOffers`): losing the
+  platform credential means losing the local queue, which is R-36's existing risk and not widened here.
+
+---
+
 ### ADR-030 — Queued edits: what the queue may carry, and a conflict diff that quotes no decision
 **Status:** Accepted
 

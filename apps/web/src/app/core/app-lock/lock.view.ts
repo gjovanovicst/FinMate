@@ -41,6 +41,30 @@ export const LOCK_META_ID = 'lock-meta';
 /** docs/08 §3.9: re-auth after five minutes idle. Not a preference, a policy. */
 export const IDLE_LOCK_MS = 5 * 60 * 1000;
 
+/**
+ * How long a **device-armed** lock may sit idle before it re-locks (ADR-029's 2026-09-20 amendment).
+ *
+ * The idle rule exists to stop an unattended session being read by whoever picks the device up. A
+ * WebAuthn-armed lock is already gated by the platform authenticator: the next person to open the app
+ * cannot pass it, and the *device's* own lock screen covers the phone in a pocket. A PIN is the weaker
+ * secret — six digits, observable and guessable — so the short window stays where it is load-bearing.
+ *
+ * Five minutes was also the number that made the lock annoying in ordinary use: reading a page, taking a
+ * call or copying an amount for longer than that re-prompted on every return, and a prompt people learn to
+ * resent is a prompt they turn the feature off to avoid — which loses the durability the queue needs.
+ */
+export const IDLE_LOCK_DEVICE_MS = 60 * 60 * 1000;
+
+/**
+ * The idle window for the secret this install chose.
+ *
+ * Pure and exported because the service, the shell's idle gate and the docs must agree: two copies of
+ * this number is how a policy quietly becomes two policies.
+ */
+export function idleLockMs(method: LockMethod | null): number {
+  return method === 'WEBAUTHN' ? IDLE_LOCK_DEVICE_MS : IDLE_LOCK_MS;
+}
+
 /** A PIN is exactly six digits (docs/08 §3.9). */
 export const PIN_LENGTH = 6;
 

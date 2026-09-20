@@ -61,8 +61,8 @@ import {
   type WebAuthnScope,
 } from './lock.crypto';
 import {
-  IDLE_LOCK_MS,
   LOCK_META_ID,
+  idleLockMs,
   isValidPin,
   lockState,
   shouldLockOnIdle,
@@ -302,8 +302,9 @@ export class AppLockService implements OfflineKeyProvider {
    * Lock now: drop the key from memory and forget it.
    *
    * The wrapped record stays on disk — that is the point — and the store backing falls back to memory,
-   * so nothing behind the lock can be read. Called on idle (docs/08 §3.9's five minutes) and by the lock
-   * screen's own control.
+   * so nothing behind the lock can be read. Called on idle and by the lock screen's own control. The
+   * window is the one the *method* earns (ADR-029's amendment): five minutes for a PIN, an hour for the
+   * platform authenticator, which the next person to pick the device up cannot pass anyway.
    */
   lock(): void {
     this.unlockedKey = null;
@@ -317,7 +318,7 @@ export class AppLockService implements OfflineKeyProvider {
   }
 
   /** Whether the idle rule says to lock now. The caller decides *how* it is polled (4.2.6b). */
-  isIdle(now = Date.now(), idleMs = IDLE_LOCK_MS): boolean {
+  isIdle(now = Date.now(), idleMs = idleLockMs(this.method())): boolean {
     return this.stateSignal() === 'UNLOCKED' && shouldLockOnIdle(this.idleSignal(), now, idleMs);
   }
 

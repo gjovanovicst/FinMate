@@ -421,6 +421,9 @@ export const es: Record<keyof typeof en, string> = {
   'settings.security.title': 'Bloqueo de la app',
   'settings.security.why': 'Con el bloqueo de la app activado, los registros que hagas sin conexión sobreviven al cierre de la app. Además, lo que se guarda queda cifrado con el bloqueo de tu dispositivo o un PIN.',
   'settings.security.withDevice': 'Usar el bloqueo de este dispositivo',
+  'settings.security.deviceHint':
+    'Un toque con tu huella, tu cara o el código del dispositivo, y tus datos guardados siguen cifrados en este dispositivo. La app vuelve a preguntar tras una hora de inactividad, no cada pocos minutos.',
+  'settings.security.usePinInstead': 'Usar un PIN en su lugar',
   'settings.security.withPin': 'Usar un PIN',
   'settings.security.pinLabel': 'Elige un PIN de 6 dígitos',
   'settings.security.pinHint': 'Alguien que tenga el teléfono y tiempo puede adivinar un PIN de 6 dígitos. El bloqueo del dispositivo es la opción más fuerte.',

@@ -52,7 +52,10 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   **2026-09-20 amendment (4.3.8)** then made the offline app *the app*: every route is admitted, the real
   shell renders with one persistent banner, and the dashboard's snapshot and the ledger cache are
   reachable — measured live, with the queue draining on reconnect. ⚠️ The **app lock** is still the
-  precondition: off by default, and with it off nothing is persisted, so offline is `/sign-in`;
+  precondition: off by default, and with it off nothing is persisted, so offline is `/sign-in` — and the
+  lock screen is the *decryption* step, not a gate in front of the cache (the records are ciphertext).
+  **ADR-029's same-day amendment** makes the device path the offer and the idle window follow the secret
+  (60 min for WebAuthn, 5 for a PIN);
   and queued **edits**, version-checked and dispatched by entry kind, with a conflict diff that shows
   the two versions instead of inventing a reason — **ADR-030** (4.2.7a/4.2.7b); and the **ledger-rows**
   record plus **the screens that serve it** (4.2.8a/4.2.8b) — the current period plus 45 days, capped at
