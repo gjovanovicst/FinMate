@@ -43,11 +43,11 @@ entire product thesis.
 So the input is a fragment a person would actually type or say:
 
 ```text
-Lidl 2000, gorivo 3500, plata 150.000
+Lidl 2000, Maxi 1500, Netflix 1200
 ```
 
-Three fragments, three correctly categorised transactions — groceries, fuel and salary — without a
-single form.
+Three fragments, three correctly categorised transactions — two grocery shops and a subscription —
+without a single form.
 
 What makes that trustworthy rather than merely clever is where the intelligence sits:
 
@@ -69,7 +69,7 @@ the exception path, not the default.
 
 ```mermaid
 flowchart LR
-    A["Raw input<br/>Lidl 2000, gorivo 3500"] --> B["1-2 Segment<br/>normalise + extract"]
+    A["Raw input<br/>Lidl 2000, Maxi 1500"] --> B["1-2 Segment<br/>normalise + extract"]
     B --> C["3 Resolve<br/>merchant · counterparty"]
     C --> D["4 Rules<br/>+ keyword scoring"]
     D -->|matched| F["6 Confidence gate"]
@@ -91,7 +91,7 @@ flowchart LR
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------ |
 | 1–2 Segment       | One fragment. `2000` → `200000` minor units RSD; direction `EXPENSE`; `Lidl` tokenised                                                | ~5 ms  |
 | 3 Resolve         | Nothing yet — the shipped merchant catalogue is global, and the classifier reads merchants per Household, so a fresh signup sees none | ~15 ms |
-| 4 Rules/keywords  | The keyword `lidl`, seeded by onboarding at the decisive weight 2.0, selects `Hrana → Supermarket`                                    | ~10 ms |
+| 4 Rules/keywords  | The keyword `lidl`, seeded by onboarding at the decisive weight 2.0, selects the groceries category                                   | ~10 ms |
 | 5 AI classify     | **Never called** — stage 4 already decided                                                                                            | zero   |
 | 6 Confidence gate | The decision is decisive, so the category is applied silently and the row carries an undo affordance                                  | ~20 ms |
 
@@ -99,6 +99,12 @@ A Household with its own merchant row — as the seeded demo Household has — r
 by name, and never reaches the keyword tier. Both paths are asserted in the test suite, because the
 difference between them is exactly what hid the cold-start bug that made a fresh signup fall through to
 the model.
+
+> **One caveat the examples hide.** The shipped catalogue is a **Serbian** category tree, and its
+> keywords are Serbian words plus international brand names — which is why every example above is a
+> brand. The pipeline reads amounts, dates, currencies and direction in English, but a plain English
+> entity word such as `fuel` finds no matching category yet: English seed content and English entity
+> vocabulary are recorded, open gaps (`docs/06` §8.8, `docs/16` Part C), not surprises.
 
 In the measured evaluation suite, **73.8 %** of inputs resolve without the model at all, and the
 pipeline's p95 extraction cost is **39 ms** — the five-second promise is about network and UI, not the
@@ -109,7 +115,7 @@ classifier. When a model _is_ reached and is not confident, the app asks instead
 1. **The LLM never owns state or computes money.** It returns proposals with a confidence; only the
    backend validates and persists. _(ADR-001)_
 2. **Rules before AI.** Normalise → resolve → rules → keywords → _then_ the model. _(ADR-002)_
-3. **Money is `BIGINT` minor units plus an ISO-4217 code — never a float, anywhere.** `2.000 RSD` is
+3. **Money is `BIGINT` minor units plus an ISO-4217 code — never a float, anywhere.** `2,000 RSD` is
    `200000n`; there is no `number`, no `parseFloat` and no `NUMERIC` in the money path, not even
    transiently. _(ADR-003)_
 4. **Every household-scoped query filters by `household_id` resolved from the session**, never from
@@ -128,17 +134,17 @@ The full decision log and risk register live in
 
 All 21 screens ship. The highlights:
 
-| Area                  | What works                                                                                                                                                  |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Capture**           | Natural-language entry (single or bulk), duplicate detection, undo, a first-use AI consent sheet, and a correction that becomes a reusable rule _(ADR-010)_ |
-| **Ledger**            | Accounts, transactions with splits, tags, merchants, counterparties, optimistic concurrency, filtered search with cursor paging, CSV export (`F-25`)        |
-| **Budgets & goals**   | Period budgets with consumption and pace, saving goals with required-monthly figures and contributions                                                      |
-| **Intelligence**      | Insight generators, alerts over in-app/email/web-push channels, analytics, recurring rules with RRULE expansion, subscription detection                     |
-| **Assistant**         | A closed intent registry, a pure query planner and a numeric validator, plus propose-then-confirm writes that only run on a click _(ADR-035)_               |
-| **Receipts**          | Presigned uploads, an OCR seam, item classification and reconciliation against the statement total (`F-14`, `F-34`)                                         |
-| **Offline & mobile**  | Installable PWA (`F-26`), an encrypted offline store behind an app lock, a queued outbox with conflict diffs, web push, and a read-only offline shell       |
-| **Account & privacy** | Profile, staged email change, session list, email verification, TOTP and emailed-code two-factor, per-purpose AI consent                                    |
-| **i18n & a11y**       | English plus Serbian (latin and cyrillic) composed at runtime, WCAG-audited screens, per-route bundle budgets in CI                                         |
+| Area                  | What works                                                                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Capture**           | Natural-language entry (single or bulk), duplicate detection, undo, a first-use AI consent sheet, and a correction that becomes a reusable rule _(ADR-010)_        |
+| **Ledger**            | Accounts, transactions with splits, tags, merchants, counterparties, optimistic concurrency, filtered search with cursor paging, CSV export (`F-25`)               |
+| **Budgets & goals**   | Period budgets with consumption and pace, saving goals with required-monthly figures and contributions                                                             |
+| **Intelligence**      | Insight generators, alerts over in-app/email/web-push channels, analytics, recurring rules with RRULE expansion, subscription detection                            |
+| **Assistant**         | A closed intent registry, a pure query planner and a numeric validator, plus propose-then-confirm writes that only run on a click _(ADR-035)_                      |
+| **Receipts**          | Presigned uploads, an OCR seam, item classification and reconciliation against the statement total (`F-14`, `F-34`)                                                |
+| **Offline & mobile**  | Installable PWA (`F-26`), an encrypted offline store behind an app lock, a queued outbox with conflict diffs, web push, and a read-only offline shell              |
+| **Account & privacy** | Profile, staged email change, session list, email verification, TOTP and emailed-code two-factor, per-purpose AI consent                                           |
+| **i18n & a11y**       | English plus Serbian (latin and cyrillic) composed at runtime — the shipped seed catalogue is a Serbian tree; WCAG-audited screens; per-route bundle budgets in CI |
 
 Screens that have not yet had a human visual pass, features that are deliberately unbuilt and gaps that
 are known are all recorded in the docs rather than left implicit.
