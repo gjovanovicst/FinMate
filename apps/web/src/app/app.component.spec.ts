@@ -89,10 +89,10 @@ async function mount(
     imports: [AppComponent],
     providers: [
       provideZonelessChangeDetection(),
-      // The offline shell navigates to `/pending` (ADR-033) and sign-out navigates to `/sign-in`; these
-      // paths exist so that navigation resolves in the spec instead of rejecting as an unmatched URL.
-      // The empty path stands in for the dashboard, so the active-state specs can sit on `/` as well as
-      // on a child destination.
+      // The offline app moves a page load off `/sign-in` once the lock is through (ADR-033), and
+      // sign-out navigates to `/sign-in`; these paths exist so that navigation resolves in the spec
+      // instead of rejecting as an unmatched URL. The empty path is the dashboard — where an offline
+      // unlock lands — so the active-state specs can sit on `/` as well as on a child destination.
       provideRouter([
         { path: '', children: [] },
         { path: 'pending', children: [] },
@@ -620,26 +620,34 @@ describe('AppComponent nav (mounted)', () => {
     expect(host.querySelector('.shell')).not.toBeNull();
   });
   /**
-   * ADR-033's third shell state, and the risk it closes (R-27(b)).
+   * ADR-033's third shell state, and the risk it closes (R-27(b)) — amended so that the offline app is
+   * the app.
    *
    * An offline reload leaves the lock screen in front of a page load whose session could not be
-   * restored. Before this, the unlock dropped the user on `/sign-in` with a durable queue on disk and no
-   * way to reach it. The shell now renders a sentence and the two routes that read only what is local.
+   * restored. The unlock used to drop the person on `/sign-in`, and then on a two-link page beside the
+   * app. It now renders the **real shell** — navigation, header and outlet — with one line saying no
+   * session was restored, so every destination opens and each screen serves the record it has
+   * (the dashboard snapshot, the ledger cache, the queue) or its own "needs a connection" state.
    */
-  it('renders the offline shell, not the navigation, when an unlocked install could not reach the server', async () => {
+  it('renders the app shell, with its navigation, when an unlocked install could not reach the server', async () => {
     const { fixture } = await mount(0, 0, 'UNLOCKED', 'UNREACHABLE');
     await new Promise((resolve) => setTimeout(resolve, 0));
     fixture.detectChanges();
 
     const host = fixture.nativeElement as HTMLElement;
+    // The one sentence that says what state this page load is in, and the way back to a session.
     expect(host.textContent).toContain('The server is not reachable, so you are still signed out');
-    // No *navigation list*: only the two destinations that work are offered (docs/02 §2), and the
-    // ledger one is what makes the cached rows reachable without typing a URL.
-    expect(host.querySelectorAll('.nav__link').length).toBe(0);
-    const links = Array.from(host.querySelectorAll<HTMLAnchorElement>('.offline__links a')).map((a) => a.getAttribute('href'));
-    expect(links).toEqual(['/pending', '/transactions', '/sign-in']);
-    // And the router is moved to the screen that does work, rather than sitting on `/sign-in`.
-    expect(TestBed.inject(Router).url).toBe('/pending');
+    expect(host.querySelector('.offline-banner a')?.getAttribute('href')).toBe('/sign-in');
+    // The app's own navigation, not an offline shell beside it: the destinations do open.
+    expect(host.querySelectorAll('.nav__link').length).toBeGreaterThan(0);
+    expect(host.querySelector('.shell--authenticated')).not.toBeNull();
+    expect(host.querySelector('router-outlet')).not.toBeNull();
+    // What a session is genuinely required for is absent: the account block has no name to render, and
+    // a sign-out with no session would only be a way to wipe the queue the person came here to see.
+    expect(host.querySelector('.account')).toBeNull();
+    expect(host.querySelector('.topbar__signout')).toBeNull();
+    // And the page load is not parked on the sign-in screen it was redirected to before the unlock.
+    expect(TestBed.inject(Router).url).not.toContain('sign-in');
   });
 
   it('keeps the ordinary shell when the server refused the session rather than being unreachable', async () => {
@@ -648,8 +656,8 @@ describe('AppComponent nav (mounted)', () => {
     fixture.detectChanges();
 
     const host = fixture.nativeElement as HTMLElement;
-    // A `401`/refusal is an answer and must be respected: no offline shell, no local data.
-    expect(host.querySelector('.offline')).toBeNull();
+    // A `401`/refusal is an answer and must be respected: no offline banner, no local data.
+    expect(host.querySelector('.offline-banner')).toBeNull();
     expect(host.textContent).not.toContain('still signed out');
     // The ordinary shell is what renders — the sign-in page inside it, with no nav because there is
     // no session (which is the state this app has always had for a refused restore).

@@ -677,8 +677,16 @@ platform behaviour. Legend: ✅ works offline · 📖 read-only offline · ⏳ p
 The shell these capabilities live in is cached by the service worker
 ([ADR-024](14-decisions-and-risks.md)): it holds the document, the bundles and the icons, **never** a
 response from the API, so a row marked 📖 below is read from the encrypted IndexedDB snapshot and not
-from anything the worker kept. Until 4.2.2 lands there is no snapshot at all, so a 📖 row is not even
-that yet: the shell opens and the screen shows its own failure.
+from anything the worker kept.
+
+**A cold start with no network opens the app, not an offline notice** ([ADR-033's amendment](14-decisions-and-risks.md)).
+The service worker serves the shell; the session cannot be restored because the refresh token is a cookie
+and nothing answers, so the app renders its **real** navigation and header with one persistent line saying
+the session is not restored, and **every route is reachable**. What a screen shows is then the row below
+for that capability: a local record (the dashboard snapshot, the ledger cache, the queue) or the screen's
+own "needs a connection" state. Nothing is sent without a session, so queued captures wait for one. The
+unlock is what authorises reading the local records at all — with the app lock off, nothing is persisted
+and there is nothing to serve.
 
 | Capability | State | Notes |
 |---|---|---|

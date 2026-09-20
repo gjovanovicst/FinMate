@@ -2104,6 +2104,60 @@ exactly what the user needs: the queued captures and the cached ledger.
 
 ---
 
+#### ADR-033 — amendment: the offline app is the app, not two screens beside it
+
+**Status:** Accepted (2026-09-20), amending **decision 2** and the shell half of decision 3. Decisions 1
+and 4 are untouched: the failure is still classified by `isUnreachable`, and **nothing is sent without a
+session**.
+
+**Context.** Decision 2 gave an unlocked, unreachable install exactly two routes (`/pending` and the
+cached ledger), one redirect to the tray from every other one, and a shell that replaced the navigation
+with two links — on the reasoning that *"every other destination is a control that cannot work"*. That
+reasoning does not survive contact with the screens as built. The dashboard serves its ADR-027 snapshot
+with a `podaci od <time>` label, `/transactions` serves the ledger cache, the composer queues offline,
+`SyncService.flushNow` already refuses without a session and drains the moment one arrives, and the
+analytics screen already carries its own "needs a connection" sentence. docs/07 §6's matrix has marked
+safe-to-spend and the projection 📖 all along — which was **false after a reload**, because `/` redirected
+away from the snapshot it was serving. Measured with the network cut: an offline reload + PIN landed on
+`/pending`, and the dashboard was reachable by no control at all.
+
+The unit of offline behaviour on this app is a **screen**, not the shell: each screen already knows
+whether it holds a local record or must say it needs a connection. A shell that hides the whole map
+because *some* rooms are locked discards that, and it contradicts the platform expectation of an
+installed PWA — the app opens, and the things that need the network say so.
+
+**Decision.**
+
+1. **Every route is admitted** to an unlocked install whose restore failed as `UNREACHABLE`. The
+   `data: { offline: true }` allow-list is removed; a route no longer has to declare itself, because the
+   screen's own read is what decides what it can show.
+2. **The shell is the real shell.** It renders its navigation, its header controls that need no session
+   (theme, language, the queue's sync chip, the notification bell) and its outlet. What stays gated on a
+   session is what genuinely needs one: the account block, sign-out, and the global search — the last
+   because it navigates to a **filtered** ledger read, which is deliberately never cached, so it could
+   only search nothing (docs/02 §2's rule that a control which cannot work is not shown).
+3. **One persistent banner replaces the offline page**: the existing `offline.sessionNote` and a *Sign
+   in* link, rendered inside the content region above the outlet. It is not dismissible — it is the only
+   place the missing session is stated, and a person who dismissed it would be left guessing why nothing
+   sends.
+4. **The unlock lands on the dashboard, not the tray.** The guards ran while the install was still
+   LOCKED, so a cold start was sent to `/sign-in` before the PIN could be asked for; the unlock now moves
+   that page load to `/`, which serves the snapshot. A deep link is left where the person asked to be.
+
+**Consequences.**
+- ✅ docs/07 §6's 📖 rows are true **after a reload**: the dashboard, safe-to-spend and the projection are
+  reachable offline, labelled with the snapshot's own `as of` time.
+- ✅ The security boundary is unchanged: no session is fabricated, no token is minted, `isAuthenticated()`
+  stays false, and `flushNow` still refuses — so a revoked session is never kept alive on the device. The
+  unlock authorises *reading what the key opens*, exactly as decision 1 says.
+- ⚠️ **A screen that has no local record now shows its own error in the app's chrome** rather than being
+  unreachable. That is the intended trade, and it puts the honesty burden on each screen's offline state
+  (Definition of Done already requires one) instead of on a redirect.
+- ⚠️ The offline banner is per-page-load, like `restoreFailure`: it disappears the moment a session is
+  restored, which is what makes it a statement about *this* page load rather than a mode.
+
+---
+
 ### ADR-034 — The consent disclosure names what a caller can reach, once per destination
 
 **Status:** Accepted (2026-09-17), from the AI-disclosure audit — task 4.3.7a.

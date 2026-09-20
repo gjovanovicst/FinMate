@@ -5,18 +5,21 @@ import { AppLockService } from '../app-lock/app-lock.service';
 import { AuthStore } from './auth.store';
 
 /**
- * Require an authenticated session — with one deliberate exception (ADR-033).
+ * Require an authenticated session — with one deliberate exception (ADR-033, amended).
  *
  * `restore()` is attempted once per page load: the access token lives in memory, so a refresh
  * (F5) loses it while the refresh cookie survives. Without this, a reload would bounce an
  * authenticated user to sign-in — the single most annoying bug a session design can ship.
  *
- * The exception is the offline shell: an install the lock has **unlocked** whose session could not be
- * restored because nothing answered may reach the routes that read only what is already on the device,
- * marked `data: { offline: true }` (today `/pending` and `/transactions`' cache). Everything else
- * redirects to the tray, and a session the server actually refused still goes to `/sign-in`.
+ * The exception is the offline app: an install the lock has **unlocked** whose session could not be
+ * restored because nothing answered opens the app's own screens. Every route is admitted, not a
+ * two-entry allow-list, because the destinations do open — each screen serves the record it has
+ * (the dashboard snapshot, the ledger cache, the queue) or its own honest "needs a connection"
+ * state. What the unlock does **not** authorise is a session: `isAuthenticated()` stays false and
+ * nothing is sent (ADR-033 decision 4), so a revoked session is never kept alive on the device.
+ * A session the server actually refused still goes to `/sign-in`.
  */
-export const authenticatedGuard: CanActivateFn = async (route) => {
+export const authenticatedGuard: CanActivateFn = async () => {
   const auth = inject(AuthStore);
   const router = inject(Router);
   const lock = inject(AppLockService);
@@ -29,9 +32,7 @@ export const authenticatedGuard: CanActivateFn = async (route) => {
   if (auth.isAuthenticated()) return true;
 
   await lock.ready();
-  if (lock.state() === 'UNLOCKED' && auth.restoreFailure() === 'UNREACHABLE') {
-    return route.data?.['offline'] === true ? true : router.createUrlTree(['/pending']);
-  }
+  if (lock.state() === 'UNLOCKED' && auth.restoreFailure() === 'UNREACHABLE') return true;
 
   return router.createUrlTree(['/sign-in']);
 };

@@ -98,29 +98,8 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
       <!-- The gate (ADR-029 decision 5): no nav, no header, no outlet. There is nothing to navigate
            to, because the data key is not in memory and every offline read is empty by construction. -->
       <fm-app-lock-screen />
-    } @else if (offlineOnly()) {
-      <!-- ADR-033: the lock is unlocked, so the data key is in memory and what it protects is readable,
-           but there is no session and nothing answered. No nav, because only the two offline-capable
-           routes can work; the outlet renders one of them. -->
-      <div class="offline">
-        <p class="offline__note">{{ i18n.t('offline.sessionNote') }}</p>
-        <!-- Two links, not a navigation: these are the only destinations that work without a session
-             (ADR-033 decision 2). Without them the cached ledger would be reachable by URL only. -->
-        <nav class="offline__links" [attr.aria-label]="i18n.t('app.primaryNav')">
-          <a class="offline__link" routerLink="/pending" routerLinkActive="offline__link--active">
-            {{ i18n.t('pending.title') }}
-          </a>
-          <a class="offline__link" routerLink="/transactions" routerLinkActive="offline__link--active">
-            {{ i18n.t('nav.transactions') }}
-          </a>
-          <a class="offline__signIn" routerLink="/sign-in">{{ i18n.t('offline.signIn') }}</a>
-        </nav>
-        <main id="main" class="offline__content" tabindex="-1">
-          <router-outlet />
-        </main>
-      </div>
     } @else {
-      <div class="shell" [class.shell--authenticated]="isAuthenticated()" [class.shell--bare]="!showNav()">
+      <div class="shell" [class.shell--authenticated]="chrome()" [class.shell--bare]="!showNav()">
         @if (showNav()) {
           <nav class="nav" [attr.aria-label]="i18n.t('app.primaryNav')">
             <!-- The brand block. The mark is inline SVG rather than an asset: it has to scale from 28 px
@@ -211,7 +190,7 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
           </nav>
         }
 
-        @if (isAuthenticated()) {
+        @if (chrome()) {
           <!-- docs/02 §2.2: the header carries search, the theme control, the notification bell, the
                language switcher and the account block on both layouts. It is the *only* entry to the
                notification centre — a second one in the nav put "Obaveštenja" in the sidebar twice. -->
@@ -222,18 +201,23 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
               <fm-brand [tagline]="false" />
             </a>
 
-            <form class="search" role="search" (submit)="submitSearch($event)">
-              <span class="search__icon" aria-hidden="true"><fm-icon name="search" [size]="18" /></span>
-              <input
-                class="search__input"
-                type="search"
-                name="q"
-                [value]="query()"
-                (input)="onQuery($event)"
-                [attr.placeholder]="i18n.t('app.searchPlaceholder')"
-                [attr.aria-label]="i18n.t('app.searchLabel')"
-              />
-            </form>
+            <!-- Hidden in the offline app (ADR-033 amended): it navigates to the ledger with a query,
+                 and a *filtered* read is deliberately never cached, so it could only search nothing.
+                 docs/02 §2: a control that cannot work is not shown. -->
+            @if (isAuthenticated()) {
+              <form class="search" role="search" (submit)="submitSearch($event)">
+                <span class="search__icon" aria-hidden="true"><fm-icon name="search" [size]="18" /></span>
+                <input
+                  class="search__input"
+                  type="search"
+                  name="q"
+                  [value]="query()"
+                  (input)="onQuery($event)"
+                  [attr.placeholder]="i18n.t('app.searchPlaceholder')"
+                  [attr.aria-label]="i18n.t('app.searchLabel')"
+                />
+              </form>
+            }
 
             <div class="topbar__actions">
               <fm-theme-toggle />
@@ -260,34 +244,50 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
                 </span>
               </a>
 
-              <!-- The account block. Since 0.6.4 the API's /auth/me carries the display name, so it
-                   names the person; the role stays underneath as the server-resolved fact it is. It
-                   opens the settings shell's **Account** tab, which is where the name is edited. -->
-              <a class="account" routerLink="/settings" [queryParams]="{ section: 'account' }">
-                <fm-avatar [name]="accountName()" [size]="34" />
-                <span class="account__text">
-                  <span class="account__name">{{ accountName() }}</span>
-                  <span class="account__meta">{{ roleLabel() }}</span>
-                </span>
-                <fm-icon name="chevronDown" [size]="16" />
-              </a>
+              <!-- The account block and sign-out need a session, so the offline app shows neither
+                   (ADR-033 amended): there is no name to render, and a sign-out with no session would
+                   only be a way to wipe the queue the person came here to see. -->
+              @if (isAuthenticated()) {
+                <!-- The account block. Since 0.6.4 the API's /auth/me carries the display name, so it
+                     names the person; the role stays underneath as the server-resolved fact it is. It
+                     opens the settings shell's **Account** tab, which is where the name is edited. -->
+                <a class="account" routerLink="/settings" [queryParams]="{ section: 'account' }">
+                  <fm-avatar [name]="accountName()" [size]="34" />
+                  <span class="account__text">
+                    <span class="account__name">{{ accountName() }}</span>
+                    <span class="account__meta">{{ roleLabel() }}</span>
+                  </span>
+                  <fm-icon name="chevronDown" [size]="16" />
+                </a>
 
-              <button
-                type="button"
-                class="fm-btn topbar__signout"
-                (click)="signOut()"
-                [disabled]="signingOut()"
-              >
-                <fm-icon name="logout" [size]="18" />
-                <span class="topbar__signout-text">
-                  {{ signingOut() ? i18n.t('session.signingOut') : i18n.t('session.signOut') }}
-                </span>
-              </button>
+                <button
+                  type="button"
+                  class="fm-btn topbar__signout"
+                  (click)="signOut()"
+                  [disabled]="signingOut()"
+                >
+                  <fm-icon name="logout" [size]="18" />
+                  <span class="topbar__signout-text">
+                    {{ signingOut() ? i18n.t('session.signingOut') : i18n.t('session.signOut') }}
+                  </span>
+                </button>
+              }
             </div>
           </header>
         }
 
         <main id="main" class="content" tabindex="-1">
+          <!-- ADR-033 (amended): the offline app is the app. This is the one line that says what state
+               it is in and what happens next; every destination below it opens, and each screen serves
+               the record it has or its own "needs a connection" state. Not dismissible — it is the only
+               place the missing session is stated, and a person who dismissed it would be left guessing
+               why nothing sends. -->
+          @if (offlineOnly()) {
+            <p class="offline-banner" role="status">
+              <span class="offline-banner__text">{{ i18n.t('offline.sessionNote') }}</span>
+              <a class="offline-banner__link" routerLink="/sign-in">{{ i18n.t('offline.signIn') }}</a>
+            </p>
+          }
           <!-- ADR-024: a newly installed build is waiting, or the shell's own cache is broken. Rendered
                inside the main region rather than as a fourth grid area, because the layout is named areas
                and a banner that appears only sometimes must not push the nav out of its row. -->
@@ -319,48 +319,35 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
         min-block-size: 100dvh;
       }
 
-      /* The offline shell (ADR-033): a sentence, one action, and the outlet. It deliberately has no
-         nav and no header — every destination it cannot serve is a control that cannot work. */
-      .offline {
-        display: grid;
-        gap: var(--space-4);
-        max-inline-size: 48rem;
-        margin-inline: auto;
-        padding: calc(var(--space-4) + env(safe-area-inset-top)) var(--space-4)
-          calc(var(--space-6) + env(safe-area-inset-bottom));
-      }
-      .offline__note {
-        margin: 0;
-        color: var(--color-text-muted);
-      }
-      .offline__links {
+      /* The offline banner (ADR-033, amended). It sits inside the content region above the outlet, so
+         the shell it belongs to is the real one — the sentence is the only thing that distinguishes an
+         offline page load from a live one besides the figures' own provenance labels. */
+      .offline-banner {
         display: flex;
         flex-wrap: wrap;
-        gap: var(--space-3);
         align-items: center;
-      }
-      .offline__link,
-      .offline__signIn {
-        padding: var(--space-2) var(--space-3);
+        gap: var(--space-2) var(--space-3);
+        margin: 0 0 var(--space-4);
+        padding: var(--space-3) var(--space-4);
+        background: var(--color-surface-raised);
         border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        color: var(--color-text-muted);
+      }
+      .offline-banner__text {
+        flex: 1 1 16rem;
+        min-inline-size: 0;
+      }
+      .offline-banner__link {
+        padding: var(--space-2) var(--space-3);
+        border: 1px solid var(--color-primary);
         border-radius: var(--radius-pill);
-        color: var(--color-text);
-        text-decoration: none;
-        min-block-size: 2.25rem;
-        display: inline-flex;
-        align-items: center;
-      }
-      .offline__link--active {
-        border-color: var(--color-primary);
-        color: var(--color-primary-text);
-      }
-      .offline__signIn {
-        border-color: var(--color-primary);
         color: var(--color-primary-text);
         font-weight: 600;
-      }
-      .offline__content {
-        display: block;
+        text-decoration: none;
+        min-block-size: var(--control-size);
+        display: inline-flex;
+        align-items: center;
       }
 
       /* Skip link: hidden until focused. Without it a keyboard user tabs the whole nav on every page
@@ -923,10 +910,14 @@ export class AppComponent {
   readonly isAuthenticated = this.auth.isAuthenticated;
 
   /**
-   * The offline shell (ADR-033): the lock is through, so the data key is in memory, but this page load
-   * could not restore a session because nothing answered. The two offline-capable routes are reachable
-   * and everything else redirects to the tray, so the shell renders a sentence and an outlet instead of
-   * a navigation it cannot honour.
+   * The offline app (ADR-033, amended): the lock is through, so the data key is in memory, but this page
+   * load could not restore a session because nothing answered.
+   *
+   * It is **not** an offline shell beside the app any more. The shell it renders is the real one, and the
+   * claim on screen is the honest one: no session has been restored, so nothing will be sent, but every
+   * screen opens and serves the record it has. What this flag still gates is the things a session is
+   * genuinely required for — the account block, sign-out, and the search that can only read a cache a
+   * filtered query never writes.
    */
   readonly offlineOnly = computed(
     () =>
@@ -934,6 +925,15 @@ export class AppComponent {
       this.auth.restoreFailure() === 'UNREACHABLE' &&
       !this.isAuthenticated(),
   );
+
+  /**
+   * Whether the shell's frame is drawn: its navigation, its header and the one-scrolling-pane layout.
+   *
+   * True for the offline app as well as a signed-in one, because the destinations it links to do open
+   * (ADR-033 amended). `isAuthenticated()` stays the narrower question — what a *session* permits — and
+   * the two are deliberately not the same signal.
+   */
+  readonly chrome = computed(() => this.isAuthenticated() || this.offlineOnly());
 
   /**
    * Whether to draw the navigation.
@@ -944,7 +944,7 @@ export class AppComponent {
    * has Finish, so hiding the nav is not a trap.
    */
   private readonly url = signal(this.router.url);
-  readonly showNav = computed(() => this.isAuthenticated() && !this.url().startsWith('/onboarding'));
+  readonly showNav = computed(() => this.chrome() && !this.url().startsWith('/onboarding'));
 
   /**
    * Roles are shown as words, not enum values. The role itself comes from the server (never a token
@@ -1044,15 +1044,17 @@ export class AppComponent {
     // instead of being visible only in the markup.
     effect(() => this.install.setOnboarding(this.url().startsWith('/onboarding')));
 
-    // Entering the offline shell (ADR-033) is a *navigation* the router has already decided the other way:
-    // at boot it sent an unauthenticated visitor to /sign-in before the lock was unlocked, so the unlock
-    // has to move it to the one screen that works. Only when the current route is not offline-capable — a
-    // deep link to /transactions stays where the user asked to be.
+    // The unlock is a *navigation* the router already decided the other way: at boot the guards ran while
+    // the install was still LOCKED, so an unauthenticated visitor was sent to /sign-in before the PIN
+    // could be asked for (ADR-033). Once the lock is through, that decision is stale — this page load is
+    // the offline app, and the app's landing screen is the dashboard, which serves its snapshot. A deep
+    // link is left exactly where the person asked to be.
     effect(() => {
       if (!this.offlineOnly()) return;
       const path = this.url();
-      if (path.startsWith('/pending') || path.startsWith('/transactions')) return;
-      void this.router.navigateByUrl('/pending');
+      if (path.startsWith('/sign-in') || path.startsWith('/sign-up')) {
+        void this.router.navigateByUrl('/');
+      }
     });
 
     // A session the **user** ended must take the screen with it. The guards run on *navigation*, never on

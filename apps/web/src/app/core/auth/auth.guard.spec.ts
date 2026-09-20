@@ -15,12 +15,12 @@ import { authenticatedGuard } from './auth.guard';
 initAngularTesting();
 
 /**
- * ADR-033's decision table, which is the whole of R-27(b)'s security surface.
+ * ADR-033's decision table (amended), which is the whole of R-27(b)'s security surface.
  *
- * Only an **unlocked** install whose restore failed because nothing answered may reach the routes that
- * read what is already on the device. A refused session (`401`) stays on the sign-in path, a locked
- * install never sees local data, and a route that has not declared itself offline-capable is redirected
- * to the tray rather than served.
+ * An **unlocked** install whose restore failed because nothing answered reaches the app's own screens —
+ * every route, because each screen serves the record it has (the dashboard snapshot, the ledger cache,
+ * the queue) or its own "needs a connection" state. A refused session (`401`) stays on the sign-in path,
+ * and a locked install never sees local data.
  */
 interface Stubs {
   readonly restore: ReturnType<typeof vi.fn>;
@@ -31,7 +31,6 @@ async function run(options: {
   authenticated?: boolean;
   restoreFailure?: SessionFailure | null;
   lockState?: 'OFF' | 'LOCKED' | 'UNLOCKED';
-  offlineRoute?: boolean;
 }): Promise<Stubs> {
   const restore = vi.fn(() => Promise.resolve());
 
@@ -57,9 +56,8 @@ async function run(options: {
     ],
   });
 
-  const route = { data: options.offlineRoute === true ? { offline: true } : {} };
   const result = await TestBed.runInInjectionContext(() =>
-    authenticatedGuard(route as unknown as ActivatedRouteSnapshot, {} as never),
+    authenticatedGuard({} as ActivatedRouteSnapshot, {} as never),
   );
   return { restore, result };
 }
@@ -75,42 +73,23 @@ describe('authenticatedGuard', () => {
     expect(restore).not.toHaveBeenCalled();
   });
 
-  it('admits an unlocked, unreachable install to an offline-capable route', async () => {
-    const { result } = await run({
-      restoreFailure: 'UNREACHABLE',
-      lockState: 'UNLOCKED',
-      offlineRoute: true,
-    });
+  it('admits an unlocked, unreachable install to the app, on any route', async () => {
+    // No route declares itself offline-capable any more (ADR-033 amended): the offline app is the app,
+    // and each screen is responsible for what it can honestly show without a server.
+    const { result } = await run({ restoreFailure: 'UNREACHABLE', lockState: 'UNLOCKED' });
     expect(result).toBe(true);
-  });
-
-  it('sends an unlocked, unreachable install to the tray from any other route', async () => {
-    const { result } = await run({
-      restoreFailure: 'UNREACHABLE',
-      lockState: 'UNLOCKED',
-      offlineRoute: false,
-    });
-    expect(result).toEqual({ commands: ['/pending'] });
   });
 
   it('keeps a locked install out even when the restore was unreachable', async () => {
     // The data key is not in memory, so every offline read would be empty anyway.
-    const { result } = await run({
-      restoreFailure: 'UNREACHABLE',
-      lockState: 'LOCKED',
-      offlineRoute: true,
-    });
+    const { result } = await run({ restoreFailure: 'UNREACHABLE', lockState: 'LOCKED' });
     expect(result).toEqual({ commands: ['/sign-in'] });
   });
 
   it.each<SessionFailure>(['REFUSED', 'SIGNED_OUT'])(
     'respects a %s session and stays on the sign-in path',
     async (failure) => {
-      const { result } = await run({
-        restoreFailure: failure,
-        lockState: 'UNLOCKED',
-        offlineRoute: true,
-      });
+      const { result } = await run({ restoreFailure: failure, lockState: 'UNLOCKED' });
       expect(result).toEqual({ commands: ['/sign-in'] });
     },
   );

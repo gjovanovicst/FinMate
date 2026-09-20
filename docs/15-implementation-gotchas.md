@@ -1961,6 +1961,20 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   offline shell (and the queue) — the exact thing ADR-033's `SIGNED_OUT` arm exists to prevent. `restore()`
   now returns early for `SIGNED_OUT`, so the user's choice stays final for the page load.
 
+- **An allow-list of "offline-capable routes" makes the screens that *do* have cached data unreachable,
+  and it made the matrix lie.** ADR-033 shipped the offline state as `/pending` plus the cached ledger,
+  with every other route redirecting to the tray and the navigation replaced by two links. The reasoning
+  was *"every other destination is a control that cannot work"* — but that was written before the screens
+  existed. The dashboard serves an ADR-027 snapshot with an `as of` label, the ledger serves its cache,
+  the composer queues, and analytics carries its own "needs a connection" sentence; each screen already
+  knows what it can honestly show, so a shell that hides the map because some rooms are locked throws that
+  away. It also left **docs/07 §6's 📖 rows false after a reload** (the dashboard and safe-to-spend were
+  "read-only offline" and reachable from no control at all). The unit of offline behaviour is a **screen**,
+  not the shell: admit every route and let each one serve its record. Measured against the production build
+  with the network cut: an offline reload + PIN now lands on `/` with the snapshot's label, the ledger
+  shows *"1 transactions saved on this device"*, an offline capture queues and survives another reload, and
+  the queue drains on reconnect.
+
 - **A "remember this" control has to be gated on the condition its server path needs, and its answer must
   not live at the end of a scroller.** The edit sheet's *Zapamti za ubuduće* tick writes
   `rememberForFuture`, which `correctTransaction` reads — and the save only reaches `correctTransaction`

@@ -47,8 +47,12 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   arms it — `/settings`' one section, the re-auth screen the shell renders while locked, and the idle
   gate — which is what turns offline persistence on for F-26 (4.2.6b). ⚠️ **R-23 was closed on a claim 4.3.6 measured false**: arming the lock did not make the queue durable,
   and both halves are fixed in 4.3.6a (ADR-025's amendment). An **offline** reload separately cannot
-  restore the session, so the re-auth screen unlocks into `/sign-in` and queued work is unreachable —
-  **R-27(b)**, closed by 4.3.6c ([ADR-033](docs/14-decisions-and-risks.md));
+  restore the session, so the re-auth screen used to unlock into `/sign-in` and leave queued work
+  unreachable — **R-27(b)**, closed by 4.3.6c ([ADR-033](docs/14-decisions-and-risks.md)), whose
+  **2026-09-20 amendment (4.3.8)** then made the offline app *the app*: every route is admitted, the real
+  shell renders with one persistent banner, and the dashboard's snapshot and the ledger cache are
+  reachable — measured live, with the queue draining on reconnect. ⚠️ The **app lock** is still the
+  precondition: off by default, and with it off nothing is persisted, so offline is `/sign-in`;
   and queued **edits**, version-checked and dispatched by entry kind, with a conflict diff that shows
   the two versions instead of inventing a reason — **ADR-030** (4.2.7a/4.2.7b); and the **ledger-rows**
   record plus **the screens that serve it** (4.2.8a/4.2.8b) — the current period plus 45 days, capped at
@@ -90,9 +94,10 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   `generation` signal `SyncService` reacts to, ADR-025's amendment; **(a2)** offline the composer sent
   `defaultAccountId: null` because its `accounts` query failed, so the server refused the batch — it now
   reads ADR-025 decision 5's taxonomy cache. **Live 8/8.** **(b, [ADR-033](docs/14-decisions-and-risks.md))** an unlocked install whose
-  session could not be restored because *nothing answered* renders a **read-only offline shell** — one
-  sentence, two links (`/pending`, `/transactions`' cached ledger), no navigation, and **nothing sent
-  without a session** — **live 13/13**. It also **refuted its own first reading**: the flush *is* refused.
+  session could not be restored because *nothing answered* stops bouncing to `/sign-in` and opens the
+  app's own screens, and **nothing is sent without a session** — **live 13/13**, then **widened by
+  ADR-033's 2026-09-20 amendment (4.3.8)**: the real shell with its navigation, every route admitted,
+  and one persistent offline banner. It also **refuted its own first reading**: the flush *is* refused.
 - **And 4.3.7 closed the AI-disclosure audit** ([ADR-034](docs/14-decisions-and-risks.md)): the consent
   sheet names what a *caller* can reach, one sentence per destination; `/assistant` says how each answer was
   worded, linking `/settings` only when withheld consent caused the fallback — docs/06 §8.5's *"make the
