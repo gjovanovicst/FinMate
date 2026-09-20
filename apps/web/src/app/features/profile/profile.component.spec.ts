@@ -61,7 +61,7 @@ const SESSIONS: readonly AccountSession[] = [
 function profileStub(initial: Profile = PROFILE, sessions: readonly AccountSession[] = SESSIONS) {
   const profile = signal<Profile | null>(initial);
   const sessionList = signal<readonly AccountSession[]>(sessions);
-  const mfa = signal<MfaState>({
+  const mfa = signal<MfaState | null>({
     totpEnabled: false,
     emailOtpEnabled: false,
     totpAvailable: true,
@@ -72,7 +72,7 @@ function profileStub(initial: Profile = PROFILE, sessions: readonly AccountSessi
     sessions: sessionList,
     mfa,
     loading: signal(false),
-    load: vi.fn(async () => undefined),
+    load: vi.fn(async () => ({ sessionsFailed: false, mfaFailed: false })),
     rename: vi.fn(async (displayName: string) => {
       const next = { ...(profile() as Profile), displayName };
       profile.set(next);
@@ -276,5 +276,20 @@ describe('ProfileComponent', () => {
 
     expect(service.regenerateRecoveryCodes).toHaveBeenCalled();
     expect(component.recoveryCodes()).toEqual(['BBBB-BBBB-BBBB-BBBB']);
+  });
+
+  it('keeps the page up when the two-step read failed, and says so', async () => {
+    const service = profileStub();
+    service.load = vi.fn(async () => {
+      // What the real service does when `/auth/mfa` cannot be read.
+      service.mfa.set(null);
+      return { sessionsFailed: false, mfaFailed: true };
+    });
+    const { fixture } = await mount(service);
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+
+    // The identity is still there — this used to be an empty "failed to load".
+    expect(text).toContain('owner@example.com');
+    expect(text).toContain('could not be loaded');
   });
 });

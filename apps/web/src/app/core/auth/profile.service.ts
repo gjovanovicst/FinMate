@@ -51,6 +51,20 @@ export interface TotpSetup {
 }
 
 /**
+ * What a profile load managed to read.
+ *
+ * The identity is required — without it there is nothing honest to render — but the session list and
+ * the factor panel **degrade**: one of them failing must not blank the screen. That is not
+ * hypothetical: a deployment serving the previous release answered `404` for `/auth/mfa`, and a
+ * `Promise.all` over the three turned a working profile page into "failed to load" with nothing on
+ * it.
+ */
+export interface ProfileLoadResult {
+  readonly sessionsFailed: boolean;
+  readonly mfaFailed: boolean;
+}
+
+/**
  * The profile screen's data and writes (docs/02 §4.18's **Profil** section).
  *
  * Kept out of `AuthStore`, which owns *whether* there is a session and is read by guards on every
@@ -72,18 +86,34 @@ export class ProfileService {
   readonly mfa = this.mfaSignal.asReadonly();
   readonly loading = this.loadingSignal.asReadonly();
 
-  /** Read the profile, the live sessions and the factor state together; one spinner covers all three. */
-  async load(): Promise<void> {
+  /**
+   * Read the profile, the live sessions and the factor state together.
+   *
+   * `allSettled`, not `all`: the identity is the screen, so its failure propagates, but the other two
+   * sections report their own failure and the rest of the page still renders. A `Promise.all` here
+   * meant any single `404`/`500` produced an empty "failed to load".
+   */
+  async load(): Promise<ProfileLoadResult> {
     this.loadingSignal.set(true);
     try {
-      const [profile, sessions, mfa] = await Promise.all([
+      const [profile, sessions, mfa] = await Promise.allSettled([
         firstValueFrom(this.http.get<Profile>('/api/auth/profile')),
         firstValueFrom(this.http.get<readonly AccountSession[]>('/api/auth/sessions')),
         firstValueFrom(this.http.get<MfaState>('/api/auth/mfa')),
       ]);
-      this.profileSignal.set(profile);
-      this.sessionsSignal.set(sessions);
-      this.mfaSignal.set(mfa);
+
+      if (profile.status === 'rejected') throw profile.reason;
+      this.profileSignal.set(profile.value);
+
+      if (sessions.status === 'fulfilled') this.sessionsSignal.set(sessions.value);
+      else this.sessionsSignal.set([]);
+      if (mfa.status === 'fulfilled') this.mfaSignal.set(mfa.value);
+      else this.mfaSignal.set(null);
+
+      return {
+        sessionsFailed: sessions.status === 'rejected',
+        mfaFailed: mfa.status === 'rejected',
+      };
     } finally {
       this.loadingSignal.set(false);
     }

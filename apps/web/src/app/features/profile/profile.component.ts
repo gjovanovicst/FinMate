@@ -305,6 +305,9 @@ import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../auth/password-polic
             }
           }
 
+          @if (mfaFailed()) {
+            <p class="error" role="alert">{{ i18n.t('mfa.failed') }}</p>
+          }
           @if (mfaMessage(); as text) {
             <p class="ok" role="status">{{ text }}</p>
           }
@@ -322,6 +325,10 @@ import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../auth/password-polic
             </h2>
           </div>
           <p class="muted small">{{ i18n.t('profile.sessions.intro') }}</p>
+
+          @if (sessionsFailed()) {
+            <p class="error" role="alert">{{ i18n.t('profile.sessions.failed') }}</p>
+          }
 
           <ul class="sessions">
             @for (session of profile.sessions(); track session.id) {
@@ -544,6 +551,16 @@ export class ProfileComponent {
   readonly error = signal<string | null>(null);
 
   /**
+   * Which optional sections failed to load.
+   *
+   * The identity is the screen, but a session list or a factor panel that could not be read reports
+   * itself and leaves the rest of the page up — the difference between "failed to load" and "this
+   * part is unavailable, and here is everything else".
+   */
+  readonly sessionsFailed = signal(false);
+  readonly mfaFailed = signal(false);
+
+  /**
    * Two-factor state (ADR-041).
    *
    * **One** password field serves every action in the section rather than one per button: the API
@@ -581,9 +598,12 @@ export class ProfileComponent {
   private async load(): Promise<void> {
     this.error.set(null);
     try {
-      await this.profile.load();
+      const result = await this.profile.load();
+      this.sessionsFailed.set(result.sessionsFailed);
+      this.mfaFailed.set(result.mfaFailed);
       this.displayName.set(this.profile.profile()?.displayName ?? '');
     } catch (error) {
+      // Only the identity failing reaches here; the other two carry their own flags.
       this.error.set(this.errors.for(error));
     }
   }

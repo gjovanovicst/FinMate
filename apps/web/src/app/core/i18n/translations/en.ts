@@ -545,11 +545,13 @@ export const en = {
   'profile.sessions.revokeOthers': 'Sign out all other devices',
   'profile.sessions.revoked': 'That session has been signed out.',
   'profile.sessions.revokedOthers': 'Signed out {count} other sessions.',
+  'profile.sessions.failed': 'The list of signed-in devices could not be loaded. Everything else on this page is up to date.',
   'profile.language.title': 'Language',
   'profile.language.intro': 'The language of the app and of the messages we send you.',
   // ---- two-factor authentication (ADR-041) ----
   'mfa.title': 'Two-step verification',
   'mfa.intro': 'A password alone is not enough. Add an authenticator app, an emailed code, or both.',
+  'mfa.failed': 'The two-step settings could not be loaded. Everything else on this page is up to date.',
   'mfa.passwordLabel': 'Your password',
   'mfa.status.appOn': 'Authenticator app: on',
   'mfa.status.appOff': 'Authenticator app: off',
