@@ -44,6 +44,38 @@ interface AuthTokensResponse {
   readonly expiresIn: number;
 }
 
+/** The two factors the API knows; a recovery code is accepted in place of either (ADR-041). */
+export type MfaMethod = 'TOTP' | 'EMAIL';
+
+/**
+ * A login that passed its password and is waiting for a second factor.
+ *
+ * Held in the store while the sign-in screen shows the code form, so a failed code does not make the
+ * person retype their password — the challenge is single-use but it survives wrong attempts (up to
+ * the server's cap).
+ */
+export interface MfaChallenge {
+  readonly challengeToken: string;
+  readonly methods: readonly MfaMethod[];
+  /** `a***@example.com`, never the full address. */
+  readonly emailHint: string;
+  readonly expiresAt: string;
+}
+
+/** What `POST /auth/login` answers — a discriminated union on `mfaRequired` (docs/06 §2). */
+type LoginResponse =
+  | { readonly mfaRequired: false; readonly accessToken: string; readonly expiresIn: number }
+  | {
+      readonly mfaRequired: true;
+      readonly challengeToken: string;
+      readonly methods: readonly MfaMethod[];
+      readonly emailHint: string;
+      readonly expiresAt: string;
+    };
+
+/** The outcome of a password step: either a session now, or a code form next. */
+export type SignInOutcome = 'SESSION' | 'MFA';
+
 /**
  * Authentication state, held in signals.
  *
@@ -58,10 +90,20 @@ export class AuthStore {
   private readonly accessTokenSignal = signal<string | null>(null);
   private readonly sessionSignal = signal<Session | null>(null);
   private readonly restoreFailureSignal = signal<SessionFailure | null>(null);
+  private readonly mfaChallengeSignal = signal<MfaChallenge | null>(null);
 
   readonly accessToken = this.accessTokenSignal.asReadonly();
   readonly session = this.sessionSignal.asReadonly();
   readonly isAuthenticated = computed(() => this.sessionSignal() !== null);
+
+  /**
+   * The step between password and session, or `null` when there is none.
+   *
+   * Read by `/sign-in`, which renders the code form while it is set. It lives in the store rather
+   * than the component because a wrong code must not lose it: the challenge is the one credential
+   * that step has.
+   */
+  readonly mfaChallenge = this.mfaChallengeSignal.asReadonly();
 
   /**
    * Why the last restore failed, or `null` when there is a session or none has been attempted.
@@ -99,13 +141,69 @@ export class AuthStore {
     this.restoreFailureSignal.set(null);
   }
 
-  async signIn(email: string, password: string): Promise<void> {
+  /**
+   * Sign in with a password.
+   *
+   * Returns which step comes next. With a second factor on the API answers a **challenge and no
+   * cookie**, so nothing is authenticated yet and the caller must not navigate (ADR-041); the
+   * challenge is kept here for {@link verifyMfa}.
+   */
+  async signIn(email: string, password: string): Promise<SignInOutcome> {
+    const response = await firstValueFrom(
+      this.http.post<LoginResponse>('/api/auth/login', { email, password }),
+    );
+
+    if (response.mfaRequired) {
+      this.mfaChallengeSignal.set({
+        challengeToken: response.challengeToken,
+        methods: response.methods,
+        emailHint: response.emailHint,
+        expiresAt: response.expiresAt,
+      });
+      return 'MFA';
+    }
+
+    this.mfaChallengeSignal.set(null);
+    this.accessTokenSignal.set(response.accessToken);
+    await this.loadSession();
+    this.restoreFailureSignal.set(null);
+    return 'SESSION';
+  }
+
+  /**
+   * Complete the second step and, only then, establish the session.
+   *
+   * The code may be a TOTP code, an emailed code or a recovery code; the server decides from the
+   * challenge, so the client does not have to know which kind it is holding.
+   */
+  async verifyMfa(code: string): Promise<void> {
+    const challenge = this.mfaChallengeSignal();
+    if (challenge === null) throw new Error('No two-factor challenge is in progress.');
+
     const tokens = await firstValueFrom(
-      this.http.post<AuthTokensResponse>('/api/auth/login', { email, password }),
+      this.http.post<AuthTokensResponse>('/api/auth/login/mfa', {
+        challengeToken: challenge.challengeToken,
+        code,
+      }),
     );
     this.accessTokenSignal.set(tokens.accessToken);
     await this.loadSession();
     this.restoreFailureSignal.set(null);
+    this.mfaChallengeSignal.set(null);
+  }
+
+  /** Ask for a fresh emailed code for the live challenge. Throws when the factor is not on. */
+  async resendMfaCode(): Promise<void> {
+    const challenge = this.mfaChallengeSignal();
+    if (challenge === null) return;
+    await firstValueFrom(
+      this.http.post('/api/auth/login/mfa/resend', { challengeToken: challenge.challengeToken }),
+    );
+  }
+
+  /** Abandon the second step and go back to the password form. */
+  cancelMfa(): void {
+    this.mfaChallengeSignal.set(null);
   }
 
   /**
@@ -248,6 +346,8 @@ export class AuthStore {
   clear(): void {
     this.accessTokenSignal.set(null);
     this.sessionSignal.set(null);
+    // A half-finished second step goes with the session: a challenge belongs to one sign-in attempt.
+    this.mfaChallengeSignal.set(null);
   }
 
   private async loadSession(): Promise<void> {

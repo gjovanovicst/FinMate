@@ -113,6 +113,26 @@ export const envSchema = z
       .default('false')
       .transform((value) => value === 'true'),
 
+    /**
+     * Two-factor authentication (ADR-041).
+     *
+     * `MFA_ENCRYPTION_KEY` is a **32-byte** key — base64, or 64 hex characters — that encrypts each
+     * stored TOTP shared secret with AES-256-GCM. It is optional, and unset means the
+     * authenticator-app factor **cannot be set up**: the API refuses rather than storing a shared
+     * secret in the clear, and the settings surface says why. The emailed-code factor needs no key.
+     *
+     * ⚠️ Losing this key makes every enrolled authenticator unusable; the recovery codes are the way
+     * back in, which is why ten are minted and shown once. Rotating it is a migration, not a config
+     * change.
+     */
+    MFA_ENCRYPTION_KEY: optionalText,
+    /** How long the step between password and second factor stays valid. */
+    MFA_CHALLENGE_TTL_SECONDS: z.coerce.number().int().positive().default(300), // 5 min
+    /** How long an emailed login code stays valid. */
+    MFA_EMAIL_CODE_TTL_SECONDS: z.coerce.number().int().positive().default(600), // 10 min
+    /** Wrong second-factor codes, per challenge, before it is dead. */
+    MFA_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
+
     // ADR-007: PARSE/CLASSIFY/NARRATE/OCR may only target a LOCAL model or an EEA endpoint.
     // Anything else is a GDPR Chapter V transfer requiring recorded Household consent.
     AI_PARSE_PRIMARY: z.string().default('LOCAL'),
@@ -246,6 +266,19 @@ export const envSchema = z
       });
     }
 
+    // A present-but-wrong key is worse than an absent one: absent means the TOTP factor is honestly
+    // unavailable, while a malformed key would enrol an authenticator whose secret cannot be read
+    // back. Fail at boot instead (ADR-041).
+    if (env.MFA_ENCRYPTION_KEY !== undefined && decodeMfaKey(env.MFA_ENCRYPTION_KEY) === null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['MFA_ENCRYPTION_KEY'],
+        message:
+          'MFA_ENCRYPTION_KEY must be 32 bytes, given as base64 or as 64 hex characters ' +
+          '(for example: openssl rand -base64 32).',
+      });
+    }
+
     // Residency guard: reject a routing target that is neither LOCAL nor EEA-suffixed.
     for (const key of [
       'AI_PARSE_PRIMARY',
@@ -287,6 +320,21 @@ export const envSchema = z
   });
 
 export type AppConfig = z.infer<typeof envSchema>;
+
+/**
+ * Decode a 32-byte key given as base64 **or** 64 hex characters, or `null` when it is neither.
+ *
+ * Exported because two callers must agree on what a valid key is: the schema, so a wrong one fails
+ * at boot rather than on the first enrolment, and `mfa-crypto`, which derives the AES key. A key of
+ * the wrong length must never be silently stretched or padded into one.
+ */
+export function decodeMfaKey(value: string): Buffer | null {
+  const trimmed = value.trim();
+  const buffer = /^[0-9a-fA-F]{64}$/.test(trimmed)
+    ? Buffer.from(trimmed, 'hex')
+    : Buffer.from(trimmed, 'base64');
+  return buffer.length === 32 ? buffer : null;
+}
 
 /** Parse and validate the environment, throwing a readable error listing every problem at once. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {

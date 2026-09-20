@@ -3,24 +3,51 @@
 // `@angular/router` (docs/15 §9).
 import { initAngularTesting } from '@web-test/angular-testing';
 
-import { provideZonelessChangeDetection } from '@angular/core';
+import { provideZonelessChangeDetection, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { AuthStore } from '../../core/auth/auth.store';
+import { AuthStore, type MfaChallenge } from '../../core/auth/auth.store';
 import { SignInComponent } from './sign-in.component';
 
 initAngularTesting();
 
 /**
- * Sign-in — the one thing 5.8 changed here.
+ * Sign-in, and the second step 5.8 did not have.
  *
- * The screen itself is Phase 0's; what the reset work added is the way into the recovery flow, and the
- * assertion that matters is that the link is a real route reachable from the form rather than a
- * sentence telling the user to find another way in.
+ * What matters here is the **shape of the flow**: with a second factor on, a correct password must
+ * not navigate (the API sets no cookie, so there is nothing to navigate with), the code form must
+ * survive a refused code, and the recovery flow link must stay reachable from the password step.
  */
-async function mount(store = { signIn: vi.fn(() => Promise.resolve()) }) {
+
+interface StoreStub {
+  signIn: ReturnType<typeof vi.fn>;
+  verifyMfa: ReturnType<typeof vi.fn>;
+  resendMfaCode: ReturnType<typeof vi.fn>;
+  cancelMfa: ReturnType<typeof vi.fn>;
+  mfaChallenge: () => MfaChallenge | null;
+}
+
+function challenge(overrides: Partial<MfaChallenge> = {}): MfaChallenge {
+  return {
+    challengeToken: 'challenge-1',
+    methods: ['TOTP'],
+    emailHint: 'a***@example.test',
+    expiresAt: '2026-09-20T12:05:00.000Z',
+    ...overrides,
+  };
+}
+
+async function mount(overrides: Partial<StoreStub> = {}) {
+  const store: StoreStub = {
+    signIn: vi.fn(async () => 'SESSION'),
+    verifyMfa: vi.fn(async () => undefined),
+    resendMfaCode: vi.fn(async () => undefined),
+    cancelMfa: vi.fn(),
+    mfaChallenge: () => null,
+    ...overrides,
+  };
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     imports: [SignInComponent],
@@ -51,8 +78,9 @@ describe('SignInComponent', () => {
   });
 
   it('reports a refused sign-in and stays on the form', async () => {
-    const store = { signIn: vi.fn(() => Promise.reject({ error: { error: { code: 'UNAUTHENTICATED' } } })) };
-    const screen = await mount(store);
+    const screen = await mount({
+      signIn: vi.fn(() => Promise.reject({ error: { error: { code: 'UNAUTHENTICATED' } } })),
+    });
 
     screen.component.form.setValue({ email: 'someone@example.test', password: 'wrong-password' });
     await screen.component.submit();
@@ -67,8 +95,8 @@ describe('SignInComponent', () => {
     // its only signal. `submitting` spans the credentials call *and* `navigateByUrl`, so the form is gone
     // for both.
     let release!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
+    const pending = new Promise<string>((resolve) => {
+      release = () => resolve('SESSION');
     });
     const screen = await mount({ signIn: vi.fn(() => pending) });
 
@@ -85,5 +113,94 @@ describe('SignInComponent', () => {
 
     release();
     await submitting;
+  });
+
+  it('swaps to the code form when the account has a second factor', async () => {
+    const active = signal<MfaChallenge | null>(null);
+    const screen = await mount({
+      signIn: vi.fn(async () => {
+        active.set(challenge());
+        return 'MFA';
+      }),
+      mfaChallenge: () => active(),
+    });
+
+    screen.component.form.setValue({ email: 'someone@example.test', password: 'correct-horse' });
+    await screen.component.submit();
+    screen.fixture.detectChanges();
+
+    // The password fields are gone — this is a different step, not an error on the same form.
+    expect(screen.root.querySelector('input[type="email"]')).toBeNull();
+    expect(screen.text()).toContain('authenticator app');
+    expect(screen.root.querySelector('input[autocomplete="one-time-code"]')).not.toBeNull();
+  });
+
+  it('finishes the login with the code, and only then', async () => {
+    const active = signal<MfaChallenge | null>(challenge());
+    const screen = await mount({
+      signIn: vi.fn(async () => 'MFA'),
+      mfaChallenge: () => active(),
+    });
+    screen.component.step.set('MFA');
+    screen.component.code.set('123456');
+    screen.fixture.detectChanges();
+
+    await screen.component.verify();
+
+    expect(screen.store.verifyMfa).toHaveBeenCalledWith('123456');
+  });
+
+  it('keeps the code form when the code is refused', async () => {
+    const active = signal<MfaChallenge | null>(challenge());
+    const screen = await mount({
+      signIn: vi.fn(async () => 'MFA'),
+      verifyMfa: vi.fn(() => Promise.reject({ error: { error: { code: 'MFA_INVALID_CODE' } } })),
+      mfaChallenge: () => active(),
+    });
+    screen.component.step.set('MFA');
+    screen.component.code.set('000000');
+    screen.fixture.detectChanges();
+
+    await screen.component.verify();
+    screen.fixture.detectChanges();
+
+    expect(screen.text()).toContain('not correct');
+    // The challenge survives a wrong code, so the person does not retype their password.
+    expect(screen.root.querySelector('input[autocomplete="one-time-code"]')).not.toBeNull();
+  });
+
+  it('offers an emailed code only when the account has that factor', async () => {
+    const active = signal<MfaChallenge | null>(challenge({ methods: ['TOTP'] }));
+    const screen = await mount({ mfaChallenge: () => active() });
+    screen.component.step.set('MFA');
+    screen.fixture.detectChanges();
+    expect(screen.text()).not.toContain('Email me a code');
+
+    active.set(challenge({ methods: ['TOTP', 'EMAIL'] }));
+    screen.fixture.detectChanges();
+    expect(screen.text()).toContain('Email me a code');
+  });
+
+  it('names the masked address when email is the only factor', async () => {
+    const active = signal<MfaChallenge | null>(challenge({ methods: ['EMAIL'] }));
+    const screen = await mount({ mfaChallenge: () => active() });
+    screen.component.step.set('MFA');
+    screen.fixture.detectChanges();
+
+    expect(screen.text()).toContain('a***@example.test');
+  });
+
+  it('goes back to the password form and drops the half-finished challenge', async () => {
+    const active = signal<MfaChallenge | null>(challenge());
+    const screen = await mount({ mfaChallenge: () => active() });
+    screen.component.step.set('MFA');
+    screen.fixture.detectChanges();
+
+    screen.component.back();
+    screen.fixture.detectChanges();
+
+    expect(screen.store.cancelMfa).toHaveBeenCalled();
+    expect(screen.component.step()).toBe('PASSWORD');
+    expect(screen.root.querySelector('input[type="email"]')).not.toBeNull();
   });
 });

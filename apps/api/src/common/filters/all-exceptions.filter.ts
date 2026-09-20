@@ -29,6 +29,12 @@ export type ApiErrorCode =
    * is specific and safe: offer a re-send, do not give up on the session.
    */
   | 'EMAIL_NOT_VERIFIED'
+  /**
+   * A second-factor code was wrong (ADR-041). Its own code rather than `UNAUTHENTICATED`, because on
+   * the code step "incorrect email or password" is both untrue and unhelpful — the client has a
+   * specific sentence for this state.
+   */
+  | 'MFA_INVALID_CODE'
   | 'NOT_FOUND'
   | 'VALIDATION_FAILED'
   | 'CONFLICT'
@@ -42,6 +48,7 @@ const STATUS_BY_CODE: Record<ApiErrorCode, HttpStatus> = {
   UNAUTHENTICATED: HttpStatus.UNAUTHORIZED,
   FORBIDDEN: HttpStatus.FORBIDDEN,
   EMAIL_NOT_VERIFIED: HttpStatus.FORBIDDEN,
+  MFA_INVALID_CODE: HttpStatus.UNAUTHORIZED,
   NOT_FOUND: HttpStatus.NOT_FOUND,
   VALIDATION_FAILED: HttpStatus.BAD_REQUEST,
   CONFLICT: HttpStatus.CONFLICT,

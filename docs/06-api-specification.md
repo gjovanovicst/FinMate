@@ -315,6 +315,32 @@ type ConflictError {
 > - `GET /auth/me` gained `email`, `displayName`, `locale`, `emailVerified` and `pendingEmail` on the
 >   same read, because the shell's account block renders the name on the page load that already
 >   fetches the session — it named the role until this task.
+>
+> **Two-factor authentication (ADR-041).** Two independent factors, each opt-in per account:
+> an authenticator app (TOTP, RFC 6238) and an emailed six-digit code. **A correct password with a
+> factor on returns a challenge and sets no cookie**, so the login flow gains one step:
+>
+> | Route | Auth | Body / answer |
+> |---|---|---|
+> | `POST /auth/login` | **public** | `{ email, password }` → `{ mfaRequired: false, accessToken, expiresIn }` **or** `{ mfaRequired: true, challengeToken, methods, emailHint, expiresAt }` |
+> | `POST /auth/login/mfa` | **public** (the challenge token *is* the credential) | `{ challengeToken, code }` → `{ accessToken, expiresIn }`; the code may be a TOTP code, an emailed code or a recovery code |
+> | `POST /auth/login/mfa/resend` | **public** | `{ challengeToken }` → `204`; a fresh emailed code, only when that factor is on |
+> | `GET /auth/mfa` | session | `{ totpEnabled, emailOtpEnabled, totpAvailable, recoveryCodesRemaining }` |
+> | `POST /auth/mfa/totp/setup` | session **+ password** | → `{ secret, otpauthUri }`, shown **once**; the secret is stored encrypted and unconfirmed |
+> | `POST /auth/mfa/totp/enable` | session **+ password** | `{ code }` → `{ recoveryCodes }` (ten, shown once) |
+> | `POST /auth/mfa/totp/disable` | session **+ password** | `204`; recovery codes survive if the email factor is still on |
+> | `POST /auth/mfa/email` | session **+ password** | `{ enabled }` → `{ recoveryCodes }` (non-empty only when enabling minted them) |
+> | `POST /auth/mfa/recovery-codes` | session **+ password** | → `{ recoveryCodes }`; regenerates, invalidating the old ones |
+>
+> The decisions, each of which could reasonably go the other way (ADR-041 records them in full): a factor
+> is **on** only when its `*_at` column is non-null; a challenge is a single-use row storing only the
+> digest of its token, with an attempt cap and a short expiry; the TOTP secret is **AES-256-GCM
+> ciphertext** under `MFA_ENCRYPTION_KEY` (32 bytes, **optional** — without it `totpAvailable` is false
+> and the screen says so); TOTP is computed **in-repo** on `node:crypto`; recovery codes are 80-bit,
+> hashed, single-use and minted with the first factor; and **every factor mutation re-authenticates with
+> the password**, so a borrowed session cannot arm a lockout. Two error codes are specific to this flow:
+> `MFA_INVALID_CODE` (`401`) for a wrong code — not `UNAUTHENTICATED`, which the client renders as
+> "incorrect email or password" — and `RATE_LIMITED` for the attempt that trips the cap.
 
 
 ### 2.1 Token strategy

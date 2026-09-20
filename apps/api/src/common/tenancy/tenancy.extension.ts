@@ -104,12 +104,16 @@ export const PARENT_SCOPED_MODELS: ReadonlySet<string> = new Set([
 /**
  * Models with no Household relationship. Tenancy does not apply; the authorization matrix does.
  *
- * `users`, `sessions`, `refresh_tokens` and `email_tokens` are scoped to the authenticated *user*
- * — that is an authentication concern (Phase 0 task 0.6), not a tenancy concern. `prompt_templates`
- * is platform configuration.
+ * `users`, `sessions`, `refresh_tokens`, `email_tokens`, `mfa_challenges` and `mfa_recovery_codes`
+ * are scoped to the authenticated *user* — that is an authentication concern (Phase 0 task 0.6),
+ * not a tenancy concern. Every query against the last two still scopes by `user_id` taken from the
+ * session; being in this set means the guard adds no predicate, not that a caller may omit one.
+ * `prompt_templates` is platform configuration.
  */
 export const GLOBAL_MODELS: ReadonlySet<string> = new Set([
   'email_tokens',
+  'mfa_challenges',
+  'mfa_recovery_codes',
   'prompt_templates',
   'refresh_tokens',
   'sessions',

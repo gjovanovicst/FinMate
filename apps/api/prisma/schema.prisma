@@ -738,6 +738,13 @@ model users {
   display_name       String
   locale             String                @default("en")
   status             String                @default("ACTIVE")
+  /// The TOTP shared secret, **encrypted at rest** with `MFA_ENCRYPTION_KEY` (AES-256-GCM). NULL
+  /// until a setup is started; the factor is enabled only once `totp_confirmed_at` is set (ADR-041).
+  totp_secret        String?
+  /// Non-null means the authenticator-app factor is **on**: a code was verified at setup.
+  totp_confirmed_at  DateTime?             @db.Timestamptz(6)
+  /// Non-null means the emailed-code factor is on.
+  email_otp_enabled_at DateTime?           @db.Timestamptz(6)
   created_at         DateTime              @default(now()) @db.Timestamptz(6)
   updated_at         DateTime              @default(now()) @db.Timestamptz(6)
   audit_log          audit_log[]
@@ -745,8 +752,52 @@ model users {
   email_tokens       email_tokens[]
   household_members  household_members[]
   households         households[]
+  mfa_challenges     mfa_challenges[]
+  mfa_recovery_codes mfa_recovery_codes[]
   notifications      notifications[]
   purge_receipts     purge_receipts[]
   push_subscriptions push_subscriptions[]
   sessions           sessions[]
+}
+
+/// A login that passed its password and is waiting for a second factor (ADR-041).
+///
+/// The raw challenge token is returned to the client once and only its SHA-256 is stored, exactly
+/// like a refresh token. `attempts` caps guessing of a six-digit emailed code; `consumed_at` makes
+/// the challenge single-use, so a code observed in transit cannot be replayed.
+model mfa_challenges {
+  id              String    @id @db.Uuid
+  user_id         String    @db.Uuid
+  token_hash      String    @unique @db.Char(64)
+  /// The factor this challenge offered first: `TOTP` or `EMAIL`. Either is accepted at verification,
+  /// and a recovery code is accepted in place of both.
+  method          String
+  /// SHA-256 of the emailed six-digit code. NULL for a TOTP challenge, which stores no code.
+  code_hash       String?   @db.Char(64)
+  attempts        Int       @default(0)
+  expires_at      DateTime  @db.Timestamptz(6)
+  consumed_at     DateTime? @db.Timestamptz(6)
+  ip_hash         String?
+  user_agent_hash String?
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  users           users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], where: raw("(consumed_at IS NULL)"))
+  @@index([expires_at], where: raw("(consumed_at IS NULL)"))
+}
+
+/// Single-use recovery codes for a two-factor account (ADR-041).
+///
+/// Ten are minted when a factor is enabled, shown to the owner **once**, and stored only as SHA-256
+/// digests. A fast digest is correct: each code is 80 bits of randomness, so there is no dictionary
+/// to attack. `used_at` retires one on first use.
+model mfa_recovery_codes {
+  id         String    @id @db.Uuid
+  user_id    String    @db.Uuid
+  code_hash  String    @unique @db.Char(64)
+  used_at    DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], where: raw("(used_at IS NULL)"))
 }

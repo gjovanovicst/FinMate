@@ -2843,6 +2843,139 @@ string it composes and stores or sends.
 
 ---
 
+### ADR-041 — Two-factor authentication is a login *challenge*, with in-repo TOTP, encrypted secrets and recovery codes
+
+**Status:** Accepted · **Supersedes:** the deferral in docs/09 Part 4 ("passkeys / TOTP 2FA — not v1")
+
+**Context.** docs/09's deferred list said *"password + refresh rotation is sufficient for v1"* and put
+passkeys and TOTP behind an enterprise ask. The product owner asked for both an authenticator-app factor
+and an emailed-code factor, so the deferral is overridden deliberately — and that makes the login flow the
+thing that changes, not just a settings toggle. The existing surface is a password plus a rotating refresh
+cookie; `REQUIRE_EMAIL_VERIFICATION` (ADR-039's session work, task 0.6.5) already shows how a
+deployment-level policy composes with the guard chain.
+
+Constraints that shaped this: no vendor SDK for an algorithm RFC 6238 specifies exactly; a shared secret
+must never be readable by a database thief; a second factor the owner cannot satisfy must not become a
+permanent lockout; the client is a browser with no native crypto to borrow; and a deployment with no mail
+relay must still be able to run something.
+
+**Decision.**
+
+1. **Two independent factors**, each enabled by a non-null column: `users.totp_confirmed_at` (authenticator
+   app) and `users.email_otp_enabled_at` (emailed code). Either can be on alone; both can be on.
+2. **A correct password with a factor on mints no session and sets no cookie.** `POST /auth/login` answers
+   a discriminated `{ mfaRequired: true, challengeToken, methods, emailHint, expiresAt }`, and
+   `POST /auth/login/mfa` is the only path that establishes a session. This is the constraint, not a
+   preference: "password checked, then session minted" is one line to reintroduce by accident.
+3. **Challenges are rows**: `mfa_challenges` stores the SHA-256 of an opaque 256-bit token (never the
+   token), the offered method, an optional hashed emailed code, an attempt count, a short expiry
+   (`MFA_CHALLENGE_TTL_SECONDS`, default 300 s) and `consumed_at`. Single-use is what makes a code
+   observed in transit useless, and the attempt cap (`MFA_MAX_ATTEMPTS`, default 5) is what makes a
+   six-digit code safe. No separate rate limiter is layered on top: reaching this step already cost a
+   correct password, and *that* is rate-limited (`LOGIN_MAX_ATTEMPTS`).
+4. **TOTP is implemented in-repo on `node:crypto`**, in `apps/api/src/modules/auth/totp.ts` — base32,
+   HMAC-SHA1 dynamic truncation, a ±1-step window, and the `otpauth://` URI. It is pinned to **RFC 6238
+   Appendix B's own vectors** in `totp.spec.ts`. It lives in the **API**, not `packages/domain`, because
+   `node:crypto` cannot be bundled into the browser and the web never computes a code.
+5. **The TOTP secret is encrypted at rest**, AES-256-GCM under `MFA_ENCRYPTION_KEY` (32 bytes, base64 or
+   hex). The key has **no default** and is optional; with it unset the authenticator factor **cannot be
+   enrolled**, and `GET /auth/mfa` reports `totpAvailable: false` so the screen says so instead of offering
+   a setup that would store a shared secret in the clear. `config.ts` refuses to boot on a present-but-wrong
+   key.
+6. **Ten recovery codes**, each 16 characters of a 32-symbol alphabet without `I`/`O`/`0`/`1` (80 bits),
+   stored only as SHA-256 digests, single-use, shown **once**. They are minted when the account's *first*
+   factor is enabled and deleted when the *last* one goes — a second factor with no way back in is a
+   lockout waiting to happen (R-35).
+7. **Every mutation of a factor re-authenticates with the password** — enrol, confirm, disable, regenerate.
+   A borrowed session must not be able to arm a factor that locks the owner out.
+8. **The emailed code is six digits**, hashed, with its own TTL (`MFA_EMAIL_CODE_TTL_SECONDS`, default
+   600 s) and its own resend path (rate-limited to 3 per window, per challenge).
+
+**Consequences.**
+
+- ✅ A stolen password is no longer a session. The one-step shortcut is closed by construction rather than
+  by remembering to check a flag.
+- ✅ Nothing recoverable from the database is useful: challenge tokens, recovery codes and emailed codes are
+  digests, and the TOTP secret is ciphertext under a key that lives only in the environment.
+- ✅ The algorithm is auditable against a public standard instead of trusted to a package.
+- ✅ The factors compose with everything already built: they live under `/auth/*`, so `@AllowUnverified()`
+  covers them, and a login that needs a second factor still passes the same tenancy and status checks.
+- ⚠️ **Losing `MFA_ENCRYPTION_KEY` makes every enrolled authenticator unusable** (R-36). Recovery codes are
+  the way back; rotating the key is a migration, not a config change.
+- ⚠️ **No per-step replay denylist.** A TOTP code is valid for its whole 30-second step and could be
+  presented twice *if* two challenges were open; the challenge being single-use is what closes the login
+  replay, and a denylist would add a write to every verification for a window the challenge already covers.
+  Named, not hidden.
+- ⚠️ **No passkeys/WebAuthn as a login factor.** The app lock already uses WebAuthn PRF for local
+  encryption (ADR-029) and that is a different concern; a passkey *login* is its own decision and is not
+  implied by this one.
+- ⚠️ **The emailed factor's availability is the mail relay's.** It needs `SMTP_URL` (already required in
+  production, task 0.6.5), so a deployment without mail cannot offer it.
+
+**Alternatives rejected.**
+
+- **(a) `otplib` (or any TOTP package)** — a new dependency for ~80 lines this repository can read, test
+  against RFC vectors and audit. ADR-004's rule is that a dependency is a decision; here there is nothing
+  to buy.
+- **(b) Store the TOTP secret in plaintext, or derive it from the password** — plaintext fails the "database
+  thief" bar outright; deriving it makes the factor a function of the password and silently breaks every
+  authenticator on a password change.
+- **(c) Mint a session after the password and *then* demand the code** — the advisory shape, and the one
+  that turns a 2FA flag into a suggestion: every data route would have to remember to check, and one that
+  forgot would be the whole vulnerability.
+- **(d) A separate `mfa_tokens` table reusing `email_tokens` for the emailed code** — `email_tokens` has no
+  attempt counter, and an unthrottled six-digit code is guessable by a script. The attempt cap is the
+  reason `mfa_challenges` exists.
+- **(e) SMS** — a second vendor, a phone number as personal data, and SIM-swap as the failure mode. Not
+  proposed and not built.
+
+---
+
+### ADR-042 — `qrcode-generator` is the QR encoder for authenticator enrolment
+
+**Status:** Accepted
+
+**Context.** ADR-041 returns an `otpauth://` URI; a person has to get it into an authenticator app. The
+overwhelmingly common way is a QR code, which has to be rendered **in the browser** — a server-rendered
+image would mean the shared secret leaves the device it was generated for, and an extra round trip for a
+picture. A QR encoder is not something to hand-roll (Reed–Solomon, masking, version selection), so this is
+the "new dependency" case ADR-004 and the non-negotiable rules require an ADR for.
+
+**Decision.** Use **`qrcode-generator@2`** (MIT) in `apps/web`, exclusively for the authenticator setup.
+It has **zero dependencies** and ships its own TypeScript declarations; the component renders
+`qr.createDataURL(6, 2)` as an `<img src>`, and the URI is passed in from the server's one-time setup
+response. The secret is **also** shown as selectable text beside it, because a QR code alone fails for a
+desktop browser, a screen reader, and any app that only offers manual entry. The encoding lives in
+`shared/ui/totp-qr/qr.ts` as a plain function so it is tested without mounting anything.
+
+**Consequences.**
+
+- ✅ Zero transitive dependencies, and types, for a feature on one screen — the smallest real cost found.
+- ✅ A real `<img>`, so the browser's own image handling, zoom and accessibility apply; no sanitizer bypass
+  is needed (the library's `createSvgTag` string would have required one).
+- ✅ The QR route stays inside the `/profile` lazy chunk (measured 168.6 KB / 320 KB after this change), so
+  a visitor who never opens the screen never downloads it.
+- ⚠️ One more package to track for advisories, on an unmaintained-but-frozen MIT codebase whose output is a
+  static image. The risk is bounded by the fact that nothing it produces is trusted: the QR is a rendering
+  of a string this system already holds.
+- ⚠️ The library is untyped-by-origin but ships `.d.ts`; a future major without them would need a local
+  declaration.
+
+**Alternatives rejected.**
+
+- **(a) `qrcode`** — the popular option, but it pulls `pngjs`, `yargs` and `dijkstrajs` in for a feature
+  that never touches a file or a CLI.
+- **(b) `qr-creator`** — also zero-dependency and typed, and its custom-element API fits the DOM less well
+  than a string return in a framework that already owns the template.
+- **(c) Inject the library's SVG string with `bypassSecurityTrustHtml`** — a sanitizer bypass for a picture,
+  which is exactly the kind of hole that outlives its reason.
+- **(d) Render the QR server-side** — the shared secret would leave the device to come back as an image,
+  and the setup response already carries it; the round trip buys nothing.
+- **(e) Manual entry only, no QR** — the fallback must exist, but making it the *only* path turns a
+  two-second enrolment into a transcription task, which is where enrolment is abandoned.
+
+---
+
 ## Part 2 — Risk register
 
 Scored as **Likelihood (L)** and **Impact (I)** on 1–5; **Exposure = L × I**. Anything ≥ 12 gets an
@@ -2893,6 +3026,8 @@ owner and a checkpoint in [09](09-implementation-plan.md).
 | **R-32** | **A cloud OCR route that is configured but unnamed looks live and fails at the first receipt.** `supportsOcr: true` with no model is precisely how OCR was dead in every deployment (ADR-037's context), and the same shape is reachable again by naming `AI_OCR_PRIMARY=OPENAI_EU` and forgetting `AI_OCR_MODEL` | 2 | 2 | 4 | `assembleAi` now asks the constructed adapter `supports(task)` before writing a route, so the task is **skipped with an actionable reason** in the boot log, the seam stays `UNCONFIGURED_OCR`, and `aiEgress` does not disclose a transfer that cannot happen. Asserted in `ai-providers.spec.ts` for both the cloud and the text-only-endpoint cases |
 | **R-33** | **The redesign restyles twenty screens at once through the token layer, and only two of them had a reference to check against.** A single token value or a shared primitive therefore changes every screen's appearance, and a regression on a screen nobody opened is invisible in the diff — the same shape as 4.3.1d's contrast defect, which shipped because nothing *rendered* the pair anybody had changed | 3 | 2 | 6 | The token pairs are measured by `styles.tokens.spec.ts` in **both** themes rather than eyeballed; the shell and the dashboard were captured at 320/768/1280 px in each theme and compared against the references; a screen can still be restyled without touching a primitive, because the primitives are global classes rather than encapsulated component styles. ⚠️ **Named, not closed**: `/analytics` and `/assistant` had still had no human pass at any width before this change, and the redesign does not fix that — it makes the standing gap in docs/02 §9 wider by changing what they look like | The human visual pass docs/02 §9 already schedules |
 | **R-34** | **The API now has a second copy catalogue, and a string the client could have rendered can drift into it** (ADR-040). ADR-019 put wording in the client; server-composed copy had to move to the API because a notification, an email and a stored name are rendered by no client — but the boundary between "the server must say this" and "the screen should say this" is a judgement, and a later task can put a screen's sentence in the API and lose it from the switcher without any test failing | 3 | 2 | 6 | The server catalogue only holds copy that is **stored or delivered** (`notification-copy.ts`, `mail.service.ts`, the assistant's answer templates, the rule/household/receipt names); every interactive surface still calls `i18n.t()` and `app.routes.spec.ts`/`translations.spec.ts` fail on a key that is missing or duplicated across locales. The English/Serbian copy pair is asserted by `common/i18n/copy.spec.ts` across all three locales, and the transliteration it depends on is the shared `@finmate/nlp` function the browser also uses, so a Cyrillic catalogue cannot drift from the Latin one. ⚠️ **Named residuals**: rows written before the change keep their old language (`Naučeno: …`, `Moje domaćinstvo`), seed content is still Serbian for every Household, and `classification_decisions.rationale` is still English | Re-checked when a new server-composed message is added; the web catalogue's own guard is `translations.spec.ts` |
+| **R-35** | **A two-factor account is locked out when the authenticator is lost and the recovery codes are lost with it** (ADR-041). Enabling a factor raises the cost of a stolen password and simultaneously creates a way for the legitimate owner to be shut out; the app has no operator-assisted account recovery, so the recoverable paths are the ones built into the account | 3 | 4 | 12 | Ten single-use recovery codes are minted when the first factor is enabled and shown **once**, each accepted in place of either factor; the emailed-code factor is an alternative that needs only mailbox access; recovery codes are minted alongside the emailed factor too, so a person with only that factor is not left without them; every factor change re-authenticates, so a stolen session cannot quietly remove them; and `/profile` shows how many are left. ⚠️ **Named, not closed**: losing *both* the authenticator and the codes is unrecoverable by design — an operator override would be a backdoor, and building one is a separate decision nobody has made | `/profile` shows the remaining count; re-checked if an operator recovery path is ever proposed |
+| **R-36** | **Losing or rotating `MFA_ENCRYPTION_KEY` makes every enrolled authenticator unusable at once** (ADR-041). The key is deliberately required to store a shared secret safely, which means it is also a single point of failure for every account that enrolled | 2 | 4 | 8 | The key is **optional**, so a deployment that does not want that dependency simply cannot offer the authenticator factor and says so (`totpAvailable: false`); the emailed-code factor and the ten recovery codes need no key, so no account is left with one factor and no way in; and the schema refuses to boot on a present-but-wrong key, so a typo fails at deploy rather than at enrolment. ⚠️ Rotating the key is a **migration** (decrypt under the old, re-encrypt under the new), not a config change, and that is not built | Deployment runbook; the ADR states the rotation shape |
 
 ### Top five by exposure
 1. **R-01 onboarding cold-start (20)** — the single biggest threat, and the one the plan spends the most disproportionate effort on.

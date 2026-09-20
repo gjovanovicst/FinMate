@@ -127,6 +127,39 @@ describe('SMTP_URL is required in production', () => {
 });
 
 /**
+ * `MFA_ENCRYPTION_KEY` (ADR-041).
+ *
+ * A present-but-wrong key is the dangerous state: absent means the authenticator factor is honestly
+ * unavailable, while a malformed key would enrol an authenticator whose secret cannot be read back.
+ * It must fail at boot, and a wrong-length key must never be stretched or padded into a valid one.
+ */
+describe('MFA_ENCRYPTION_KEY', () => {
+  it('accepts a 32-byte base64 key', () => {
+    expect(() =>
+      loadConfig({ ...BASE, MFA_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64') }),
+    ).not.toThrow();
+  });
+
+  it('accepts a 64-character hex key', () => {
+    expect(() => loadConfig({ ...BASE, MFA_ENCRYPTION_KEY: 'a'.repeat(64) })).not.toThrow();
+  });
+
+  it('treats a blank key as unset, so the factor is simply unavailable', () => {
+    expect(loadConfig({ ...BASE, MFA_ENCRYPTION_KEY: '' }).MFA_ENCRYPTION_KEY).toBeUndefined();
+    expect(loadConfig({ ...BASE }).MFA_ENCRYPTION_KEY).toBeUndefined();
+  });
+
+  it('refuses a key of the wrong length rather than padding it', () => {
+    expect(() =>
+      loadConfig({ ...BASE, MFA_ENCRYPTION_KEY: Buffer.alloc(16, 1).toString('base64') }),
+    ).toThrow(/MFA_ENCRYPTION_KEY/);
+    expect(() => loadConfig({ ...BASE, MFA_ENCRYPTION_KEY: 'not-a-key' })).toThrow(
+      /MFA_ENCRYPTION_KEY/,
+    );
+  });
+});
+
+/**
  * `PUBLIC_API_PREFIX` — the browser's path to this API (R-26, task 4.3.5).
  *
  * It scopes the refresh cookie, so a wrong value is not a cosmetic mistake: a prefix the browser never

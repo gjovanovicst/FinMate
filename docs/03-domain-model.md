@@ -163,6 +163,11 @@ CREATE TABLE users (
   locale             TEXT NOT NULL DEFAULT 'en',
   status             TEXT NOT NULL DEFAULT 'ACTIVE'
                        CHECK (status IN ('ACTIVE','SUSPENDED','DELETED')),
+  -- Two-factor factors (ADR-041). The TOTP secret is stored as ciphertext, never the shared secret
+  -- itself; a factor is ON only when its `*_at` column is non-null.
+  totp_secret          TEXT,
+  totp_confirmed_at    TIMESTAMPTZ,
+  email_otp_enabled_at TIMESTAMPTZ,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -236,6 +241,40 @@ CREATE TABLE email_tokens (
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX ON email_tokens (user_id, purpose) WHERE consumed_at IS NULL;
+
+-- ---- two-factor authentication (ADR-041)
+-- The factors live on `users`; the two tables below are the per-login and per-code records. Like
+-- `sessions` and `email_tokens`, they attach to a User rather than a Household, and every query
+-- scopes by the authenticated user's id.
+
+-- users.totp_secret            TEXT, AES-256-GCM encrypted under MFA_ENCRYPTION_KEY (never plaintext)
+-- users.totp_confirmed_at      TIMESTAMPTZ, non-null => the authenticator-app factor is ON
+-- users.email_otp_enabled_at   TIMESTAMPTZ, non-null => the emailed-code factor is ON
+
+CREATE TABLE mfa_challenges (
+  id                 UUID PRIMARY KEY,
+  user_id            UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash         CHAR(64) NOT NULL UNIQUE,   -- sha256 of the challenge token; the token is never stored
+  method             TEXT NOT NULL CHECK (method IN ('TOTP','EMAIL')),
+  code_hash          CHAR(64),                   -- sha256 of the emailed six-digit code; NULL for TOTP
+  attempts           INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  expires_at         TIMESTAMPTZ NOT NULL,
+  consumed_at        TIMESTAMPTZ,                -- non-null => single-use challenge, already spent
+  ip_hash            TEXT,
+  user_agent_hash    TEXT,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX ON mfa_challenges (user_id) WHERE consumed_at IS NULL;
+CREATE INDEX ON mfa_challenges (expires_at) WHERE consumed_at IS NULL;
+
+CREATE TABLE mfa_recovery_codes (
+  id                 UUID PRIMARY KEY,
+  user_id            UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash          CHAR(64) NOT NULL UNIQUE,   -- sha256 of an 80-bit code; fast digest is correct here
+  used_at            TIMESTAMPTZ,                -- non-null => spent, one use only
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX ON mfa_recovery_codes (user_id) WHERE used_at IS NULL;
 
 -- ---- consent & erasure records (GDPR evidence; [08](08-security-privacy-and-compliance.md) §7)
 

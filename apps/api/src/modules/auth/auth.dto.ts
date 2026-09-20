@@ -81,6 +81,51 @@ export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export const uuidSchema = z.string().uuid();
 
 /**
+ * Two-factor authentication (ADR-041).
+ *
+ * Every **mutation** of a second factor carries the password: enrolling, enabling, disabling and
+ * regenerating recovery codes are all credential changes, and a borrowed session must not be able to
+ * make any of them (docs/08 §3). The one exception is verifying a login challenge, which is public
+ * by definition and holds its own single-use token.
+ */
+export const mfaPasswordSchema = z.object({
+  password: z.string().min(1).max(256),
+});
+export type MfaPasswordInput = z.infer<typeof mfaPasswordSchema>;
+
+export const mfaEnableTotpSchema = z.object({
+  password: z.string().min(1).max(256),
+  // Six to eight digits, matching what `verifyTotp` accepts: an authenticator app is configured for
+  // six, but the API tolerates the wider width rather than rejecting a code the algorithm allows.
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6,8}$/, 'Enter the six-digit code from your app.'),
+});
+export type MfaEnableTotpInput = z.infer<typeof mfaEnableTotpSchema>;
+
+export const mfaEmailToggleSchema = z.object({
+  password: z.string().min(1).max(256),
+  enabled: z.boolean(),
+});
+export type MfaEmailToggleInput = z.infer<typeof mfaEmailToggleSchema>;
+
+/** Login-challenge follow-ups. Public: the challenge token *is* the credential at this step. */
+export const mfaVerifySchema = z.object({
+  challengeToken: z.string().min(1).max(512),
+  // A TOTP code (6–8 digits), an emailed code (6) or a recovery code (four groups). Length only: the
+  // service decides which shape it is, so a stale client cannot ask for a factor the challenge did
+  // not offer.
+  code: z.string().trim().min(1).max(64),
+});
+export type MfaVerifyInput = z.infer<typeof mfaVerifySchema>;
+
+export const mfaChallengeSchema = z.object({
+  challengeToken: z.string().min(1).max(512),
+});
+export type MfaChallengeInput = z.infer<typeof mfaChallengeSchema>;
+
+/**
  * The profile screen (docs/02 §4.18). Only the display name is editable here: the email is a
  * credential change with its own confirmation flow, and the language has its own endpoint because
  * the switcher persists it without visiting this page (`updateLocaleSchema`).

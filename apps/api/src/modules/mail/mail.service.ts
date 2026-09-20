@@ -128,6 +128,39 @@ export class MailService {
   }
 
   /**
+   * A second-factor login code (ADR-041).
+   *
+   * The body carries the code and nothing else — no link, no account detail — because this message
+   * lands on a lock screen like any other. The text says what the code is for, since a bare six
+   * digits in an inbox read later is indistinguishable from a phishing attempt.
+   */
+  async sendLoginCode(to: string, code: string, locale: CopyLocale = 'en'): Promise<void> {
+    const minutes = Math.max(1, Math.round(this.config.MFA_EMAIL_CODE_TTL_SECONDS / 60));
+    await this.send(
+      to,
+      tr(locale, { en: 'Your sign-in code', sr: 'Tvoj kod za prijavu' }),
+      [
+        tr(locale, {
+          en: 'Your sign-in code is:',
+          sr: 'Tvoj kod za prijavu je:',
+        }),
+        '',
+        code,
+        '',
+        tr(
+          locale,
+          { en: 'It expires in {minutes} minutes.', sr: 'Ističe za {minutes} minuta.' },
+          { minutes },
+        ),
+        tr(locale, {
+          en: 'If you did not try to sign in, someone may have your password — change it now.',
+          sr: 'Ako nisi pokušao da se prijaviš, neko možda zna tvoju lozinku — promeni je odmah.',
+        }),
+      ].join('\n'),
+    );
+  }
+
+  /**
    * A notification (F-22). The body is composed by the notifications module and is already
    * **lock-screen safe** for this channel (docs/08 T-09): no amounts, no entity names — an email lands
    * on a phone's lock screen just as a push does.

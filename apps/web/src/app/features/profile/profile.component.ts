@@ -3,10 +3,11 @@ import { Router, RouterLink } from '@angular/router';
 
 import { ErrorMessageService } from '../../core/api/error-message.service';
 import { AuthStore } from '../../core/auth/auth.store';
-import { ProfileService } from '../../core/auth/profile.service';
+import { ProfileService, type MfaState, type TotpSetup } from '../../core/auth/profile.service';
 import { I18nService } from '../../core/i18n/i18n.service';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { LanguageSwitcherComponent } from '../../shared/ui/language-switcher/language-switcher.component';
+import { TotpQrComponent } from '../../shared/ui/totp-qr/totp-qr.component';
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../auth/password-policy';
 
 /**
@@ -33,7 +34,7 @@ import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../auth/password-polic
 @Component({
   selector: 'fm-profile',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, IconComponent, LanguageSwitcherComponent],
+  imports: [RouterLink, IconComponent, LanguageSwitcherComponent, TotpQrComponent],
   template: `
     <main class="fm-page wrap">
       <h1>{{ i18n.t('profile.title') }}</h1>
@@ -177,6 +178,139 @@ import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../auth/password-polic
           <p class="muted small">
             {{ i18n.t('profile.password.hint', { min: minLength }) }}
           </p>
+        </section>
+
+        <!-- Two-step verification (ADR-041) -->
+        <section class="fm-card" aria-labelledby="mfa-heading">
+          <div class="fm-card__head">
+            <h2 class="fm-card__title" id="mfa-heading">
+              <fm-icon name="lock" [size]="18" />
+              {{ i18n.t('mfa.title') }}
+            </h2>
+          </div>
+          <p class="muted small">{{ i18n.t('mfa.intro') }}</p>
+
+          @if (profile.mfa(); as mfa) {
+            <p class="value">{{ mfaStatus(mfa) }}</p>
+
+            <div class="row">
+              <label class="fm-field__label" for="mfa-password">
+                {{ i18n.t('mfa.passwordLabel') }}
+              </label>
+              <input
+                class="fm-field__input"
+                id="mfa-password"
+                type="password"
+                autocomplete="current-password"
+                [value]="mfaPassword()"
+                (input)="setMfaPassword($event)"
+              />
+            </div>
+
+            <div class="actions">
+              @if (!mfa.totpEnabled) {
+                @if (mfa.totpAvailable) {
+                  <button
+                    type="button"
+                    class="fm-btn fm-btn--primary"
+                    [disabled]="mfaBusy() || mfaPassword() === ''"
+                    (click)="startTotp()"
+                  >
+                    {{ i18n.t('mfa.app.setup') }}
+                  </button>
+                } @else {
+                  <!-- The key is absent, so the authenticator factor cannot be stored safely. Saying
+                       so is the honest state; a button here would fail on submit. -->
+                  <p class="muted small">{{ i18n.t('mfa.app.unavailable') }}</p>
+                }
+              } @else {
+                <button
+                  type="button"
+                  class="fm-btn fm-btn--danger"
+                  [disabled]="mfaBusy() || mfaPassword() === ''"
+                  (click)="disableTotp()"
+                >
+                  {{ i18n.t('mfa.app.disable') }}
+                </button>
+              }
+
+              <button
+                type="button"
+                class="fm-btn"
+                [disabled]="mfaBusy() || mfaPassword() === ''"
+                (click)="toggleEmail(mfa)"
+              >
+                {{ mfa.emailOtpEnabled ? i18n.t('mfa.email.disable') : i18n.t('mfa.email.enable') }}
+              </button>
+
+              @if (mfa.totpEnabled || mfa.emailOtpEnabled) {
+                <button
+                  type="button"
+                  class="fm-btn"
+                  [disabled]="mfaBusy() || mfaPassword() === ''"
+                  (click)="regenerateCodes()"
+                >
+                  {{ i18n.t('mfa.codes.regenerate') }}
+                </button>
+              }
+            </div>
+
+            @if (totpSetup(); as setup) {
+              <div class="totp">
+                <fm-totp-qr [uri]="setup.otpauthUri" />
+                <div class="totp__text">
+                  <p class="muted small">{{ i18n.t('mfa.app.scan') }}</p>
+                  <!-- The secret as text as well as a code: a desktop browser, a screen reader and
+                       every app with manual entry need it. -->
+                  <code class="secret">{{ setup.secret }}</code>
+                  <p class="muted small">{{ i18n.t('mfa.app.manual') }}</p>
+                  <div class="row">
+                    <label class="fm-field__label" for="totp-code">
+                      {{ i18n.t('mfa.app.codeLabel') }}
+                    </label>
+                    <input
+                      class="fm-field__input code"
+                      id="totp-code"
+                      type="text"
+                      inputmode="numeric"
+                      autocomplete="one-time-code"
+                      [value]="totpCode()"
+                      (input)="setTotpCode($event)"
+                    />
+                    <button
+                      type="button"
+                      class="fm-btn fm-btn--primary"
+                      [disabled]="mfaBusy() || totpCode().trim() === ''"
+                      (click)="enableTotp()"
+                    >
+                      {{ i18n.t('mfa.app.confirm') }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            }
+
+            @if (recoveryCodes().length > 0) {
+              <div class="codes" role="status">
+                <p class="muted small">{{ i18n.t('mfa.codes.intro') }}</p>
+                <ul class="codes__list">
+                  @for (entry of recoveryCodes(); track entry) {
+                    <li><code>{{ entry }}</code></li>
+                  }
+                </ul>
+                <button type="button" class="fm-btn fm-btn--primary" (click)="dismissCodes()">
+                  {{ i18n.t('mfa.codes.saved') }}
+                </button>
+              </div>
+            }
+          }
+
+          @if (mfaMessage(); as text) {
+            <p class="ok" role="status">{{ text }}</p>
+          }
+          @if (mfaError(); as text) {
+            <p class="error" role="alert">{{ text }}</p>
+          }
         </section>
 
         <!-- Sessions -->
@@ -339,6 +473,54 @@ import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../auth/password-polic
     .back a {
       color: var(--color-text-muted);
     }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+      margin-block-start: var(--space-2);
+    }
+    /* The QR and its manual-entry fallback sit side by side where there is room and stack where
+       there is not; the secret is monospace so it can be compared character by character. */
+    .totp {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-4);
+      align-items: flex-start;
+      margin-block: var(--space-3);
+      padding-block-start: var(--space-3);
+      border-block-start: 1px solid var(--color-border);
+    }
+    .totp__text {
+      display: grid;
+      gap: var(--space-2);
+      flex: 1 1 16rem;
+      min-inline-size: 0;
+    }
+    .secret,
+    .code {
+      font-family: var(--font-mono, monospace);
+      letter-spacing: 0.1em;
+      overflow-wrap: anywhere;
+    }
+    .codes {
+      display: grid;
+      gap: var(--space-2);
+      margin-block-start: var(--space-3);
+      padding: var(--space-3);
+      border: 1px solid var(--color-border-strong);
+      border-radius: var(--radius-md);
+    }
+    .codes__list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+      gap: var(--space-1) var(--space-3);
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .codes__list code {
+      font-family: var(--font-mono, monospace);
+    }
   `,
 })
 export class ProfileComponent {
@@ -360,6 +542,22 @@ export class ProfileComponent {
   readonly busy = signal(false);
   readonly message = signal<string | null>(null);
   readonly error = signal<string | null>(null);
+
+  /**
+   * Two-factor state (ADR-041).
+   *
+   * **One** password field serves every action in the section rather than one per button: the API
+   * re-authenticates each change, and asking for the same password four times on one card would be
+   * hostile for no security gain. The recovery codes are held here only until the person confirms
+   * they saved them — the API will not show them again.
+   */
+  readonly mfaPassword = signal('');
+  readonly totpCode = signal('');
+  readonly totpSetup = signal<TotpSetup | null>(null);
+  readonly recoveryCodes = signal<readonly string[]>([]);
+  readonly mfaBusy = signal(false);
+  readonly mfaMessage = signal<string | null>(null);
+  readonly mfaError = signal<string | null>(null);
 
   /** At least one session that is not this one, so "sign out everywhere else" is worth offering. */
   readonly hasOtherSessions = computed(() =>
@@ -416,6 +614,95 @@ export class ProfileComponent {
 
   setNewPassword(event: Event): void {
     this.newPassword.set((event.target as HTMLInputElement).value);
+  }
+
+  /**
+   * One sentence for what is on, built from whole translated fragments rather than a concatenated
+   * template — Serbian inflects, and a sentence assembled from English word order cannot.
+   */
+  mfaStatus(mfa: MfaState): string {
+    const parts = [
+      mfa.totpEnabled ? this.i18n.t('mfa.status.appOn') : this.i18n.t('mfa.status.appOff'),
+      mfa.emailOtpEnabled ? this.i18n.t('mfa.status.emailOn') : this.i18n.t('mfa.status.emailOff'),
+    ];
+    if (mfa.totpEnabled || mfa.emailOtpEnabled) {
+      parts.push(this.i18n.t('mfa.status.codes', { count: mfa.recoveryCodesRemaining }));
+    }
+    return parts.join(' · ');
+  }
+
+  setMfaPassword(event: Event): void {
+    this.mfaPassword.set((event.target as HTMLInputElement).value);
+  }
+
+  setTotpCode(event: Event): void {
+    this.totpCode.set((event.target as HTMLInputElement).value);
+  }
+
+  async startTotp(): Promise<void> {
+    if (this.mfaBusy()) return;
+    await this.runMfa(async () => {
+      this.totpSetup.set(await this.profile.startTotpSetup(this.mfaPassword()));
+      this.totpCode.set('');
+    });
+  }
+
+  async enableTotp(): Promise<void> {
+    if (this.mfaBusy()) return;
+    await this.runMfa(async () => {
+      const codes = await this.profile.enableTotp(this.mfaPassword(), this.totpCode().trim());
+      this.recoveryCodes.set(codes);
+      this.totpSetup.set(null);
+      this.totpCode.set('');
+      this.mfaMessage.set(this.i18n.t('mfa.app.enabled'));
+    });
+  }
+
+  async disableTotp(): Promise<void> {
+    if (this.mfaBusy()) return;
+    await this.runMfa(async () => {
+      await this.profile.disableTotp(this.mfaPassword());
+      this.totpSetup.set(null);
+      this.mfaMessage.set(this.i18n.t('mfa.app.disabled'));
+    });
+  }
+
+  async toggleEmail(mfa: MfaState): Promise<void> {
+    if (this.mfaBusy()) return;
+    const enabled = !mfa.emailOtpEnabled;
+    await this.runMfa(async () => {
+      const codes = await this.profile.setEmailOtp(this.mfaPassword(), enabled);
+      if (codes.length > 0) this.recoveryCodes.set(codes);
+      this.mfaMessage.set(
+        enabled ? this.i18n.t('mfa.email.enabled') : this.i18n.t('mfa.email.disabled'),
+      );
+    });
+  }
+
+  async regenerateCodes(): Promise<void> {
+    if (this.mfaBusy()) return;
+    await this.runMfa(async () => {
+      this.recoveryCodes.set(await this.profile.regenerateRecoveryCodes(this.mfaPassword()));
+      this.mfaMessage.set(this.i18n.t('mfa.codes.regenerated'));
+    });
+  }
+
+  /** The codes are shown once; acknowledging removes them from the screen (not from the server). */
+  dismissCodes(): void {
+    this.recoveryCodes.set([]);
+  }
+
+  private async runMfa(action: () => Promise<void>): Promise<void> {
+    this.mfaBusy.set(true);
+    this.mfaMessage.set(null);
+    this.mfaError.set(null);
+    try {
+      await action();
+    } catch (error) {
+      this.mfaError.set(this.errors.for(error));
+    } finally {
+      this.mfaBusy.set(false);
+    }
   }
 
   /** Re-send the confirmation link to this account's own address (task 0.6.5). */

@@ -11,10 +11,12 @@ import { AuthStore } from '../../core/auth/auth.store';
 import {
   ProfileService,
   type AccountSession,
+  type MfaState,
   type Profile,
 } from '../../core/auth/profile.service';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { LanguageSwitcherComponent } from '../../shared/ui/language-switcher/language-switcher.component';
+import { TotpQrComponent } from '../../shared/ui/totp-qr/totp-qr.component';
 import { ProfileComponent } from './profile.component';
 
 initAngularTesting();
@@ -59,9 +61,16 @@ const SESSIONS: readonly AccountSession[] = [
 function profileStub(initial: Profile = PROFILE, sessions: readonly AccountSession[] = SESSIONS) {
   const profile = signal<Profile | null>(initial);
   const sessionList = signal<readonly AccountSession[]>(sessions);
+  const mfa = signal<MfaState>({
+    totpEnabled: false,
+    emailOtpEnabled: false,
+    totpAvailable: true,
+    recoveryCodesRemaining: 0,
+  });
   return {
     profile,
     sessions: sessionList,
+    mfa,
     loading: signal(false),
     load: vi.fn(async () => undefined),
     rename: vi.fn(async (displayName: string) => {
@@ -77,6 +86,15 @@ function profileStub(initial: Profile = PROFILE, sessions: readonly AccountSessi
     changePassword: vi.fn(async () => undefined),
     revokeSession: vi.fn(async () => ({ revoked: true, current: false })),
     revokeOtherSessions: vi.fn(async () => 2),
+    reloadMfa: vi.fn(async () => mfa()),
+    startTotpSetup: vi.fn(async () => ({
+      secret: 'JBSWY3DPEHPK3PXP',
+      otpauthUri: 'otpauth://totp/FinMate:a%40b.c?secret=JBSWY3DPEHPK3PXP&issuer=FinMate',
+    })),
+    enableTotp: vi.fn(async () => ['AAAA-AAAA-AAAA-AAAA']),
+    disableTotp: vi.fn(async () => undefined),
+    setEmailOtp: vi.fn(async () => [] as string[]),
+    regenerateRecoveryCodes: vi.fn(async () => ['BBBB-BBBB-BBBB-BBBB']),
   };
 }
 
@@ -100,7 +118,7 @@ async function mount(service = profileStub()) {
   // from a parent template (NG0950 — the same limitation `settings.component.spec.ts` records), so
   // they are removed and left as opaque elements. What they render is their own specs' subject.
   TestBed.overrideComponent(ProfileComponent, {
-    remove: { imports: [IconComponent, LanguageSwitcherComponent] },
+    remove: { imports: [IconComponent, LanguageSwitcherComponent, TotpQrComponent] },
     add: { schemas: [CUSTOM_ELEMENTS_SCHEMA] },
   });
   const fixture = TestBed.createComponent(ProfileComponent);
@@ -199,5 +217,64 @@ describe('ProfileComponent', () => {
       (fixture.nativeElement as HTMLElement).querySelectorAll('button'),
     ).map((button) => button.textContent ?? '');
     expect(labels.some((label) => label.includes('Send the link again'))).toBe(false);
+  });
+
+  it('reports both factors as off and offers the authenticator setup', async () => {
+    const { fixture, component } = await mount();
+    expect(component.mfaStatus(component.profile.mfa()!)).toContain('off');
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'Set up an authenticator app',
+    );
+  });
+
+  it('walks the authenticator setup and shows the recovery codes only once', async () => {
+    const { component, service } = await mount();
+    component.mfaPassword.set('correct horse battery staple');
+
+    await component.startTotp();
+    expect(service.startTotpSetup).toHaveBeenCalledWith('correct horse battery staple');
+    expect(component.totpSetup()?.secret).toBe('JBSWY3DPEHPK3PXP');
+
+    component.totpCode.set('123456');
+    await component.enableTotp();
+    expect(service.enableTotp).toHaveBeenCalledWith('correct horse battery staple', '123456');
+    expect(component.recoveryCodes()).toEqual(['AAAA-AAAA-AAAA-AAAA']);
+    // The setup panel goes away once the factor is confirmed.
+    expect(component.totpSetup()).toBeNull();
+
+    component.dismissCodes();
+    expect(component.recoveryCodes()).toEqual([]);
+  });
+
+  it('turns the emailed factor on and says so', async () => {
+    const { component, service } = await mount();
+    component.mfaPassword.set('correct horse battery staple');
+
+    await component.toggleEmail(component.profile.mfa()!);
+
+    expect(service.setEmailOtp).toHaveBeenCalledWith('correct horse battery staple', true);
+    expect(component.mfaMessage()).toBeTruthy();
+  });
+
+  it('surfaces a rejected password on a factor change rather than failing silently', async () => {
+    const { component, service } = await mount();
+    service.setEmailOtp = vi.fn(async () => {
+      throw new Error('Password is incorrect.');
+    });
+    component.mfaPassword.set('wrong');
+
+    await component.toggleEmail(component.profile.mfa()!);
+
+    expect(component.mfaError()).toContain('incorrect');
+  });
+
+  it('generates fresh recovery codes', async () => {
+    const { component, service } = await mount();
+    component.mfaPassword.set('correct horse battery staple');
+
+    await component.regenerateCodes();
+
+    expect(service.regenerateRecoveryCodes).toHaveBeenCalled();
+    expect(component.recoveryCodes()).toEqual(['BBBB-BBBB-BBBB-BBBB']);
   });
 });

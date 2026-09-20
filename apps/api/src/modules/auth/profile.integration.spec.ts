@@ -113,8 +113,10 @@ describe('profile and sessions (integration)', () => {
 
   /** A second, independent session for the same user — the one a password change must revoke. */
   async function secondSession(email: string): Promise<string> {
-    const tokens = await auth.login({ email, password, userAgentHash: null, ipHash: null });
-    const session = await auth.resolveSession(tokens.accessToken);
+    const outcome = await auth.login({ email, password, userAgentHash: null, ipHash: null });
+    // These accounts have no second factor, so a session is the only possible outcome.
+    if (outcome.kind !== 'session') throw new Error('unexpected MFA challenge');
+    const session = await auth.resolveSession(outcome.tokens.accessToken);
     if (!session) throw new Error('login did not create a session');
     return session.sessionId;
   }

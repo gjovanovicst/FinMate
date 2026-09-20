@@ -35,6 +35,21 @@ export interface AccountSession {
   readonly expiresAt: string;
 }
 
+/** The profile screen's view of an account's second factors (ADR-041). */
+export interface MfaState {
+  readonly totpEnabled: boolean;
+  readonly emailOtpEnabled: boolean;
+  /** Whether this deployment can enrol an authenticator at all (`MFA_ENCRYPTION_KEY` present). */
+  readonly totpAvailable: boolean;
+  readonly recoveryCodesRemaining: number;
+}
+
+/** A TOTP enrolment in progress: the secret and the URI that encodes it, shown once. */
+export interface TotpSetup {
+  readonly secret: string;
+  readonly otpauthUri: string;
+}
+
 /**
  * The profile screen's data and writes (docs/02 §4.18's **Profil** section).
  *
@@ -49,22 +64,26 @@ export class ProfileService {
 
   private readonly profileSignal = signal<Profile | null>(null);
   private readonly sessionsSignal = signal<readonly AccountSession[]>([]);
+  private readonly mfaSignal = signal<MfaState | null>(null);
   private readonly loadingSignal = signal(false);
 
   readonly profile = this.profileSignal.asReadonly();
   readonly sessions = this.sessionsSignal.asReadonly();
+  readonly mfa = this.mfaSignal.asReadonly();
   readonly loading = this.loadingSignal.asReadonly();
 
-  /** Read the profile and the live sessions together; the screen renders both under one spinner. */
+  /** Read the profile, the live sessions and the factor state together; one spinner covers all three. */
   async load(): Promise<void> {
     this.loadingSignal.set(true);
     try {
-      const [profile, sessions] = await Promise.all([
+      const [profile, sessions, mfa] = await Promise.all([
         firstValueFrom(this.http.get<Profile>('/api/auth/profile')),
         firstValueFrom(this.http.get<readonly AccountSession[]>('/api/auth/sessions')),
+        firstValueFrom(this.http.get<MfaState>('/api/auth/mfa')),
       ]);
       this.profileSignal.set(profile);
       this.sessionsSignal.set(sessions);
+      this.mfaSignal.set(mfa);
     } finally {
       this.loadingSignal.set(false);
     }
@@ -114,6 +133,57 @@ export class ProfileService {
     );
     await this.reloadSessions();
     return result.revoked;
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Two-factor authentication (ADR-041). Every mutation sends the password: the API re-authenticates
+  // before it touches a factor, and the screen asks for it once for all of them.
+  // -------------------------------------------------------------------------------------------
+
+  /** Re-read just the factor state, after a change that may have minted recovery codes. */
+  async reloadMfa(): Promise<MfaState> {
+    const state = await firstValueFrom(this.http.get<MfaState>('/api/auth/mfa'));
+    this.mfaSignal.set(state);
+    return state;
+  }
+
+  /** Begin enrolling an authenticator; the secret and URI are returned exactly once. */
+  async startTotpSetup(password: string): Promise<TotpSetup> {
+    return firstValueFrom(
+      this.http.post<TotpSetup>('/api/auth/mfa/totp/setup', { password }),
+    );
+  }
+
+  /** Confirm the authenticator with one code; the returned recovery codes are shown once. */
+  async enableTotp(password: string, code: string): Promise<string[]> {
+    const result = await firstValueFrom(
+      this.http.post<{ recoveryCodes: string[] }>('/api/auth/mfa/totp/enable', { password, code }),
+    );
+    await this.reloadMfa();
+    return result.recoveryCodes;
+  }
+
+  async disableTotp(password: string): Promise<void> {
+    await firstValueFrom(this.http.post('/api/auth/mfa/totp/disable', { password }));
+    await this.reloadMfa();
+  }
+
+  /** Turn the emailed-code factor on or off; codes are returned only when enabling minted them. */
+  async setEmailOtp(password: string, enabled: boolean): Promise<string[]> {
+    const result = await firstValueFrom(
+      this.http.post<{ recoveryCodes: string[] }>('/api/auth/mfa/email', { password, enabled }),
+    );
+    await this.reloadMfa();
+    return result.recoveryCodes;
+  }
+
+  /** Replace every unused recovery code with a fresh set, returned once. */
+  async regenerateRecoveryCodes(password: string): Promise<string[]> {
+    const result = await firstValueFrom(
+      this.http.post<{ recoveryCodes: string[] }>('/api/auth/mfa/recovery-codes', { password }),
+    );
+    await this.reloadMfa();
+    return result.recoveryCodes;
   }
 
   private async reloadProfile(): Promise<Profile> {

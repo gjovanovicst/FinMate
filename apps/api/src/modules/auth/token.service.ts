@@ -71,6 +71,18 @@ export class TokenService {
   }
 
   /**
+   * Generate an opaque single-use token for a two-factor login challenge (ADR-041).
+   *
+   * Same shape as the two above — 256 bits, only the digest stored — because it is the same kind of
+   * thing: a bearer value handed to the client once, whose compromise must not survive a database
+   * leak.
+   */
+  generateChallengeToken(): { token: string; hash: string } {
+    const token = randomBytes(32).toString('base64url');
+    return { token, hash: this.hashToken(token) };
+  }
+
+  /**
    * SHA-256 of an opaque token.
    *
    * A fast digest is correct here, unlike for passwords: the input is 256 bits of randomness, so

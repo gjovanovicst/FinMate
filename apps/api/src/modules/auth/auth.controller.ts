@@ -27,6 +27,11 @@ import {
   changeEmailSchema,
   changePasswordSchema,
   loginSchema,
+  mfaChallengeSchema,
+  mfaEmailToggleSchema,
+  mfaEnableTotpSchema,
+  mfaPasswordSchema,
+  mfaVerifySchema,
   refreshSchema,
   requestPasswordResetSchema,
   resetPasswordSchema,
@@ -38,6 +43,11 @@ import {
   type ChangeEmailInput,
   type ChangePasswordInput,
   type LoginInput,
+  type MfaChallengeInput,
+  type MfaEmailToggleInput,
+  type MfaEnableTotpInput,
+  type MfaPasswordInput,
+  type MfaVerifyInput,
   type RefreshInput,
   type RequestPasswordResetInput,
   type ResetPasswordInput,
@@ -46,7 +56,14 @@ import {
   type UpdateLocaleInput,
   type UpdateProfileInput,
 } from './auth.dto';
-import { AuthService, type AuthTokens, type ProfileView, type SessionView } from './auth.service';
+import {
+  AuthService,
+  type AuthTokens,
+  type MfaMethod,
+  type MfaState,
+  type ProfileView,
+  type SessionView,
+} from './auth.service';
 
 /**
  * Authentication endpoints — REST, not GraphQL.
@@ -100,15 +117,67 @@ export class AuthController {
     @Body(new ZodValidationPipe(loginSchema)) body: LoginInput,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<{ accessToken: string; expiresIn: number }> {
-    const tokens = await this.auth.login({
+  ): Promise<LoginResponseBody> {
+    const outcome = await this.auth.login({
       email: body.email,
       password: body.password,
       userAgentHash: fingerprint(request.headers['user-agent']),
       ipHash: fingerprint(request.ip),
     });
+
+    // A correct password with a second factor on mints **no** session and sets **no** cookie: the
+    // only thing the client holds is the single-use challenge (ADR-041).
+    if (outcome.kind === 'mfa') {
+      return {
+        mfaRequired: true,
+        challengeToken: outcome.challenge.challengeToken,
+        methods: outcome.challenge.methods,
+        emailHint: outcome.challenge.emailHint,
+        expiresAt: outcome.challenge.expiresAt.toISOString(),
+      };
+    }
+
+    this.writeCookies(response, outcome.tokens);
+    return {
+      mfaRequired: false,
+      accessToken: outcome.tokens.accessToken,
+      expiresIn: outcome.tokens.accessTokenExpiresIn,
+    };
+  }
+
+  /**
+   * Complete a two-factor login.
+   *
+   * Public, because at this point the caller has no session by construction — the challenge token is
+   * the credential. The code may be a TOTP code, an emailed code or a recovery code; the service
+   * decides which from the challenge, not from anything the client claims.
+   */
+@Public()
+  @Post('login/mfa')
+  @HttpCode(HttpStatus.OK)
+  async verifyMfa(
+    @Body(new ZodValidationPipe(mfaVerifySchema)) body: MfaVerifyInput,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ accessToken: string; expiresIn: number }> {
+    const tokens = await this.auth.verifyMfa({
+      challengeToken: body.challengeToken,
+      code: body.code,
+      userAgentHash: fingerprint(request.headers['user-agent']),
+      ipHash: fingerprint(request.ip),
+    });
     this.writeCookies(response, tokens);
     return { accessToken: tokens.accessToken, expiresIn: tokens.accessTokenExpiresIn };
+  }
+
+  /** Send a fresh emailed code for a live challenge. Public, for the same reason as `login/mfa`. */
+@Public()
+  @Post('login/mfa/resend')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async resendMfaCode(
+    @Body(new ZodValidationPipe(mfaChallengeSchema)) body: MfaChallengeInput,
+  ): Promise<void> {
+    await this.auth.resendMfaEmailCode(body.challengeToken);
   }
 
 @Public()
@@ -314,6 +383,79 @@ export class AuthController {
     return { revoked: count > 0, current: id === tenant.sessionId };
   }
 
+  // -------------------------------------------------------------------------------------------
+  // Two-factor authentication (ADR-041). All under `/auth`, so `@AllowUnverified()` covers them: an
+  // unconfirmed account must still be able to secure itself. Every mutation re-authenticates.
+  // -------------------------------------------------------------------------------------------
+
+  /** What the profile screen shows about this account's second factors. */
+  @Get('mfa')
+  @HttpCode(HttpStatus.OK)
+  async mfa(@CurrentTenant() tenant: TenantContext): Promise<MfaState> {
+    return this.auth.mfaState(tenant.userId);
+  }
+
+  /**
+   * Begin enrolling an authenticator app: returns the secret and its `otpauth://` URI **once**.
+   *
+   * The client renders the URI as a QR code; the server never sees a code at this step and stores
+   * only the encrypted secret, unconfirmed.
+   */
+  @Post('mfa/totp/setup')
+  @HttpCode(HttpStatus.OK)
+  async setupTotp(
+    @Body(new ZodValidationPipe(mfaPasswordSchema)) body: MfaPasswordInput,
+    @CurrentTenant() tenant: TenantContext,
+  ): Promise<{ secret: string; otpauthUri: string }> {
+    return this.auth.startTotpSetup(tenant.userId, body.password);
+  }
+
+  /** Confirm the authenticator with one code and receive the recovery codes, once. */
+  @Post('mfa/totp/enable')
+  @HttpCode(HttpStatus.OK)
+  async enableTotp(
+    @Body(new ZodValidationPipe(mfaEnableTotpSchema)) body: MfaEnableTotpInput,
+    @CurrentTenant() tenant: TenantContext,
+  ): Promise<{ recoveryCodes: string[] }> {
+    return { recoveryCodes: await this.auth.enableTotp(tenant.userId, body.password, body.code) };
+  }
+
+  @Post('mfa/totp/disable')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async disableTotp(
+    @Body(new ZodValidationPipe(mfaPasswordSchema)) body: MfaPasswordInput,
+    @CurrentTenant() tenant: TenantContext,
+  ): Promise<void> {
+    await this.auth.disableTotp(tenant.userId, body.password);
+  }
+
+  /**
+   * Turn the emailed-code factor on or off.
+   *
+   * Returns recovery codes when enabling minted them, and an empty list otherwise — so the screen can
+   * show them once without a second round trip.
+   */
+  @Post('mfa/email')
+  @HttpCode(HttpStatus.OK)
+  async setEmailOtp(
+    @Body(new ZodValidationPipe(mfaEmailToggleSchema)) body: MfaEmailToggleInput,
+    @CurrentTenant() tenant: TenantContext,
+  ): Promise<{ recoveryCodes: string[] }> {
+    return {
+      recoveryCodes: await this.auth.setEmailOtp(tenant.userId, body.password, body.enabled),
+    };
+  }
+
+  /** Replace every unused recovery code with a fresh set, returned once. */
+  @Post('mfa/recovery-codes')
+  @HttpCode(HttpStatus.OK)
+  async regenerateRecoveryCodes(
+    @Body(new ZodValidationPipe(mfaPasswordSchema)) body: MfaPasswordInput,
+    @CurrentTenant() tenant: TenantContext,
+  ): Promise<{ recoveryCodes: string[] }> {
+    return { recoveryCodes: await this.auth.regenerateRecoveryCodes(tenant.userId, body.password) };
+  }
+
   /** Always 204, even for an unknown address — see `AuthService.requestPasswordReset`. */
 @Public()
   @Post('request-password-reset')
@@ -385,6 +527,23 @@ export class AuthController {
     });
   }
 }
+
+/**
+ * What `POST /auth/login` answers.
+ *
+ * A discriminated union on `mfaRequired`, so a client cannot read `accessToken` off a challenge
+ * response by accident — with a second factor on, there is no token yet and no cookie is set.
+ */
+export type LoginResponseBody =
+  | { readonly mfaRequired: false; readonly accessToken: string; readonly expiresIn: number }
+  | {
+      readonly mfaRequired: true;
+      readonly challengeToken: string;
+      readonly methods: readonly MfaMethod[];
+      /** `a***@example.com`, never the full address: the login screen is reachable by a stranger. */
+      readonly emailHint: string;
+      readonly expiresAt: string;
+    };
 
 /**
  * Hash a request fingerprint (IP or User-Agent) before it is stored.

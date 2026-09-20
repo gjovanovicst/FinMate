@@ -1143,7 +1143,10 @@ user opens, not on first load.
 >
 > **Still not built**: the rest of §4.18's sections.
 > **Profil is built** — as its own screen at `/profile` (task 0.6.4), because it is a set of forms and a
-> session list rather than a switch, and the header's account block links to it. Domaćinstvo, Prikaz,
+> session list rather than a switch, and the header's account block links to it. **Two-step verification
+> lives there too** (task 0.6.6, ADR-041): the section offers an authenticator to scan, an emailed-code
+> toggle and one-time recovery codes, and `/sign-in` grows a second step only for an account that has a
+> factor on — a password alone then mints no session. Domaćinstvo, Prikaz,
 > Jezik and Podaci are 3.1.4/5 work, and `Računi`/`Članovi` already have screens or are deferred (F-29).
 > Jezik's control is the shell's switcher, which also appears inside `/profile`'s own section.
 
@@ -1168,7 +1171,7 @@ user opens, not on first load.
 
 | Section | Contents |
 |---|---|
-| Profil | **`/profile`** (0.6.4): display name, email + a staged change with its confirmation link, password change (re-auth), active sessions with revoke, and language |
+| Profil | **`/profile`** (0.6.4/0.6.6): display name, email + a staged change with its confirmation link, password change (re-auth), active sessions with revoke, language, and **two-step verification** (ADR-041) — an authenticator app with a scannable QR plus the key as text, an emailed-code toggle, and recovery codes shown once |
 | Domaćinstvo | Name, `ledger_currency` (**read-only `RSD`**, ADR-011), `iana_timezone` |
 | Računi (F-01) | Account CRUD, `kind`, opening balance, archive, sort order |
 | Prikaz | Theme, dense table mode, grouping default, number/date format |
