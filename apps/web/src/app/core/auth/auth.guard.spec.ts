@@ -5,7 +5,7 @@
 import { initAngularTesting } from '@web-test/angular-testing';
 
 import { TestBed } from '@angular/core/testing';
-import { Router, type ActivatedRouteSnapshot } from '@angular/router';
+import { Router } from '@angular/router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AppLockService } from '../app-lock/app-lock.service';
@@ -57,7 +57,7 @@ async function run(options: {
   });
 
   const result = await TestBed.runInInjectionContext(() =>
-    authenticatedGuard({} as ActivatedRouteSnapshot, {} as never),
+    authenticatedGuard(),
   );
   return { restore, result };
 }
