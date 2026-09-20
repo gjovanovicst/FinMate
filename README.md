@@ -1,5 +1,7 @@
 # FinMate
 
+![FinMate — AI-first household budgeting, in six languages and sixty currencies](docs/assets/banner.png)
+
 **Describe what you spent, and get a categorised, budget-aware transaction in under five seconds.**
 
 FinMate is an AI-first household budgeting app for desktop and mobile. Natural language is the primary

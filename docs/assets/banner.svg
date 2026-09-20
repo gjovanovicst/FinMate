@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="288" viewBox="0 0 1280 288" role="img" aria-label="FinMate — AI-first household budgeting">
+  <!--
+    README banner, editable source.
+
+    Colours are the shipped design tokens (apps/web/src/styles.css, ADR-039), not invented ones.
+    Token names are written without their leading dashes because an XML comment may not contain a
+    double hyphen, and writing them properly makes this file fail to parse.
+
+      background       color-bg             #0a0e18
+      wordmark         color-text           #eef2fa
+      tagline          color-text-muted     #9aa8c0
+      accent, pills    color-primary-text   #a99cff
+      pill fill        color-primary-soft   #6d5cf6 at 14 percent
+      hairline         color-border         #242e45
+      tile gradient    gradient-brand       135 degrees, #5b6cf9 to #8b5cf6
+      glow             shadow-glow          #6d5cf6 at 34 percent
+
+    The mark is the path ui-brand draws inline, at banner scale. See README.md beside this file for
+    how it is re-rendered and what that depends on.
+  -->
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5b6cf9" />
+      <stop offset="1" stop-color="#8b5cf6" />
+    </linearGradient>
+    <radialGradient id="glowA" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#6d5cf6" stop-opacity="0.44" />
+      <stop offset="1" stop-color="#6d5cf6" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="glowB" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#5b6cf9" stop-opacity="0.32" />
+      <stop offset="1" stop-color="#5b6cf9" stop-opacity="0" />
+    </radialGradient>
+    <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
+      <circle cx="1.1" cy="1.1" r="1.1" fill="#eef2fa" fill-opacity="0.05" />
+    </pattern>
+    <filter id="tileGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#6d5cf6" flood-opacity="0.45" />
+    </filter>
+  </defs>
+
+  <!-- ground -->
+  <rect width="1280" height="288" fill="#0a0e18" />
+  <rect width="1280" height="288" fill="url(#dots)" />
+  <ellipse cx="1110" cy="300" rx="560" ry="290" fill="url(#glowA)" />
+  <ellipse cx="60" cy="-40" rx="440" ry="250" fill="url(#glowB)" />
+
+  <!-- hairline top, brand gradient along the bottom: the strip reads as a surface, not a hole -->
+  <rect x="0" y="0" width="1280" height="1" fill="#242e45" />
+  <rect x="0" y="284" width="1280" height="4" fill="url(#brand)" />
+
+  <!-- the mark, over the shipped brand gradient -->
+  <g filter="url(#tileGlow)">
+    <rect x="64" y="96" width="96" height="96" rx="24" fill="url(#brand)" />
+  </g>
+  <g transform="translate(77.4, 109.4) scale(2.16)" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 22.5c0-6.4 4.6-11 11.4-11.6M9 22.5c5.9 1.2 11.4-1.6 13.6-6.6" />
+  </g>
+
+  <!-- wordmark and tagline -->
+  <g font-family="Ubuntu, 'Liberation Sans', 'DejaVu Sans', sans-serif">
+    <text x="196" y="148" font-size="76" font-weight="700" letter-spacing="-0.8" fill="#eef2fa">FinMate</text>
+    <text x="199" y="190" font-size="25" font-weight="400" letter-spacing="0.1" fill="#9aa8c0">Your AI money companion</text>
+  </g>
+
+  <!-- a hairline the two halves share, so the middle reads as division rather than as empty space -->
+  <rect x="742" y="88" width="1" height="112" fill="#242e45" />
+
+  <!-- what it speaks: the six shipped interface languages, and how many ledger currencies -->
+  <text x="1216" y="126" text-anchor="end" font-family="Ubuntu, 'Liberation Sans', 'DejaVu Sans', sans-serif"
+        font-size="17" font-weight="500" letter-spacing="0.2" fill="#7e8ba5">6 languages · 60 currencies</text>
+
+  <g font-family="Ubuntu, 'Liberation Sans', 'DejaVu Sans', sans-serif" text-anchor="middle"
+     font-size="17" font-weight="600" letter-spacing="0.7" fill="#a99cff">
+    <rect x="842" y="140" width="54" height="34" rx="17" fill="#6d5cf6" fill-opacity="0.14" stroke="#242e45" stroke-width="1" />
+    <text x="869" y="163">EN</text>
+    <rect x="906" y="140" width="54" height="34" rx="17" fill="#6d5cf6" fill-opacity="0.14" stroke="#242e45" stroke-width="1" />
+    <text x="933" y="163">SR</text>
+    <rect x="970" y="140" width="54" height="34" rx="17" fill="#6d5cf6" fill-opacity="0.14" stroke="#242e45" stroke-width="1" />
+    <text x="997" y="163">DE</text>
+    <rect x="1034" y="140" width="54" height="34" rx="17" fill="#6d5cf6" fill-opacity="0.14" stroke="#242e45" stroke-width="1" />
+    <text x="1061" y="163">ES</text>
+    <rect x="1098" y="140" width="54" height="34" rx="17" fill="#6d5cf6" fill-opacity="0.14" stroke="#242e45" stroke-width="1" />
+    <text x="1125" y="163">FR</text>
+    <rect x="1162" y="140" width="54" height="34" rx="17" fill="#6d5cf6" fill-opacity="0.14" stroke="#242e45" stroke-width="1" />
+    <text x="1189" y="163">AR</text>
+  </g>
+</svg>
