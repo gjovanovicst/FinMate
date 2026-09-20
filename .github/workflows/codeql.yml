@@ -1,0 +1,63 @@
+# Static analysis (CodeQL). Free for public repositories; on a private repository it requires
+# GitHub Advanced Security, so this workflow is expected to run from the moment the repo is public.
+#
+# It is deliberately separate from ci.yml: CodeQL's results land in the Security tab as alerts rather
+# than as a pass/fail gate on the pull request, and a weekly scheduled run catches newly published
+# queries against code that has not changed.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Mondays at 05:17 UTC — a little ahead of the Dependabot pass, off the hour to avoid the queue.
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      # Required to upload the results to the code-scanning dashboard.
+      security-events: write
+      # Required by the private-repository path; harmless on a public one.
+      packages: read
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: javascript-typescript
+            build-mode: none
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # The default query suite plus the security-and-quality queries. Quality findings arrive as
+          # alerts, never as a blocked build.
+          queries: security-and-quality
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:${{ matrix.language }}'

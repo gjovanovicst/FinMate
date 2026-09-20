@@ -1,0 +1,38 @@
+# Normalise line endings on checkout so a Windows contributor and a Linux CI runner see the same
+# bytes. The repository is authored on Linux.
+* text=auto eol=lf
+
+# Windows-only scripts must keep CRLF or they misbehave.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets — never diff, never rewrite.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.pdf binary
+
+# Generated or vendored artefacts: keep them out of diffs, review stats and language breakdown.
+pnpm-lock.yaml linguist-generated=true -diff
+apps/api/schema.gql linguist-generated=true
+apps/api/prisma/migrations/** linguist-generated=true
+
+# Documentation is the specification here, and it is a large share of the repository.
+docs/** linguist-documentation=true
+AGENTS.md linguist-documentation=true
+CHANGELOG.md linguist-documentation=true
+CODE_OF_CONDUCT.md linguist-documentation=true
+CONTRIBUTING.md linguist-documentation=true
+SECURITY.md linguist-documentation=true
+.github/** linguist-documentation=true
+
+# Test fixtures are data, not the product.
+packages/nlp/test/golden/** linguist-documentation=true
+**/*.spec.ts linguist-detectable=true

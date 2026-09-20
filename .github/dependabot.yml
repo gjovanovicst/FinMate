@@ -1,0 +1,90 @@
+# Dependency updates (https://docs.github.com/code-security/dependabot).
+#
+# One pnpm workspace, one lockfile at the root, so a single npm entry covers every project. Updates
+# are grouped so a weekly pass produces a handful of reviewable pull requests instead of dozens.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Belgrade
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    commit-message:
+      # Matches the house style: a descriptive sentence, not a Conventional Commit prefix.
+      prefix: 'Dependencies:'
+      include: scope
+    labels:
+      - dependencies
+    ignore:
+      # Angular packages must move together; a lone @angular/* bump is a broken build, not an update.
+      # These arrive as one coordinated group instead — see the groups below.
+      - dependency-name: '@angular/*'
+        update-types: ['version-update:semver-major']
+      # Prisma's client, CLI and adapter are pinned to the same version in package.json on purpose,
+      # and the schema-drift check in CI compares a live database to schema.prisma. A major bump needs
+      # a migration plan, not an automated pull request.
+      - dependency-name: 'prisma'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@prisma/*'
+        update-types: ['version-update:semver-major']
+      # NestJS majors move core, common and every platform package together.
+      - dependency-name: '@nestjs/*'
+        update-types: ['version-update:semver-major']
+    groups:
+      angular:
+        patterns:
+          - '@angular/*'
+          - 'angular-eslint'
+          - 'zone.js'
+          - 'rxjs'
+      nestjs:
+        patterns:
+          - '@nestjs/*'
+      prisma:
+        patterns:
+          - 'prisma'
+          - '@prisma/*'
+      test-tooling:
+        patterns:
+          - 'vitest'
+          - '@vitest/*'
+          - 'fake-indexeddb'
+      lint-and-format:
+        patterns:
+          - 'eslint'
+          - 'eslint-*'
+          - '@eslint/*'
+          - 'typescript-eslint'
+          - '@typescript-eslint/*'
+          - 'prettier'
+      nx:
+        patterns:
+          - 'nx'
+          - '@nx/*'
+      minor-and-patch:
+        applies-to: version-updates
+        update-types: ['minor', 'patch']
+
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Belgrade
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'Dependencies:'
+      include: scope
+    labels:
+      - dependencies
+      - github-actions
+    groups:
+      actions:
+        patterns: ['*']
+        update-types: ['minor', 'patch']

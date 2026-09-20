@@ -1,0 +1,84 @@
+name: Feature request
+description: Propose a capability, or an improvement to one that exists.
+title: '[Feature]: '
+labels: ['enhancement', 'needs-triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A note on scope before you write: this project deliberately does **not** build household
+        sharing UI (`F-29`), bank/Open Banking import (`F-33`), native apps, a multi-currency ledger,
+        investments/net worth, or model fine-tuning. See *Do not build without asking* in
+        [AGENTS.md](https://github.com/gjovanovicst/FinMate/blob/main/AGENTS.md). A proposal that argues one of those *into* scope is
+        welcome as a discussion, but it will need to change the plan first.
+
+        The feature catalogue is [docs/01-product-requirements.md](https://github.com/gjovanovicst/FinMate/blob/main/docs/01-product-requirements.md)
+        and the roadmap is [docs/09-implementation-plan.md](https://github.com/gjovanovicst/FinMate/blob/main/docs/09-implementation-plan.md)
+        — if your idea is already `F-xx`, say so.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that you cannot do today? Describe the situation, not the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like to happen
+      description: The behaviour you want, from the user's point of view.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including doing nothing, and any workaround that exists today.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - categorization / AI input
+        - rules and corrections
+        - transactions and ledger
+        - budgets and goals
+        - analytics and insights
+        - notifications and alerts
+        - receipts and OCR
+        - recurring and subscriptions
+        - assistant
+        - offline, sync and PWA
+        - auth, security and privacy
+        - accessibility / i18n
+        - developer experience and tooling
+        - documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: architecture
+    attributes:
+      label: Architectural impact (if any)
+      description: |
+        Does this need a new dependency, datastore or service, or does it change a canonical
+        decision? Those need an ADR before implementation (CONTRIBUTING.md, non-negotiable 7).
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues, docs/01 and docs/09 — this is not already recorded.
+          required: true
+        - label: I am willing to work on this myself, or to help review it.
+          required: false

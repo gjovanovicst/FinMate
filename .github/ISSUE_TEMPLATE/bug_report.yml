@@ -1,0 +1,109 @@
+name: Bug report
+description: Something behaves differently from what the docs say, or fails outright.
+title: '[Bug]: '
+labels: ['bug', 'needs-triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Two notes before you start:
+
+        - **Security issues must not be filed here.** Use the *Security* tab →
+          *Report a vulnerability*, or see [SECURITY.md](https://github.com/gjovanovicst/FinMate/blob/main/SECURITY.md).
+        - **Check the gotchas first.** Many things that "should work" are already documented in
+          [docs/15-implementation-gotchas.md](https://github.com/gjovanovicst/FinMate/blob/main/docs/15-implementation-gotchas.md), and
+          [AGENTS.md](https://github.com/gjovanovicst/FinMate/blob/main/AGENTS.md) carries the current known state.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of the monorepo is this in?
+      multiple: true
+      options:
+        - apps/api
+        - apps/web
+        - apps/worker
+        - packages/domain
+        - packages/nlp
+        - packages/rules-engine
+        - packages/ai
+        - packages/contracts or packages/config
+        - docs
+        - infra / dev stack
+        - not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Describe the actual behaviour. If a balance, total or category is wrong, give the figures.
+      placeholder: I typed `Lidl 2000` and the row was categorised as …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+      description: If a document specifies the expected behaviour, link it and quote the sentence.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence that shows the problem. A fresh signup or a specific seed state matters.
+      placeholder: |
+        1. pnpm dev:infra && pnpm db:migrate && pnpm db:seed
+        2. nx run api:serve
+        3. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Logs, the GraphQL/REST response, a stack trace, or a screenshot. Redact anything personal.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: commit
+    attributes:
+      label: Commit or version
+      description: The output of `git rev-parse --short HEAD`, or the tag you are running.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Fill in what is relevant — Node, pnpm, Docker, OS, browser, whether an AI provider is configured.
+      value: |
+        - Node:
+        - pnpm:
+        - Docker / Compose:
+        - OS:
+        - Browser (for web issues):
+        - AI provider configured (yes/no):
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues and this is not a duplicate.
+          required: true
+        - label: I checked docs/15-implementation-gotchas.md and AGENTS.md for a known cause.
+          required: true
+        - label: This is not a security vulnerability (those go through SECURITY.md).
+          required: true

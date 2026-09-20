@@ -2,10 +2,42 @@
   "name": "finmate",
   "version": "0.0.0",
   "private": true,
-  "description": "AI-first household budgeting app. Working title \u2014 see docs/13-brand-and-naming.md (ADR-014).",
+  "description": "AI-first household budgeting for mobile and desktop: type `Lidl 2000` and get a correctly categorised, budget-aware transaction. 'FinMate' is a working title \u2014 see docs/13-brand-and-naming.md (ADR-014, R-28).",
+  "license": "AGPL-3.0-or-later",
+  "author": {
+    "name": "Goran Jovanovic",
+    "email": "gjovanovic.st@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gjovanovicst/FinMate.git"
+  },
+  "homepage": "https://github.com/gjovanovicst/FinMate#readme",
+  "bugs": {
+    "url": "https://github.com/gjovanovicst/FinMate/issues"
+  },
+  "keywords": [
+    "budgeting",
+    "personal-finance",
+    "household-finance",
+    "ai",
+    "llm",
+    "nlp",
+    "serbian",
+    "angular",
+    "nestjs",
+    "prisma",
+    "postgresql",
+    "pnpm",
+    "nx",
+    "monorepo",
+    "offline-first",
+    "pwa"
+  ],
   "packageManager": "pnpm@11.7.0",
   "engines": {
-    "node": ">=24"
+    "node": ">=24",
+    "pnpm": ">=11"
   },
   "scripts": {
     "dev": "pnpm dev:infra && nx run-many -t serve --parallel=3",

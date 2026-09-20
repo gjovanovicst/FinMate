@@ -1,0 +1,20 @@
+# The issue chooser (docs: https://docs.github.com/communities).
+#
+# `blank_issues_enabled: false` funnels reports through the templates, because the templates ask for
+# the machine state and the reproduction steps that make a report actionable. Set it to `true` if
+# that friction ever discourages useful reports.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/gjovanovicst/FinMate/security/advisories/new
+    about: Please report vulnerabilities privately — never in a public issue. See SECURITY.md.
+  - name: Read the documentation first
+    url: https://github.com/gjovanovicst/FinMate/blob/main/docs/README.md
+    about: docs/ is the specification and it is canonical. Start with the index.
+  - name: Debugging something that "should work"
+    url: https://github.com/gjovanovicst/FinMate/blob/main/docs/15-implementation-gotchas.md
+    about: 200+ accumulated traps, each saying what the failure looks like. Check here before filing.
+  - name: Current build state and known gaps
+    url: https://github.com/gjovanovicst/FinMate/blob/main/AGENTS.md
+    about: What is built, what is deliberately unbuilt, and every known gap — kept current.
