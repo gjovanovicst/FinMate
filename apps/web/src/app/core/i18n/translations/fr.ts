@@ -1145,6 +1145,15 @@ export const fr: Record<keyof typeof en, string> = {
   // answered. It replaces the navigation, so it has to say what state the app is in and what happens next.
   'offline.sessionNote': 'Le serveur est injoignable, tu restes donc déconnecté. Tes saisies enregistrées sont sur cet appareil et seront envoyées dès que tu seras de nouveau en ligne et connecté.',
   'offline.signIn': 'Se connecter',
+  'offline.banner.saved':
+    'Vous êtes hors ligne. Les écritures que vous ajoutez sont enregistrées sur cet appareil et seront envoyées dès votre reconnexion.',
+  'offline.banner.ephemeral':
+    'Vous êtes hors ligne. Les écritures que vous ajoutez ne sont conservées que jusqu’à la fermeture de l’application — activez le verrouillage pour les garder sur cet appareil.',
+  'offline.banner.enable': 'Configurer le mode hors ligne',
+  'offline.banner.signedOut':
+    'Vous êtes hors ligne. La connexion nécessite un réseau, et cet appareil n’est pas configuré pour fonctionner hors ligne.',
+  'offline.banner.locked':
+    'Vous êtes hors ligne. Déverrouillez pour voir ce qui est enregistré sur cet appareil.',
   'sync.chipLabel': 'En attente d’envoi, {count} saisies',
   // ADR-027 decisions 2 and 4: the one provenance label a snapshot-served figure carries. Mandatory
   // for any cached figure (docs/02 section 4.2, and section 10's money.asOf row).

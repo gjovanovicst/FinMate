@@ -688,6 +688,22 @@ own "needs a connection" state. Nothing is sent without a session, so queued cap
 unlock is what authorises reading the local records at all — with the app lock off, nothing is persisted
 and there is nothing to serve.
 
+**The banner is the app's one statement of the network state, and it says a different true thing per
+install** (the shell's `offlineNotice`), because "your entries are saved on this device" is only true once
+the app lock is armed (ADR-025 decision 3):
+
+| State | What it says | Action |
+|---|---|---|
+| No session, lock through (`UNREACHABLE`) | the session is not restored; the queue is on the device and will be sent once back online and signed in | *Sign in* |
+| Signed in, lock armed | entries are saved on this device and sent on reconnect | — |
+| Signed in, lock off | entries are kept **only until the app closes**; the lock is what keeps them | *Set up offline* → `/settings` |
+| Signed in or out, lock off | signing in needs a connection and this device is not set up to work offline | — |
+
+It is not dismissible, and it is raised by the browser's own `online`/`offline` events seeded from
+`navigator.onLine` (`core/connectivity`). ⚠️ That signal is only ever allowed to choose **copy**: it is
+`true` behind a captive portal, so nothing that decides whether to send or persist may branch on it —
+`SyncService` attempts the flush and the outbox classifies the real answer (ADR-025 decision 7).
+
 | Capability | State | Notes |
 |---|---|---|
 | Capture single / bulk ([F-05](01-product-requirements.md), [F-06](01-product-requirements.md)) | ✅ | Local segmentation via `packages/nlp`; committed to the outbox with `idempotency_key` + `client_id` |

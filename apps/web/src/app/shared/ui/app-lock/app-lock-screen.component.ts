@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { AppLockService } from '../../../core/app-lock/app-lock.service';
 import { PIN_LENGTH, lockFailureKey, unlockOffers } from '../../../core/app-lock/lock.view';
 import { AuthStore } from '../../../core/auth/auth.store';
+import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
 import { I18nService } from '../../../core/i18n/i18n.service';
 import { SyncService } from '../../../core/offline/sync.service';
 
@@ -29,6 +30,13 @@ import { SyncService } from '../../../core/offline/sync.service';
     <main class="lock" role="dialog" aria-modal="true" [attr.aria-label]="i18n.t('lock.screen.title')">
       <h1 class="lock__title">{{ i18n.t('lock.screen.title') }}</h1>
       <p class="lock__body">{{ i18n.t('lock.screen.body') }}</p>
+
+      <!-- The offline line (ADR-033 amended). It matters *here* more than anywhere else: this screen is
+           what an offline reload lands on, and without a sentence a person reads an unexplained PIN
+           prompt instead of "your data is on this device, unlock to see it". -->
+      @if (!connectivity.online()) {
+        <p class="lock__muted" role="status">{{ i18n.t('offline.banner.locked') }}</p>
+      }
 
       @if (offers().biometric) {
         <button type="button" class="lock__primary" [disabled]="lock.busy()" (click)="unlockWithDevice()">
@@ -137,6 +145,8 @@ import { SyncService } from '../../../core/offline/sync.service';
 export class AppLockScreenComponent {
   private readonly auth = inject(AuthStore);
   private readonly sync = inject(SyncService);
+  /** Public because the template reads it: the offline line above the PIN field (ADR-033 amended). */
+  readonly connectivity = inject(ConnectivityService);
   readonly lock = inject(AppLockService);
   readonly i18n = inject(I18nService);
 

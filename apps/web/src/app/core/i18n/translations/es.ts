@@ -1017,6 +1017,15 @@ export const es: Record<keyof typeof en, string> = {
   'sync.chip': 'Pendiente de envío ({count})',
   'offline.sessionNote': 'No se puede contactar con el servidor, así que sigues sin sesión iniciada. Tus registros guardados están en este dispositivo y se enviarán cuando vuelvas a estar en línea y con la sesión iniciada.',
   'offline.signIn': 'Iniciar sesión',
+  'offline.banner.saved':
+    'Estás sin conexión. Los movimientos que añadas se guardan en este dispositivo y se enviarán cuando vuelvas a conectarte.',
+  'offline.banner.ephemeral':
+    'Estás sin conexión. Los movimientos que añadas solo se conservan hasta que cierres la app: activa el bloqueo de la app para que permanezcan en este dispositivo.',
+  'offline.banner.enable': 'Configurar sin conexión',
+  'offline.banner.signedOut':
+    'Estás sin conexión. Iniciar sesión requiere conexión y este dispositivo no está configurado para funcionar sin conexión.',
+  'offline.banner.locked':
+    'Estás sin conexión. Desbloquea para ver lo que está guardado en este dispositivo.',
   'sync.chipLabel': 'Pendiente de envío, {count} entradas',
   'money.asOf': 'datos de {time}',
   'money.income': 'ingreso',

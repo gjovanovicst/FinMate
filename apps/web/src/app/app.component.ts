@@ -14,6 +14,7 @@ import { filter } from 'rxjs';
 
 import { AppLockService } from './core/app-lock/app-lock.service';
 import { AuthStore } from './core/auth/auth.store';
+import { ConnectivityService } from './core/connectivity/connectivity.service';
 import { I18nService } from './core/i18n/i18n.service';
 import type { TranslationKey } from './core/i18n/translations';
 import { InstallService } from './core/install/install.service';
@@ -43,6 +44,24 @@ import { VerifyBannerComponent } from './shared/ui/verify-banner/verify-banner.c
  * in — so a reset that clears the session must not have its own screen navigated out from under it.
  */
 const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password', '/verify-email'];
+
+/**
+ * What the offline banner says on this page load, or `null` when there is a network.
+ *
+ * One sentence and at most one action. The sentence is deliberately different per install state, because
+ * the honest claim about a queued entry depends on whether anything was persisted at all: with the app
+ * lock armed it is on this device and survives a reload (ADR-025 decision 3), and without it the queue
+ * lives in memory and a reload loses it — which is what the app-lock card's own copy says, and the banner
+ * must not contradict it.
+ */
+interface OfflineNotice {
+  readonly key: TranslationKey;
+  readonly link?: {
+    readonly path: string;
+    readonly labelKey: TranslationKey;
+    readonly queryParams?: Readonly<Record<string, string>>;
+  };
+}
 
 /**
  * The application shell: brand, navigation, search, account and a content outlet.
@@ -277,15 +296,23 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
         }
 
         <main id="main" class="content" tabindex="-1">
-          <!-- ADR-033 (amended): the offline app is the app. This is the one line that says what state
-               it is in and what happens next; every destination below it opens, and each screen serves
-               the record it has or its own "needs a connection" state. Not dismissible — it is the only
-               place the missing session is stated, and a person who dismissed it would be left guessing
-               why nothing sends. -->
-          @if (offlineOnly()) {
+          <!-- The one place the app says it has no network, and what that means for the work in hand.
+               It is not dismissible: it is the only statement of the state, and a person who dismissed it
+               would be left guessing why a control did nothing. What it claims differs by install —
+               see offlineNotice() — because "your entries are saved on this device" is true of an armed
+               lock and false of one that was never set up. -->
+          @if (offlineNotice(); as notice) {
             <p class="offline-banner" role="status">
-              <span class="offline-banner__text">{{ i18n.t('offline.sessionNote') }}</span>
-              <a class="offline-banner__link" routerLink="/sign-in">{{ i18n.t('offline.signIn') }}</a>
+              <span class="offline-banner__text">{{ i18n.t(notice.key) }}</span>
+              @if (notice.link; as link) {
+                <a
+                  class="offline-banner__link"
+                  [routerLink]="link.path"
+                  [queryParams]="link.queryParams ?? {}"
+                >
+                  {{ i18n.t(link.labelKey) }}
+                </a>
+              }
             </p>
           }
           <!-- ADR-024: a newly installed build is waiting, or the shell's own cache is broken. Rendered
@@ -905,6 +932,7 @@ export class AppComponent {
   readonly install = inject(InstallService);
   private readonly snapshot = inject(SnapshotService);
   private readonly sync = inject(SyncService);
+  private readonly connectivity = inject(ConnectivityService);
   readonly i18n = inject(I18nService);
 
   readonly isAuthenticated = this.auth.isAuthenticated;
@@ -934,6 +962,48 @@ export class AppComponent {
    * the two are deliberately not the same signal.
    */
   readonly chrome = computed(() => this.isAuthenticated() || this.offlineOnly());
+
+  /**
+   * The offline banner's copy for this page load, or `null` when the browser has a network.
+   *
+   * Four states, and each one is a different truth rather than a different tone:
+   *
+   *  - **no session, but the lock is through** (ADR-033): nothing answered, so the session is not
+   *    restored; what the key opens is on the device and the way back is signing in.
+   *  - **signed in, lock armed**: the ordinary PWA case — entries are persisted and the queue will drain.
+   *  - **signed in, no lock**: the queue is in memory, so a reload loses it. It says so, and offers the
+   *    one control that changes it rather than pretending the entries are safe.
+   *  - **neither**: the sign-in screen needs a connection, and this install was never set up to work
+   *    without one. This is the case that used to be a silent dead end.
+   *
+   * It reads `isAuthenticated()` and not `chrome()`: the offline shell has a session-shaped hole, and the
+   * two need different sentences.
+   */
+  readonly offlineNotice = computed<OfflineNotice | null>(() => {
+    if (this.connectivity.online()) return null;
+
+    if (this.offlineOnly()) {
+      return {
+        key: 'offline.sessionNote',
+        link: { path: '/sign-in', labelKey: 'offline.signIn' },
+      };
+    }
+
+    if (this.isAuthenticated()) {
+      return this.appLock.state() === 'OFF'
+        ? {
+            key: 'offline.banner.ephemeral',
+            link: {
+              path: '/settings',
+              labelKey: 'offline.banner.enable',
+              queryParams: { section: 'security' },
+            },
+          }
+        : { key: 'offline.banner.saved' };
+    }
+
+    return { key: 'offline.banner.signedOut' };
+  });
 
   /**
    * Whether to draw the navigation.

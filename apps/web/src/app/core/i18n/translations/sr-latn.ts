@@ -1168,6 +1168,14 @@ export const srLatn: Record<keyof typeof en, string> = {
   'offline.sessionNote':
     'Server nije dostupan, pa si i dalje odjavljen. Sačuvani unosi su na ovom uređaju i biće poslati kada se ponovo povežeš i prijaviš.',
   'offline.signIn': 'Prijavi se',
+  'offline.banner.saved':
+    'Nema mreže. Unosi koje dodaš čuvaju se na ovom uređaju i biće poslati kada se ponovo povežeš.',
+  'offline.banner.ephemeral':
+    'Nema mreže. Unosi koje dodaš čuvaju se samo dok ne zatvoriš aplikaciju — uključi zaključavanje da ostanu na ovom uređaju.',
+  'offline.banner.enable': 'Podesi rad van mreže',
+  'offline.banner.signedOut':
+    'Nema mreže. Prijava zahteva vezu, a ovaj uređaj nije podešen za rad van mreže.',
+  'offline.banner.locked': 'Nema mreže. Otključaj da vidiš šta je sačuvano na ovom uređaju.',
   'sync.chipLabel': 'Čeka slanje, {count} stavke',
   // ADR-027: the wording docs/02 section 4.2 already uses for a figure that came from the snapshot.
   'money.asOf': 'podaci od {time}',

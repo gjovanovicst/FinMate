@@ -12,6 +12,7 @@ import { EMPTY } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthStore } from './core/auth/auth.store';
+import { ConnectivityService } from './core/connectivity/connectivity.service';
 import { GraphqlClient } from './core/graphql/graphql.client';
 import { InstallService } from './core/install/install.service';
 import type { InstallPromptKind } from './core/install/install.view';
@@ -66,6 +67,8 @@ async function mount(
   restoreFailure: 'UNREACHABLE' | 'REFUSED' | 'SIGNED_OUT' | null = null,
   /** docs/07 §4.7: what the install service is offering right now, or `null` for nothing. */
   installKind: InstallPromptKind | null = null,
+  /** ADR-033 amended: the browser's own network state, which the offline banner reads. */
+  online = true,
 ): Promise<{
   fixture: ReturnType<typeof TestBed.createComponent<AppComponent>>;
   /**
@@ -74,6 +77,8 @@ async function mount(
    */
   sessionFailure: ReturnType<typeof signal<'UNREACHABLE' | 'REFUSED' | 'SIGNED_OUT' | null>>;
   authenticated: ReturnType<typeof signal<boolean>>;
+  /** Writable so a test can take the network away after mount and re-render the banner. */
+  online: ReturnType<typeof signal<boolean>>;
 }> {
   const query = vi.fn((document: string) => {
     if (document.includes('ReviewQueueCount')) return Promise.resolve({ reviewQueueCount: count });
@@ -84,6 +89,7 @@ async function mount(
   // that the *user* ended the session, and it has to be settable after mount to reproduce that.
   const sessionFailure = signal<'UNREACHABLE' | 'REFUSED' | 'SIGNED_OUT' | null>(restoreFailure);
   const authenticated = signal(restoreFailure === null);
+  const onlineSignal = signal(online);
 
   TestBed.configureTestingModule({
     imports: [AppComponent],
@@ -161,6 +167,10 @@ async function mount(
           signOut: vi.fn(),
         },
       },
+      // The offline banner reads the browser's network state (ADR-033 amended). jsdom reports
+      // navigator.onLine === true, which is the wrong default for the states this spec is about, so the
+      // signal is stubbed and returned.
+      { provide: ConnectivityService, useValue: { online: onlineSignal } },
     ],
   });
 
@@ -189,7 +199,7 @@ async function mount(
   const fixture = TestBed.createComponent(AppComponent);
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, sessionFailure, authenticated };
+  return { fixture, sessionFailure, authenticated, online: onlineSignal };
 }
 
 function navLinks(fixture: { nativeElement: unknown }, selector: string): HTMLAnchorElement[] {
@@ -630,7 +640,7 @@ describe('AppComponent nav (mounted)', () => {
    * (the dashboard snapshot, the ledger cache, the queue) or its own "needs a connection" state.
    */
   it('renders the app shell, with its navigation, when an unlocked install could not reach the server', async () => {
-    const { fixture } = await mount(0, 0, 'UNLOCKED', 'UNREACHABLE');
+    const { fixture } = await mount(0, 0, 'UNLOCKED', 'UNREACHABLE', null, false);
     await new Promise((resolve) => setTimeout(resolve, 0));
     fixture.detectChanges();
 
@@ -651,6 +661,9 @@ describe('AppComponent nav (mounted)', () => {
   });
 
   it('keeps the ordinary shell when the server refused the session rather than being unreachable', async () => {
+    // Note the network is *up* here: a refusal is an answer, and the point is that it opens no offline
+    // shell and serves no local data. (A refused restore with the network down still raises the generic
+    // signed-out offline banner, which is a separate claim about the connection, not about the session.)
     const { fixture } = await mount(0, 0, 'UNLOCKED', 'REFUSED');
     await new Promise((resolve) => setTimeout(resolve, 0));
     fixture.detectChanges();
@@ -662,6 +675,65 @@ describe('AppComponent nav (mounted)', () => {
     // The ordinary shell is what renders — the sign-in page inside it, with no nav because there is
     // no session (which is the state this app has always had for a refused restore).
     expect(host.querySelector('.shell')).not.toBeNull();
+  });
+
+  /**
+   * The offline banner's copy is a claim about *this install*, and the three signed-in/signed-out states
+   * make different ones. ADR-033's amendment exists because the app used to say nothing until a screen
+   * failed, and the app-lock card's own promise ("captures survive a reload") is only true once the lock
+   * is armed — so the banner must not repeat it on an install that never armed one.
+   */
+  it('says entries are saved on the device only when a lock is armed', async () => {
+    const { fixture } = await mount(3, 0, 'UNLOCKED', null, null, false);
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.textContent).toContain('saved on this device and sent when you reconnect');
+    expect(host.textContent).not.toContain('kept only until you close the app');
+    // Nothing to act on: the app is already storing what it queues.
+    expect(host.querySelector('.offline-banner a')).toBeNull();
+  });
+
+  it('warns that an unarmed install keeps entries only until the app closes, and offers the switch', async () => {
+    const { fixture } = await mount(3, 0, 'OFF', null, null, false);
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.textContent).toContain('kept only until you close the app');
+    // The one control that changes the claim, pointing at the section that owns it.
+    const link = host.querySelector<HTMLAnchorElement>('.offline-banner a');
+    expect(link?.getAttribute('href')).toBe('/settings?section=security');
+  });
+
+  it('tells a signed-out person that sign-in needs a connection instead of leaving a dead form', async () => {
+    // The case the owner hit: offline, no lock armed, no session — which used to be an unexplained login.
+    const { fixture } = await mount(0, 0, 'OFF', 'UNREACHABLE', null, false);
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.textContent).toContain('Signing in needs a connection');
+    expect(host.textContent).toContain('not set up to work offline');
+  });
+
+  it('shows no banner at all while there is a network', async () => {
+    const { fixture } = await mount(3);
+    const host = fixture.nativeElement as HTMLElement;
+
+    expect(host.querySelector('.offline-banner')).toBeNull();
+  });
+
+  it('raises the banner when the network goes away after load, and drops it when it returns', async () => {
+    const { fixture, online } = await mount(3);
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.querySelector('.offline-banner')).toBeNull();
+
+    online.set(false);
+    fixture.detectChanges();
+    expect(host.querySelector('.offline-banner')).not.toBeNull();
+
+    online.set(true);
+    fixture.detectChanges();
+    expect(host.querySelector('.offline-banner')).toBeNull();
   });
 
 });
