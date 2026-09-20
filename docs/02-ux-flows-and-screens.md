@@ -88,6 +88,27 @@ Household is resolved from the session, never the URL (ADR-008).
 > *should* gate is a product and security decision, not a UI one. (2) There is **no way to re-send a verification
 > email**: only signup and the password-reset request issue tokens, so an expired confirmation link has no in-app
 > recovery. It costs the user nothing today *because* nothing is gated — the two gaps are the same gap.
+>
+> **Build note (0.6.6, and a defect fixed after the owner hit it).** `/sign-in` is **two steps** when the
+> account has a second factor ([ADR-041](14-decisions-and-risks.md)): the password step returns
+> `mfaRequired`, the API sets **no cookie**, and the screen swaps to a code field instead of navigating —
+> only the second step mints a session. The field takes any of the three kinds (authenticator, emailed,
+> recovery) because the server decides from the challenge, and *Email me a code* appears only when the
+> challenge lists that factor (it is sent **on demand**, not with the password step).
+>
+> ⚠️ **The code step shipped broken, and the form's own shape was the cause.** It bound
+> `(ngSubmit)="verify()"` on a `<form>` with **no form directive** — `ngSubmit` is an output of
+> `FormGroupDirective`/`NgForm`, so nothing emitted it, and nothing called `preventDefault()` either; the
+> browser did a **native GET submit** to the same URL. The owner's report was exactly that: entering a
+> correct code "returned to the login page", because the reload threw away the single-use challenge and the
+> access token, both of which live only in memory. Measured in the browser: navigation to `/sign-in?`,
+> `POST /auth/login/mfa` **never sent**, password form back. The password step was never affected because
+> `[formGroup]` binds the directive. The code step is now a reactive form like its sibling, and a spec
+> drives the **real submit event** and asserts `verifyMfa` ran *and* the default was cancelled — the
+> previous MFA tests called `verify()` directly, which is why none of them could see it (docs/15).
+> **Verified live after the fix, 7/7 + 4/4**: a wrong code is refused without leaving the form, a right
+> code signs in and the session survives a hard reload, a recovery code works, and an emailed code
+> requested by the button arrives and signs in.
 
 | `/onboarding` | Onboarding wizard | F-13 | — |
 | `/` | Dashboard | F-19, F-21 | Danas |

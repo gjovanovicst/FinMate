@@ -35,17 +35,16 @@ import { AUTH_STYLES } from './auth.styles';
         @if (submitting()) {
           <p class="auth__progress" role="status">{{ i18n.t('signIn.mfaVerifying') }}</p>
         } @else {
-          <form class="auth__form" (ngSubmit)="verify()" novalidate>
+          <form class="auth__form" [formGroup]="codeForm" (ngSubmit)="verify()" novalidate>
             <label class="field">
               <span class="field__label">{{ i18n.t('signIn.mfaCode') }}</span>
               <input
                 class="field__input code"
                 type="text"
+                formControlName="code"
                 inputmode="text"
                 autocomplete="one-time-code"
                 autocapitalize="characters"
-                [value]="code()"
-                (input)="onCode($event)"
                 required
               />
             </label>
@@ -60,7 +59,7 @@ import { AUTH_STYLES } from './auth.styles';
               <p class="auth__error" role="alert">{{ error() }}</p>
             }
 
-            <button class="auth__submit" type="submit" [disabled]="code().trim() === ''">
+            <button class="auth__submit" type="submit" [disabled]="codeForm.controls.code.value.trim() === ''">
               {{ i18n.t('signIn.mfaVerify') }}
             </button>
           </form>
@@ -177,8 +176,22 @@ export class SignInComponent {
     password: ['', [Validators.required]],
   });
 
+  /**
+   * The code step's own form, and it must be a **reactive** one.
+   *
+   * A bare `<form (ngSubmit)="…">` with no form directive is not a form Angular knows about: `ngSubmit`
+   * is an output of `FormGroupDirective`/`NgForm`, so nothing emits it and nothing calls
+   * `preventDefault()` either — the browser then does a **native GET submit** to the current URL, which
+   * reloads the page and throws away the in-memory challenge and access token. Measured live before this
+   * was fixed: clicking *Verify* navigated to `/sign-in?`, `POST /auth/login/mfa` was never sent, and the
+   * password form came back (docs/15). Binding the control is what makes the directive cancel the native
+   * submit, exactly as it does on the password step above.
+   */
+  readonly codeForm = this.fb.nonNullable.group({
+    code: ['', [Validators.required]],
+  });
+
   readonly step = signal<'PASSWORD' | 'MFA'>('PASSWORD');
-  readonly code = signal('');
   readonly submitting = signal(false);
   readonly resending = signal(false);
   readonly resent = signal(false);
@@ -203,10 +216,6 @@ export class SignInComponent {
     return this.i18n.t('signIn.mfaIntroEmail', { email: challenge.emailHint });
   });
 
-  onCode(event: Event): void {
-    this.code.set((event.target as HTMLInputElement).value);
-  }
-
   async submit(): Promise<void> {
     if (this.form.invalid || this.submitting()) {
       // Marking touched surfaces the field-level messages on a failed submit.
@@ -221,7 +230,7 @@ export class SignInComponent {
       const outcome = await this.auth.signIn(email, password);
       if (outcome === 'MFA') {
         this.step.set('MFA');
-        this.code.set('');
+        this.codeForm.reset({ code: '' });
         return;
       }
       await this.router.navigateByUrl('/');
@@ -233,7 +242,7 @@ export class SignInComponent {
   }
 
   async verify(): Promise<void> {
-    const code = this.code().trim();
+    const code = this.codeForm.getRawValue().code.trim();
     if (code === '' || this.submitting()) return;
 
     this.submitting.set(true);
@@ -267,7 +276,7 @@ export class SignInComponent {
   back(): void {
     this.auth.cancelMfa();
     this.step.set('PASSWORD');
-    this.code.set('');
+    this.codeForm.reset({ code: '' });
     this.resent.set(false);
     this.error.set(null);
   }

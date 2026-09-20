@@ -1949,6 +1949,33 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   with it. Verified live at 320/768/1280 px including a 1280×500 px window where the sixteen destinations
   do not fit (27/27 checks, `.artifacts/shell-check/`).
 
+- **`(ngSubmit)` on a `<form>` with no form directive is not a submit handler, and it is worse than a
+  dead one: it lets the browser navigate.** `ngSubmit` is an output of `FormGroupDirective`/`NgForm`, not
+  a DOM event — so on a `<form>` that binds neither `[formGroup]` nor `[(ngModel)]`/`ngForm`, Angular
+  attaches a listener for a DOM event nothing ever fires, **and no one calls `preventDefault()`**. The
+  browser then performs a **native GET submit** to the current URL. The symptom is a page that quietly
+  reloads and loses every in-memory value, which is why it cost a bug report: `/sign-in`'s second step
+  (the two-factor code, ADR-041) was built that way, so a **correct code appeared to do nothing** — the
+  form was replaced by the password form again, because the reload discarded the single-use challenge
+  *and* the access token (both live only in memory, and the API deliberately sets no cookie until the
+  second factor passes). Measured live: clicking *Verify* navigated to `/sign-in?` — the trailing `?` is
+  the signature of the native GET submit against a form whose inputs carry no `name` — and
+  `POST /auth/login/mfa` was never sent. Ask Angular itself rather than reading the template: in dev mode
+  `window.ng.getDirectives(document.querySelector('form'))` listed `NgNoValidate` and
+  `NgControlStatusGroup` for the broken form and those **plus `FormGroupDirective`** for the password form
+  above it, which is the whole difference. (`NgNoValidate`/`NgControlStatusGroup` come from the shared
+  forms module and attach to *any* `<form>`, so their presence proves nothing.) The fix is to bind a form,
+  which makes the directive cancel the native submit — and it is the same one-line shape
+  `FormGroupDirective.onSubmit` uses, returning `false` unless the form's `method` is `dialog`.
+  ⚠️ **Why no test caught it, and what to do about it**: every existing MFA spec called
+  `component.verify()` directly, so the form's submit path was never exercised. Call `verify()` for the
+  logic and dispatch a real event for the wiring — `form.dispatchEvent(new Event('submit', { bubbles:
+  true, cancelable: true }))` returns `false` and sets `defaultPrevented` when a directive handled it —
+  and assert the request went out, because that pair is exactly what a native submit breaks. A repo-wide
+  static rule is not the guard here: `FormsModule` **is** used (onboarding), so a `<form (ngSubmit)>` with
+  `ngModel` is legitimate and a scan would false-positive. Every other form in the app already binds
+  `[formGroup]`; this was the only one that did not.
+
 - **`viewChild()` is `undefined` in the mounted harness — including when nothing is wrong.** The shell
   reaches its scroll container with `inject(ElementRef).nativeElement.querySelector('main.content')` for
   the same reason `assistant.component.ts` does (the entry above): a signal query is not populated under

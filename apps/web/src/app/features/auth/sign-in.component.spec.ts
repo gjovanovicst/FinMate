@@ -142,12 +142,43 @@ describe('SignInComponent', () => {
       mfaChallenge: () => active(),
     });
     screen.component.step.set('MFA');
-    screen.component.code.set('123456');
+    screen.component.codeForm.setValue({ code: '123456' });
     screen.fixture.detectChanges();
 
     await screen.component.verify();
 
     expect(screen.store.verifyMfa).toHaveBeenCalledWith('123456');
+  });
+
+  it('submits the code through the form itself, and cancels the browser default', async () => {
+    // The bug this guards: the code form bound `(ngSubmit)` with **no form directive**, so nothing ever
+    // emitted `ngSubmit` and nothing called `preventDefault()`. Clicking *Verify* did a native GET submit
+    // to the same URL — the page reloaded, the challenge and access token (both in memory) were gone, and
+    // the password form came back. Every other MFA test called `verify()` directly and so could not see
+    // it: this one drives the real DOM path and asserts both halves of the contract.
+    const active = signal<MfaChallenge | null>(challenge());
+    const screen = await mount({
+      signIn: vi.fn(async () => 'MFA'),
+      mfaChallenge: () => active(),
+    });
+    screen.component.step.set('MFA');
+    screen.fixture.detectChanges();
+
+    const form = screen.root.querySelector('form');
+    const input = screen.root.querySelector<HTMLInputElement>('input[autocomplete="one-time-code"]');
+    expect(form).not.toBeNull();
+    expect(input).not.toBeNull();
+    input!.value = '654321';
+    input!.dispatchEvent(new Event('input', { bubbles: true }));
+
+    const submit = new Event('submit', { bubbles: true, cancelable: true });
+    const notCancelled = form!.dispatchEvent(submit);
+    await screen.fixture.whenStable();
+
+    expect(screen.store.verifyMfa).toHaveBeenCalledWith('654321');
+    // A native submit is what reloads the page and loses the challenge.
+    expect(notCancelled).toBe(false);
+    expect(submit.defaultPrevented).toBe(true);
   });
 
   it('keeps the code form when the code is refused', async () => {
@@ -158,7 +189,7 @@ describe('SignInComponent', () => {
       mfaChallenge: () => active(),
     });
     screen.component.step.set('MFA');
-    screen.component.code.set('000000');
+    screen.component.codeForm.setValue({ code: '000000' });
     screen.fixture.detectChanges();
 
     await screen.component.verify();
