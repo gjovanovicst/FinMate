@@ -257,6 +257,25 @@ Everything here has cost time at least once, and most of it fails in a way that 
   includes them on purpose), which is exactly where this class of error lives: it is `tsc` that sees a
   test double's inferred signature, never the test run.
 
+- **A long-running `ng serve` can stop picking up edits and keep serving a build from hours ago, with no
+  error anywhere.** The symptom is exactly "I made the change and I see nothing" — the dev server answers
+  `200`, the page renders, and the bundle is simply old. Verified once: a server started at 14:05 was still
+  serving pre-change code at 16:10 (`route.profile` and "Back to settings" present, every new string
+  absent), while a freshly started one served the new code immediately. Because it is silent, **prove what
+  is being served instead of re-checking the source**: fetch the entry and its chunks and grep them for a
+  string only the new code has.
+  ```bash
+  curl -s http://127.0.0.1:4200/main.js -o /tmp/m.js
+  grep -oE '/chunk-[A-Z0-9]+\.js' /tmp/m.js | sort -u |
+    while read -r c; do curl -s "http://127.0.0.1:4200$c" | grep -l "some-new-string" && echo "in $c"; done
+  ```
+  The fix is to restart `nx run web:serve`. ⚠️ Two traps when testing whether the watcher lives:
+  **a change to a lazy route does not alter `main.js`** (it lands in its own chunk, so comparing
+  `main.js` hashes proves nothing), and **verify the probe edit actually applied** before concluding —
+  `sed -i` that matches nothing leaves a clean `git status`, which reads exactly like "the watcher
+  ignored my change". A reliable probe edits an **eager** string, greps the file to confirm, waits ~8 s,
+  then greps the served chunks.
+
 ## 2. Prisma and the database
 
 Prisma 7 plus a tenancy extension plus hand-written SQL means the driver is not the only thing deciding what a query does.
