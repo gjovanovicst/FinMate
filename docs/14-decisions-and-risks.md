@@ -3013,6 +3013,174 @@ inspection: `Reflect.getMetadata('design:paramtypes', AuthenticatedGuard)[0] ===
 
 ---
 
+### ADR-044 — A locale is data: the registry is open, catalogues load lazily, and writing direction is a property
+
+**Status:** Accepted · **Amends:** ADR-019 (its design stands; its closed locale set does not)
+
+**Context.** ADR-019 built the right machine — one runtime catalogue, switched by a signal write with no
+reload and no rebuild — and then bolted the door. `LocaleCode` was the literal union
+`'en' | 'sr-Latn' | 'sr-Cyrl'`, `CATALOGUES` was a static object, and every catalogue was imported
+eagerly. The consequences were not theoretical:
+
+- **Adding German was a code change in five places** — the web union, the web catalogue map, the picker,
+  the API's `CopyLocale` union and `CopyPair` — in a product whose central claim is that a language is a
+  data change.
+- **`CopyPair` is `{ en, sr }` by construction.** A type with exactly two language fields cannot hold a
+  third, so the server's copy layer was not "Serbian-first", it was *Serbian-only-by-design*.
+- **`resolveCopyLocale` mapped every non-Serbian, non-English tag to `'en'`**, and signup **stores that
+  result in `users.locale`**. A German reader was therefore *persisted as English*, and every
+  notification, email and synthesised name composed afterwards was English no matter what the picker said.
+- **The shell was at 150.9 KB of its 156 KB budget** (docs/07 §11), because `en` *and* Serbian Latin were
+  both in the initial chunk. Bundling five catalogues eagerly is not a slow first paint; it is a failed
+  build.
+- **`documentElement.dir` was the literal `'ltr'`.** Arabic is now a shipped target, and hardcoding the
+  attribute meant the one locale that most needs it was the one that could never set it. The stylesheet
+  was already written in logical properties (ADR-039), so the attribute is very nearly the whole of RTL
+  support — one physical positional declaration exists in the entire application, and it is a comment
+  saying not to write one.
+
+**Decision.** Treat the locale set as **data**, and keep only English on the eager path.
+
+1. `LocaleCode` is a `string`. `LOCALES` is the registry, and each entry carries `code`, `tag`,
+   `nativeLabel`, `englishLabel` and **`direction`**. `findLocale` resolves a browser tag by exact tag →
+   exact code → language-prefix, with one special case: a Serbian tag resolves on its **script subtag**
+   (`cyrl` ⇒ Cyrillic, anything else ⇒ Latin), so `sr-RS` cannot silently become the wrong script and a
+   Cyrillic reader gets Cyrillic.
+2. **`en` stays eager** — it is the primary language, the fallback `t()` degrades to, and the source
+   `TranslationKey` is derived from, so it cannot be deferred. **Every other catalogue is a dynamic
+   import** in one `LOADERS` map. Adding a language is the module, its `LOCALES` entry and one line.
+3. **`I18nService.init()` is awaited by an app initializer before the application renders.** That is what
+   buys off the only cost of laziness — a flash of English on a cold load — rather than accepting it.
+4. **`documentElement.dir` follows the locale's `direction`.** The client's `findLocale` and the server's
+   `resolveCopyLocale` apply the **identical** Serbian script rule, deliberately, so a screen and a
+   notification cannot disagree about what language the reader is in.
+5. Server copy becomes a **map**, not a pair: `CopyPair` → `CopyMap` (locale → string, `en` required,
+   `sr` holding Serbian **Latin** as the source `sr-Cyrl` is transliterated from), and
+   `resolveCopyLocale` returns **the language the tag actually names** rather than collapsing to English.
+6. The catalogue integrity spec **walks the registry**, so a new language is covered by the existing
+   parity, emptiness, placeholder and "is this actually translated" guards without editing the test.
+
+**Consequences.**
+
+- ✅ Adding a language is a data change plus one line, which is what ADR-019 promised.
+- ✅ **The shell budget no longer grows with the language count** — five catalogues ship as lazy chunks,
+  and removing Serbian Latin from the eager path returns budget rather than spending it.
+- ✅ An RTL locale works, and the `dir` attribute is asserted by a spec rather than assumed.
+- ✅ A German reader is stored as `de`, so every later notification and email is written in German —
+  pinned by an integration test that asserts `users.locale === 'de'` after a `de-DE` signup.
+- ✅ A language the picker offers but this build cannot load is a **failing test**, not a runtime
+  surprise, because the registry and the loader are checked against each other.
+- ⚠️ **`setLocale` is asynchronous.** The switch is still a signal write with no reload, but it now
+  resolves after a chunk. Callers await it; the switcher reports the server the language only *after* the
+  switch, so the stored tag is the one the reader landed on.
+- ⚠️ **A catalogue that fails to arrive degrades to English mid-session** (`loadCatalogue` never rejects).
+  That is the honest fallback and it is logged, but it means an offline reader on a cold cache can see
+  English under a non-English picker.
+- ⚠️ **German, Spanish, French and Arabic are machine-assisted and have not been read by a native
+  speaker.** The tests can prove a catalogue is structurally complete and substantially translated; they
+  cannot prove it reads well. This is **R-37**, and it is a launch gate for those locales.
+- ⚠️ **No human has looked at an RTL layout at any width** — the plumbing is tested, the appearance is not
+  (**R-38**).
+- ⚠️ **Plurals are unaddressed, and the gap is older than this ADR.** Count strings are hand-written
+  `One`/`Many` key pairs chosen by the caller, and a pair cannot express Serbian's *few* or Arabic's
+  **six** CLDR categories — so `transactions.count` is already wrong in Serbian for 2–4, and Arabic
+  plural agreement is approximate throughout. The code half is known and small (`Intl.PluralRules` plus
+  category-suffixed keys), but it is a **data** migration across every catalogue and every count call
+  site, so it is recorded as a named gap rather than shipped as an unused helper.
+- ⚠️ A stored locale code that a future release stops shipping resolves to the fallback rather than to a
+  raw key, but the User row keeps the old code — there is no backfill.
+
+**Alternatives rejected.**
+
+- **Keep the closed union and add cases.** Every new language edits types in two packages and a map in a
+  third; it is the opposite of the property ADR-019 was written to provide.
+- **Bundle every catalogue eagerly.** Measured against docs/07 §11: five catalogues do not fit in a 156 KB
+  shell that was already at 97 %.
+- **One build per locale, with a reload.** Loses the no-reload switch ADR-019 chose (a Household may want
+  Cyrillic on a Latin device), and multiplies the build by the language count.
+- **Derive the locale list from `Intl` at runtime.** It supplies neither native labels nor writing
+  direction, and it cannot tell us which catalogues this build actually ships.
+- **Keep `CopyPair` and add a third field.** The type still cannot hold N languages, so the next one needs
+  another field forever; a map is the shape the problem actually has.
+- **Have the server call the client for wording.** The copy at issue is *stored and delivered* — a
+  notification row, an email, a synthesised Rule name — and is rendered by no client (ADR-040).
+
+---
+
+### ADR-045 — A Household's ledger currency is chosen at signup, and the supported set is shipped data checked against CLDR
+
+**Status:** Accepted · **Amends:** ADR-011 (one ledger currency per Household stands; the hardcoded one does not)
+
+**Context.** ADR-011 made the ledger currency a property of the Household, which was the right call, and
+then the code never asked anyone about it: signup wrote the literal **`'RSD'`**. Two further facts made
+that a hard blocker rather than a cosmetic one:
+
+- **`MINOR_UNITS_PER_MAJOR` named four currencies** — RSD, EUR, USD, JPY — and `money()` **throws** on any
+  other. A Household whose ledger was GBP, CHF, PLN or EGP could not record a single Transaction, so
+  "add more currencies" was not only a UI gap.
+- **`formatMoney`/`formatBalance` defaulted their locale to `'sr-Latn-RS'`** and hardcoded
+  `minimumFractionDigits: scale === 1 ? 0 : 2`, so a Kuwaiti dinar rendered to **two** places instead of
+  three — a silently wrong amount, which is the worst kind.
+
+**Decision.**
+
+1. **Ship a currency table, and check it against the authority.** `MINOR_UNITS_PER_MAJOR` carries 60
+   currencies covering the target markets plus the majors, including the awkward families — zero-decimal
+   (JPY, KRW, VND, ISK, UGX…) and three-decimal (KWD, BHD, OMR, JOD, TND). `money.spec.ts` asserts **every
+   entry against `Intl`'s own `maximumFractionDigits`**, so the hand-written data is verified rather than
+   trusted.
+2. **It is static, and that is a measured decision.** Deriving the table from `Intl` at module load costs
+   **61 ms** for 162 currencies (measured in Node 24), on the client's first-paint path, and would make a
+   money path depend on the runtime's CLDR build. A static table plus a test is faster *and* more
+   deterministic.
+3. **Formatters use the currency's real digit count**, via `fractionDigitsOf`, and `formatMoney` /
+   `formatBalance` take a **required** `locale` — a default locale formats an amount in a language and
+   region nobody chose, and it does so invisibly.
+4. **Currency is a signup question.** `signupSchema` accepts an optional `currency`, validated in the DTO
+   *and* again in `AuthService.signup` (the seam every entry point goes through) with
+   `isSupportedCurrency`; an unsupported value falls back rather than creating a Household that cannot
+   record a Transaction. Signup no longer contains the literal `'RSD'`.
+5. **The client pre-fills, the reader confirms.** `suggestCurrencyForLocale` resolves the browser's tag to
+   a region with `Intl.Locale.maximize()` — which is what makes `navigator.language` usable, since a
+   browser reports `de`, not `de-DE` — and maps it through `CURRENCY_BY_REGION`. The signup form shows the
+   choice as a select labelled by CLDR through `Intl.DisplayNames`, so sixty currency names are named in
+   the reader's language without being translated sixty times per catalogue.
+
+**Consequences.**
+
+- ✅ GBP, CHF, PLN, SEK, EGP, INR, BRL, KWD and the rest work rather than throwing.
+- ✅ A Household created in Berlin is born in **EUR**, and the reader confirms it rather than discovering
+  it later; `suggestCurrencyForLocale('de')` is `EUR` and `('en-GB')` is `GBP`.
+- ✅ A currency the ledger cannot keep is refused at signup, which is where the choice belongs.
+- ✅ Three-decimal currencies render their third decimal.
+- ✅ Region → currency mapping is one shared table, so a future settings screen or a native client cannot
+  invent a second answer.
+- ⚠️ **The currency cannot be changed after signup.** There is no screen and no mutation; a reader who
+  confirms the wrong currency needs a migration. This is **R-39**, and it is the most obvious follow-up
+  task this decision creates.
+- ⚠️ **60 of CLDR's 162 currencies are supported**; the rest are refused at signup. Refusing is honest,
+  but it is a real limit on "international" and the table is now hand-maintained data.
+- ⚠️ A client that sends no currency still gets **RSD**. That preserves existing Households, and it is
+  still a Serbian default reached by an international reader whose client did not ask.
+- ⚠️ `CURRENCY_BY_REGION` and `MINOR_UNITS_PER_MAJOR` are two hand-written tables; a test asserts every
+  region maps to a *supported* currency, but nothing stops a region being absent.
+
+**Alternatives rejected.**
+
+- **Derive the table from `Intl` at load.** 61 ms measured, on the first-paint path, for a money path that
+  should not vary with the runtime's CLDR data.
+- **Support all 162 currencies.** More hand-written data to keep correct for markets with no users yet;
+  refusing an unsupported currency at signup is a better failure than a wrong amount.
+- **Let the server pick the currency from the reader's `Accept-Language`.** The reader never confirms, and
+  a wrong ledger currency is invisible — it mislabels every amount they go on to record.
+- **Keep the `'sr-Latn-RS'` default in `formatMoney`.** It was correct while the product was
+  Serbian-first and is a defect now; requiring the argument makes every call site answer "whose number is
+  this?" at compile time.
+- **Reuse `Intl.DisplayNames` for the *stored* name of a currency.** It is right for a picker and wrong
+  for storage — a stored name would freeze one language into a Household's data.
+
+---
+
 ## Part 2 — Risk register
 
 Scored as **Likelihood (L)** and **Impact (I)** on 1–5; **Exposure = L × I**. Anything ≥ 12 gets an
@@ -3065,6 +3233,10 @@ owner and a checkpoint in [09](09-implementation-plan.md).
 | **R-34** | **The API now has a second copy catalogue, and a string the client could have rendered can drift into it** (ADR-040). ADR-019 put wording in the client; server-composed copy had to move to the API because a notification, an email and a stored name are rendered by no client — but the boundary between "the server must say this" and "the screen should say this" is a judgement, and a later task can put a screen's sentence in the API and lose it from the switcher without any test failing | 3 | 2 | 6 | The server catalogue only holds copy that is **stored or delivered** (`notification-copy.ts`, `mail.service.ts`, the assistant's answer templates, the rule/household/receipt names); every interactive surface still calls `i18n.t()` and `app.routes.spec.ts`/`translations.spec.ts` fail on a key that is missing or duplicated across locales. The English/Serbian copy pair is asserted by `common/i18n/copy.spec.ts` across all three locales, and the transliteration it depends on is the shared `@finmate/nlp` function the browser also uses, so a Cyrillic catalogue cannot drift from the Latin one. ⚠️ **Named residuals**: rows written before the change keep their old language (`Naučeno: …`, `Moje domaćinstvo`), seed content is still Serbian for every Household, and `classification_decisions.rationale` is still English | Re-checked when a new server-composed message is added; the web catalogue's own guard is `translations.spec.ts` |
 | **R-35** | **A two-factor account is locked out when the authenticator is lost and the recovery codes are lost with it** (ADR-041). Enabling a factor raises the cost of a stolen password and simultaneously creates a way for the legitimate owner to be shut out; the app has no operator-assisted account recovery, so the recoverable paths are the ones built into the account | 3 | 4 | 12 | Ten single-use recovery codes are minted when the first factor is enabled and shown **once**, each accepted in place of either factor; the emailed-code factor is an alternative that needs only mailbox access; recovery codes are minted alongside the emailed factor too, so a person with only that factor is not left without them; every factor change re-authenticates, so a stolen session cannot quietly remove them; and `/profile` shows how many are left. ⚠️ **Named, not closed**: losing *both* the authenticator and the codes is unrecoverable by design — an operator override would be a backdoor, and building one is a separate decision nobody has made | `/profile` shows the remaining count; re-checked if an operator recovery path is ever proposed |
 | **R-36** | **Losing or rotating `MFA_ENCRYPTION_KEY` makes every enrolled authenticator unusable at once** (ADR-041). The key is deliberately required to store a shared secret safely, which means it is also a single point of failure for every account that enrolled | 2 | 4 | 8 | The key is **optional**, so a deployment that does not want that dependency simply cannot offer the authenticator factor and says so (`totpAvailable: false`); the emailed-code factor and the ten recovery codes need no key, so no account is left with one factor and no way in; and the schema refuses to boot on a present-but-wrong key, so a typo fails at deploy rather than at enrolment. ⚠️ Rotating the key is a **migration** (decrypt under the old, re-encrypt under the new), not a config change, and that is not built | Deployment runbook; the ADR states the rotation shape |
+
+| **R-37** | **Four shipped catalogues are machine-assisted and no native speaker has read them** (ADR-044). German, Spanish, French and Arabic were produced from `en.ts` in one pass. A test can prove a catalogue is structurally complete, that no placeholder was dropped, and that it is substantially *not* English — it cannot prove the wording is idiomatic, that the register is consistent, or that a financial term is the one a native speaker would recognise. Shipping unreviewed translation in a money app is a trust risk of exactly the shape ADR-040 spent a task fixing in the other direction | 3 | 3 | 9 | The structural guards are real and automated: key parity against `en`, no empty values, placeholder parity per key, and a **>85 % not-identical-to-English floor** that fails a catalogue which was never translated (measured: de 97.9 %, es 99.5 %, fr 96.4 %, ar 99.7 %); the Serbian guard that caught a real wrong-language defect is kept. ⚠️ **Named, not closed**: these four locales are **not launch-ready** until a native speaker reviews them, and the honest intermediate state is to keep them behind the picker only for people who choose them | Native review before any of the four is promoted in marketing; re-checked when a catalogue is edited |
+| **R-38** | **Arabic ships an RTL interface that no human has looked at** (ADR-044). The plumbing is tested — `dir` follows the locale and a spec asserts `rtl` under `ar` — and the stylesheet was already written in logical properties, but "the attribute is set" and "the layout is correct" are different claims, and this repository's own history is that a *measured* pass finds what a *reasoned* one does not (4.3.1d and 4.3.4b both found real defects the design review had passed) | 3 | 2 | 6 | One physical positional declaration exists in the entire web application, deliberately (ADR-039, asserted by convention in `styles.css`), so logical properties are the house rule rather than an aspiration; `text-align: start/end` is used at the four places alignment matters; and the direction attribute is spec-asserted against the registry. ⚠️ **Named, not closed**: no RTL capture at 320/768/1280 px exists, and mirrored affordances (a back chevron, a progress direction, a chart axis) are exactly the things a captured pass finds | The human visual pass docs/02 §9 already schedules; add `ar` to it |
+| **R-39** | **A Household's ledger currency is chosen at signup and cannot be changed afterwards** (ADR-045). The decision moved the currency from a hardcoded literal to a confirmed choice, which is an improvement — and it made the choice permanent, because no screen and no mutation update `households.ledger_currency`. Every Transaction, Account, Budget and Goal in that Household is denominated in it (ADR-011), so a reader who confirms the wrong currency must either live with mislabelled amounts or be fixed by a migration | 3 | 3 | 9 | The choice is **pre-filled from the reader's own region** (`suggestCurrencyForLocale`) and shown as an explicit, labelled select with a hint that says what it is for, so the common case needs no thought; an unsupported code is refused rather than stored; and changing the currency is a **data migration over denormalised `currency` columns**, not a form field — which is why it is a task with its own ADR rather than a settings control. ⚠️ **Named, not closed**: there is no self-service correction path, and `/settings` does not show the ledger currency at all | Next currency task; the follow-up ADR must state what happens to existing rows rather than re-denominating them silently |
 
 ### Top five by exposure
 1. **R-01 onboarding cold-start (20)** — the single biggest threat, and the one the plan spends the most disproportionate effort on.

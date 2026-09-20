@@ -73,6 +73,16 @@ Household is resolved from the session, never the URL (ADR-008).
 > reverse guard would bounce a signed-in visitor (exactly who clicks an emailed link) to `/`, and the token — not
 > a session — is what authorises the change.
 >
+> **`/sign-up` also asks for the ledger currency (ADR-045).** §4.18's account shell and this wireframe never
+> showed one because the server simply wrote `ledger_currency = 'RSD'`; a Household created in Berlin was born
+> with a dinar ledger and the reader was never asked. The form now carries a **Currency** select — every
+> currency the ledger can keep, labelled by CLDR through `Intl.DisplayNames` so the names are in the reader's
+> current language — **pre-filled from the browser's own locale** via `suggestCurrencyForLocale`, with a hint
+> saying what the choice does. The browser's region is used rather than the app's language deliberately: an
+> English-speaking reader in Germany should be offered EUR. ⚠️ **The choice is permanent today** — no screen
+> and no mutation update `households.ledger_currency` (**R-39**), so the pre-fill and the hint carry the whole
+> burden of getting it right.
+>
 > **`/reset-password` is one route with two questions**: no `token` asks for the address (reachable from
 > *Zaboravio si lozinku?* on `/sign-in`), and `?token=…` asks for the new password. The request answer is
 > deliberately the same whether or not the account exists, because the API answers `204` for any address; a spent

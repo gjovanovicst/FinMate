@@ -25,20 +25,119 @@ export type CurrencyCode = string;
 export type MinorUnits = bigint;
 
 /**
- * Minor units per major unit for the currencies v1 supports.
+ * Minor units per major unit, for every currency a Household's ledger may be kept in (ADR-045).
  *
- * This is deliberately a lookup rather than a constant: JPY has 0 decimals and KWD has 3, so a
- * hardcoded 100 would be wrong the moment multi-currency lands. v1 is RSD-only (ADR-011).
+ * This is deliberately a lookup rather than the constant `100`: JPY has no minor unit and KWD has
+ * three, so a hardcoded hundred is wrong the day a second currency exists.
+ *
+ * **Why this is a static table and not derived from `Intl` at load.** `Intl` knows both the list of
+ * currencies and their minor-unit counts, which is exactly the right source of truth — and building
+ * the table from it costs **61 ms** (measured, 162 currencies × `Intl.NumberFormat`), which is startup
+ * cost on the client's first-paint path. A money path also wants an answer that does not depend on the
+ * runtime's CLDR build. So the data is static and the *correctness* is pinned by `money.spec.ts`, which
+ * asserts every entry below against `Intl`'s own `maximumFractionDigits` — hand-written data that a
+ * test checks against the authority, rather than data a test trusts.
+ *
+ * The set covers the markets the product targets plus the majors; a currency outside it is refused at
+ * signup rather than accepted and then thrown on by `money()` at the first transaction.
  */
 export const MINOR_UNITS_PER_MAJOR: Readonly<Record<string, bigint>> = Object.freeze({
+  // Balkans and wider Europe
   RSD: 100n,
   EUR: 100n,
+  GBP: 100n,
+  CHF: 100n,
+  SEK: 100n,
+  NOK: 100n,
+  DKK: 100n,
+  PLN: 100n,
+  CZK: 100n,
+  HUF: 1n,
+  RON: 100n,
+  BGN: 100n,
+  ISK: 1n,
+  MKD: 100n,
+  ALL: 1n,
+  BAM: 100n,
+  MDL: 100n,
+  UAH: 100n,
+  TRY: 100n,
+  // Americas
   USD: 100n,
+  CAD: 100n,
+  MXN: 100n,
+  BRL: 100n,
+  ARS: 100n,
+  CLP: 1n,
+  COP: 1n,
+  PEN: 100n,
+  // Asia-Pacific
   JPY: 1n,
+  CNY: 100n,
+  KRW: 1n,
+  INR: 100n,
+  IDR: 1n,
+  MYR: 100n,
+  SGD: 100n,
+  HKD: 100n,
+  TWD: 100n,
+  THB: 100n,
+  PHP: 100n,
+  VND: 1n,
+  AUD: 100n,
+  NZD: 100n,
+  PKR: 1n,
+  BDT: 100n,
+  // Middle East, Africa
+  AED: 100n,
+  SAR: 100n,
+  QAR: 100n,
+  KWD: 1000n,
+  BHD: 1000n,
+  OMR: 1000n,
+  JOD: 1000n,
+  ILS: 100n,
+  EGP: 100n,
+  ZAR: 100n,
+  NGN: 100n,
+  KES: 100n,
+  MAD: 100n,
+  TND: 1000n,
+  GHS: 100n,
+  TZS: 100n,
+  UGX: 1n,
 });
 
-/** The default ledger currency for a new Household. */
+/**
+ * The default ledger currency for a new Household.
+ *
+ * It stays `RSD` because that is what existing Households hold and what a client that sends no currency
+ * gets. It is a **fallback, not a policy**: signup takes the currency the client derived from the
+ * reader's own locale (ADR-045), so a German Household is born in EUR rather than being corrected later.
+ */
 export const DEFAULT_LEDGER_CURRENCY: CurrencyCode = 'RSD';
+
+/** The currency's minor-unit exponent, or throws when this build does not support it. */
+export function minorUnitsPerMajor(currency: CurrencyCode): bigint {
+  const exponent = MINOR_UNITS_PER_MAJOR[currency];
+  if (exponent === undefined) throw new MoneyError(`Unsupported currency: ${currency}`);
+  return exponent;
+}
+
+/**
+ * Decimal places a currency is written with.
+ *
+ * Derived from the exponent rather than assumed: `100n` → 2, `1n` → 0, `1000n` → 3. The formatters below
+ * used to hardcode `scale === 1 ? 0 : 2`, which silently rendered a Kuwaiti dinar to two places.
+ */
+export function fractionDigitsOf(currency: CurrencyCode): number {
+  return minorUnitsPerMajor(currency).toString().length - 1;
+}
+
+/** True when a ledger can be kept in `currency`. Signup validates against this before creating one. */
+export function isSupportedCurrency(currency: string): boolean {
+  return currency in MINOR_UNITS_PER_MAJOR;
+}
 
 /** Thrown when money is combined across currencies, or given an invalid amount. */
 export class MoneyError extends Error {
@@ -66,7 +165,7 @@ export function money(amountMinor: bigint, currency: CurrencyCode): Money {
       `amountMinor must be non-negative; direction is carried by kind, not a sign (ADR-003).`,
     );
   }
-  if (!(currency in MINOR_UNITS_PER_MAJOR)) {
+  if (!isSupportedCurrency(currency)) {
     throw new MoneyError(`Unsupported currency: ${currency}`);
   }
   return Object.freeze({ amountMinor, currency });
@@ -98,16 +197,22 @@ export function equalsMoney(a: Money, b: Money): boolean {
 /**
  * Format for display. Grouping uses the locale's separator; Serbian uses `.` for thousands
  * and `,` for decimals (see docs/04 §3.1 on the parsing side).
+ *
+ * `locale` is **required, with no default** (ADR-044). It used to default to `'sr-Latn-RS'`, which was
+ * right when the product was Serbian-first and is a defect now: a default locale silently formats an
+ * amount in a language and region nobody chose, and it does so *invisibly* — the number still looks
+ * like a number. Requiring it makes every call site answer "whose number is this?" at compile time,
+ * and the client's answer is always the active locale (`fm-money` → `I18nService.tag`).
  */
-export function formatMoney(m: Money, locale = 'sr-Latn-RS'): string {
-  const exponent = MINOR_UNITS_PER_MAJOR[m.currency];
-  if (exponent === undefined) throw new MoneyError(`Unsupported currency: ${m.currency}`);
+export function formatMoney(m: Money, locale: string): string {
+  const exponent = minorUnitsPerMajor(m.currency);
   const scale = Number(exponent);
   const major = Number(m.amountMinor) / scale;
   return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency: m.currency,
-    minimumFractionDigits: scale === 1 ? 0 : 2,
+    // The currency's own digit count, not `scale === 1 ? 0 : 2` — that rendered KWD to two places.
+    minimumFractionDigits: fractionDigitsOf(m.currency),
   }).format(major);
 }
 
@@ -153,7 +258,7 @@ export function balance(amountMinor: bigint, currency: CurrencyCode): Balance {
       `Balance amountMinor must be a bigint (minor units), received ${typeof amountMinor}. See ADR-003.`,
     );
   }
-  if (!(currency in MINOR_UNITS_PER_MAJOR)) {
+  if (!isSupportedCurrency(currency)) {
     throw new MoneyError(`Unsupported currency: ${currency}`);
   }
   return Object.freeze({ amountMinor, currency });
@@ -194,15 +299,18 @@ export function applyMovement(current: Balance, kind: 'INCOME' | 'EXPENSE', amou
     : balance(current.amountMinor - amount.amountMinor, current.currency);
 }
 
-/** Format a Balance for display, including a leading minus where the value is negative. */
-export function formatBalance(value: Balance, locale = 'sr-Latn-RS'): string {
-  const exponent = MINOR_UNITS_PER_MAJOR[value.currency];
-  if (exponent === undefined) throw new MoneyError(`Unsupported currency: ${value.currency}`);
+/**
+ * Format a Balance for display, including a leading minus where the value is negative.
+ *
+ * `locale` is required for the same reason as {@link formatMoney}: see ADR-044.
+ */
+export function formatBalance(value: Balance, locale: string): string {
+  const exponent = minorUnitsPerMajor(value.currency);
   const scale = Number(exponent);
   return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency: value.currency,
-    minimumFractionDigits: scale === 1 ? 0 : 2,
+    minimumFractionDigits: fractionDigitsOf(value.currency),
   }).format(Number(value.amountMinor) / scale);
 }
 

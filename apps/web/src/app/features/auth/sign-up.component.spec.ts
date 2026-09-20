@@ -9,6 +9,7 @@ import { provideRouter } from '@angular/router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthStore } from '../../core/auth/auth.store';
+import { SUPPORTED_CURRENCIES } from '../../core/i18n/currency-names';
 import { SignUpComponent } from './sign-up.component';
 
 initAngularTesting();
@@ -58,6 +59,7 @@ describe('SignUpComponent', () => {
       displayName: 'Ana',
       email: 'ana@example.test',
       password: 'correct-horse',
+      currency: 'EUR',
     });
     const submitting = screen.component.submit();
     screen.fixture.detectChanges();
@@ -68,5 +70,42 @@ describe('SignUpComponent', () => {
 
     release();
     await submitting;
+  });
+
+  /**
+   * The ledger currency (ADR-045).
+   *
+   * Before this, the server wrote the literal `'RSD'` at signup, so a reader anywhere else was given a
+   * dinar ledger without ever being asked — and a wrong ledger currency mislabels every amount the
+   * Household goes on to record.
+   */
+  it('offers every supported currency, pre-filled, and sends the confirmed one', async () => {
+    const signUp = vi.fn(
+      (_email: string, _password: string, _displayName: string, _locale?: string, _currency?: string) =>
+        Promise.resolve(),
+    );
+    const screen = await mount({ signUp });
+
+    const control = screen.component.form.controls.currency;
+    // Pre-filled from the browser's region rather than left empty or hardcoded.
+    expect(SUPPORTED_CURRENCIES).toContain(control.value);
+    expect(control.hasError('required')).toBe(false);
+
+    const select = screen.root.querySelector('select');
+    expect(select).not.toBeNull();
+    expect(select!.querySelectorAll('option')).toHaveLength(SUPPORTED_CURRENCIES.length);
+    // The label names the currency in the reader's language, via CLDR rather than a hand-written table.
+    expect(select!.textContent).toContain('EUR');
+
+    screen.component.form.setValue({
+      displayName: 'Ana',
+      email: 'ana@example.test',
+      password: 'correct-horse',
+      currency: 'EUR',
+    });
+    await screen.component.submit();
+
+    expect(signUp).toHaveBeenCalledTimes(1);
+    expect(signUp.mock.calls[0]?.[4]).toBe('EUR');
   });
 });

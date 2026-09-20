@@ -67,11 +67,16 @@ describe('AuthService session lifecycle (integration)', () => {
 
   const uniqueEmail = (): string => `it-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`;
 
-  async function signup(email: string): Promise<{ accessToken: string; refreshToken: string }> {
+  async function signup(
+    email: string,
+    options: { locale?: string; currency?: string } = {},
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     const tokens = await auth.signup({
       email,
       password,
       displayName: 'Integration Test',
+      locale: options.locale ?? null,
+      currency: options.currency ?? null,
       userAgentHash: null,
       ipHash: null,
     });
@@ -102,6 +107,43 @@ describe('AuthService session lifecycle (integration)', () => {
     `;
     expect(memberships).toHaveLength(1);
     expect(memberships[0]?.role).toBe('OWNER');
+  });
+
+  /** The Household's ledger currency as stored. Raw SQL, like the membership read above, so the
+   *  tenancy guard does not need a context for a row this test owns. */
+  async function ledgerCurrencyOf(userId: string): Promise<string | undefined> {
+    const rows = await prisma.client.$queryRaw<{ ledger_currency: string }[]>`
+      SELECT ledger_currency FROM households WHERE owner_user_id = ${userId}::uuid
+    `;
+    return rows[0]?.ledger_currency;
+  }
+
+  it('creates the Household in the currency the reader confirmed (ADR-045)', async () => {
+    // The defect this pins: `ledger_currency` was the literal `'RSD'`, so a Household signed up in
+    // Berlin was born with a dinar ledger and nobody was ever asked.
+    const email = uniqueEmail();
+    await signup(email, { currency: 'EUR' });
+    const user = await prisma.client.users.findFirst({ where: { email } });
+    expect(await ledgerCurrencyOf(user!.id)).toBe('EUR');
+  });
+
+  it('falls back rather than storing a currency the ledger cannot keep (ADR-045)', async () => {
+    // `money()` throws on an unsupported currency, so accepting `ZZZ` here would create a Household
+    // that cannot record a single Transaction. The service is the floor: the DTO rejects it too.
+    const email = uniqueEmail();
+    await signup(email, { currency: 'ZZZ' });
+    const user = await prisma.client.users.findFirst({ where: { email } });
+    expect(await ledgerCurrencyOf(user!.id)).toBe('RSD');
+  });
+
+  it('stores the reader\'s own language rather than collapsing it to English (ADR-044)', async () => {
+    // Before ADR-044 `resolveCopyLocale` mapped every non-Serbian, non-English tag to `'en'` and this
+    // result was written to `users.locale` — so a German reader was *persisted as English* and every
+    // later email and notification was English regardless of the picker.
+    const email = uniqueEmail();
+    await signup(email, { locale: 'de-DE' });
+    const user = await prisma.client.users.findFirst({ where: { email } });
+    expect(user?.locale).toBe('de');
   });
 
   it('stores only the digests of tokens, never the tokens themselves', async () => {

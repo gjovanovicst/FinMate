@@ -1,10 +1,4 @@
-import {
-  MINOR_UNITS_PER_MAJOR,
-  MoneyError,
-  money,
-  type CurrencyCode,
-  type Money,
-} from './money';
+import { minorUnitsPerMajor, money, type CurrencyCode, type Money } from './money';
 
 /**
  * Parse a human-typed amount into `Money`.
@@ -53,8 +47,7 @@ export function parseAmount(input: string, currency: CurrencyCode): AmountParseR
     return { money: null, candidates: [], currency, ambiguous: false };
   }
 
-  const scale = MINOR_UNITS_PER_MAJOR[currency];
-  if (scale === undefined) throw new MoneyError(`Unsupported currency: ${currency}`);
+  const scale = minorUnitsPerMajor(currency);
 
   const shorthand = applyThousandsShorthand(cleaned);
 
@@ -236,8 +229,7 @@ function toMinorUnits(majorText: string, scale: bigint): bigint | null {
  * an `<input>` regardless of the display locale.
  */
 export function toMajorString(value: Money): string {
-  const scale = MINOR_UNITS_PER_MAJOR[value.currency];
-  if (scale === undefined) throw new MoneyError(`Unsupported currency: ${value.currency}`);
+  const scale = minorUnitsPerMajor(value.currency);
   if (scale === 1n) return value.amountMinor.toString();
 
   const exponent = String(scale).length - 1;

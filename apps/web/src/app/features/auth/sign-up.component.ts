@@ -1,9 +1,13 @@
+import { DOCUMENT } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 
+import { suggestCurrencyForLocale } from '@finmate/domain';
+
 import { ErrorMessageService } from '../../core/api/error-message.service';
 import { AuthStore } from '../../core/auth/auth.store';
+import { currencyOptionLabel, SUPPORTED_CURRENCIES } from '../../core/i18n/currency-names';
 import { I18nService } from '../../core/i18n/i18n.service';
 import { BrandComponent } from '../../shared/ui/brand/brand.component';
 import { AUTH_STYLES } from './auth.styles';
@@ -67,6 +71,22 @@ import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from './password-policy';
             <span class="field__hint">{{ i18n.t('signUp.passwordHint', { min: minLength }) }}</span>
           </label>
 
+          <!-- The ledger currency (ADR-045). It used to be the literal 'RSD' on the server, so a reader
+               anywhere else was given a dinar ledger without ever being asked. Pre-filled from the
+               browser's region and confirmed here, because a wrong ledger currency is not a setting
+               people go looking for — it silently mislabels every amount they record. -->
+          <label class="field">
+            <span class="field__label">{{ i18n.t('signUp.currency') }}</span>
+            <select class="field__input" formControlName="currency" required>
+              @for (code of currencies; track code) {
+                <option [value]="code" [selected]="code === form.controls.currency.value">
+                  {{ optionLabel(code) }}
+                </option>
+              }
+            </select>
+            <span class="field__hint">{{ i18n.t('signUp.currencyHint') }}</span>
+          </label>
+
           @if (error()) {
             <p class="auth__error" role="alert">{{ error() }}</p>
           }
@@ -91,8 +111,12 @@ export class SignUpComponent {
   private readonly router = inject(Router);
   private readonly errors = inject(ErrorMessageService);
   private readonly fb = inject(FormBuilder);
+  private readonly document = inject(DOCUMENT);
 
   readonly minLength = MIN_PASSWORD_LENGTH;
+
+  /** Every currency a Household's ledger may be kept in (ADR-045). */
+  readonly currencies = SUPPORTED_CURRENCIES;
 
   readonly form = this.fb.nonNullable.group({
     displayName: ['', [Validators.required, Validators.maxLength(80)]],
@@ -105,10 +129,18 @@ export class SignUpComponent {
         Validators.maxLength(MAX_PASSWORD_LENGTH),
       ],
     ],
+    // The **browser's** locale, deliberately, not the app's language: an English-speaking reader in
+    // Germany should be offered EUR, and `i18n.tag()` would have followed the language picker instead.
+    currency: [this.suggestedCurrency(), [Validators.required]],
   });
 
   readonly submitting = signal(false);
   readonly error = signal<string | null>(null);
+
+  /** `"EUR — Euro"`, named by CLDR in the reader's current language. */
+  optionLabel(code: string): string {
+    return currencyOptionLabel(code, this.i18n.tag());
+  }
 
   async submit(): Promise<void> {
     if (this.form.invalid || this.submitting()) {
@@ -119,13 +151,17 @@ export class SignUpComponent {
     this.submitting.set(true);
     this.error.set(null);
     try {
-      const { email, password, displayName } = this.form.getRawValue();
-      await this.auth.signUp(email, password, displayName, this.i18n.tag());
+      const { email, password, displayName, currency } = this.form.getRawValue();
+      await this.auth.signUp(email, password, displayName, this.i18n.tag(), currency);
       await this.router.navigateByUrl('/');
     } catch (error) {
       this.error.set(this.errors.for(error));
     } finally {
       this.submitting.set(false);
     }
+  }
+
+  private suggestedCurrency(): string {
+    return suggestCurrencyForLocale(this.document.defaultView?.navigator.language ?? null);
   }
 }

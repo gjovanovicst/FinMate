@@ -11,13 +11,23 @@ import { copyIntlLocale, pick, resolveCopyLocale, tr } from './copy';
  * and interpolation, which decides whether a Household's own Category name is rewritten.
  */
 describe('resolveCopyLocale', () => {
-  it('maps a Serbian tag to a script, and everything else to English', () => {
+  it('maps a Serbian tag to its script', () => {
     expect(resolveCopyLocale('sr-Latn-RS')).toBe('sr-Latn');
     expect(resolveCopyLocale('sr-Cyrl-RS')).toBe('sr-Cyrl');
+    // `sr` alone and `sr-RS` name no script; Latin is the product's Serbian default.
     expect(resolveCopyLocale('sr')).toBe('sr-Latn');
+    expect(resolveCopyLocale('sr-RS')).toBe('sr-Latn');
+  });
+
+  it('returns the language a non-Serbian tag names, rather than collapsing it to English', () => {
+    // ADR-044. This used to assert `'en'` for `de-DE`, and that collapse is exactly what persisted a
+    // German reader as English at signup — so every later email and notification was English.
     expect(resolveCopyLocale('en-US')).toBe('en');
-    expect(resolveCopyLocale('de-DE')).toBe('en');
-    expect(resolveCopyLocale('de-DE', 'sr-Latn')).toBe('sr-Latn');
+    expect(resolveCopyLocale('de-DE')).toBe('de');
+    expect(resolveCopyLocale('de-AT')).toBe('de');
+    expect(resolveCopyLocale('es-419')).toBe('es');
+    expect(resolveCopyLocale('fr-CA')).toBe('fr');
+    expect(resolveCopyLocale('ar-EG')).toBe('ar');
   });
 
   it('treats absent, empty and null as the fallback', () => {
@@ -26,12 +36,14 @@ describe('resolveCopyLocale', () => {
     expect(resolveCopyLocale(undefined)).toBe('en');
     expect(resolveCopyLocale(null)).toBe('en');
     expect(resolveCopyLocale('')).toBe('en');
+    expect(resolveCopyLocale('   ')).toBe('en');
     expect(resolveCopyLocale(undefined, 'sr-Cyrl')).toBe('sr-Cyrl');
   });
 
   it('is case-insensitive, because an HTTP header and a client tag do not agree on case', () => {
     expect(resolveCopyLocale('SR-LATN-RS')).toBe('sr-Latn');
     expect(resolveCopyLocale('sr-cyrl')).toBe('sr-Cyrl');
+    expect(resolveCopyLocale('DE-de')).toBe('de');
   });
 });
 
@@ -54,6 +66,19 @@ describe('tr', () => {
     // `Храна` would put a script the reader never typed into their own ledger.
     expect(tr('sr-Cyrl', pair, { amount: 'Hrana / Supermarket' })).toBe('Потрошио си Hrana / Supermarket.');
   });
+
+  it('renders any language the map carries, and degrades to English for one it does not', () => {
+    // ADR-044: the map is open, so a third language is data rather than a type change.
+    const map = { en: 'You spent {amount}.', sr: 'Potrošio si {amount}.', de: 'Du hast {amount} ausgegeben.' };
+    expect(tr('de', map, { amount: '100' })).toBe('Du hast 100 ausgegeben.');
+    // A language with no strings yet must not render a raw key or a blank line.
+    expect(tr('fr', map, { amount: '100' })).toBe('You spent 100.');
+  });
+
+  it('resolves a region-qualified tag to its language', () => {
+    expect(tr('de-AT', { en: 'x', de: 'y' })).toBe('y');
+    expect(tr('es-419', { en: 'x', es: 'z' })).toBe('z');
+  });
 });
 
 describe('pick', () => {
@@ -64,6 +89,11 @@ describe('pick', () => {
     expect(pick('sr-Latn', { en: ['a'], sr: ['b'] })).toEqual(['b']);
     expect(pick('sr-Cyrl', { en: ['a'], sr: ['b'] })).toEqual(['b']);
   });
+
+  it('serves a third language, and English when it has none', () => {
+    expect(pick('de', { en: ['a'], sr: ['b'], de: ['c'] })).toEqual(['c']);
+    expect(pick('fr', { en: ['a'], sr: ['b'] })).toEqual(['a']);
+  });
 });
 
 describe('copyIntlLocale', () => {
@@ -72,5 +102,9 @@ describe('copyIntlLocale', () => {
     expect(copyIntlLocale('en')).toBe('en-US');
     expect(copyIntlLocale('sr-Latn')).toBe('sr-Latn-RS');
     expect(copyIntlLocale('sr-Cyrl')).toBe('sr-Cyrl-RS');
+    // A language with no bespoke tag is passed through — `Intl` formats in its own conventions, which
+    // is the point: a German sentence must not carry an amount grouped for the United States.
+    expect(copyIntlLocale('de')).toBe('de');
+    expect(copyIntlLocale('fr-CA')).toBe('fr-CA');
   });
 });

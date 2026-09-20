@@ -25,7 +25,7 @@
  * @module apps/api/src/modules/assistant
  */
 
-import type { CopyPair } from '../../common/i18n/copy';
+import type { CopyMap } from '../../common/i18n/copy';
 
 /**
  * The closed set of writes the assistant may **propose**.
@@ -279,7 +279,7 @@ export const ACTION_TEMPLATES: Readonly<Record<AssistantAction, ActionTemplate>>
  */
 export const ACTION_EXAMPLES: readonly {
   readonly action: AssistantAction;
-  readonly question: CopyPair;
+  readonly question: CopyMap;
 }[] = [
   // Ordered by how likely a reader is to want it, because the chips are read top to bottom: recording
   // an entry is the product's one-line promise, and naming a Category is the next thing somebody wants.

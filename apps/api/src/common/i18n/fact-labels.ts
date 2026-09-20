@@ -1,4 +1,4 @@
-import type { CopyPair } from './copy';
+import type { CopyMap } from './copy';
 
 /**
  * The assistant's fact-table labels, in both languages (ADR-040).
@@ -36,4 +36,4 @@ export const FACT_LABELS = {
   usual: { en: 'Usual', sr: 'Uobičajeno' },
   difference: { en: 'Difference', sr: 'Razlika' },
   household: { en: 'Household', sr: 'Domaćinstvo' },
-} as const satisfies Readonly<Record<string, CopyPair>>;
+} as const satisfies Readonly<Record<string, CopyMap>>;

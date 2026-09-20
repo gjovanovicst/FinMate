@@ -684,6 +684,9 @@ export const en = {
   'signUp.email': 'Email',
   'signUp.password': 'Password',
   'signUp.passwordHint': 'At least {min} characters.',
+  'signUp.currency': 'Currency',
+  'signUp.currencyHint':
+    'The currency your household keeps its accounts in. Pre-filled from your region — change it if it is not right.',
   'signUp.submit': 'Create account',
   'signUp.submitting': 'Creating account…',
   'signUp.haveAccount': 'Already have an account?',

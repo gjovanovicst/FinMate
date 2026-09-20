@@ -11,7 +11,11 @@ import {
   zeroBalance,
   equalsMoney,
   formatMoney,
+  fractionDigitsOf,
+  isSupportedCurrency,
+  MINOR_UNITS_PER_MAJOR,
   MoneyError,
+  minorUnitsPerMajor,
   money,
   subtractMoney,
 } from './money';
@@ -113,5 +117,59 @@ describe('Balance (a derived, SIGNED quantity — distinct from Money)', () => {
   it('has a zero identity that leaves a balance unchanged', () => {
     const original = balance(-500n, 'RSD');
     expect(addBalance(original, zeroBalance('RSD')).amountMinor).toBe(-500n);
+  });
+});
+
+/**
+ * The currency table (ADR-045).
+ *
+ * `MINOR_UNITS_PER_MAJOR` is hand-written static data, because deriving it from `Intl` at load costs
+ * 61 ms on the client's first-paint path. These tests are what make that safe: they check the shipped
+ * data against the platform's own CLDR figures, so a wrong exponent is a failing test rather than a
+ * mis-formatted amount in a Household's ledger.
+ */
+describe('MINOR_UNITS_PER_MAJOR (ADR-045)', () => {
+  /** CLDR's own minor-unit count for a currency. */
+  const cldrDigits = (currency: string): number =>
+    new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits;
+
+  it('agrees with Intl on every currency it ships', () => {
+    const wrong = Object.entries(MINOR_UNITS_PER_MAJOR)
+      .filter(([code, exponent]) => exponent !== 10n ** BigInt(cldrDigits(code)))
+      .map(([code]) => code);
+    expect(wrong).toEqual([]);
+  });
+
+  it('covers the markets the product targets, with the awkward exponents present', () => {
+    // The three families that a hardcoded 100 gets wrong, named so a regression is legible.
+    expect(minorUnitsPerMajor('JPY')).toBe(1n); // no minor unit
+    expect(minorUnitsPerMajor('KWD')).toBe(1000n); // three minor units
+    expect(minorUnitsPerMajor('HUF')).toBe(1n); // CLDR writes it with none
+    // Markets beyond the original RSD/EUR/USD/JPY quartet.
+    for (const code of ['GBP', 'CHF', 'PLN', 'SEK', 'EGP', 'INR', 'BRL', 'ZAR', 'ARS']) {
+      expect(isSupportedCurrency(code)).toBe(true);
+    }
+  });
+
+  it('rejects a currency it does not carry, rather than accepting and later throwing', () => {
+    expect(isSupportedCurrency('XXX')).toBe(false);
+    expect(isSupportedCurrency('GB')).toBe(false);
+    expect(() => minorUnitsPerMajor('XXX')).toThrow(/Unsupported currency/);
+    // `money()` is the floor: a Household currency that reaches here unsupported must fail loudly,
+    // because the alternative is a ledger that cannot record a transaction.
+    expect(() => money(100n, 'XXX')).toThrow(/Unsupported currency/);
+  });
+
+  it('derives decimal places from the exponent, not from an assumed two', () => {
+    expect(fractionDigitsOf('JPY')).toBe(0);
+    expect(fractionDigitsOf('EUR')).toBe(2);
+    expect(fractionDigitsOf('KWD')).toBe(3);
+  });
+
+  it('renders a three-decimal currency to three places', () => {
+    // The formatters hardcoded `scale === 1 ? 0 : 2`, so a Kuwaiti dinar was rendered to two places
+    // and 1.234 KWD displayed as 1.23 — a silently wrong amount, which is the worst kind.
+    const formatted = formatMoney(money(1234n, 'KWD'), 'en-US').replace(/\u00a0|\u202f/g, ' ');
+    expect(formatted).toMatch(/1\.234/);
   });
 });

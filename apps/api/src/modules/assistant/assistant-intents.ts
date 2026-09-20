@@ -16,7 +16,7 @@
  * @module apps/api/src/modules/assistant
  */
 
-import type { CopyPair } from '../../common/i18n/copy';
+import type { CopyMap } from '../../common/i18n/copy';
 
 /** docs/06 §8.1's `AssistantIntent`, verbatim and in the same order. */
 export const ASSISTANT_INTENTS = [
@@ -363,7 +363,7 @@ export const INTENT_TEMPLATES: Readonly<Record<AssistantIntent, IntentTemplate>>
  */
 export const SUGGESTED_QUESTIONS: readonly {
   readonly intent: AssistantIntent;
-  readonly question: CopyPair;
+  readonly question: CopyMap;
 }[] = [
   {
     intent: 'SPEND_TOTAL',

@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import { uuidv7 } from '@finmate/domain';
+import { DEFAULT_LEDGER_CURRENCY, isSupportedCurrency, uuidv7 } from '@finmate/domain';
 
 import { ApiError } from '../../common/filters/all-exceptions.filter';
 import { resolveCopyLocale, tr, type CopyLocale } from '../../common/i18n/copy';
@@ -137,6 +137,12 @@ export class AuthService {
     displayName: string;
     /** The reader's language, from the client that signed up. Absent means the product default. */
     locale?: string | null;
+    /**
+     * The ledger currency the client pre-filled from the reader's locale (ADR-045). Absent or
+     * unsupported means the product default — a Household is always created with a currency the ledger
+     * can keep, because there is no "no currency" state for one to be in.
+     */
+    currency?: string | null;
     userAgentHash: string | null;
     ipHash: string | null;
   }): Promise<AuthTokens> {
@@ -146,6 +152,14 @@ export class AuthService {
     // Resolved once, here: it names the Household below and it is what every later email and
     // notification is written in (ADR-040). Stored as our own locale code rather than the raw tag.
     const copyLocale = resolveCopyLocale(params.locale, resolveCopyLocale(this.config.APP_DEFAULT_LOCALE));
+
+    // Validated here as well as in the DTO, because this method is the seam every entry point goes
+    // through (including tests and the signup spec) and an unsupported currency is not a cosmetic
+    // problem: `money()` throws on it, so the Household could not record a single Transaction.
+    const currency =
+      params.currency !== null && params.currency !== undefined && isSupportedCurrency(params.currency)
+        ? params.currency
+        : DEFAULT_LEDGER_CURRENCY;
 
     const email = params.email.trim().toLowerCase();
     const existing = await this.prisma.client.users.findFirst({ where: { email } });
@@ -181,7 +195,9 @@ export class AuthService {
             data: {
               id: householdId,
               name: tr(copyLocale, { en: 'My household', sr: 'Moje domaćinstvo' }),
-              ledger_currency: 'RSD',
+              // Chosen by the reader at signup, pre-filled from their locale — not the literal `'RSD'`
+              // that made every Household Serbian-first regardless of where it was created (ADR-045).
+              ledger_currency: currency,
               owner_user_id: userId,
             },
           });

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { isSupportedCurrency } from '@finmate/domain';
+
 /**
  * Auth request schemas.
  *
@@ -25,6 +27,21 @@ export const signupSchema = z.object({
   // The language the client is showing. Optional: a client that does not send one leaves the User on
   // the product's primary language, which is what every notification and email then uses (ADR-040).
   locale: z.string().trim().min(2).max(35).optional(),
+  /**
+   * The currency the new Household keeps its ledger in (ADR-045).
+   *
+   * Optional, and the client pre-fills it from the reader's own locale
+   * (`suggestCurrencyForLocale` in `@finmate/domain`). It is validated against the currencies the ledger
+   * can actually keep, because the failure mode of accepting an unknown one is not a bad label on a
+   * screen — it is a Household whose `money()` throws on its first transaction.
+   */
+  currency: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z]{3}$/, 'Must be an ISO-4217 currency code.')
+    .transform((value) => value.toUpperCase())
+    .refine(isSupportedCurrency, 'Unsupported currency.')
+    .optional(),
 });
 export type SignupInput = z.infer<typeof signupSchema>;
 

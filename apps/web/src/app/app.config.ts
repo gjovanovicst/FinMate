@@ -14,6 +14,7 @@ import { routes } from './app.routes';
 import { AppLockService } from './core/app-lock/app-lock.service';
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { credentialsInterceptor } from './core/auth/credentials.interceptor';
+import { I18nService } from './core/i18n/i18n.service';
 import { LocalizedTitleStrategy } from './core/i18n/title.strategy';
 
 /**
@@ -50,6 +51,10 @@ export const appConfig: ApplicationConfig = {
       // Order matters: credentials first (so cookies ride along), then bearer-token attachment.
       withInterceptors([credentialsInterceptor, authInterceptor]),
     ),
+    // The active locale's catalogue is a **lazy chunk** (ADR-044), and it is awaited here so the first
+    // render is already in the reader's language. Without this the shell would paint English and then
+    // swap, which for a German or Serbian reader is a visible flicker on every cold load.
+    provideAppInitializer(() => inject(I18nService).init()),
     // The app lock is read **before anything renders**: it decides whether this install persists
     // anything at all (ADR-025 decision 3), and a store built before that answer would silently be the
     // in-memory one. One IndexedDB read, awaited once per page load.

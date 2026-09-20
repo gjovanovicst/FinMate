@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 import type { Route } from '@angular/router';
 
 import { routes } from './app.routes';
-import { en, srCyrl, srLatn, type TranslationKey } from './core/i18n/translations';
+import { LOCALES } from './core/i18n/locales';
+import { en, loadCatalogue, type TranslationKey } from './core/i18n/translations';
 
 /**
  * The document-title contract.
@@ -53,14 +54,18 @@ describe('route titles', () => {
     expect(declared.filter((key) => !used.has(key))).toEqual([]);
   });
 
-  it('translates every title in each locale, not only in English', () => {
+  it('translates every title in each locale, not only in English', async () => {
     // The strategy renders the key in the active locale, so a title missing from a catalogue would fall
-    // back to English mid-page. The key-parity test covers the set; this keeps the titles in view.
-    for (const catalogue of [srLatn, srCyrl]) {
+    // back to English mid-page. The key-parity test covers the set; this keeps the titles in view — and
+    // since ADR-044 it walks the **registry**, so a newly added language is covered without editing
+    // this test.
+    for (const locale of LOCALES) {
+      const catalogue = locale.code === 'en' ? en : await loadCatalogue(locale.code);
+      expect(catalogue, `${locale.code} has no catalogue`).not.toBeNull();
       for (const route of titled) {
         const key = route.title as TranslationKey;
-        expect(catalogue[key]).toBeTruthy();
-        expect(catalogue[key]).not.toBe(key);
+        expect(catalogue![key], `${locale.code} is missing ${key}`).toBeTruthy();
+        expect(catalogue![key], `${locale.code} did not translate ${key}`).not.toBe(key);
       }
     }
   });

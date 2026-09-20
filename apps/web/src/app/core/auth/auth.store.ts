@@ -127,6 +127,10 @@ export class AuthStore {
     // The language the visitor is signing up in, stored so the verification mail and every later
     // notification are written in it (ADR-040).
     locale?: string,
+    // The ledger currency the new Household is created in, pre-filled from the reader's region and
+    // confirmed by them on the form (ADR-045). Omitted rather than sent empty when absent, because the
+    // API distinguishes "no opinion" from "the empty string".
+    currency?: string,
   ): Promise<void> {
     const tokens = await firstValueFrom(
       this.http.post<AuthTokensResponse>('/api/auth/signup', {
@@ -134,6 +138,7 @@ export class AuthStore {
         password,
         displayName,
         ...(locale === undefined ? {} : { locale }),
+        ...(currency === undefined ? {} : { currency }),
       }),
     );
     this.accessTokenSignal.set(tokens.accessToken);

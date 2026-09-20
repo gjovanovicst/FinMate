@@ -655,6 +655,9 @@ export const srLatn: Record<keyof typeof en, string> = {
   'signUp.email': 'Email',
   'signUp.password': 'Lozinka',
   'signUp.passwordHint': 'Najmanje {min} znakova.',
+  'signUp.currency': 'Valuta',
+  'signUp.currencyHint':
+    'Valuta u kojoj tvoje domaćinstvo vodi knjigu. Predložena je prema tvojoj regiji — promeni je ako nije tačna.',
   'signUp.submit': 'Otvori nalog',
   'signUp.submitting': 'Otvaranje naloga…',
   'signUp.haveAccount': 'Već imaš nalog?',

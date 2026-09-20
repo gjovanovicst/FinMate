@@ -13,7 +13,10 @@ export {
   DEFAULT_LEDGER_CURRENCY,
   equalsMoney,
   formatMoney,
+  fractionDigitsOf,
+  isSupportedCurrency,
   MINOR_UNITS_PER_MAJOR,
+  minorUnitsPerMajor,
   money,
   MoneyError,
   subtractMoney,
@@ -21,6 +24,13 @@ export {
   type MinorUnits,
   type Money,
 } from './money';
+
+export {
+  CURRENCY_BY_REGION,
+  currencyForRegion,
+  regionForLocale,
+  suggestCurrencyForLocale,
+} from './region-currency';
 
 export { uuidv7, uuidv7Timestamp } from './uuid';
 

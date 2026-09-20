@@ -58,7 +58,7 @@ describe('Money rendering contract (ADR-003 in the client)', () => {
   it('keeps the Money formatter strict, so amounts still cannot be negative', () => {
     // The distinction is deliberate: Money is a typed amount (never negative), Balance is derived.
     expect(() => money(-1n, 'RSD')).toThrow();
-    expect(formatMoney(money(100n, 'RSD'))).toBeTruthy();
+    expect(formatMoney(money(100n, 'RSD'), 'en-US')).toBeTruthy();
   });
 
   it('uses the requested locale for grouping', () => {

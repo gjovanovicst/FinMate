@@ -76,12 +76,16 @@ export class LanguageSwitcherComponent {
   readonly i18n = inject(I18nService);
   private readonly auth = inject(AuthStore);
 
-  onChange(event: Event): void {
+  async onChange(event: Event): Promise<void> {
     const value = (event.target as HTMLSelectElement).value as LocaleCode;
-    this.i18n.setLocale(value);
+    // Asynchronous since ADR-044: the catalogue is a lazy chunk, so the switch resolves once it is
+    // resident. The UI is already consistent while it loads — `t()` keeps rendering the outgoing
+    // catalogue rather than a half-applied one.
+    await this.i18n.setLocale(value);
     // The switch itself is a signal write and needs no round trip (ADR-019). This tells the **server**
     // which language to write a later email or notification in, so it is skipped when nobody is signed
-    // in — there is no User row to remember it on (ADR-040).
+    // in — there is no User row to remember it on (ADR-040). It runs *after* the switch so the tag it
+    // reports is the one the reader actually landed on.
     if (this.auth.isAuthenticated()) void this.auth.rememberLocale(this.i18n.tag());
   }
 }

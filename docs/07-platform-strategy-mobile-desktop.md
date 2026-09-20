@@ -1114,18 +1114,32 @@ delivered. Two reading decisions are load-bearing, both learned by measuring —
   `dynamic-import`, so following all edges makes the whole application "the shell" and every route's
   marginal cost zero. Only `import-statement` edges are followed.
 
-Measured at ADR-039's visual pass (production, gzipped — the numbers this table's budgets are read against).
-The 4.3.4a figures are in parentheses where they moved, so the cost of the design system is visible rather
-than inferred:
+Measured after **ADR-044** (production, gzipped — the numbers this table's budgets are read against). The
+ADR-039 and 4.3.4a figures are in parentheses where they moved, so both the cost of the design system and
+the *saving* from the language work are visible rather than inferred:
 
 | Route | Cold cost | Budget |
 |---|---|---|
-| App shell + boot | **150.9 KB** (was 137.9 — the icon registry, the theme service, the account block, the shared field primitive and the shell's own styles; 97 % of the raised budget) | ≤ 156 KB |
-| Capture | 172.2 KB (was 159.9) | ≤ 180 KB |
-| Transaction list | 187.0 KB (was 174.9) | ≤ 260 KB |
-| Dashboard / Review / Receipts / Analytics / Assistant | 168.6 / 162.7 / 162.7 / 166.4 / 167.9 KB | 220 / 220 / 240 / 300 / 280 KB |
-| The 17 routes §11 does not name | 163–190 KB | held to the 320 KB total |
+| App shell + boot | **135.3 KB** (was 150.9, then 137.9 before ADR-039 — **−15.6 KB in ADR-044**) | ≤ 156 KB |
+| Capture | 158.1 KB (was 172.2) | ≤ 180 KB |
+| Transaction list | 174.5 KB (was 187.0) | ≤ 260 KB |
+| Dashboard / Review / Receipts / Analytics / Assistant | 155.6 / 148.5 / 149.6 / 153.3 / 153.8 KB | 220 / 220 / 240 / 300 / 280 KB |
+| The 17 routes §11 does not name | 136–176 KB (was 163–190) | held to the 320 KB total |
 | `packages/nlp` | **2.7 KB** (one chunk, fetched with the first route that needs it — not eagerly) | ≤ 40 KB |
+
+**The shell went *down* by 15.6 KB while the app gained four languages, and that is the whole point of
+ADR-044.** The eager chunk used to carry English **and** Serbian Latin — both were statically imported by
+`core/i18n/translations/index.ts` — which was 97 % of the 156 KB ceiling. ADR-044 leaves **only English**
+eager (it is the primary language, the fallback `t()` degrades to, and the source `TranslationKey` is
+derived from) and makes every other catalogue — Serbian Latin, Serbian Cyrillic, German, Spanish, French,
+Arabic — a **dynamic import**. The budget is therefore independent of the language count instead of
+proportional to it, and the shell is back to 87 % with headroom for the design system. The one cost, a
+flash of English on a cold load for a non-English reader, is bought off rather than accepted:
+`I18nService.init()` is awaited by an app initializer before the application renders.
+
+⚠️ The lazy catalogue chunks are **not** counted in any row above, and deliberately so — they are fetched
+when a language is first selected, not on the cold path, which is exactly the property being bought. They
+are precached by the service worker's `/*.js` asset group (ADR-024), so a first switch is served locally.
 
 **The shell budget moved 150 → 156 KB, and this is the stated reason.** It was first *used* rather than
 raised: fourteen unused icon paths were deleted to bring 150.3 KB back under 150. Then the ADR-039 audit

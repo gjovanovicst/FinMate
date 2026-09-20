@@ -103,6 +103,9 @@ export class AuthController {
       password: body.password,
       displayName: body.displayName,
       locale: body.locale ?? null,
+      // Pre-filled by the client from the reader's locale; the service validates it before it becomes
+      // the Household's ledger currency (ADR-045).
+      currency: body.currency ?? null,
       userAgentHash: fingerprint(request.headers['user-agent']),
       ipHash: fingerprint(request.ip),
     });
