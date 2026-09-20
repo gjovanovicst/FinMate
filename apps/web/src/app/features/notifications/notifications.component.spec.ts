@@ -80,15 +80,29 @@ function fakePush(state: PushState = 'READY', overrides: { busy?: boolean; error
   };
 }
 
-async function mount(push: ReturnType<typeof fakePush> = fakePush()): Promise<{
+/** What an on-demand check reports when it found nothing — the shape `mount` returns by default. */
+const NOTHING_FOUND = {
+  insightsCreated: 0,
+  notificationsCreated: 0,
+  duplicates: 0,
+  rateLimited: 0,
+  queued: 0,
+  suppressed: 0,
+};
+
+async function mount(
+  push: ReturnType<typeof fakePush> = fakePush(),
+  options: { run?: Partial<typeof NOTHING_FOUND>; rows?: readonly unknown[] } = {},
+): Promise<{
   fixture: ReturnType<typeof TestBed.createComponent<NotificationsComponent>>;
   client: { query: ReturnType<typeof vi.fn> };
   store: NotificationStore;
   push: ReturnType<typeof fakePush>;
 }> {
+  const listRows = options.rows ?? ROWS;
   const client = {
     query: vi.fn((query: string) => {
-      if (query.includes('query Notifications')) return Promise.resolve({ notifications: { edges: ROWS.map((node) => ({ node })) } });
+      if (query.includes('query Notifications')) return Promise.resolve({ notifications: { edges: listRows.map((node) => ({ node })) } });
       if (query.includes('query Alerts')) return Promise.resolve({ alerts: RULES });
       if (query.includes('query NotificationPreferences')) {
         return Promise.resolve({
@@ -99,6 +113,12 @@ async function mount(push: ReturnType<typeof fakePush> = fakePush()): Promise<{
             locale: null,
           },
         });
+      }
+      if (query.includes('mutation RunAlerts')) {
+        return Promise.resolve({ runAlerts: { ...NOTHING_FOUND, ...options.run } });
+      }
+      if (query.includes('mutation DispatchNotifications')) {
+        return Promise.resolve({ dispatchNotifications: { sent: 0, failed: 0, deferred: 0, skipped: 0 } });
       }
       if (query.includes('markNotificationRead')) {
         return Promise.resolve({
@@ -231,6 +251,64 @@ describe('NotificationsComponent (mounted)', () => {
 
     expect(client.query).toHaveBeenCalledWith(expect.stringContaining('updateAlertRule'), {
       input: { id: 'r1', isActive: false },
+    });
+  });
+
+  /**
+   * The on-demand check.
+   *
+   * The producer is a daily 06:00 job (docs/06 §5.14), so without this button a deployment whose worker
+   * has not run shows an empty list that is indistinguishable from "nothing to report" — the reported
+   * defect. What is asserted here is that the button runs the **documented** pipeline (`runAlerts`, then
+   * the dispatch drain), reloads, and says what happened.
+   */
+  describe('the on-demand check', () => {
+    function checkButton(fixture: { nativeElement: unknown }): HTMLButtonElement {
+      return Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('.toolbar button'),
+      ).find((button) => button.textContent?.includes('Check for alerts'))!;
+    }
+
+    it('runs the evaluation, then the dispatch drain, then reloads the list', async () => {
+      const { fixture, client } = await mount();
+      const reloadsBefore = client.query.mock.calls.filter((call) =>
+        String(call[0]).includes('query Notifications'),
+      ).length;
+
+      checkButton(fixture).click();
+      await fixture.whenStable();
+
+      const calls = client.query.mock.calls.map((call) => String(call[0]));
+      const evaluation = calls.findIndex((query) => query.includes('mutation RunAlerts'));
+      const dispatch = calls.findIndex((query) => query.includes('mutation DispatchNotifications'));
+      // Order is the pipeline's: evaluate into rows, then deliver what the evaluation queued.
+      expect(evaluation).toBeGreaterThanOrEqual(0);
+      expect(dispatch).toBeGreaterThan(evaluation);
+      // The list is re-read, so a row the check just wrote is actually on screen.
+      const reloadsAfter = calls.filter((query) => query.includes('query Notifications')).length;
+      expect(reloadsAfter).toBeGreaterThan(reloadsBefore);
+    });
+
+    it('says "nothing to report" rather than leaving an empty list unexplained', async () => {
+      const { fixture } = await mount();
+      checkButton(fixture).click();
+      await fixture.whenStable();
+      expect(text(fixture)).toContain('nothing to report');
+    });
+
+    it('reports how much arrived when something did', async () => {
+      const { fixture } = await mount(undefined, { run: { notificationsCreated: 2 } });
+      checkButton(fixture).click();
+      await fixture.whenStable();
+      expect(text(fixture)).toContain('2 new notifications');
+    });
+
+    it('explains an empty centre and still offers the check', async () => {
+      const { fixture } = await mount(undefined, { rows: [] });
+      expect(rows(fixture)).toHaveLength(0);
+      // What produces an alert, so "nothing yet" is not read as "broken".
+      expect(text(fixture)).toContain('budget is heading over its limit');
+      expect(checkButton(fixture)).toBeDefined();
     });
   });
 

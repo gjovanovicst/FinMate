@@ -221,6 +221,56 @@ export function preferencesInput(form: {
   };
 }
 
+/** What one `runAlerts` pass reports (`AlertRunModel`, docs/06 §5.14). */
+export interface AlertRunSummary {
+  readonly insightsCreated: number;
+  readonly notificationsCreated: number;
+  readonly duplicates: number;
+  readonly rateLimited: number;
+  readonly queued: number;
+  readonly suppressed: number;
+}
+
+/** The one sentence the screen shows after an on-demand check. */
+export interface CheckOutcome {
+  readonly key: TranslationKey;
+  readonly params?: Readonly<Record<string, number>>;
+  readonly tone: 'ok' | 'info' | 'warning';
+}
+
+/**
+ * What to say after the user asks for a check.
+ *
+ * This exists because an **empty** list is ambiguous: it reads identically whether the pipeline ran and
+ * found nothing, or never ran at all — which is exactly how "I never get notifications" is experienced.
+ * The summary makes the difference visible.
+ *
+ * Priority is the order of what the user can act on: something arrived, then what was withheld (a
+ * rate-limited condition is **not persisted** — docs/06 §5.14 — so this sentence is the only record of
+ * it), then "you have already seen this", then the honest nothing. `queued` is deliberately absent: a
+ * quiet-hours row *is* a created row and carries its own `Held until your quiet hours end` status, so
+ * counting it here would say "2 new" and then also "2 held" about the same two.
+ */
+export function checkOutcome(run: AlertRunSummary): CheckOutcome {
+  if (run.notificationsCreated > 0) {
+    return {
+      key:
+        run.notificationsCreated === 1
+          ? 'notifications.check.createdOne'
+          : 'notifications.check.createdMany',
+      params: { count: run.notificationsCreated },
+      tone: 'ok',
+    };
+  }
+  if (run.rateLimited > 0) {
+    return { key: 'notifications.check.rateLimited', tone: 'warning' };
+  }
+  if (run.duplicates > 0) {
+    return { key: 'notifications.check.alreadyKnown', tone: 'info' };
+  }
+  return { key: 'notifications.check.nothing', tone: 'info' };
+}
+
 /** A rule toggle's payload, so the component never builds one inline. */
 export function ruleUpdateInput(
   rule: AlertRuleRow,

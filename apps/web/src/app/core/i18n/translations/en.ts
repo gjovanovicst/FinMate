@@ -372,8 +372,16 @@ export const en = {
   'notifications.markRead': 'Mark as read',
   'notifications.open': 'Open',
   'notifications.loading': 'Loading…',
-  'notifications.empty': 'Nothing yet. Insights appear here once there is something worth saying.',
+  'notifications.empty': 'Nothing yet. Alerts appear when a budget is heading over its limit, spending jumps, or a payment is due.',
   'notifications.emptyUnread': 'Nothing unread.',
+  // ---- the on-demand check (docs/06 §5.14's `runAlerts`, wired to a button in 3.1.4) ----
+  'notifications.check.action': 'Check for alerts',
+  'notifications.check.running': 'Checking…',
+  'notifications.check.createdOne': 'One new notification.',
+  'notifications.check.createdMany': '{count} new notifications.',
+  'notifications.check.rateLimited': 'Checked — you have reached today’s limit, so some alerts were held back.',
+  'notifications.check.alreadyKnown': 'Checked — nothing new since last time.',
+  'notifications.check.nothing': 'Checked — nothing to report right now.',
   'notifications.bell': 'Notifications',
   'notifications.bellOne': '{count} unread notification',
   'notifications.bellMany': '{count} unread notifications',
@@ -406,7 +414,7 @@ export const en = {
   'notifications.settings.positive': 'Tell me when I spend less than usual',
   'notifications.settings.save': 'Save',
   'notifications.settings.saved': 'Saved.',
-  'notifications.settings.error': 'Could not save. Please try again.',
+  'notifications.error': 'Something went wrong. Please try again.',
   'notifications.settings.channelsNote': 'Browser push reaches a device only when it is turned on below; otherwise it waits in the app.',
 
   // ---- push on this device (F-22, task 4.2.5) ----

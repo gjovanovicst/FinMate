@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CONFIGURABLE_KINDS,
   channelLabelKey,
+  checkOutcome,
   deepLinkFor,
   isUnread,
   kindLabelKey,
@@ -16,6 +17,7 @@ import {
   toneFor,
   unreadCount,
   visibleRows,
+  type AlertRunSummary,
   type NotificationRow,
 } from './notifications.view';
 
@@ -169,5 +171,57 @@ describe('ruleUpdateInput', () => {
       id: 'r1',
       channels: ['IN_APP', 'EMAIL'],
     });
+  });
+});
+
+describe('checkOutcome', () => {
+  const run = (overrides: Partial<AlertRunSummary> = {}): AlertRunSummary => ({
+    insightsCreated: 0,
+    notificationsCreated: 0,
+    duplicates: 0,
+    rateLimited: 0,
+    queued: 0,
+    suppressed: 0,
+    ...overrides,
+  });
+
+  it('says what arrived, in the singular and the plural', () => {
+    expect(checkOutcome(run({ notificationsCreated: 1 }))).toEqual({
+      key: 'notifications.check.createdOne',
+      params: { count: 1 },
+      tone: 'ok',
+    });
+    expect(checkOutcome(run({ notificationsCreated: 3 }))).toEqual({
+      key: 'notifications.check.createdMany',
+      params: { count: 3 },
+      tone: 'ok',
+    });
+  });
+
+  it('reports a rate-limited condition, which is the only record of it (it is never persisted)', () => {
+    const outcome = checkOutcome(run({ rateLimited: 2 }));
+    expect(outcome.key).toBe('notifications.check.rateLimited');
+    expect(outcome.tone).toBe('warning');
+  });
+
+  it('distinguishes "already told you" from "nothing to report"', () => {
+    expect(checkOutcome(run({ duplicates: 1 })).key).toBe('notifications.check.alreadyKnown');
+    expect(checkOutcome(run()).key).toBe('notifications.check.nothing');
+  });
+
+  it('prefers the delivered news over the held-back detail', () => {
+    // A row that arrived and a row the cap held are both true; the sentence leads with what the user
+    // can act on, and the held-back count is not lost — it is the row's own status.
+    expect(
+      checkOutcome(run({ notificationsCreated: 1, rateLimited: 4, duplicates: 2 })).key,
+    ).toBe('notifications.check.createdOne');
+  });
+
+  it('never treats a quiet-hours row as extra news', () => {
+    // `queued` counts a decision whose row is already in `notificationsCreated`; saying both would
+    // report the same notification twice.
+    expect(checkOutcome(run({ notificationsCreated: 2, queued: 2 })).params).toEqual({ count: 2 });
+    // …and on its own it is not a reason to claim nothing happened.
+    expect(checkOutcome(run({ queued: 2 })).key).toBe('notifications.check.nothing');
   });
 });

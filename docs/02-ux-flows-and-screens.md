@@ -1093,6 +1093,18 @@ user opens, not on first load.
 > reading of the same rule and the only one iOS's gesture requirement allows (docs/07 §4.8). The states
 > where push cannot be established offer **email** instead, which docs/07 §4.8's binding consequence (2)
 > requires. When the settings shell lands, the panel moves unchanged.
+>
+> **Build note (3.1.4's check action).** The screen carries a **Check for alerts** button, because the
+> producer is a *daily 06:00* job: on a deployment whose worker has not run — or simply before 06:00 —
+> the centre is structurally empty and reads as broken, and an empty list cannot distinguish *nothing to
+> report* from *nothing ever ran*, which is how "I never get notifications" is actually experienced. The
+> button calls the two mutations the API already declares (`runAlerts`, then the `dispatchNotifications`
+> drain), reloads, and renders one sentence from the run summary: what arrived, then a rate-limited
+> condition (**the only record of one** — a `SUPPRESSED` decision is never persisted, docs/06 §5.14),
+> then "nothing new", then the honest *nothing to report right now*. It is deliberately a button and not
+> a load-time write: generating insights writes rows, and the user is the one who knows whether the
+> numbers are ready. The first check is also what writes the Household's default alert rules, so the
+> preferences section beneath it becomes usable at the same moment.
 
 ### 4.18 Settings — F-32, F-01, F-25, F-27, F-28
 

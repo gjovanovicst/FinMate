@@ -11,6 +11,7 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
 import {
   CHANNELS,
   channelLabelKey,
+  checkOutcome,
   deepLinkFor,
   kindLabelKey,
   preferencesInput,
@@ -20,6 +21,8 @@ import {
   toneFor,
   visibleRows,
   type AlertRuleRow,
+  type AlertRunSummary,
+  type CheckOutcome,
   type InsightSeverity,
   type NotificationChannel,
   type NotificationRow,
@@ -52,6 +55,21 @@ import {
  * string; task 4.2.5 derives it from `pushPublicKey` (§5.14), which is the only honest source for
  * whether a deployment can deliver at all.
  *
+ * ## Why there is a "check for alerts" button
+ *
+ * The producer is `insights.generate`, a **daily 06:00 job** (`notifications.dispatch` then drains every
+ * minute), so on a deployment whose worker has not run — or simply before 06:00 — this screen is
+ * structurally empty and reads as broken. It also cannot distinguish *nothing to report* from *nothing
+ * ever ran*, which is how "I never get notifications" is actually experienced.
+ *
+ * So the screen carries the **manual entry point the API already declares** — `runAlerts` is documented
+ * as the mutation the daily job calls (docs/06 §5.14) — and follows it with `dispatchNotifications` so a
+ * row held for quiet hours is delivered rather than left invisible. The pass is idempotent (insight
+ * dedupe keys, `notifications.dedupe_key`), and the summary sentence it returns is what makes an empty
+ * list mean something. It is deliberately a **button and not a load-time write**: generating insights
+ * and writing rows is a side effect that a page visit should not perform, and the user is the one who
+ * knows whether the numbers are ready.
+ *
  * @module apps/web/src/app/features/notifications
  */
 @Component({
@@ -74,6 +92,9 @@ import {
             />
             <span>{{ i18n.t('notifications.unreadOnly') }}</span>
           </label>
+          <button type="button" class="fm-btn" [disabled]="busy()" (click)="checkNow()">
+            {{ busy() && checking() ? i18n.t('notifications.check.running') : i18n.t('notifications.check.action') }}
+          </button>
           @if (unreadCount() > 0) {
             <button type="button" class="fm-btn" [disabled]="busy()" (click)="markAllRead()">
               {{ i18n.t('notifications.markAllRead') }}
@@ -83,7 +104,13 @@ import {
       </header>
 
       @if (error()) {
-        <p class="error" role="alert">{{ i18n.t('notifications.settings.error') }}</p>
+        <p class="error" role="alert">{{ i18n.t('notifications.error') }}</p>
+      }
+
+      @if (outcome(); as result) {
+        <p class="outcome" [attr.data-tone]="result.tone" role="status">
+          {{ i18n.t(result.key, result.params) }}
+        </p>
       }
 
       <section class="fm-card">
@@ -368,6 +395,18 @@ import {
     .error {
       color: var(--color-danger);
     }
+    /* The last on-demand check's sentence. Tone is carried by the colour, so a held-back condition is
+       distinguishable from "nothing to report" without a second sentence. */
+    .outcome {
+      margin: 0;
+      color: var(--color-text-muted);
+    }
+    .outcome[data-tone='ok'] {
+      color: var(--color-success);
+    }
+    .outcome[data-tone='warning'] {
+      color: var(--color-warning);
+    }
     .ok {
       margin-inline-start: var(--space-2);
       color: var(--color-success);
@@ -407,6 +446,13 @@ export class NotificationsComponent {
   readonly quiet = signal({ enabled: false, start: '21:00', end: '08:00' });
   readonly positiveFeedback = signal(true);
 
+  /** `true` only while the on-demand check runs, so its own button can say "Checking…". */
+  readonly checking = signal(false);
+  private readonly outcomeSignal = signal<CheckOutcome | null>(null);
+
+  /** The sentence the last on-demand check produced, or `null` before one has run this visit. */
+  readonly outcome = this.outcomeSignal.asReadonly();
+
   readonly rows = computed(() => visibleRows(this.rowsSignal(), { unreadOnly: this.unreadOnly() }));
   readonly rules = this.rulesSignal.asReadonly();
   readonly unreadCount = computed(() => this.rowsSignal().filter((row) => row.readAt === null).length);
@@ -442,6 +488,34 @@ export class NotificationsComponent {
 
   linkFor(row: NotificationRow): string | null {
     return deepLinkFor(row.insightKind);
+  }
+
+  /**
+   * Run the pipeline on demand — the manual entry point `runAlerts` already declares — then reload.
+   *
+   * `runAlerts` generates the period's insights **and** evaluates them into rows (the same method the
+   * daily `insights.generate` job calls, so the two cannot drift), and `dispatchNotifications` is the
+   * drain that delivers a row the evaluation queued for quiet hours. Both are idempotent, so pressing
+   * the button twice cannot produce a second copy of the same condition.
+   */
+  async checkNow(): Promise<void> {
+    this.busy.set(true);
+    this.checking.set(true);
+    this.error.set(false);
+    this.outcomeSignal.set(null);
+    try {
+      const run = await this.graphql.query<{ runAlerts: AlertRunSummary }>(RUN_ALERTS);
+      await this.graphql.query<{ dispatchNotifications: unknown }>(DISPATCH);
+      // The summary is set before the reload so the sentence survives even if the list read is slow;
+      // converting it once, here, is what keeps the template free of a branch per outcome.
+      this.outcomeSignal.set(checkOutcome(run.runAlerts));
+      await this.load();
+    } catch {
+      this.error.set(true);
+    } finally {
+      this.busy.set(false);
+      this.checking.set(false);
+    }
   }
 
   async markRead(row: NotificationRow): Promise<void> {
@@ -639,6 +713,36 @@ const MARK_READ = /* GraphQL */ `
 const MARK_ALL_READ = /* GraphQL */ `
   mutation MarkAllNotificationsRead {
     markAllNotificationsRead
+  }
+`;
+
+/**
+ * The on-demand pass: evaluate the period's conditions, then deliver what the evaluation queued.
+ *
+ * No `asOf`: the API defaults it to today in the Household's own zone, which is the day the screen is
+ * showing. The fields are exactly the summary `checkOutcome` reads.
+ */
+const RUN_ALERTS = /* GraphQL */ `
+  mutation RunAlerts {
+    runAlerts {
+      insightsCreated
+      notificationsCreated
+      duplicates
+      rateLimited
+      queued
+      suppressed
+    }
+  }
+`;
+
+const DISPATCH = /* GraphQL */ `
+  mutation DispatchNotifications {
+    dispatchNotifications {
+      sent
+      failed
+      deferred
+      skipped
+    }
   }
 `;
 

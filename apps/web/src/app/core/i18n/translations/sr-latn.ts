@@ -356,8 +356,16 @@ export const srLatn: Record<keyof typeof en, string> = {
   'notifications.markRead': 'Označi kao pročitano',
   'notifications.open': 'Otvori',
   'notifications.loading': 'Učitavanje…',
-  'notifications.empty': 'Još ništa. Uvidi se pojavljuju kad bude nešto vredno pažnje.',
+  'notifications.empty': 'Još ništa. Upozorenja se pojavljuju kad budžet ide preko limita, kad potrošnja skoči ili kad naplata dospeva.',
   'notifications.emptyUnread': 'Nema nepročitanih.',
+  // ---- provera na zahtev (docs/06 §5.14 `runAlerts`, dugme u 3.1.4) ----
+  'notifications.check.action': 'Proveri upozorenja',
+  'notifications.check.running': 'Proveravam…',
+  'notifications.check.createdOne': 'Jedno novo obaveštenje.',
+  'notifications.check.createdMany': '{count} novih obaveštenja.',
+  'notifications.check.rateLimited': 'Provereno — dostignut je današnji limit, pa su neka upozorenja zadržana.',
+  'notifications.check.alreadyKnown': 'Provereno — nema ništa novo od prošlog puta.',
+  'notifications.check.nothing': 'Provereno — trenutno nema ništa za prijavu.',
   'notifications.bell': 'Obaveštenja',
   'notifications.bellOne': '{count} nepročitano obaveštenje',
   'notifications.bellMany': '{count} nepročitanih obaveštenja',
@@ -390,7 +398,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'notifications.settings.positive': 'Javi mi kad potrošim manje nego obično',
   'notifications.settings.save': 'Sačuvaj',
   'notifications.settings.saved': 'Sačuvano.',
-  'notifications.settings.error': 'Nije sačuvano. Pokušaj ponovo.',
+  'notifications.error': 'Nešto nije u redu. Pokušaj ponovo.',
   'notifications.settings.channelsNote': 'Push u pregledaču stiže na uređaj samo ako je uključen ispod; inače čeka u aplikaciji.',
 
   // ---- push na ovom uređaju (F-22, zadatak 4.2.5) ----
