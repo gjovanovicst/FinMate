@@ -6,9 +6,22 @@ FinMate is an AI-first household budgeting app for desktop and mobile. Natural l
 input, and a deterministic backend turns it into ledger entries, budgets and alerts. The model
 interprets what you typed; it never touches the money.
 
-It is built for the Serbian/Balkan market first — mixed latin/cyrillic, RSD, cash-heavy households and
-local merchants that English-first classifiers handle badly. The interface ships in English (primary)
-and Serbian (latin and cyrillic).
+It began in the Serbian/Balkan market — mixed latin/cyrillic script, cash-heavy households and local
+merchants that English-first classifiers handle badly — and is not confined to it. The interface ships
+in **English** (primary), **Serbian** (latin and cyrillic), **German**, **Spanish**, **French** and
+**Arabic** (right-to-left), and each Household's ledger is opened in the currency its owner confirms at
+signup, out of the sixty the ledger can keep.
+
+Adding a language is a data change rather than a code change: the locale set is an open registry, and
+every catalogue but English loads lazily, so the app shell does not grow with the language count — it
+went **down** by 15.6 KB when four languages were added. The reasoning is in
+[ADR-044 and ADR-045](docs/14-decisions-and-risks.md).
+
+> **Status of the four newest languages.** German, Spanish, French and Arabic are machine-assisted and
+> have not yet been reviewed by a native speaker, and no human has looked at the RTL layout at any width
+> (risks **R-37** and **R-38**). English and Serbian are hand-written. The shipped **seed content** —
+> the category tree, its keywords and the merchant catalogue — is still Serbian, which is the largest
+> remaining gap for a Household that does not speak it.
 
 [![CI](https://github.com/gjovanovicst/FinMate/actions/workflows/ci.yml/badge.svg)](https://github.com/gjovanovicst/FinMate/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
@@ -102,9 +115,11 @@ the model.
 
 > **One caveat the examples hide.** The shipped catalogue is a **Serbian** category tree, and its
 > keywords are Serbian words plus international brand names — which is why every example above is a
-> brand. The pipeline reads amounts, dates, currencies and direction in English, but a plain English
-> entity word such as `fuel` finds no matching category yet: English seed content and English entity
-> vocabulary are recorded, open gaps (`docs/06` §8.8, `docs/16` Part C), not surprises.
+> brand. The pipeline reads amounts, dates, currencies and direction in English, but a plain entity word
+> such as `fuel` — or `tanken`, `carburant`, `وقود` — finds no matching category yet, because the seed
+> content and the entity vocabulary exist in Serbian only. That is a recorded, open gap
+> (`docs/06` §8.8, `docs/16` Part C), not a surprise: the **interface** is multilingual, the
+> **starter data** is not yet.
 
 In the measured evaluation suite, **73.8 %** of inputs resolve without the model at all, and the
 pipeline's p95 extraction cost is **39 ms** — the five-second promise is about network and UI, not the
@@ -134,23 +149,24 @@ The full decision log and risk register live in
 
 All 21 screens ship. The highlights:
 
-| Area                  | What works                                                                                                                                                         |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Capture**           | Natural-language entry (single or bulk), duplicate detection, undo, a first-use AI consent sheet, and a correction that becomes a reusable rule _(ADR-010)_        |
-| **Ledger**            | Accounts, transactions with splits, tags, merchants, counterparties, optimistic concurrency, filtered search with cursor paging, CSV export (`F-25`)               |
-| **Budgets & goals**   | Period budgets with consumption and pace, saving goals with required-monthly figures and contributions                                                             |
-| **Intelligence**      | Insight generators, alerts over in-app/email/web-push channels, analytics, recurring rules with RRULE expansion, subscription detection                            |
-| **Assistant**         | A closed intent registry, a pure query planner and a numeric validator, plus propose-then-confirm writes that only run on a click _(ADR-035)_                      |
-| **Receipts**          | Presigned uploads, an OCR seam, item classification and reconciliation against the statement total (`F-14`, `F-34`)                                                |
-| **Offline & mobile**  | Installable PWA (`F-26`), an encrypted offline store behind an app lock, a queued outbox with conflict diffs, web push, and a read-only offline shell              |
-| **Account & privacy** | Profile, staged email change, session list, email verification, TOTP and emailed-code two-factor, per-purpose AI consent                                           |
-| **i18n & a11y**       | English plus Serbian (latin and cyrillic) composed at runtime — the shipped seed catalogue is a Serbian tree; WCAG-audited screens; per-route bundle budgets in CI |
+| Area                  | What works                                                                                                                                                                                                                                                                                                                  |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Capture**           | Natural-language entry (single or bulk), duplicate detection, undo, a first-use AI consent sheet, and a correction that becomes a reusable rule _(ADR-010)_                                                                                                                                                                 |
+| **Ledger**            | Accounts, transactions with splits, tags, merchants, counterparties, optimistic concurrency, filtered search with cursor paging, CSV export (`F-25`)                                                                                                                                                                        |
+| **Budgets & goals**   | Period budgets with consumption and pace, saving goals with required-monthly figures and contributions                                                                                                                                                                                                                      |
+| **Intelligence**      | Insight generators, alerts over in-app/email/web-push channels, analytics, recurring rules with RRULE expansion, subscription detection                                                                                                                                                                                     |
+| **Assistant**         | A closed intent registry, a pure query planner and a numeric validator, plus propose-then-confirm writes that only run on a click _(ADR-035)_                                                                                                                                                                               |
+| **Receipts**          | Presigned uploads, an OCR seam, item classification and reconciliation against the statement total (`F-14`, `F-34`)                                                                                                                                                                                                         |
+| **Offline & mobile**  | Installable PWA (`F-26`), an encrypted offline store behind an app lock, a queued outbox with conflict diffs, web push, and a read-only offline shell                                                                                                                                                                       |
+| **Account & privacy** | Profile, staged email change, session list, email verification, TOTP and emailed-code two-factor, per-purpose AI consent                                                                                                                                                                                                    |
+| **i18n & currency**   | Seven locales composed at runtime — English (primary), Serbian latin + cyrillic, German, Spanish, French and Arabic with RTL — each catalogue a lazy chunk; a Household's currency chosen at signup from the sixty the ledger can keep, with CLDR-correct minor units; WCAG-audited screens; per-route bundle budgets in CI |
 
 Screens that have not yet had a human visual pass, features that are deliberately unbuilt and gaps that
 are known are all recorded in the docs rather than left implicit.
 
 **Deliberately not in scope:** household-sharing UI (`F-29`), bank/Open Banking import (`F-33`), native
-apps, a multi-currency ledger, investments/net worth, and model fine-tuning.
+apps, a **multi-currency ledger** (one currency per Household — chosen at signup, but never converted),
+investments/net worth, and model fine-tuning.
 
 ## Architecture
 
@@ -193,17 +209,17 @@ flowchart TB
 
 Nine Nx projects:
 
-| Path                    | What it is                                                                                               |
-| ----------------------- | -------------------------------------------------------------------------------------------------------- |
-| `apps/api`              | NestJS modular monolith — GraphQL (code-first) and REST, Prisma 7, the tenancy guard                     |
-| `apps/worker`           | BullMQ background jobs, booting the API's own services _(ADR-022)_                                       |
-| `apps/web`              | Angular 22 zoneless SPA with signals, a service worker and an encrypted offline store                    |
-| `packages/domain`       | Dates, money allocation, Serbian amount parsing, category tree, budget calculators, invariants — no deps |
-| `packages/nlp`          | Transliteration, folding, segmentation, fragment extraction, the entity-resolution ladder                |
-| `packages/rules-engine` | Pure conflict resolution and keyword scoring — no I/O                                                    |
-| `packages/ai`           | Provider adapters, fail-closed residency routing, circuit breaker, redaction, telemetry — no vendor SDK  |
-| `packages/contracts`    | Shared transport types                                                                                   |
-| `packages/config`       | Typed configuration schema shared by the apps                                                            |
+| Path                    | What it is                                                                                                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/api`              | NestJS modular monolith — GraphQL (code-first) and REST, Prisma 7, the tenancy guard                                                                                      |
+| `apps/worker`           | BullMQ background jobs, booting the API's own services _(ADR-022)_                                                                                                        |
+| `apps/web`              | Angular 22 zoneless SPA with signals, a service worker and an encrypted offline store                                                                                     |
+| `packages/domain`       | Dates, money allocation, the supported-currency table and region→currency mapping, Serbian-shaped amount parsing, category tree, budget calculators, invariants — no deps |
+| `packages/nlp`          | Transliteration, folding, segmentation, fragment extraction, the entity-resolution ladder                                                                                 |
+| `packages/rules-engine` | Pure conflict resolution and keyword scoring — no I/O                                                                                                                     |
+| `packages/ai`           | Provider adapters, fail-closed residency routing, circuit breaker, redaction, telemetry — no vendor SDK                                                                   |
+| `packages/contracts`    | Shared transport types                                                                                                                                                    |
+| `packages/config`       | Typed configuration schema shared by the apps                                                                                                                             |
 
 ### Stack
 
@@ -214,7 +230,7 @@ Nine Nx projects:
 | **Web**                | Angular 22 (zoneless, signals) · `ngsw` service worker · IndexedDB via `idb` for the encrypted offline store |
 | **AI**                 | OpenAI-compatible adapters written in-repo, local-first through Ollama, no vendor SDK in a feature module    |
 | **Dev infrastructure** | Docker Compose — Postgres + pgvector, Redis, MinIO (S3-compatible), Mailhog                                  |
-| **Tests**              | Vitest everywhere — 3,100+ unit and integration specs, plus deterministic AI evaluation gates in CI          |
+| **Tests**              | Vitest everywhere — 3,200+ unit and integration specs, plus deterministic AI evaluation gates in CI          |
 
 ## Quickstart
 
