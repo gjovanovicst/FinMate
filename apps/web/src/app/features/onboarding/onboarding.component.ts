@@ -572,6 +572,10 @@ export class OnboardingComponent {
   private draft(): OnboardingDraft {
     return {
       categoryCount: this.categoryCount(),
+      // The preview is the shipped document itself, so its node count is exactly what Continue would
+      // write. Without it a fresh Household — `categoryCount` zero, because nothing has been seeded —
+      // could never enable the button that seeds (docs/02 §4.1).
+      starterCount: this.tree().categories,
       accountCount: this.accounts(),
       acceptedPeople: this.addedPeople().size,
       selectedMerchants: this.selectedMerchants().length,

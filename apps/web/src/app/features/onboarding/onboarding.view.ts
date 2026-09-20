@@ -348,6 +348,17 @@ export function toggleSelection(selected: readonly string[], name: string): read
 export interface OnboardingDraft {
   /** Categories that exist now — the server's count, not the preview's. */
   readonly categoryCount: number;
+  /**
+   * Categories the shipped starter tree holds — the *preview's* count, not the Household's.
+   *
+   * Step 1's Continue is what calls `seedStarterCategories` (docs/02 §4.1's *Seeds* column), so the
+   * gate has to read what pressing it would **create**. It used to read only
+   * {@link categoryCount}, which is zero precisely because the seed has not run yet: the one control
+   * that writes the tree was disabled until the tree existed, so a fresh Household could only Skip
+   * step 1 and every later verification — the demo Household, `db:seed`, the eval harness — bypassed
+   * the wizard and never saw it.
+   */
+  readonly starterCount: number;
   readonly accountCount: number;
   /** Step-3 proposals the user has accepted. */
   readonly acceptedPeople: number;
@@ -360,9 +371,10 @@ export interface OnboardingDraft {
  * **Every step is skippable** (docs/01 F-13: "skippable at every step"), so this never returns `false`
  * to block a skip — it returns `false` only where pressing Continue would *write something invalid*:
  *
- *  - step 1 with no categories and no intent to create any: Continue is a no-op write, so the button is
- *    disabled and *Skip* is the honest control. The distinction matters because Continue calls
- *    `seedStarterCategories` and Skip does not.
+ *  - step 1 with no starter tree to write: Continue calls `seedStarterCategories`, so it is disabled
+ *    only when that write would have nothing to write. It is enabled for a Household that has no
+ *    categories yet — which is the normal fresh state, and the whole point of the step. *Skip* stays
+ *    the control for "I want an empty tree" (docs/02 §4.1).
  *  - step 2 with no accounts: a Transaction needs one (I-4), so Continue is allowed only once at least
  *    one exists — the step's own "use cash" default satisfies this.
  *  - steps 3–5 accept anything, including nothing.
@@ -377,7 +389,10 @@ export function canContinue(step: number, draft: OnboardingDraft): boolean {
 
   switch (key) {
     case 'categories':
-      return draft.categoryCount > 0;
+      // Continue is `seedStarterCategories`; it writes whenever there is a tree to seed, whether or
+      // not this Household already has categories (the mutation is idempotent by parent+name). The
+      // Household's own count cannot gate it — it is zero until this very write runs.
+      return draft.categoryCount > 0 || draft.starterCount > 0;
     case 'accounts':
     case 'firstEntry':
       // Step 6 commits a real Transaction, which needs an Account (I-4).

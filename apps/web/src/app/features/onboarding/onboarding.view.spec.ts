@@ -283,16 +283,26 @@ describe('toggleSelection', () => {
 describe('canContinue', () => {
   const draft = (over: Partial<Parameters<typeof canContinue>[1]> = {}) => ({
     categoryCount: 0,
+    // The shipped tree, so the default is the real fresh-Household state: nothing of its own yet,
+    // but a document that Continue can write.
+    starterCount: 39,
     accountCount: 0,
     acceptedPeople: 0,
     selectedMerchants: 0,
     ...over,
   });
 
-  it('will not press Continue on step 1 with no tree, because that writes nothing', () => {
-    // Continue calls `seedStarterCategories`; Skip is the control for "I want an empty tree".
-    expect(canContinue(1, draft({ categoryCount: 0 }))).toBe(false);
+  it('enables Continue on step 1 for a fresh Household, because Continue is what seeds the tree', () => {
+    // docs/02 §4.1: step 1 *Seeds* the categories, and *Skip* is the control for an empty tree. The
+    // Household's own count is zero until that write runs, so it cannot be the gate.
+    // Regression: this read `categoryCount` alone, so the only enabled control on a fresh step 1 was
+    // Skip — which does not seed — and a Household that finished the wizard had no categories at all.
+    expect(canContinue(1, draft({ categoryCount: 0, starterCount: 39 }))).toBe(true);
     expect(canContinue(1, draft({ categoryCount: 39 }))).toBe(true);
+  });
+
+  it('disables Continue on step 1 only when there is no starter tree to write', () => {
+    expect(canContinue(1, draft({ categoryCount: 0, starterCount: 0 }))).toBe(false);
   });
 
   it('requires an account before step 2 and step 6 can proceed', () => {
