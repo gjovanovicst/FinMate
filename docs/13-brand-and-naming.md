@@ -20,7 +20,7 @@
 
 ### 1.1 What is already true
 
-The source concept conversation ([`../chatgpt-share-transcript.md`](../chatgpt-share-transcript.md),
+The source concept conversation ([`chatgpt-share-transcript.md`](chatgpt-share-transcript.md),
 "Planiranje AI budžetske aplikacije") closed with a naming round in which four candidates were
 **knocked out by existing products**, verified by web search inside that session:
 
@@ -643,4 +643,4 @@ schedule beats a perfect name chosen in Phase 6.
 **See also:** [00](00-executive-summary.md) · [01](01-product-requirements.md) · [03](03-domain-model.md) ·
 [04](04-categorization-and-ai-engine.md) · [05](05-architecture.md) · [09](09-implementation-plan.md) ·
 [12](12-monetization-and-pricing.md) · [14](14-decisions-and-risks.md) ·
-[`../chatgpt-share-transcript.md`](../chatgpt-share-transcript.md)
+[`chatgpt-share-transcript.md`](chatgpt-share-transcript.md)

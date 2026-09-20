@@ -1089,7 +1089,7 @@ Implementation notes:
   uses, and `proposeSavings` (`@finmate/domain`, pure, integer minor units) proposes up to 20 % of each
   Category's own spend, biggest first, reporting the shortfall it cannot cover. The answer is a **plan
   the user has not applied**: nothing writes a Budget (docs/06 §8.8 records why that is a decision and
-  not an omission), and the model's only part is the sentence — which is why [08 §6.7](../../docs/08-security-privacy-and-compliance.md)
+  not an omission), and the model's only part is the sentence — which is why [08 §6.7](08-security-privacy-and-compliance.md)
   can list F-30 as unchanged without AI consent.
 
 **Output numeric validator** deserves emphasis: before returning a narrative, extract all numerals

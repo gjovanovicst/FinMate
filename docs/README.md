@@ -13,7 +13,7 @@
 
 A complete product, architecture and delivery plan for an **AI-first household budgeting app** for
 **desktop and mobile**, derived from the original concept session
-([`../chatgpt-share-transcript.md`](../chatgpt-share-transcript.md)) and turned into an engineering plan
+([`chatgpt-share-transcript.md`](chatgpt-share-transcript.md)) and turned into an engineering plan
 that can be executed.
 
 The core thesis, in one line:
@@ -108,5 +108,5 @@ the **product name** (ADR-014; `Ostava` is the recommendation, `FinMate` is take
 ## Source material
 
 The plan is a continuation of, and supersedes, the original concept conversation:
-[`../chatgpt-share-transcript.md`](../chatgpt-share-transcript.md) — *"Planiranje AI budžetske aplikacije"*.
+[`chatgpt-share-transcript.md`](chatgpt-share-transcript.md) — *"Planiranje AI budžetske aplikacije"*.
 Where this plan disagrees with that transcript, **this plan wins**; deviations are recorded in the ADR log.
