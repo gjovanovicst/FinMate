@@ -91,6 +91,43 @@ export class MailService {
   }
 
   /**
+   * Confirm a new email address (docs/02 §4.18, docs/06 §2).
+   *
+   * Sent to the **new** address, never the old one: the person who can read the mailbox being added
+   * is the one whose consent the change needs, and the old address is not proof of that. The old
+   * address stays the login identity until this link is consumed, so an abandoned change is inert.
+   */
+  async sendEmailChange(to: string, token: string, locale: CopyLocale = 'en'): Promise<void> {
+    const link = `${this.config.APP_BASE_URL}/verify-email?token=${encodeURIComponent(token)}&change=1`;
+    const minutes = Math.round(this.config.EMAIL_TOKEN_TTL_SECONDS / 60);
+    await this.send(
+      to,
+      tr(locale, { en: 'Confirm your new email address', sr: 'Potvrdite novu email adresu' }),
+      [
+        tr(locale, {
+          en: 'Confirm this address to use it for your account:',
+          sr: 'Potvrdite ovu adresu da biste je koristili za svoj nalog:',
+        }),
+        link,
+        '',
+        tr(
+          locale,
+          { en: 'The link expires in {minutes} minutes.', sr: 'Link ističe za {minutes} minuta.' },
+          { minutes },
+        ),
+        tr(locale, {
+          en: 'Until you confirm it, your current address stays the one you sign in with.',
+          sr: 'Dok je ne potvrdite, prijavljujete se sa trenutnom adresom.',
+        }),
+        tr(locale, {
+          en: 'If you did not ask for this, ignore this message — nothing changes.',
+          sr: 'Ako niste vi tražili ovo, ignorišite poruku — ništa se ne menja.',
+        }),
+      ].join('\n'),
+    );
+  }
+
+  /**
    * A notification (F-22). The body is composed by the notifications module and is already
    * **lock-screen safe** for this channel (docs/08 T-09): no amounts, no entity names — an email lands
    * on a phone's lock screen just as a push does.

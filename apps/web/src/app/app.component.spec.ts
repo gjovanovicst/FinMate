@@ -50,6 +50,11 @@ const SESSION = {
   householdId: 'h-1',
   role: 'OWNER' as const,
   sessionId: 's-1',
+  email: 'owner@example.com',
+  displayName: 'Owner',
+  locale: 'en',
+  emailVerified: true,
+  pendingEmail: null,
 };
 
 async function mount(

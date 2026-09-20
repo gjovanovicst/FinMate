@@ -71,3 +71,44 @@ export const resetPasswordSchema = z.object({
   password: z.string().min(1).max(256),
 });
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+
+/**
+ * A UUID path parameter (`/auth/sessions/:id`).
+ *
+ * Validated rather than passed through, so a malformed id is a `VALIDATION_FAILED` the client can
+ * act on instead of a Prisma cast error surfacing as an opaque `INTERNAL`.
+ */
+export const uuidSchema = z.string().uuid();
+
+/**
+ * The profile screen (docs/02 §4.18). Only the display name is editable here: the email is a
+ * credential change with its own confirmation flow, and the language has its own endpoint because
+ * the switcher persists it without visiting this page (`updateLocaleSchema`).
+ */
+export const updateProfileSchema = z.object({
+  displayName: z.string().trim().min(1).max(80),
+});
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+
+/**
+ * Changing a password is a **re-authentication**, not an edit: the current password is required even
+ * though the request already carries a session, because a borrowed session must not be able to lock
+ * the owner out of their own account (docs/08 §3).
+ */
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(256),
+  // Length bounds only; `PasswordService.validateStrength` owns the policy and its message, exactly
+  // as on signup and reset.
+  newPassword: z.string().min(1).max(256),
+});
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+/**
+ * Starting an email change. The password is required for the same reason as above: an address is
+ * half of every login, so moving it is a credential change and not a field edit.
+ */
+export const changeEmailSchema = z.object({
+  email,
+  password: z.string().min(1).max(256),
+});
+export type ChangeEmailInput = z.infer<typeof changeEmailSchema>;

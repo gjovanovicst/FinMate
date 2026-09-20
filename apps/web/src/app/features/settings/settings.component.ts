@@ -59,6 +59,19 @@ import { SyncService } from '../../core/offline/sync.service';
     <main class="fm-page wrap">
       <h1>{{ i18n.t('settings.title') }}</h1>
 
+      <section class="fm-card" aria-labelledby="profile-heading">
+        <div class="fm-card__head">
+          <h2 class="fm-card__title" id="profile-heading">
+            <fm-icon name="people" [size]="18" />
+            {{ i18n.t('profile.title') }}
+          </h2>
+        </div>
+        <p class="muted">{{ i18n.t('profile.intro') }}</p>
+        <a class="fm-btn notifications__open" routerLink="/profile">
+          {{ i18n.t('profile.open') }}
+        </a>
+      </section>
+
       <section class="fm-card" aria-labelledby="security-heading">
         <div class="fm-card__head">
           <h2 class="fm-card__title" id="security-heading">

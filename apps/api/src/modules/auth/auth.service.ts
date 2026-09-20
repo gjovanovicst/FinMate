@@ -25,6 +25,32 @@ export interface AuthenticatedSession {
   readonly membership: Membership;
 }
 
+/** The account's own view of itself — docs/02 §4.18's **Profil** section. */
+export interface ProfileView {
+  readonly userId: string;
+  readonly email: string;
+  /** A staged address change awaiting its confirmation link, or `null`. */
+  readonly pendingEmail: string | null;
+  readonly displayName: string;
+  readonly locale: string;
+  readonly emailVerified: boolean;
+  readonly createdAt: Date;
+}
+
+/**
+ * One live session, as the profile screen renders it.
+ *
+ * There is no device label: only hashes of the User-Agent and IP are stored (docs/08 §3.9), so the
+ * screen shows when the session started and when it was last used, and nothing it cannot know.
+ */
+export interface SessionView {
+  readonly id: string;
+  readonly current: boolean;
+  readonly createdAt: Date;
+  readonly lastSeenAt: Date;
+  readonly expiresAt: Date;
+}
+
 /**
  * A hash of a known-unguessable string, used to equalise the cost of a login attempt when the
  * email does not exist. Without it, "no such user" returns in microseconds while a real user costs
@@ -139,6 +165,203 @@ export class AuthService {
   async updateLocale(userId: string, locale: string): Promise<void> {
     const resolved = resolveCopyLocale(locale, resolveCopyLocale(this.config.APP_DEFAULT_LOCALE));
     await this.prisma.client.users.update({ where: { id: userId }, data: { locale: resolved } });
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Profile
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * The account's own view of itself (docs/02 §4.18's **Profil** section).
+   *
+   * `emailVerified` is derived rather than stored as a boolean so the column stays the single
+   * source of truth, and `pendingEmail` is exposed so the screen can honestly say a change is
+   * waiting for confirmation instead of showing the old address as if nothing had happened.
+   */
+  async profile(userId: string): Promise<ProfileView> {
+    const user = await this.prisma.client.users.findFirst({ where: { id: userId } });
+    if (!user) throw new ApiError('NOT_FOUND', 'User not found.');
+    return {
+      userId: user.id,
+      email: user.email,
+      pendingEmail: user.pending_email,
+      displayName: user.display_name,
+      locale: user.locale,
+      emailVerified: user.email_verified_at !== null,
+      createdAt: user.created_at,
+    };
+  }
+
+  /** Rename. The only free-text identity field, and the one the shell's account block shows. */
+  async updateProfile(userId: string, displayName: string): Promise<void> {
+    const trimmed = displayName.trim();
+    if (trimmed.length === 0) {
+      throw new ApiError('VALIDATION_FAILED', 'Display name is required.');
+    }
+    await this.prisma.client.users.update({
+      where: { id: userId },
+      data: { display_name: trimmed },
+    });
+  }
+
+  /**
+   * Change the password, keeping the current session and ending every other one.
+   *
+   * The current password is required even though the request is already authenticated: a borrowed
+   * session must not be able to change the credential that would let the owner take it back
+   * (docs/08 §3). Every *other* session is revoked for the same reason a reset revokes all of them —
+   * if the old password leaked, whoever else holds a session should not keep it. The caller's own
+   * session is deliberately spared, because signing the person out of the device they are typing on
+   * is not a security improvement.
+   */
+  async changePassword(
+    userId: string,
+    currentSessionId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await this.prisma.client.users.findFirst({ where: { id: userId } });
+    if (!user || !user.password_hash) {
+      throw new ApiError('UNAUTHENTICATED', 'This account has no password to change.');
+    }
+
+    const ok = await this.passwords.verifyPassword(user.password_hash, currentPassword);
+    if (!ok) throw new ApiError('UNAUTHENTICATED', 'Current password is incorrect.');
+
+    const strength = this.passwords.validateStrength(newPassword);
+    if (!strength.ok) throw new ApiError('VALIDATION_FAILED', strength.reason);
+
+    const passwordHash = await this.passwords.hashPassword(newPassword);
+    await this.prisma.client.users.update({
+      where: { id: userId },
+      data: { password_hash: passwordHash },
+    });
+    await this.revokeOtherSessionsForUser(userId, currentSessionId, 'PASSWORD_CHANGE');
+  }
+
+  /**
+   * Begin an email change: remember the new address and mail it a confirmation link.
+   *
+   * The change is staged in `pending_email` rather than applied here. An address is half of every
+   * login, so it is only moved once the mailbox proves it can receive — which is also what makes a
+   * typo harmless. Sending to the new address rather than the old one is the point: only someone who
+   * can read the mailbox being added may consent to adding it.
+   */
+  async changeEmail(userId: string, newEmail: string, password: string): Promise<void> {
+    const user = await this.prisma.client.users.findFirst({ where: { id: userId } });
+    if (!user || !user.password_hash) {
+      throw new ApiError('UNAUTHENTICATED', 'This account has no password.');
+    }
+
+    const ok = await this.passwords.verifyPassword(user.password_hash, password);
+    if (!ok) throw new ApiError('UNAUTHENTICATED', 'Password is incorrect.');
+
+    const next = newEmail.trim().toLowerCase();
+    if (next === user.email.toLowerCase()) {
+      throw new ApiError('VALIDATION_FAILED', 'That is already your email address.');
+    }
+
+    const taken = await this.prisma.client.users.findFirst({ where: { email: next } });
+    if (taken && taken.id !== userId) {
+      throw new ApiError('CONFLICT', 'An account with that email already exists.');
+    }
+
+    await this.prisma.client.users.update({
+      where: { id: userId },
+      data: { pending_email: next },
+    });
+    await this.issueEmailToken(userId, 'CHANGE_EMAIL', next);
+  }
+
+  /**
+   * Confirm a staged email change.
+   *
+   * Re-checks uniqueness at the moment of the swap, because the address could have been claimed by
+   * somebody else in the days between requesting and confirming. The new address is marked verified
+   * without a second round trip: the link that reached it *is* the proof.
+   */
+  async confirmEmailChange(token: string): Promise<void> {
+    const userId = await this.consumeEmailToken(token, 'CHANGE_EMAIL');
+    const user = await this.prisma.client.users.findFirst({ where: { id: userId } });
+    if (!user?.pending_email) {
+      // A consumed or superseded request: the token was valid but there is nothing staged.
+      throw new ApiError('VALIDATION_FAILED', 'This link is invalid or has expired.');
+    }
+
+    const taken = await this.prisma.client.users.findFirst({ where: { email: user.pending_email } });
+    if (taken && taken.id !== userId) {
+      throw new ApiError('CONFLICT', 'That email address is no longer available.');
+    }
+
+    await this.prisma.client.users.update({
+      where: { id: userId },
+      data: {
+        email: user.pending_email,
+        pending_email: null,
+        email_verified_at: new Date(),
+      },
+    });
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Sessions
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * The account's live sessions, newest activity first.
+   *
+   * Deliberately no device name: `sessions` stores **hashes** of the User-Agent and IP (docs/08
+   * §3.9), so the raw values are not recoverable by design. Showing a plausible-looking "Chrome on
+   * macOS" would mean either storing the raw agent or inventing one, and the screen says what it
+   * actually knows instead — when the session started and when it was last used.
+   */
+  async listSessions(userId: string, currentSessionId: string): Promise<SessionView[]> {
+    const rows = await this.prisma.client.sessions.findMany({
+      where: { user_id: userId, revoked_at: null, expires_at: { gt: new Date() } },
+      orderBy: { last_seen_at: 'desc' },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      current: row.id === currentSessionId,
+      createdAt: row.created_at,
+      lastSeenAt: row.last_seen_at,
+      expiresAt: row.expires_at,
+    }));
+  }
+
+  /**
+   * End one session the caller owns.
+   *
+   * Scoped by `user_id` as well as `id`, so a session id from another account is a no-op rather than
+   * a cross-account logout. Returns how many rows were revoked; the controller compares the id with
+   * the caller's own session to decide whether the client has to sign itself out.
+   */
+  async revokeOwnSession(userId: string, sessionId: string): Promise<number> {
+    const result = await this.prisma.client.sessions.updateMany({
+      where: { id: sessionId, user_id: userId, revoked_at: null },
+      data: { revoked_at: new Date(), revoked_reason: 'LOGOUT' },
+    });
+    return result.count;
+  }
+
+  /** End every session except the one making the request. */
+  async revokeOtherSessions(userId: string, currentSessionId: string): Promise<number> {
+    const result = await this.prisma.client.sessions.updateMany({
+      where: { user_id: userId, revoked_at: null, id: { not: currentSessionId } },
+      data: { revoked_at: new Date(), revoked_reason: 'LOGOUT' },
+    });
+    return result.count;
+  }
+
+  private async revokeOtherSessionsForUser(
+    userId: string,
+    keepSessionId: string,
+    reason: 'PASSWORD_CHANGE',
+  ): Promise<void> {
+    await this.prisma.client.sessions.updateMany({
+      where: { user_id: userId, revoked_at: null, id: { not: keepSessionId } },
+      data: { revoked_at: new Date(), revoked_reason: reason },
+    });
   }
 
   // -------------------------------------------------------------------------------------------
@@ -369,6 +592,12 @@ export class AuthService {
   private async issueEmailToken(
     userId: string,
     purpose: 'VERIFY_EMAIL' | 'RESET_PASSWORD' | 'CHANGE_EMAIL',
+    /**
+     * Where the mail goes, when it is not the account's current address. An email change must reach
+     * the **new** mailbox — the old one is not proof that its owner still controls the account — so
+     * `CHANGE_EMAIL` passes `pending_email` here.
+     */
+    to?: string,
   ): Promise<void> {
     const { token, hash } = this.tokens.generateEmailToken();
 
@@ -393,8 +622,10 @@ export class AuthService {
     // The recipient's stored language: an email is composed once and read later, by someone who may
     // not be the caller. `en` is the column default, so a reader who never chose keeps the primary.
     const locale = resolveCopyLocale(user.locale, resolveCopyLocale(this.config.APP_DEFAULT_LOCALE));
-    if (purpose === 'VERIFY_EMAIL') await this.mail.sendEmailVerification(user.email, token, locale);
-    else if (purpose === 'RESET_PASSWORD') await this.mail.sendPasswordReset(user.email, token, locale);
+    const recipient = to ?? user.email;
+    if (purpose === 'VERIFY_EMAIL') await this.mail.sendEmailVerification(recipient, token, locale);
+    else if (purpose === 'RESET_PASSWORD') await this.mail.sendPasswordReset(recipient, token, locale);
+    else await this.mail.sendEmailChange(recipient, token, locale);
   }
 
   private async consumeEmailToken(

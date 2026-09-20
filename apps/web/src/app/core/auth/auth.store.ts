@@ -9,6 +9,17 @@ export interface Session {
   readonly householdId: string;
   readonly role: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
   readonly sessionId: string;
+  /**
+   * The account fields the shell renders and the profile screen edits. They arrive with the same
+   * `GET /auth/me` the session does, so the header's account block shows the real name with no
+   * second request (docs/02 §2.2; it named the role until 0.6.4).
+   */
+  readonly email: string;
+  readonly displayName: string;
+  readonly locale: string;
+  readonly emailVerified: boolean;
+  /** A staged address change awaiting its confirmation link, or `null`. */
+  readonly pendingEmail: string | null;
 }
 
 /**
@@ -123,6 +134,34 @@ export class AuthStore {
   }
 
   /**
+   * Confirm a staged email change (docs/02 §4.18).
+   *
+   * The link is clicked from a mailbox, so this can run on the `/verify-email` screen with or
+   * without a session. When there *is* one, the session's own `email` has just changed and the
+   * shell's cached copy of it is stale, so it is re-read.
+   */
+  async confirmEmailChange(token: string): Promise<void> {
+    await firstValueFrom(this.http.post('/api/auth/confirm-email-change', { token }));
+    await this.refresh();
+  }
+
+  /**
+   * Re-read `GET /auth/me` after something outside this store changed the account — a rename on
+   * `/profile`, or a confirmed email change.
+   *
+   * Silent on failure: the session is still valid and only the cached copy is stale, so an error
+   * banner over a display name would overstate the problem. The next navigation re-reads anyway.
+   */
+  async refresh(): Promise<void> {
+    if (this.accessTokenSignal() === null) return;
+    try {
+      await this.loadSession();
+    } catch {
+      // Deliberately silent; see the doc comment.
+    }
+  }
+
+  /**
    * Tell the API which language this reader chose (ADR-040).
    *
    * The switcher itself is a client signal (ADR-019) and works with no round trip — this exists so the
@@ -139,8 +178,7 @@ export class AuthStore {
     }
   }
 
-  async signOut(): Promise<void> {
-    try {
+  async signOut(): Promise<void> {    try {
       await firstValueFrom(this.http.post('/api/auth/logout', {}));
     } finally {
       // Clear locally even if the call failed: leaving the UI authenticated after the user asked to

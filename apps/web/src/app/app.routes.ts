@@ -188,6 +188,15 @@ export const routes: Routes = [
     title: 'route.settings',
   },
   {
+    // The **Profil** section of the same shell (docs/02 §4.18), given its own screen because it is a
+    // set of forms and a session list rather than a switch. The header's account block links here.
+    path: 'profile',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./features/profile/profile.component').then((m) => m.ProfileComponent),
+    title: 'route.profile',
+  },
+  {
     path: 'notifications',
     canActivate: [authenticatedGuard],
     loadComponent: () =>

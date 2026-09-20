@@ -3,10 +3,13 @@ import { createHash } from 'node:crypto';
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
   Inject,
+  Param,
+  Patch,
   Post,
   Req,
   Res,
@@ -21,6 +24,8 @@ import { requireSessionId, type TenantContext } from '../../common/tenancy/tenan
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
 import { CONFIG, type AppConfig } from '../../config/config';
 import {
+  changeEmailSchema,
+  changePasswordSchema,
   loginSchema,
   refreshSchema,
   requestPasswordResetSchema,
@@ -28,6 +33,10 @@ import {
   signupSchema,
   tokenSchema,
   updateLocaleSchema,
+  updateProfileSchema,
+  uuidSchema,
+  type ChangeEmailInput,
+  type ChangePasswordInput,
   type LoginInput,
   type RefreshInput,
   type RequestPasswordResetInput,
@@ -35,8 +44,9 @@ import {
   type SignupInput,
   type TokenInput,
   type UpdateLocaleInput,
+  type UpdateProfileInput,
 } from './auth.dto';
-import { AuthService, type AuthTokens } from './auth.service';
+import { AuthService, type AuthTokens, type ProfileView, type SessionView } from './auth.service';
 
 /**
  * Authentication endpoints — REST, not GraphQL.
@@ -151,13 +161,128 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async me(
     @CurrentTenant() tenant: TenantContext,
-  ): Promise<{ userId: string; householdId: string; role: string; sessionId: string }> {
+  ): Promise<{
+    userId: string;
+    householdId: string;
+    role: string;
+    sessionId: string;
+    email: string;
+    displayName: string;
+    locale: string;
+    emailVerified: boolean;
+    pendingEmail: string | null;
+  }> {
+    // The session's own identity plus the account fields the shell renders (its account block shows
+    // the display name since 0.6.4) and the profile screen edits. One read, because every caller of
+    // `me` needs the session and the shell needs the name on the same page load.
+    const profile = await this.auth.profile(tenant.userId);
     return {
       userId: tenant.userId,
       householdId: tenant.householdId,
       role: tenant.role,
       sessionId: tenant.sessionId ?? '',
+      email: profile.email,
+      displayName: profile.displayName,
+      locale: profile.locale,
+      emailVerified: profile.emailVerified,
+      pendingEmail: profile.pendingEmail,
     };
+  }
+
+  /** The account's own profile — docs/02 §4.18's **Profil** section. */
+  @Get('profile')
+  @HttpCode(HttpStatus.OK)
+  async profile(@CurrentTenant() tenant: TenantContext): Promise<ProfileView> {
+    return this.auth.profile(tenant.userId);
+  }
+
+  /** Rename. The only free-text identity field; 204 because there is nothing to return. */
+  @Patch('profile')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async updateProfile(
+    @Body(new ZodValidationPipe(updateProfileSchema)) body: UpdateProfileInput,
+    @CurrentTenant() tenant: TenantContext,
+  ): Promise<void> {
+    await this.auth.updateProfile(tenant.userId, body.displayName);
+  }
+
+  /**
+   * Change the password.
+   *
+   * Requires the **current** password even though the request is authenticated (docs/08 §3): a
+   * borrowed session must not let someone change the credential that would take the account back.
+   * Every other session is revoked; this one is kept.
+   */
+  @Post('change-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async changePassword(
+    @Body(new ZodValidationPipe(changePasswordSchema)) body: ChangePasswordInput,
+    @CurrentTenant() tenant: TenantContext,
+  ): Promise<void> {
+    await this.auth.changePassword(
+      tenant.userId,
+      requireSessionId('auth.changePassword'),
+      body.currentPassword,
+      body.newPassword,
+    );
+  }
+
+  /**
+   * Start an email change: stage the new address and mail it a confirmation link.
+   *
+   * 204 and not the staged address: the only thing that has happened is that a message is on its way.
+   */
+  @Post('change-email')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async changeEmail(
+    @Body(new ZodValidationPipe(changeEmailSchema)) body: ChangeEmailInput,
+    @CurrentTenant() tenant: TenantContext,
+  ): Promise<void> {
+    await this.auth.changeEmail(tenant.userId, body.email, body.password);
+  }
+
+  /** Confirm a staged email change. Public: the link is clicked from a mailbox, with or without a session. */
+  @Public()
+  @Post('confirm-email-change')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async confirmEmailChange(
+    @Body(new ZodValidationPipe(tokenSchema)) body: TokenInput,
+  ): Promise<void> {
+    await this.auth.confirmEmailChange(body.token);
+  }
+
+  /** The account's live sessions, for the profile screen's **Active sessions** list. */
+  @Get('sessions')
+  @HttpCode(HttpStatus.OK)
+  async sessions(@CurrentTenant() tenant: TenantContext): Promise<readonly SessionView[]> {
+    return this.auth.listSessions(tenant.userId, tenant.sessionId ?? '');
+  }
+
+  /** End every session except this one. */
+  @Post('sessions/revoke-others')
+  @HttpCode(HttpStatus.OK)
+  async revokeOtherSessions(@CurrentTenant() tenant: TenantContext): Promise<{ revoked: number }> {
+    const revoked = await this.auth.revokeOtherSessions(
+      tenant.userId,
+      requireSessionId('auth.revokeOtherSessions'),
+    );
+    return { revoked };
+  }
+
+  /**
+   * End one session.
+   *
+   * `current` tells the client whether it just ended the session it is using — the one case where it
+   * must sign itself out rather than simply refresh the list.
+   */
+  @Delete('sessions/:id')
+  @HttpCode(HttpStatus.OK)
+  async revokeSession(
+    @Param('id', new ZodValidationPipe(uuidSchema)) id: string,
+    @CurrentTenant() tenant: TenantContext,
+  ): Promise<{ revoked: boolean; current: boolean }> {
+    const count = await this.auth.revokeOwnSession(tenant.userId, id);
+    return { revoked: count > 0, current: id === tenant.sessionId };
   }
 
   /** Always 204, even for an unknown address — see `AuthService.requestPasswordReset`. */

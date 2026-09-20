@@ -65,8 +65,10 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
  *  - the **global search** performs a real search (it routes to /transactions with the query, where the
  *    filter already exists) rather than looking like one and doing nothing — docs/02 §2 is explicit that a
  *    control which cannot work is not shown;
- *  - the **user's name** is nowhere in the API — the session carries an id, a household and a role, and no
- *    display name — so the account block names the **role** and the greeting has no name;
+ *  - the **user's name** is in the API since 0.6.4: `GET /auth/me` carries `displayName`, so the account
+ *    block names the person and the role sits underneath it. It used to name the role alone, because the
+ *    session carried only an id, a household and a role — and no display name — so the greeting had no
+ *    name to use;
  *  - the sidebar's marketing card is replaced by the sync chip and sign-out, which are controls the shell
  *    actually owes the user. Copy nobody asked for is not a design improvement.
  */
@@ -256,13 +258,14 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
                 </span>
               </a>
 
-              <!-- The account block. The API exposes no display name (see the component header), so it
-                   names the **role**, which is real, server-resolved data. -->
-              <a class="account" routerLink="/settings">
-                <fm-avatar [name]="roleLabel()" [size]="34" />
+              <!-- The account block. Since 0.6.4 the API's /auth/me carries the display name, so it
+                   names the person; the role stays underneath as the server-resolved fact it is. It
+                   links to the profile screen, which is where the name is edited. -->
+              <a class="account" routerLink="/profile">
+                <fm-avatar [name]="accountName()" [size]="34" />
                 <span class="account__text">
-                  <span class="account__name">{{ roleLabel() }}</span>
-                  <span class="account__meta">{{ i18n.t('session.account') }}</span>
+                  <span class="account__name">{{ accountName() }}</span>
+                  <span class="account__meta">{{ roleLabel() }}</span>
                 </span>
                 <fm-icon name="chevronDown" [size]="16" />
               </a>
@@ -946,6 +949,14 @@ export class AppComponent {
     const role = this.auth.role();
     return role ? this.i18n.t(`role.${role}` as TranslationKey) : this.i18n.t('role.unknown');
   });
+
+  /**
+   * What the account block calls the person.
+   *
+   * The display name since `/auth/me` carries it (0.6.4); the role remains the fallback for a
+   * session restored before the field existed. Either way it is server data, never a client guess.
+   */
+  readonly accountName = computed(() => this.auth.session()?.displayName ?? this.roleLabel());
   readonly signingOut = signal(false);
 
   /**

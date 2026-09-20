@@ -47,8 +47,12 @@ type VerifyState = 'working' | 'verified' | 'failed' | 'missing';
           <p class="auth__hint" role="status">{{ i18n.t('verify.working') }}</p>
         }
         @case ('verified') {
-          <h1 class="auth__title">{{ i18n.t('verify.doneTitle') }}</h1>
-          <p class="auth__hint">{{ i18n.t('verify.done') }}</p>
+          <h1 class="auth__title">
+            {{ changing() ? i18n.t('verify.changeDoneTitle') : i18n.t('verify.doneTitle') }}
+          </h1>
+          <p class="auth__hint">
+            {{ changing() ? i18n.t('verify.changeDone') : i18n.t('verify.done') }}
+          </p>
           <p class="auth__alt"><a routerLink="/">{{ i18n.t('verify.toApp') }}</a></p>
         }
         @case ('failed') {
@@ -78,6 +82,13 @@ export class VerifyEmailComponent {
   /** `?token=…` from the emailed link, as read from the URL. */
   readonly token = signal('');
 
+  /**
+   * Whether this is a **new-address** confirmation (`?change=1`) rather than the first confirmation
+   * of the account's address. The two are different endpoints and different sentences: the first
+   * says the address is confirmed, the second says the login identity has moved.
+   */
+  readonly changing = signal(false);
+
   readonly state = signal<VerifyState>('working');
 
   /**
@@ -95,6 +106,7 @@ export class VerifyEmailComponent {
     this.route.queryParamMap.subscribe((params) => {
       const token = (params.get('token') ?? '').trim();
       this.token.set(token);
+      this.changing.set(params.get('change') === '1');
       if (token === '') {
         // Nothing to exchange. Calling the API with an empty token would only produce a failure that
         // says less than the sentence this state already has.
@@ -109,7 +121,10 @@ export class VerifyEmailComponent {
 
   private async verify(token: string): Promise<void> {
     try {
-      await this.auth.verifyEmail(token);
+      // Two purposes, two endpoints: the API consumes the token against the purpose it was issued
+      // for, so a `CHANGE_EMAIL` token cannot be replayed against `verify-email` or the reverse.
+      if (this.changing()) await this.auth.confirmEmailChange(token);
+      else await this.auth.verifyEmail(token);
       this.state.set('verified');
     } catch {
       // One message for unknown, used and expired — the API does not distinguish them on purpose, and

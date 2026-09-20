@@ -151,6 +151,11 @@ CREATE TABLE users (
   id                 UUID PRIMARY KEY,
   email              CITEXT NOT NULL UNIQUE,
   email_verified_at  TIMESTAMPTZ,
+  -- An address change awaiting confirmation (docs/02 §4.18, docs/06 §2). `email` remains the login
+  -- identity until the link sent to `pending_email` is consumed, so a typo in the new address cannot
+  -- lock the account out, and a stolen session cannot silently move the account to an attacker's
+  -- mailbox. Cleared when the change is confirmed, or when a later request replaces it.
+  pending_email      CITEXT,
   password_hash      TEXT,                       -- argon2id; NULL if passkey-only
   display_name       TEXT NOT NULL,
   -- English is the product's primary language (ADR-019); Serbian is a first-class

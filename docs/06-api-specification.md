@@ -272,6 +272,40 @@ type ConflictError {
 >   honest reason it costs nothing today is the bullet above. Adding one is a self-service,
 >   session-scoped `POST /auth/resend-verification`; it is unscheduled and named here rather than
 >   discovered later.
+>
+> **Profile and sessions (shipped, task 0.6.4).** docs/02 §4.18's **Profil** section is
+> `/profile`, and it is served by six more REST routes on the same controller — an account's own
+> identity is the same concern as its session, and none of these belongs in a GraphQL envelope:
+>
+> | Route | Auth | Body / answer |
+> |---|---|---|
+> | `GET /auth/profile` | session | `{ userId, email, pendingEmail, displayName, locale, emailVerified, createdAt }` |
+> | `PATCH /auth/profile` | session | `{ displayName }` → `204`. The one free-text identity field |
+> | `POST /auth/change-password` | session **+ current password** | `{ currentPassword, newPassword }` → `204`; revokes every other session |
+> | `POST /auth/change-email` | session **+ password** | `{ email, password }` → `204`; **stages** the address and mails a `CHANGE_EMAIL` link |
+> | `POST /auth/confirm-email-change` | **public** | `{ token }` → `204`; moves `email`, clears `pending_email`, marks it verified |
+> | `GET /auth/sessions` | session | `[{ id, current, createdAt, lastSeenAt, expiresAt }]` |
+> | `POST /auth/sessions/revoke-others` | session | `{ revoked }` |
+> | `DELETE /auth/sessions/:id` | session | `{ revoked, current }` — `current` means the caller ended the session it is using |
+>
+> Three decisions worth stating, because each could reasonably be done otherwise:
+>
+> - **An email change is staged in `users.pending_email`, not applied on request.** `email` stays the
+>   login identity until the link sent to the new address is consumed, so a typo is harmless and a
+>   stolen session cannot silently move the account to an attacker's mailbox. The link goes to the
+>   **new** address (only whoever can read it may consent), and confirming marks it verified — the
+>   link is the proof, so a second round trip would be ceremony.
+> - **Changing a password requires the current one**, even though the request is already
+>   authenticated. A borrowed session must not be able to change the credential that would take the
+>   account back (docs/08 §3). Every *other* session is revoked; the caller's own is kept, because
+>   signing somebody out of the device they are typing on is not a security improvement.
+> - **The session list carries no device name.** `sessions` stores only hashes of the User-Agent and
+>   IP (docs/08 §3.9), so the screen shows when each session started and was last used. A plausible
+>   "Chrome on macOS" would require storing the raw agent or inventing one; the screen says what it
+>   knows instead.
+> - `GET /auth/me` gained `email`, `displayName`, `locale`, `emailVerified` and `pendingEmail` on the
+>   same read, because the shell's account block renders the name on the page load that already
+>   fetches the session — it named the role until this task.
 
 
 ### 2.1 Token strategy

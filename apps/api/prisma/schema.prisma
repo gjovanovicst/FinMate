@@ -731,6 +731,9 @@ model users {
   id                 String                @id @db.Uuid
   email              String                @unique @db.Citext
   email_verified_at  DateTime?             @db.Timestamptz(6)
+  /// A new address awaiting confirmation. `email` stays the login identity until the emailed link is
+  /// consumed, so a typo cannot lock the account out (docs/03 §4, docs/06 §2).
+  pending_email      String?               @db.Citext
   password_hash      String?
   display_name       String
   locale             String                @default("en")

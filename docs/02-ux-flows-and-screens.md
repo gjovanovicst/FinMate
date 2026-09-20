@@ -1142,8 +1142,10 @@ user opens, not on first load.
 > for the visit; the way back is this section.
 >
 > **Still not built**: the rest of §4.18's sections.
-> Profil, Domaćinstvo, Prikaz, Jezik and Podaci are 3.1.4/5 work, and `Računi`/`Članovi` already have
-> screens or are deferred (F-29).
+> **Profil is built** — as its own screen at `/profile` (task 0.6.4), because it is a set of forms and a
+> session list rather than a switch, and the header's account block links to it. Domaćinstvo, Prikaz,
+> Jezik and Podaci are 3.1.4/5 work, and `Računi`/`Članovi` already have screens or are deferred (F-29).
+> Jezik's control is the shell's switcher, which also appears inside `/profile`'s own section.
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────────┐
@@ -1166,7 +1168,7 @@ user opens, not on first load.
 
 | Section | Contents |
 |---|---|
-| Profil | Display name, email, password change, active sessions |
+| Profil | **`/profile`** (0.6.4): display name, email + a staged change with its confirmation link, password change (re-auth), active sessions with revoke, and language |
 | Domaćinstvo | Name, `ledger_currency` (**read-only `RSD`**, ADR-011), `iana_timezone` |
 | Računi (F-01) | Account CRUD, `kind`, opening balance, archive, sort order |
 | Prikaz | Theme, dense table mode, grouping default, number/date format |

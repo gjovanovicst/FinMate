@@ -27,7 +27,19 @@ function mount(): {
 } {
   const http = {
     post: vi.fn(() => of({ accessToken: 'token', expiresIn: 900 })),
-    get: vi.fn(() => of({ userId: 'u-1', householdId: 'h-1', role: 'OWNER', sessionId: 's-1' })),
+    get: vi.fn(() =>
+      of({
+        userId: 'u-1',
+        householdId: 'h-1',
+        role: 'OWNER',
+        sessionId: 's-1',
+        email: 'owner@example.com',
+        displayName: 'Owner',
+        locale: 'en',
+        emailVerified: true,
+        pendingEmail: null,
+      }),
+    ),
   };
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: http }] });
