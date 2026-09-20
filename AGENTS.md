@@ -152,25 +152,24 @@ receipts COMPLETE, **4.2 offline & sync COMPLETE** (4.2.1–4.2.9).**
   tasks 0.6.4–0.6.6). **0.6.4** adds `/profile` — docs/02 §4.18's **Profil** — and the eight REST routes
   behind it: a display name, a **staged** email change (`users.pending_email`, so a typo cannot move the
   login identity), a password change that requires the current password and revokes every *other* session,
-  and a session list that names no device. `GET /auth/me` now
-  carries the profile, so the shell's account block names the person instead of the role. **0.6.5** closes
+  and a session list that names no device. `GET /auth/me` now carries the profile, so the account
+  block names the person instead of the role. **0.6.5** closes
   both gaps 5.8 had named: `REQUIRE_EMAIL_VERIFICATION` now drives a global `EmailVerifiedGuard`
   (`EMAIL_NOT_VERIFIED`, `/auth/*` exempt), `POST /auth/resend-verification` gives an expired link a way
-  back, and production **refuses to boot without `SMTP_URL`** — with it unset `MailService` logs the
-  message body. **0.6.6** is [ADR-041](docs/14-decisions-and-risks.md): TOTP (RFC 6238, in-repo on
+  back, and production **refuses to boot without `SMTP_URL`** (unset, `MailService` logs the body).
+  **0.6.6** is [ADR-041](docs/14-decisions-and-risks.md): TOTP (RFC 6238, in-repo on
   `node:crypto`, pinned to the RFC's vectors) and an emailed code, with a correct password minting **no
   session** when a factor is on — `POST /auth/login` answers a single-use challenge and
   `POST /auth/login/mfa` completes it. The TOTP secret is AES-256-GCM ciphertext under an optional
   `MFA_ENCRYPTION_KEY` (absent ⇒ `totpAvailable: false`, said out loud rather than stored in the clear),
   ten 80-bit recovery codes are shown once, and every factor change re-authenticates. The QR encoder is
-  `qrcode-generator` — zero dependencies, typed — chosen by [ADR-042](docs/14-decisions-and-risks.md);
+  `qrcode-generator` (zero dependencies, typed; [ADR-042](docs/14-decisions-and-risks.md));
   risks **R-35** (lockout) and **R-36** (key loss) name what it costs. **0.6.7 built the settings
   shell**: `/settings?section=…` is **URL-backed tabs** (Account, Security, AI, Notifications) with
-  `role="tablist"`, and `/profile` **redirects** there. ⚠️ Notification preferences stay on
-  `/notifications`.
-- **Next**: the **human visual pass** (the new control rhythm, 4.3.1c's pinned capture bar, the nested-`<main>`
-  landmarks, and whether the install sheet should be a bottom sheet rather than a panel), then 4.3.3 and
-  4.3.4b's Lighthouse job.
+  `role="tablist"`, `/profile` **redirects** there, and it fills the pane like every other screen. ⚠️
+  Notification preferences stay on `/notifications`.
+- **Next**: the **human visual pass** (the new control rhythm, 4.3.1c's pinned capture bar, the
+  nested-`<main>` landmarks, the install sheet's shape), then 4.3.3 and 4.3.4b's Lighthouse job.
 
 **The long form is in the docs.** Each task's decisions, deviations and live defects are recorded where
 they belong: docs/09 §6 (sequencing), docs/02's per-screen notes, docs/06 §5, docs/14 (ADRs and risks) and
@@ -268,7 +267,7 @@ Read the document that owns your task before starting:
 | If you are… | Read first |
 |---|---|
 | starting any task | `docs/05-architecture.md` §2 — monorepo layout + the dependency rule |
-| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 215 entries, each saying what the failure looks like |
+| **debugging something that should work** | **[`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md)** — 218 entries, each saying what the failure looks like |
 | touching money, Transactions, balances | `docs/03-domain-model.md` — **canonical glossary, DDL, invariants** |
 | adding or changing a feature | `docs/01-product-requirements.md` — the `F-xx` catalogue |
 | touching categorization, rules, prompts, AI | `docs/04-categorization-and-ai-engine.md` |
@@ -364,7 +363,7 @@ A change is not done until (doc 09 §8):
 
 ## Gotchas
 
-**The full list — 215 entries in 10 groups, each written to say what it looks like when it goes wrong —
+**The full list — 218 entries in 10 groups, each written to say what it looks like when it goes wrong —
 is [`docs/15-implementation-gotchas.md`](docs/15-implementation-gotchas.md). Read it before debugging
 anything that "should work".** It was split out because this file had grown past the instruction budget
 and was being truncated on load. The ones below stay here because they are the ones that bite hardest,

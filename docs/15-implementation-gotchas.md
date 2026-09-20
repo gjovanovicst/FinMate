@@ -276,6 +276,17 @@ Everything here has cost time at least once, and most of it fails in a way that 
   ignored my change". A reliable probe edits an **eager** string, greps the file to confirm, waits ~8 s,
   then greps the served chunks.
 
+  ⚠️ **A *failed* rebuild serves the last good bundle too, and it looks identical.** The watcher does
+  react — the log says `Changes detected. Rebuilding...` — and then the build dies, so the served bundle
+  is the previous one and the page shows the change that did not happen. Measured in the 0.6.7 pass: a
+  backtick inside a `styles:` comment (the trap above) failed the build, and the dev server answered
+  `200` on a bundle two edits old while the log's tail was a stack trace nobody had scrolled to. Read the
+  dev server's output, not just its liveness, before concluding a change had no effect — and remember
+  `nx run web:build` is the other half of the check, because it fails loudly where `ng serve` keeps going.
+  On WSL2 with the tree on the Windows side, watching can also simply miss writes, which is what
+  `ng serve --poll <ms>` is for; here the tree is inside the Linux filesystem, so a poll interval costs
+  latency for nothing.
+
 ## 2. Prisma and the database
 
 Prisma 7 plus a tenancy extension plus hand-written SQL means the driver is not the only thing deciding what a query does.
@@ -1943,6 +1954,43 @@ Angular 22 zoneless + signals, and three separate ways a template literal or a t
   the same reason `assistant.component.ts` does (the entry above): a signal query is not populated under
   JIT, so a scroll reset written the idiomatic way silently does nothing in exactly the spec meant to
   prove it. Prefer the host query when the behaviour itself is what a spec asserts.
+
+- **A screen-reader-only span deep in a page can grow the *document*, because an absolutely positioned box
+  is not clipped by a scroll container that is outside its containing block.** `.fm-visually-hidden` was
+  `position: absolute` with no `inset`, so the box kept its **static position** — and with no positioned
+  ancestor anywhere above it, its containing block is the initial containing block, which sits *outside*
+  `<main class="content">`. An abspos box whose containing block is outside a clipper is not clipped by
+  it, so the box's own offset became the document's scrollable overflow. Nothing else on the page had to
+  be wrong. Measured on `/settings` at 1280×800: `documentElement.scrollHeight` **903** in an 800 px
+  viewport, `window.scrollTo(0, 500)` landing on **103**, while `main.content` separately scrolled its own
+  176 px — the two vertical scrollbars the owner reported as "two vertical scrolls without no need".
+  `overflow: hidden` on the shell, on the root, on `main.content` **and** on `html` all failed to stop it,
+  and that is the tell: the containing block is the problem, not the overflow. The trigger was the account
+  tab's Language card — the topbar's switcher sits at y≈30, where the same hidden span is harmless, while
+  the identical component in a card at y≈887 laid its span out 103 px below the fold. Fixed at the class
+  level with `inset-block-start: 0; inset-inline-start: 0` (the utility is 1 px and clipped, so *where* it
+  sits cannot matter) and then swept rather than assumed: 20 routes × 320/768/1280 px, zero document
+  scroll, zero horizontal overflow. The lesson is that the utility is not inert — any `.fm-visually-hidden`
+  near the bottom of any long screen reproduces this — so the sweep is the guard.
+
+- **A custom element is `display: inline` until it is told otherwise, and one block child is enough to
+  make that expensive.** `fm-settings` was inline while its whole body was a grid, so the block-in-inline
+  split gave the host a phantom line box: the pane's `scrollHeight` came out **64 px taller** than the
+  content it held, which reads as a mystery gap under the last card and as extra scroll range nothing
+  fills. Every screen whose root is a plain `<div class="fm-page">` sidesteps it by accident, which is why
+  only some screens ever show it — `fm-budgets`, `fm-goals`, `fm-transactions` and `fm-notifications` all
+  still compute `display: inline` and are fine only because their inner scaffold is the block that lays
+  out. Give a new custom element `:host { display: block; }` when its child is a block, and prefer the
+  plain `<div class="fm-page">` root when there is no host styling to do.
+
+- **"Make this screen full width" is two decisions, and capping the page conflates them.** `/settings`
+  carried `max-inline-size: 46rem; margin-inline: auto` on its root from docs/02 §9's reading-measure
+  note, so its cards ended 240 px short of the pane every other screen fills — measured at 1280 px:
+  root **736** in a 1016 px content box (**952** of usable width inside its 2 × 32 px padding), against
+  `/budgets` at the full 952. The measure belongs on the things that are *read*: prose got
+  `max-inline-size: 72ch` and text inputs `26rem`, which also stopped a full-width card stretching one
+  short label's button into a 900 px bar. Do not reach for `width: 100%` — the host was already as wide
+  as its grid column; it was the cap, removed.
 
 ## 10. Cross-cutting rules of the codebase
 

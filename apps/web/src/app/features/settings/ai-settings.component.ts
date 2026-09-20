@@ -74,8 +74,14 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
     </section>
   `,
   styles: `
+    /* A custom element is inline until told otherwise; see the shell's own note. */
+    :host {
+      display: block;
+    }
     p {
       margin: 0;
+      /* The card spans the pane now, so prose is capped where it is read rather than the page. */
+      max-inline-size: 72ch;
     }
     .muted {
       color: var(--color-text-muted);

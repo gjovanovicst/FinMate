@@ -294,8 +294,14 @@ import { TotpQrComponent } from '../../shared/ui/totp-qr/totp-qr.component';
     }
   `,
   styles: `
+    /* A custom element is inline until told otherwise; see the shell's own note. */
+    :host {
+      display: block;
+    }
     p {
       margin: 0;
+      /* The card spans the pane now, so prose is capped where it is read rather than the page. */
+      max-inline-size: 72ch;
     }
     .muted {
       color: var(--color-text-muted);
@@ -311,6 +317,8 @@ import { TotpQrComponent } from '../../shared/ui/totp-qr/totp-qr.component';
     }
     .fm-field__input {
       flex: 1 1 14rem;
+      /* Same reason as the Account pane: a full-width card must not stretch a text field. */
+      max-inline-size: 26rem;
       min-inline-size: 0;
     }
     .value {

@@ -1169,6 +1169,18 @@ user opens, not on first load.
 > **Still not built**: Domaćinstvo, Prikaz, Podaci and Članovi — 3.1.4/5 work, and `Računi`/`Članovi`
 > already have screens or are deferred (F-29). Jezik's control is the shell's own switcher, which is also
 > embedded in the Account pane, so a language can be changed without leaving the shell.
+>
+> **Build note (0.6.7 follow-up, owner-reported).** The shell now fills the content pane like every other
+> screen, and the page no longer scrolls beside it. Two separate defects, both measured rather than
+> eyeballed at 1280×800: the root carried `max-inline-size: 46rem; margin-inline: auto` from §9's
+> reading-measure note, so its cards stopped 240 px short — root **736** in a content box of **952**,
+> against `/budgets` at the full 952 — and the Account tab's Language card grew
+> `documentElement.scrollHeight` to **903** in an 800 px viewport, which is the second scrollbar the owner
+> saw. The cap is gone (the measure moved to the prose, 72ch, and to text inputs, 26rem, where it is read)
+> and the document scroll was a **global** defect in the screen-reader-only utility, not a settings one:
+> `.fm-visually-hidden` was `position: absolute` with no inset, so a span deep in a page laid out at its
+> static position **outside** the content region's clip. Fixed at the class level and swept across
+> 20 routes × 320/768/1280 px; the full account is docs/15's.
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────────┐

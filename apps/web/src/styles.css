@@ -355,9 +355,17 @@ a[role='button'],
   min-inline-size: var(--control-size);
 }
 
-/* Screen-reader-only utility, used for labels and live regions. */
+/* Screen-reader-only utility, used for labels and live regions.
+   The origin is pinned deliberately. With `position: absolute` and no `inset`, the box keeps its
+   **static position**, and when no ancestor is positioned its containing block is the initial
+   containing block — so a utility used deep in a page sits below the fold *outside* the scroll
+   container's clip (an abspos box whose containing block is outside a clipper is not clipped by it)
+   and stretches the document by exactly its offset. That is how the account tab's Language card
+   produced a second, 103 px scrollbar nobody could reach content with (docs/15). */
 .fm-visually-hidden {
   position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
   inline-size: 1px;
   block-size: 1px;
   padding: 0;

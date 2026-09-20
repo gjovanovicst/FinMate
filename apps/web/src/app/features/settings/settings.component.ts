@@ -52,7 +52,7 @@ interface SettingsTab {
     AiSettingsComponent,
   ],
   template: `
-    <main class="fm-page wrap">
+    <div class="fm-page wrap">
       <h1>{{ i18n.t('settings.title') }}</h1>
 
       <!-- A wrapping strip rather than a scrolling one: four short labels fit two rows at 320 px, and
@@ -135,14 +135,23 @@ interface SettingsTab {
           </section>
         }
       }
-    </main>
+    </div>
   `,
   styles: `
+    /* A custom element is display: inline until it is told otherwise, and this one's only child is a
+       block. That block-in-inline split gives the host a phantom line box — measured on /settings, the
+       pane's scroll height came out 64 px taller than the content it held. Every other screen
+       sidesteps it by rooting at a plain <div class="fm-page">; this rule is the fix, and the panes
+       inside carry the same one for the same reason. (The page's *second* scrollbar was a separate
+       defect — the screen-reader-only span in the Language card, docs/15 — not this split.) */
+    :host {
+      display: block;
+    }
     .wrap {
-      /* docs/02 §9: no fixed widths. The rhythm and the card material come from fm-page and fm-card;
-         this only sets the reading measure and centres it. */
-      max-inline-size: 46rem;
-      margin-inline: auto;
+      /* The reading measure is deliberately **not** capped. Every other screen fills the content pane,
+         and the 46rem column this used to carry made /settings visibly narrower than the page beside
+         it. Prose and text fields are capped where they occur, not the page as a whole. */
+      max-inline-size: 100%;
     }
     h1 {
       font-size: var(--text-2xl);

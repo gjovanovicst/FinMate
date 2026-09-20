@@ -74,7 +74,12 @@ import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../auth/password-polic
         @if (!me.emailVerified) {
           <!-- Self-service recovery for an expired link (task 0.6.5): the API accepts no address here,
                so this can only ever mail the account's own. -->
-          <button type="button" class="fm-btn" [disabled]="busy()" (click)="resendVerification()">
+          <button
+            type="button"
+            class="fm-btn resend"
+            [disabled]="busy()"
+            (click)="resendVerification()"
+          >
             {{ i18n.t('verify.resend') }}
           </button>
         }
@@ -180,8 +185,14 @@ import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../auth/password-polic
     }
   `,
   styles: `
+    /* A custom element is inline until told otherwise; see the shell's own note. */
+    :host {
+      display: block;
+    }
     p {
       margin: 0;
+      /* The card spans the pane now, so prose is capped where it is read rather than the page. */
+      max-inline-size: 72ch;
     }
     .muted {
       color: var(--color-text-muted);
@@ -203,10 +214,18 @@ import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../auth/password-polic
     }
     .fm-field__input {
       flex: 1 1 14rem;
+      /* A field in a full-width card would otherwise stretch to the card: 26rem is a comfortable
+         typing measure, and the button beside it stays reachable. */
+      max-inline-size: 26rem;
       min-inline-size: 0;
     }
     .value {
       font-weight: var(--weight-semibold);
+    }
+    /* A shared button is inline-flex and shrink-to-fit, but as a grid child it stretches to the column,
+       which drew a full-width empty bar around one short label. */
+    .resend {
+      justify-self: start;
     }
     .badge {
       padding: 0.1rem 0.5rem;
