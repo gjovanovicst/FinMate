@@ -70,7 +70,7 @@
     "@nx/eslint-plugin": "23.2.1",
     "@nx/js": "23.2.1",
     "@prisma/adapter-pg": "7.10.0",
-    "@types/node": "^24.13.4",
+    "@types/node": "^26.6.1",
     "dotenv": "^17.4.2",
     "eslint": "10.10.0",
     "nx": "23.2.1",
