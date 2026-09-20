@@ -179,22 +179,20 @@ export const routes: Routes = [
     title: 'route.receipt',
   },
   {
-    // docs/02 §4.18's settings shell, with the first section that had no home: the app lock
-    // (task 4.2.6b). Most of the shell's sections already have a screen of their own and are linked
-    // from here; the ones that do not are not built, and are not advertised.
+    // The profile is the **Account** section of the settings shell now (docs/02 §4.18). The old path
+    // survives as a redirect because the header's account block, and any bookmark or open tab,
+    // pointed at it.
+    path: 'profile',
+    redirectTo: 'settings',
+    pathMatch: 'full',
+  },
+  {
+    // docs/02 §4.18's settings shell (task 0.6.7): the four sections that exist, as URL-backed tabs.
+    // `/profile` used to be a second page holding the same subject.
     path: 'settings',
     canActivate: [authenticatedGuard],
     loadComponent: () => import('./features/settings/settings.component').then((m) => m.SettingsComponent),
     title: 'route.settings',
-  },
-  {
-    // The **Profil** section of the same shell (docs/02 §4.18), given its own screen because it is a
-    // set of forms and a session list rather than a switch. The header's account block links here.
-    path: 'profile',
-    canActivate: [authenticatedGuard],
-    loadComponent: () =>
-      import('./features/profile/profile.component').then((m) => m.ProfileComponent),
-    title: 'route.profile',
   },
   {
     path: 'notifications',

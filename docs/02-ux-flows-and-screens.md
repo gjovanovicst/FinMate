@@ -1141,14 +1141,34 @@ user opens, not on first load.
 > saying "asked and unanswered" would be evidence of a decision nobody made. It suppresses the question
 > for the visit; the way back is this section.
 >
-> **Still not built**: the rest of §4.18's sections.
-> **Profil is built** — as its own screen at `/profile` (task 0.6.4), because it is a set of forms and a
-> session list rather than a switch, and the header's account block links to it. **Two-step verification
-> lives there too** (task 0.6.6, ADR-041): the section offers an authenticator to scan, an emailed-code
-> toggle and one-time recovery codes, and `/sign-in` grows a second step only for an account that has a
-> factor on — a password alone then mints no session. Domaćinstvo, Prikaz,
-> Jezik and Podaci are 3.1.4/5 work, and `Računi`/`Članovi` already have screens or are deferred (F-29).
-> Jezik's control is the shell's switcher, which also appears inside `/profile`'s own section.
+> **Built since (task 0.6.7): the shell itself, for the four sections that exist.** `/settings` is now
+> `/settings?section=…` with a **wrapping tab strip** — Account, Security, AI and privacy, Notifications —
+> and one pane at a time, which is §4.18's *"section list + pane"* drawn as tabs rather than as a
+> sidebar (the sidebar is already the app's navigation and a second one inside it would read as a
+> different app). The section is **in the URL**, so a section can be linked, refreshed and reached from
+> elsewhere — the header's account block opens `?section=account` — and `role="tablist"`/`tab`/`tabpanel`
+> with arrow-key navigation sits on top for a screen reader. The strip **wraps** rather than scrolling:
+> four short labels fit two rows at 320 px, and nothing ends up off-screen where a thumb cannot reach it.
+>
+> The content is grouped by **who can get in**, not by which page it used to live on:
+>
+> | Tab | Cards |
+> |---|---|
+> | **Account** | display name, email (+ a staged change), password, language |
+> | **Security** | two-step verification (ADR-041: an authenticator to scan, an emailed-code toggle, one-time recovery codes), the app lock (ADR-029), active sessions |
+> | **AI and privacy** | the consent purposes and their disclosure (docs/08 §6.6, R-25a) |
+> | **Notifications** | what the centre is for, and the way to it |
+>
+> ⚠️ **Two deviations worth naming.** `/profile` — the separate screen 0.6.4 added — is gone, and that
+> path now **redirects** to `/settings` because the header, a bookmark or an open tab may still point at
+> it. And the **notification preferences are still on `/notifications`**, beside the list they describe
+> rather than in this shell: the toggles are much easier to judge next to the alerts they would have
+> carried, and moving them needs the preferences card extracted into its own component. That is the one
+> §4.18 section this shell links out for instead of owning.
+>
+> **Still not built**: Domaćinstvo, Prikaz, Podaci and Članovi — 3.1.4/5 work, and `Računi`/`Članovi`
+> already have screens or are deferred (F-29). Jezik's control is the shell's own switcher, which is also
+> embedded in the Account pane, so a language can be changed without leaving the shell.
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────────┐
@@ -1171,7 +1191,7 @@ user opens, not on first load.
 
 | Section | Contents |
 |---|---|
-| Profil | **`/profile`** (0.6.4/0.6.6): display name, email + a staged change with its confirmation link, password change (re-auth), active sessions with revoke, language, and **two-step verification** (ADR-041) — an authenticator app with a scannable QR plus the key as text, an emailed-code toggle, and recovery codes shown once |
+| Profil | **The shell's Account and Security tabs** (0.6.4/0.6.6/0.6.7). Account: display name, email + a staged change with its confirmation link, password change (re-auth), language. Security: **two-step verification** (ADR-041) — an authenticator app with a scannable QR plus the key as text, an emailed-code toggle, and recovery codes shown once — the app lock, and active sessions with revoke. `/profile` redirects here |
 | Domaćinstvo | Name, `ledger_currency` (**read-only `RSD`**, ADR-011), `iana_timezone` |
 | Računi (F-01) | Account CRUD, `kind`, opening balance, archive, sort order |
 | Prikaz | Theme, dense table mode, grouping default, number/date format |

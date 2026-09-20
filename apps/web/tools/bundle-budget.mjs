@@ -78,7 +78,6 @@ export const UNLISTED = [
   'features/notifications/notifications.component.ts',
   'features/onboarding/onboarding.component.ts',
   'features/pending/pending.component.ts',
-  'features/profile/profile.component.ts',
   'features/receipts/receipt-detail.component.ts',
   'features/recurring/recurring.component.ts',
   'features/rules/rules.component.ts',

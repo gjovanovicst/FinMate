@@ -95,7 +95,6 @@ export const en = {
   'route.receipts': 'Receipts',
   'route.receipt': 'Receipt',
   'route.settings': 'Settings',
-  'route.profile': 'Profile',
   'route.notifications': 'Notifications',
   'route.pending': 'Waiting to send',
   'route.budgets': 'Budgets',
@@ -510,12 +509,15 @@ export const en = {
   'settings.security.queueLink': 'Open the queue',
   'settings.notifications.body': 'What you get told, and where those alerts go.',
   'settings.notifications.open': 'Open notifications',
-  // docs/02 §4.18's **Profil** section — its own screen at /profile.
-  'profile.title': 'Profile',
-  'profile.intro': 'Your name, your sign-in details and the devices signed in.',
+  'settings.notifications.why': 'The switches live next to the list they describe, so you can see what an alert would have said before you turn it off.',
+  // ---- the account shell's sections, as tabs (docs/02 §4.18) ----
+  'settings.tabs.label': 'Settings sections',
+  'settings.section.account': 'Account',
+  'settings.section.security': 'Security',
+  'settings.section.ai': 'AI and privacy',
+  'settings.section.notifications': 'Notifications',
+  // The **Account** pane: who you are, and the two credentials that identify you.
   'profile.loading': 'Loading your profile…',
-  'profile.toSettings': 'Back to settings',
-  'profile.open': 'Open profile',
   'profile.identity.title': 'Your details',
   'profile.displayName.label': 'Display name',
   'profile.displayName.save': 'Save',

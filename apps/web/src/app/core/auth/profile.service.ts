@@ -80,11 +80,27 @@ export class ProfileService {
   private readonly sessionsSignal = signal<readonly AccountSession[]>([]);
   private readonly mfaSignal = signal<MfaState | null>(null);
   private readonly loadingSignal = signal(false);
+  private cached: ProfileLoadResult | null = null;
 
   readonly profile = this.profileSignal.asReadonly();
   readonly sessions = this.sessionsSignal.asReadonly();
   readonly mfa = this.mfaSignal.asReadonly();
   readonly loading = this.loadingSignal.asReadonly();
+
+  /**
+   * Load once, then serve the cache.
+   *
+   * The account shell's **Account** and **Security** panes are separate components that both read
+   * this service, and either can be the first one shown — so without the guard, switching tabs would
+   * re-fetch the profile, the session list and the factor state on every switch. A `load()` that
+   * threw leaves the cache empty, so a failed identity read is retried on the next mount.
+   */
+  async ensureLoaded(): Promise<ProfileLoadResult> {
+    if (this.cached !== null) return this.cached;
+    const result = await this.load();
+    this.cached = result;
+    return result;
+  }
 
   /**
    * Read the profile, the live sessions and the factor state together.

@@ -262,8 +262,8 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
 
               <!-- The account block. Since 0.6.4 the API's /auth/me carries the display name, so it
                    names the person; the role stays underneath as the server-resolved fact it is. It
-                   links to the profile screen, which is where the name is edited. -->
-              <a class="account" routerLink="/profile">
+                   opens the settings shell's **Account** tab, which is where the name is edited. -->
+              <a class="account" routerLink="/settings" [queryParams]="{ section: 'account' }">
                 <fm-avatar [name]="accountName()" [size]="34" />
                 <span class="account__text">
                   <span class="account__name">{{ accountName() }}</span>

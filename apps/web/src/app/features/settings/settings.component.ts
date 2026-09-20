@@ -1,209 +1,146 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { DOCUMENT } from '@angular/common';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
-import { AppLockService } from '../../core/app-lock/app-lock.service';
-import { AuthStore } from '../../core/auth/auth.store';
-import { ConsentService } from '../../core/consent/consent.service';
-import {
-  CONSENT_KINDS,
-  canChangeConsent,
-  type ConsentKind,
-  type ConsentRecord,
-  type RecordableConsentState,
-} from '../../core/consent/consent.view';
-import {
-  PIN_LENGTH,
-  isValidPin,
-  lockFailureKey,
-  lockMessageKey,
-} from '../../core/app-lock/lock.view';
 import { I18nService } from '../../core/i18n/i18n.service';
-import { ConsentPurposeComponent } from '../../shared/ui/consent-purpose/consent-purpose.component';
+import type { TranslationKey } from '../../core/i18n/translations';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
-import { SyncService } from '../../core/offline/sync.service';
+import type { IconName } from '../../shared/ui/icon/icon-paths';
+import { AccountSettingsComponent } from './account-settings.component';
+import { AiSettingsComponent } from './ai-settings.component';
+import { SecuritySettingsComponent } from './security-settings.component';
 
 /**
- * Settings — docs/02 §4.18's shell, with the first section it needs.
+ * The account shell — docs/02 §4.18 recorded as *"Podešavanja"*.
  *
- * docs/02 §4.18 draws a settings shell whose sections are Profil, Domaćinstvo, Računi, Prikaz, Jezik,
- * AI podešavanja, Obaveštenja, Podaci and Članovi. Most of them already have a screen that owns them
- * (`/accounts`, `/onboarding`, `/notifications`), and the ones that do not are not built. What this
- * page adds is the section that had **no home at all**: `Bezbednost`, where the app lock is armed —
- * the control 4.2.6a deliberately left unbuilt.
+ * The document draws a section list beside a pane, and for a long time this route was a plain stack
+ * of cards instead: a *Profile* card that only linked elsewhere, the app lock, the AI consent
+ * purposes, and a *Notifications* card that also only linked elsewhere — while a **second** screen,
+ * `/profile`, held six more cards of the same subject. Ten cards across two pages answering one
+ * question, and two of the four cards on this page were navigation dressed as content.
  *
- * It renders only what exists. A section list with eight disabled rows would be the "disabled with a
- * tooltip rather than a broken control" rule (docs/02 §2) taken to the point of advertising absences;
- * the rows here are real controls and links to the screens that already own their content.
+ * The shell now owns every section, and `/profile` redirects here.
  *
- * ## The AI section is the consent surface's deliberate half (task R-25a)
+ * ## The tabs are links, and they are in the URL
  *
- * docs/08 §6.6 asks for consent at **first use** and needs the decision reachable from settings for
- * withdrawal "in two taps". This is the settings half: every purpose the deployment would need permission
- * for, its current state, and one primary action plus *Allow* where a change is possible. The other half —
- * the sheet that asks at the moment an entry needs the AI — is its own task, and until it exists this
- * section is the only place a Household can be asked.
- *
- * Two things it does not decide for itself. **What would be sent** comes from `aiEgress`, because a
- * provider name hardcoded in client copy is a claim and this project has been burned by one (ADR-031).
- * **Who may change it** comes from the session's role, because docs/08 §3.7 and Q-11 make granting and
- * withdrawing an OWNER act: the copy is the lawful-basis evidence, so a MEMBER sees the state and is told
- * whose decision it is.
+ * Each tab is an `<a>` carrying `?section=`, not a button toggling local state. That keeps the four
+ * things links give for free — the address bar, refresh, back/forward, open-in-a-new-tab — and makes
+ * a section reachable from elsewhere in the app (the header's account block sends you straight to
+ * `?section=account`). `role="tablist"`/`tab`/`tabpanel` is layered on top for screen readers, with
+ * arrow-key navigation per the ARIA authoring practice; because the elements are anchors, Enter and
+ * Space already do the obvious thing.
  *
  * @module apps/web/src/app/features/settings
  */
+export const SETTINGS_SECTIONS = ['account', 'security', 'ai', 'notifications'] as const;
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+
+interface SettingsTab {
+  readonly id: SettingsSection;
+  readonly labelKey: TranslationKey;
+  readonly icon: IconName;
+}
+
 @Component({
   selector: 'fm-settings',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, ConsentPurposeComponent, IconComponent],
+  imports: [
+    RouterLink,
+    IconComponent,
+    AccountSettingsComponent,
+    SecuritySettingsComponent,
+    AiSettingsComponent,
+  ],
   template: `
     <main class="fm-page wrap">
       <h1>{{ i18n.t('settings.title') }}</h1>
 
-      <section class="fm-card" aria-labelledby="profile-heading">
-        <div class="fm-card__head">
-          <h2 class="fm-card__title" id="profile-heading">
-            <fm-icon name="people" [size]="18" />
-            {{ i18n.t('profile.title') }}
-          </h2>
-        </div>
-        <p class="muted">{{ i18n.t('profile.intro') }}</p>
-        <a class="fm-btn notifications__open" routerLink="/profile">
-          {{ i18n.t('profile.open') }}
-        </a>
-      </section>
-
-      <section class="fm-card" aria-labelledby="security-heading">
-        <div class="fm-card__head">
-          <h2 class="fm-card__title" id="security-heading">
-            <fm-icon name="lock" [size]="18" />
-            {{ i18n.t('settings.security.title') }}
-          </h2>
-        </div>
-        <p class="muted">{{ i18n.t(lockMessageKey(lock.state())) }}</p>
-
-        @if (lock.state() === 'OFF') {
-          <p class="muted small">{{ i18n.t('settings.security.why') }}</p>
-
-          @if (lock.webauthnPossible) {
-            <button
-              type="button"
-              class="fm-btn fm-btn--primary"
-              [disabled]="lock.busy()"
-              (click)="armWithDevice()"
-            >
-              {{ i18n.t('settings.security.withDevice') }}
-            </button>
-          }
-
-          <form class="pin" (submit)="armWithPin($event)">
-            <label class="fm-field__label" for="new-pin">
-              {{ i18n.t('settings.security.pinLabel') }}
-            </label>
-            <input
-              class="fm-field__input pin__input"
-              id="new-pin"
-              type="password"
-              inputmode="numeric"
-              autocomplete="new-password"
-              maxlength="6"
-              [value]="pin()"
-              (input)="setPin($event)"
-            />
-            <button type="submit" class="fm-btn fm-btn--primary" [disabled]="lock.busy() || !isValidPin(pin())">
-              {{ i18n.t('settings.security.withPin') }}
-            </button>
-          </form>
-          <p class="muted small">{{ i18n.t('settings.security.pinHint') }}</p>
+      <!-- A wrapping strip rather than a scrolling one: four short labels fit two rows at 320 px, and
+           nothing is hidden off-screen where a thumb cannot reach it (docs/02 §9). -->
+      <div
+        class="tabs"
+        role="tablist"
+        [attr.aria-label]="i18n.t('settings.tabs.label')"
+        (keydown)="onTabsKeydown($event)"
+      >
+        @for (tab of tabs; track tab.id) {
+          <a
+            class="tab"
+            role="tab"
+            [id]="'tab-' + tab.id"
+            [routerLink]="[]"
+            [queryParams]="{ section: tab.id }"
+            [class.tab--active]="section() === tab.id"
+            [attr.aria-selected]="section() === tab.id"
+            [attr.aria-controls]="'panel-' + tab.id"
+            [attr.tabindex]="section() === tab.id ? 0 : -1"
+          >
+            <fm-icon [name]="tab.icon" [size]="18" />
+            <span>{{ i18n.t(tab.labelKey) }}</span>
+          </a>
         }
+      </div>
 
-        @if (lock.state() === 'UNLOCKED') {
-          <div class="actions">
-            <button type="button" class="fm-btn" [disabled]="lock.busy()" (click)="lockNow()">
-              {{ i18n.t('settings.security.lockNow') }}
-            </button>
-            <button
-              type="button"
-              class="fm-btn fm-btn--danger"
-              [disabled]="lock.busy()"
-              (click)="turnOff()"
-            >
-              {{ i18n.t('settings.security.turnOff') }}
-            </button>
-          </div>
-          <p class="muted small">{{ i18n.t('settings.security.turnOffHint') }}</p>
+      @switch (section()) {
+        @case ('account') {
+          <section
+            class="panel"
+            role="tabpanel"
+            id="panel-account"
+            aria-labelledby="tab-account"
+            tabindex="0"
+          >
+            <fm-account-settings />
+          </section>
         }
-
-        @if (pendingCount() > 0 && lock.state() === 'OFF') {
-          <p class="muted small">
-            {{ i18n.t('settings.security.queueFirst', { count: pendingCount() }) }}
-            <a routerLink="/pending">{{ i18n.t('settings.security.queueLink') }}</a>
-          </p>
+        @case ('security') {
+          <section
+            class="panel"
+            role="tabpanel"
+            id="panel-security"
+            aria-labelledby="tab-security"
+            tabindex="0"
+          >
+            <fm-security-settings />
+          </section>
         }
-
-        @if (lock.failure(); as failure) {
-          <p class="error" role="alert">{{ i18n.t(failureKey(failure)) }}</p>
+        @case ('ai') {
+          <section class="panel" role="tabpanel" id="panel-ai" aria-labelledby="tab-ai" tabindex="0">
+            <fm-ai-settings />
+          </section>
         }
-      </section>
-
-      <section class="fm-card" aria-labelledby="ai-heading">
-        <div class="fm-card__head">
-          <h2 class="fm-card__title" id="ai-heading">
-            <fm-icon name="sparkles" [size]="18" />
-            {{ i18n.t('consent.title') }}
-          </h2>
-        </div>
-        <p class="muted">{{ i18n.t('consent.intro') }}</p>
-
-        @if (consent.error(); as message) {
-          <p class="error" role="alert">{{ message }}</p>
+        @default {
+          <section
+            class="panel"
+            role="tabpanel"
+            id="panel-notifications"
+            aria-labelledby="tab-notifications"
+            tabindex="0"
+          >
+            <section class="fm-card">
+              <div class="fm-card__head">
+                <h2 class="fm-card__title">
+                  <fm-icon name="bell" [size]="18" />
+                  {{ i18n.t('nav.notifications') }}
+                </h2>
+              </div>
+              <p class="muted">{{ i18n.t('settings.notifications.body') }}</p>
+              <!-- The toggles live beside the list they describe, deliberately: a channel is a lot
+                   easier to judge next to the alert it would have carried (docs/02 §4.17). -->
+              <p class="muted small">{{ i18n.t('settings.notifications.why') }}</p>
+              <a class="fm-btn open" routerLink="/notifications">
+                {{ i18n.t('settings.notifications.open') }}
+              </a>
+            </section>
+          </section>
         }
-
-        @if (!consent.loading() && consent.routes().length === 0) {
-          <!-- Nothing is routed anywhere in this deployment, so there is no permission to request. Saying
-               so is the honest state; three disabled "Allow" buttons would advertise a decision that
-               does not exist. -->
-          <p class="muted small">{{ i18n.t('consent.egress.none') }}</p>
-        } @else {
-          @for (kind of kinds; track kind) {
-            <!-- The same card the first-use sheet shows, so the disclosure cannot drift between the two
-                 (shared/ui/consent-purpose). -->
-            <fm-consent-purpose
-              [kind]="kind"
-              [record]="recordFor(kind)"
-              [routes]="consent.routes()"
-              [mayChange]="mayChange()"
-              [saving]="consent.saving()"
-              (decide)="record(kind, $event)"
-            />
-          }
-
-          <p class="muted small">{{ i18n.t('consent.neverSent') }}</p>
-          <p class="muted small">{{ i18n.t('consent.trade') }}</p>
-
-          @if (!mayChange()) {
-            <p class="muted small">{{ i18n.t('consent.ownerOnly') }}</p>
-          }
-        }
-      </section>
-
-      <section class="fm-card" aria-labelledby="notifications-heading">
-        <div class="fm-card__head">
-          <h2 class="fm-card__title" id="notifications-heading">
-            <fm-icon name="bell" [size]="18" />
-            {{ i18n.t('nav.notifications') }}
-          </h2>
-        </div>
-        <p class="muted">{{ i18n.t('settings.notifications.body') }}</p>
-        <a class="fm-btn notifications__open" routerLink="/notifications">
-          {{ i18n.t('settings.notifications.open') }}
-        </a>
-      </section>
+      }
     </main>
   `,
   styles: `
     .wrap {
-      /* docs/02 §9: no fixed widths. The rhythm, the padding and the card material come from fm-page and
-         fm-card; this only sets the reading measure and centres it. */
+      /* docs/02 §9: no fixed widths. The rhythm and the card material come from fm-page and fm-card;
+         this only sets the reading measure and centres it. */
       max-inline-size: 46rem;
       margin-inline: auto;
     }
@@ -222,112 +159,112 @@ import { SyncService } from '../../core/offline/sync.service';
     .small {
       font-size: var(--text-sm);
     }
-    .pin {
+    .tabs {
       display: flex;
       flex-wrap: wrap;
       gap: var(--space-2);
+    }
+    /* A pill, so the strip reads as one control rather than four links. The active state is the pair
+       4.3.4b landed for the nav — brand text on the brand tint, which is 6.47:1 — not the brand colour
+       as text, which was 3.85:1. */
+    .tab {
+      display: inline-flex;
       align-items: center;
-    }
-    /* The one field in the app whose value is read digit by digit: wider tracking, centred, and narrow
-       because a six-digit PIN does not need a full-width box. */
-    .pin__input {
-      inline-size: 8rem;
-      font-size: var(--text-lg);
-      letter-spacing: 0.3em;
-      text-align: center;
-    }
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
       gap: var(--space-2);
+      min-block-size: var(--control-size);
+      padding: var(--space-2) var(--space-3);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-pill);
+      color: var(--color-text-muted);
+      font-size: var(--text-sm);
+      text-decoration: none;
+      white-space: nowrap;
     }
-    /* A shared button is inline-flex and shrink-to-fit, but as a grid child it stretches to the column,
-       which drew a full-width empty bar around one short label. */
-    .notifications__open {
+    .tab:hover {
+      background: var(--color-surface-raised);
+      color: var(--color-text);
+    }
+    .tab--active {
+      color: var(--color-primary-text);
+      background: var(--color-primary-soft);
+      border-color: var(--color-primary);
+      font-weight: var(--weight-semibold);
+    }
+    .tab:focus-visible {
+      outline: none;
+      box-shadow: var(--focus-ring);
+    }
+    /* The pane is focusable so a keyboard user lands on its content after choosing a tab; the ring is
+       suppressed because the tab they came from is the focus cue, and the browser would otherwise
+       draw a box around the whole panel. */
+    .panel {
+      display: grid;
+      gap: var(--space-4);
+      outline: none;
+    }
+    /* A shared button is inline-flex and shrink-to-fit, but as a grid child it stretches to the
+       column, which drew a full-width empty bar around one short label. */
+    .open {
       justify-self: start;
-    }
-    .error {
-      color: var(--color-danger);
-    }
-    .purpose {
-      display: flex;
-      flex-direction: column;
-      gap: 0.25rem;
-      padding-block: 0.5rem;
-      border-block-start: 1px solid var(--color-border);
-    }
-    .purpose h3 {
-      font-size: 1rem;
-      margin: 0;
-    }
-    .state {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      align-items: baseline;
-      margin: 0.25rem 0 0;
     }
   `,
 })
 export class SettingsComponent {
-  private readonly sync = inject(SyncService);
-  private readonly auth = inject(AuthStore);
-  readonly lock = inject(AppLockService);
-  readonly consent = inject(ConsentService);
   readonly i18n = inject(I18nService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly document = inject(DOCUMENT);
 
-  readonly isValidPin = isValidPin;
-  readonly lockMessageKey = lockMessageKey;
-  /** Exposed for the template, which cannot call an imported function directly. */
-  readonly failureKey = lockFailureKey;
+  readonly tabs: readonly SettingsTab[] = [
+    { id: 'account', labelKey: 'settings.section.account', icon: 'people' },
+    { id: 'security', labelKey: 'settings.section.security', icon: 'lock' },
+    { id: 'ai', labelKey: 'settings.section.ai', icon: 'sparkles' },
+    { id: 'notifications', labelKey: 'settings.section.notifications', icon: 'bell' },
+  ];
 
-  /** The purposes, in the order the section lists them (docs/08 §6.6's vocabulary, not the stored one). */
-  readonly kinds = CONSENT_KINDS;
-
-  readonly pin = signal('');
-
-  /** OWNER-only (docs/08 §3.7, Q-11). A MEMBER sees the state and whose decision it is. */
-  readonly mayChange = computed(() => canChangeConsent(this.auth.role()));
+  /**
+   * The active section, read from `?section=`.
+   *
+   * The URL is the single source of truth rather than a signal a click also writes: two copies of
+   * "which tab is open" is how a back button ends up disagreeing with the highlight.
+   */
+  readonly section = signal<SettingsSection>('account');
 
   constructor() {
-    // The section is one of several, and its state is only needed here — so it is read on entry rather
-    // than held app-wide. A failure leaves the previous state on screen and is reported in the section.
-    void this.consent.load();
+    this.route.queryParamMap.subscribe((params) => {
+      this.section.set(readSection(params.get('section')));
+    });
   }
 
-  /** The stored record for a purpose, or `null` when the API reported none (which reads `NOT_ASKED`). */
-  recordFor(kind: ConsentKind): ConsentRecord | null {
-    return this.consent.states().find((record) => record.kind === kind) ?? null;
-  }
+  /**
+   * Arrow keys move between tabs, per the ARIA tabs pattern.
+   *
+   * Automatic activation — the arrow both selects and focuses — because a pane here is cheap and
+   * there is nothing to lose by showing it; a manual-activation widget would make the reader press
+   * Enter for no reason.
+   */
+  onTabsKeydown(event: KeyboardEvent): void {
+    const order = SETTINGS_SECTIONS;
+    const index = order.indexOf(this.section());
 
-  async record(kind: ConsentKind, state: RecordableConsentState): Promise<void> {
-    await this.consent.record(kind, state, 'settings');
-  }
+    let next: SettingsSection | null = null;
+    if (event.key === 'ArrowRight') next = order[(index + 1) % order.length]!;
+    else if (event.key === 'ArrowLeft') next = order[(index - 1 + order.length) % order.length]!;
+    else if (event.key === 'Home') next = order[0]!;
+    else if (event.key === 'End') next = order[order.length - 1]!;
+    if (next === null) return;
 
-  /** The queue's size, because arming is refused while it is not empty (ADR-029 decision 6). */
-  readonly pendingCount = computed(() => this.sync.pendingCount());
-
-  setPin(event: Event): void {
-    const digits = (event.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, PIN_LENGTH);
-    this.pin.set(digits);
-  }
-
-  async armWithDevice(): Promise<void> {
-    if (await this.lock.enableWithWebAuthn(this.pendingCount())) this.pin.set('');
-  }
-
-  async armWithPin(event: Event): Promise<void> {
     event.preventDefault();
-    if (await this.lock.enableWithPin(this.pin(), this.pendingCount())) this.pin.set('');
+    void this.router.navigate([], { queryParams: { section: next } });
+    // The tab elements keep their ids, so focus can move now rather than waiting for the navigation
+    // promise: what changes is the highlight, which the query-param subscription applies.
+    this.document.getElementById(`tab-${next}`)?.focus();
   }
+}
 
-  lockNow(): void {
-    this.lock.lock();
-  }
-
-  async turnOff(): Promise<void> {
-    await this.lock.purge();
-    // The queue is gone with the wipe, so the header chip must stop advertising it.
-    await this.sync.refresh();
-  }
+/** `?section=` as a section, falling back to the first for anything unrecognised or absent. */
+export function readSection(value: string | null): SettingsSection {
+  return (SETTINGS_SECTIONS as readonly string[]).includes(value ?? '')
+    ? (value as SettingsSection)
+    : 'account';
 }
