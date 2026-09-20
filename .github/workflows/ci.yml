@@ -78,7 +78,7 @@ jobs:
       JWT_SECRET: ci-only-secret-that-is-at-least-32-chars-long
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # Nx compares against the base branch to compute affected projects
 
