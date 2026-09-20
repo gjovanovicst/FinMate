@@ -1,27 +1,30 @@
 # FinMate
 
-**Type `Lidl 2000` — get a correctly categorised, budget-aware transaction in under five seconds.**
+**Describe what you spent, and get a categorised, budget-aware transaction in under five seconds.**
 
 FinMate is an AI-first household budgeting app for desktop and mobile. Natural language is the primary
 input, and a deterministic backend turns it into ledger entries, budgets and alerts. The model
 interprets what you typed; it never touches the money.
 
-It began in the Serbian/Balkan market — mixed latin/cyrillic script, cash-heavy households and local
-merchants that English-first classifiers handle badly — and is not confined to it. The interface ships
-in **English** (primary), **Serbian** (latin and cyrillic), **German**, **Spanish**, **French** and
-**Arabic** (right-to-left), and each Household's ledger is opened in the currency its owner confirms at
-signup, out of the sixty the ledger can keep.
+The intelligence is deliberately narrow. A deterministic pipeline owns the ledger, the arithmetic and
+the confidence gates; the model only proposes. When the pipeline is not confident it asks rather than
+guessing, and every correction teaches it a reusable rule — so accuracy improves over time without the
+model ever being retrained, or ever touching a balance.
 
-Adding a language is a data change rather than a code change: the locale set is an open registry, and
-every catalogue but English loads lazily, so the app shell does not grow with the language count — it
-went **down** by 15.6 KB when four languages were added. The reasoning is in
-[ADR-044 and ADR-045](docs/14-decisions-and-risks.md).
+FinMate runs in the reader's own language and currency. The interface ships in **English** (primary),
+**Serbian** (latin and cyrillic), **German**, **Spanish**, **French** and **Arabic** (right-to-left), and
+each Household chooses the currency its ledger is kept in at signup, from the sixty supported. Adding a
+language is a data change rather than a code change — the locale set is an open registry and every
+catalogue but English loads lazily, so the app shell does not grow with the language count: it went
+**down** by 15.6 KB when four languages were added.
 
-> **Status of the four newest languages.** German, Spanish, French and Arabic are machine-assisted and
-> have not yet been reviewed by a native speaker, and no human has looked at the RTL layout at any width
-> (risks **R-37** and **R-38**). English and Serbian are hand-written. The shipped **seed content** —
-> the category tree, its keywords and the merchant catalogue — is still Serbian, which is the largest
-> remaining gap for a Household that does not speak it.
+> **Contributions welcome, in four languages.** German, Spanish, French and Arabic were machine-assisted
+> and have not been reviewed by a native speaker, and the right-to-left layout has had no human pass
+> (risks **R-37**, **R-38**). The starter category tree, its keywords and the merchant catalogue are
+> also still Serbian-only — the interface is multilingual, the seed data is not yet. Both are
+> well-scoped first tasks, and the reasoning behind them is written up in
+> [`docs/14`](docs/14-decisions-and-risks.md), because this project records _why_ rather than deciding
+> silently.
 
 [![CI](https://github.com/gjovanovicst/FinMate/actions/workflows/ci.yml/badge.svg)](https://github.com/gjovanovicst/FinMate/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
@@ -360,6 +363,24 @@ start with the index at [`docs/README.md`](docs/README.md).
 Contributions are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers the setup, which document owns
 each area, the Definition of Done and the commit conventions. Participation is covered by the
 [Code of Conduct](CODE_OF_CONDUCT.md).
+
+Good first contributions, in rough order of size:
+
+- **A native review of German, Spanish, French or Arabic**, or of the right-to-left layout on any screen
+  (risks **R-37**, **R-38**). The four catalogues are complete and machine-assisted, so the work is
+  reading and correcting rather than starting from nothing — and the app is built to make it cheap:
+  adding or fixing a language never touches the backend.
+- **Seed content for a language the interface already speaks.** The starter category tree, its keywords
+  and the merchant catalogue are Serbian-only today, which is the largest remaining gap for a Household
+  that does not read it.
+- **Anything in the open gaps**, which are recorded rather than hidden: [`AGENTS.md`](AGENTS.md) carries
+  the current state of every feature, and
+  [`docs/09-implementation-plan.md`](docs/09-implementation-plan.md) carries what is next.
+
+Every architectural decision is written up as an ADR in
+[`docs/14-decisions-and-risks.md`](docs/14-decisions-and-risks.md) rather than decided silently, so you
+can find out _why_ something is the way it is before changing _what_ it does. A change to the money
+path, the tenancy model or the AI data flow is expected to arrive with one.
 
 Please report security issues privately — see [`SECURITY.md`](SECURITY.md) — rather than opening a
 public issue.
