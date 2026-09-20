@@ -364,6 +364,22 @@ Prisma 7 plus a tenancy extension plus hand-written SQL means the driver is not 
   integration suite does. Found by B-5's live probe, on the one assertion that had been written as a
   string comparison.
 
+- **A hand-written partial index never matches Prisma's derived name, so the drift check fails on an
+  index rename.** The canonical DDL in docs/03 uses partial indexes (`WHERE revoked_at IS NULL`,
+  `WHERE deleted_at IS NULL`), which `prisma migrate` cannot express — so they are written by hand in
+  the migration, with a name a human chose. `schema.prisma` then has to say the **same** name, because
+  a bare `@@index([user_id], where: raw("(consumed_at IS NULL)"))` makes Prisma derive
+  `mfa_challenges_user_id_idx` from the columns while the migration created
+  `mfa_challenges_live_user_idx`. `prisma migrate diff` reads that as a **rename**, not a match, and
+  exits **2**, which fails CI's last step while every test, lint and build stays green — the drift
+  check is the only thing that looks. The fix is `map: "<the migration's name>"` on the index
+  (`@@index([user_id], map: "mfa_challenges_live_user_idx", where: raw("(consumed_at IS NULL)"))`),
+  which is what `push_subscriptions_live_idx` had done all along. ⚠️ **Do not "fix" it by renaming the
+  index in the migration**: migrations are forward-only and already applied, and `_prisma_migrations`
+  holds their checksum. Wash it through `pnpm exec prisma migrate diff --from-config-datasource
+  --to-schema apps/api/prisma/schema.prisma --exit-code` before a merge — and read the **exit code**,
+  not the output: piping it into `tail` shows the message and returns `tail`'s 0.
+
 ## 3. Tenancy and the guard
 
 ADR-008 is enforced by an extension, not by discipline — which is why these two are about what the guard *cannot* do for you.

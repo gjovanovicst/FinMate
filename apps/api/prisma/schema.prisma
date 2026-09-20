@@ -782,8 +782,8 @@ model mfa_challenges {
   created_at      DateTime  @default(now()) @db.Timestamptz(6)
   users           users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([user_id], where: raw("(consumed_at IS NULL)"))
-  @@index([expires_at], where: raw("(consumed_at IS NULL)"))
+  @@index([user_id], map: "mfa_challenges_live_user_idx", where: raw("(consumed_at IS NULL)"))
+  @@index([expires_at], map: "mfa_challenges_live_expiry_idx", where: raw("(consumed_at IS NULL)"))
 }
 
 /// Single-use recovery codes for a two-factor account (ADR-041).
@@ -799,5 +799,5 @@ model mfa_recovery_codes {
   created_at DateTime  @default(now()) @db.Timestamptz(6)
   users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([user_id], where: raw("(used_at IS NULL)"))
+  @@index([user_id], map: "mfa_recovery_codes_live_idx", where: raw("(used_at IS NULL)"))
 }
