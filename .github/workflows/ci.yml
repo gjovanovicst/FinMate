@@ -78,15 +78,19 @@ jobs:
       JWT_SECRET: ci-only-secret-that-is-at-least-32-chars-long
 
     steps:
-      - uses: actions/checkout@v4
+      # Action majors are pinned to the Node 24 line deliberately. Node 20 was deprecated on GitHub
+      # runners, and an action still declaring `runs.using: node20` prints a deprecation warning on
+      # every job; checkout, setup-node and upload-artifact all moved to Node 24 in their v5-v7
+      # majors. These require a runner of 2.327.1 or newer, which ubuntu-latest satisfies.
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # Nx compares against the base branch to compute affected projects
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -169,7 +173,7 @@ jobs:
 
       - name: Upload the generated GraphQL schema
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: graphql-schema
           path: apps/api/schema.gql

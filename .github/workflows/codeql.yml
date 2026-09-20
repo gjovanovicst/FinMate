@@ -1,5 +1,25 @@
-# Static analysis (CodeQL). Free for public repositories; on a private repository it requires
-# GitHub Advanced Security, so this workflow is expected to run from the moment the repo is public.
+# Static analysis (CodeQL).
+#
+# Code scanning is a *repository* feature, not a workflow setting: it is included on a public
+# repository and needs GitHub Advanced Security on a private one. When it is unavailable the action's
+# upload step fails hard — "Code scanning is not enabled for this repository" — and no change to this
+# file can fix that.
+#
+# There is a second case that fails the same way once the repository is public: a pull request from a
+# **fork** gets a read-only `GITHUB_TOKEN`, so `security-events: write` cannot be granted and the
+# upload is refused no matter what `permissions:` says. `pull_request_target` would "fix" it by running
+# untrusted code with a write token, which is exactly the trade we refuse.
+#
+# So the analysis runs only where its results can actually be uploaded, and every skip is reported as
+# an annotation instead of leaving a silent hole in coverage:
+#
+#     private repository   -> skipped, and the check says the repository is not public
+#     fork pull request    -> skipped, and the check says forks are analysed after merge instead
+#     anything else        -> analysed, with results in the Security tab
+#
+# Consequence, stated plainly: on a private repository there is **no CodeQL coverage**, and on a fork
+# pull request the analysis happens after the merge rather than before it. Both cases are visible in
+# the Actions tab on every run.
 #
 # It is deliberately separate from ci.yml: CodeQL's results land in the Security tab as alerts rather
 # than as a pass/fail gate on the pull request, and a weekly scheduled run catches newly published
@@ -24,8 +44,31 @@ permissions:
   contents: read
 
 jobs:
+  # Runs only where the analysis cannot be uploaded, so the reason is visible in the run summary
+  # rather than the check appearing to have been forgotten.
+  skipped:
+    name: Analysis skipped
+    if: >-
+      github.event.repository.visibility != 'public' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Report why no analysis ran
+        run: |
+          if [ "${{ github.event.repository.visibility }}" != "public" ]; then
+            echo "::notice title=CodeQL skipped::This repository is ${{ github.event.repository.visibility }}. Code scanning is included on public repositories and requires GitHub Advanced Security on private ones, so nothing was analysed. Make the repository public, or enable Advanced Security, and this job stops running and the analysis starts."
+          else
+            echo "::notice title=CodeQL skipped::This pull request comes from a fork, whose token is read-only, so code-scanning results cannot be uploaded from it. The analysis for this change runs on the push to main after it merges."
+          fi
+
   analyze:
     name: Analyze (${{ matrix.language }})
+    # Kept in step with the gate above: analysis runs only where its results can be uploaded.
+    if: >-
+      github.event.repository.visibility == 'public' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -46,10 +89,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -58,6 +101,6 @@ jobs:
           queries: security-and-quality
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: '/language:${{ matrix.language }}'
