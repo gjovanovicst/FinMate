@@ -421,6 +421,9 @@ export const es: Record<keyof typeof en, string> = {
   'settings.security.title': 'Bloqueo de la app',
   'settings.security.why': 'Con el bloqueo de la app activado, los registros que hagas sin conexión sobreviven al cierre de la app. Además, lo que se guarda queda cifrado con el bloqueo de tu dispositivo o un PIN.',
   'settings.security.withDevice': 'Usar el bloqueo de este dispositivo',
+  'settings.security.deviceHint':
+    'Un toque con tu huella, tu cara o el código del dispositivo, y tus datos guardados siguen cifrados en este dispositivo. La app vuelve a preguntar tras una hora de inactividad, no cada pocos minutos.',
+  'settings.security.usePinInstead': 'Usar un PIN en su lugar',
   'settings.security.withPin': 'Usar un PIN',
   'settings.security.pinLabel': 'Elige un PIN de 6 dígitos',
   'settings.security.pinHint': 'Alguien que tenga el teléfono y tiempo puede adivinar un PIN de 6 dígitos. El bloqueo del dispositivo es la opción más fuerte.',
@@ -1017,6 +1020,15 @@ export const es: Record<keyof typeof en, string> = {
   'sync.chip': 'Pendiente de envío ({count})',
   'offline.sessionNote': 'No se puede contactar con el servidor, así que sigues sin sesión iniciada. Tus registros guardados están en este dispositivo y se enviarán cuando vuelvas a estar en línea y con la sesión iniciada.',
   'offline.signIn': 'Iniciar sesión',
+  'offline.banner.saved':
+    'Estás sin conexión. Los movimientos que añadas se guardan en este dispositivo y se enviarán cuando vuelvas a conectarte.',
+  'offline.banner.ephemeral':
+    'Estás sin conexión. Los movimientos que añadas solo se conservan hasta que cierres la app: activa el bloqueo de la app para que permanezcan en este dispositivo.',
+  'offline.banner.enable': 'Configurar sin conexión',
+  'offline.banner.signedOut':
+    'Estás sin conexión. Iniciar sesión requiere conexión y este dispositivo no está configurado para funcionar sin conexión.',
+  'offline.banner.locked':
+    'Estás sin conexión. Desbloquea para ver lo que está guardado en este dispositivo.',
   'sync.chipLabel': 'Pendiente de envío, {count} entradas',
   'money.asOf': 'datos de {time}',
   'money.income': 'ingreso',

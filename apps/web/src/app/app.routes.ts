@@ -77,9 +77,8 @@ export const routes: Routes = [
   {
     path: 'transactions',
     canActivate: [authenticatedGuard],
-    // Offline-capable (ADR-033 decision 2): with the server unreachable this screen serves the
-    // ledger cache read-only — the mode 4.2.8b built — and nothing else on it calls the API.
-    data: { offline: true },
+    // Serves the ledger cache read-only when the server is unreachable (ADR-033, amended: the offline
+    // app reaches every route, and this screen's own read is what falls back to the 4.2.8b record).
     loadComponent: () =>
       import('./features/transactions/transactions.component').then((m) => m.TransactionsComponent),
     title: 'route.transactions',
@@ -206,11 +205,9 @@ export const routes: Routes = [
   {
     // ADR-026 decision 1: the pending tray is a route reached from the header's sync chip, not a nav
     // destination — the same shape as `/notifications`, so the review slot stays the only badged one.
+    // The queue is local by construction, so it is the one screen that works with no server at all.
     path: 'pending',
     canActivate: [authenticatedGuard],
-    // The queue is local by construction, so this is the one screen an unlocked offline install
-    // lands on (ADR-033 decision 2).
-    data: { offline: true },
     loadComponent: () =>
       import('./features/pending/pending.component').then((m) => m.PendingComponent),
     title: 'route.pending',

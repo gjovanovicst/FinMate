@@ -479,6 +479,9 @@ export const srLatn: Record<keyof typeof en, string> = {
   'settings.security.title': 'Brava',
   'settings.security.why': 'Sa uključenom bravom, unosi koje napraviš bez veze prežive zatvaranje aplikacije. I ono što je sačuvano ostaje šifrovano bravom uređaja ili PIN-om.',
   'settings.security.withDevice': 'Koristi bravu uređaja',
+  'settings.security.deviceHint':
+    'Jedan dodir uz otisak, lice ili šifru uređaja — a sačuvani podaci ostaju šifrovani na ovom uređaju. Aplikacija pita ponovo posle sat vremena mirovanja, ne svakih nekoliko minuta.',
+  'settings.security.usePinInstead': 'Koristi PIN umesto toga',
   'settings.security.withPin': 'Koristi PIN',
   'settings.security.pinLabel': 'Izaberi PIN od 6 cifara',
   'settings.security.pinHint': 'PIN od 6 cifara može da pogodi neko ko ima telefon i vremena. Brava uređaja je jača opcija.',
@@ -1168,6 +1171,14 @@ export const srLatn: Record<keyof typeof en, string> = {
   'offline.sessionNote':
     'Server nije dostupan, pa si i dalje odjavljen. Sačuvani unosi su na ovom uređaju i biće poslati kada se ponovo povežeš i prijaviš.',
   'offline.signIn': 'Prijavi se',
+  'offline.banner.saved':
+    'Nema mreže. Unosi koje dodaš čuvaju se na ovom uređaju i biće poslati kada se ponovo povežeš.',
+  'offline.banner.ephemeral':
+    'Nema mreže. Unosi koje dodaš čuvaju se samo dok ne zatvoriš aplikaciju — uključi zaključavanje da ostanu na ovom uređaju.',
+  'offline.banner.enable': 'Podesi rad van mreže',
+  'offline.banner.signedOut':
+    'Nema mreže. Prijava zahteva vezu, a ovaj uređaj nije podešen za rad van mreže.',
+  'offline.banner.locked': 'Nema mreže. Otključaj da vidiš šta je sačuvano na ovom uređaju.',
   'sync.chipLabel': 'Čeka slanje, {count} stavke',
   // ADR-027: the wording docs/02 section 4.2 already uses for a figure that came from the snapshot.
   'money.asOf': 'podaci od {time}',

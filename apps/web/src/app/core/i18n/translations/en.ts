@@ -499,6 +499,9 @@ export const en = {
   'settings.security.title': 'App lock',
   'settings.security.why': 'With the app lock on, captures you make without a connection survive closing the app. It also keeps what is stored encrypted with your device’s lock or a PIN.',
   'settings.security.withDevice': 'Use this device’s lock',
+  'settings.security.deviceHint':
+    'One tap with your fingerprint, face or device passcode — and your saved data stays encrypted on this device. The app asks again after an hour idle, not every few minutes.',
+  'settings.security.usePinInstead': 'Use a PIN instead',
   'settings.security.withPin': 'Use a PIN',
   'settings.security.pinLabel': 'Choose a 6-digit PIN',
   'settings.security.pinHint': 'A 6-digit PIN can be guessed by somebody who has the phone and time. The device lock is the stronger option.',
@@ -1207,6 +1210,17 @@ export const en = {
   'offline.sessionNote':
     'The server is not reachable, so you are still signed out. Your saved captures are on this device and will be sent once you are back online and signed in.',
   'offline.signIn': 'Sign in',
+  // The offline banner's other three truths (ADR-033 amended). Each says what is actually true of this
+  // install: a queued entry survives a reload only when the app lock is armed, and the sign-in screen
+  // cannot be used at all without a connection.
+  'offline.banner.saved':
+    'You are offline. Entries you add are saved on this device and sent when you reconnect.',
+  'offline.banner.ephemeral':
+    'You are offline. Entries you add are kept only until you close the app — turn on the app lock to keep them on this device.',
+  'offline.banner.enable': 'Set up offline',
+  'offline.banner.signedOut':
+    'You are offline. Signing in needs a connection, and this device is not set up to work offline.',
+  'offline.banner.locked': 'You are offline. Unlock to see what is saved on this device.',
   'sync.chipLabel': 'Waiting to send, {count} entries',
   // ADR-027 decisions 2 and 4: the one provenance label a snapshot-served figure carries. Mandatory
   // for any cached figure (docs/02 section 4.2, and section 10's money.asOf row).

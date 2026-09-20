@@ -472,6 +472,9 @@ export const de: Record<keyof typeof en, string> = {
   'settings.security.title': 'App-Sperre',
   'settings.security.why': 'Mit eingeschalteter App-Sperre überstehen Erfassungen ohne Verbindung das Schließen der App. Außerdem bleibt Gespeichertes mit der Sperre deines Geräts oder einer PIN verschlüsselt.',
   'settings.security.withDevice': 'Sperre dieses Geräts verwenden',
+  'settings.security.deviceHint':
+    'Ein Tippen mit Fingerabdruck, Gesicht oder Gerätecode — und deine gespeicherten Daten bleiben auf diesem Gerät verschlüsselt. Die App fragt erst nach einer Stunde Untätigkeit wieder, nicht alle paar Minuten.',
+  'settings.security.usePinInstead': 'Stattdessen eine PIN verwenden',
   'settings.security.withPin': 'PIN verwenden',
   'settings.security.pinLabel': 'Wähle eine 6-stellige PIN',
   'settings.security.pinHint': 'Eine 6-stellige PIN kann erraten werden, wenn jemand das Telefon und Zeit hat. Die Gerätesperre ist die stärkere Option.',
@@ -1159,6 +1162,15 @@ export const de: Record<keyof typeof en, string> = {
   'offline.sessionNote':
     'Der Server ist nicht erreichbar, deshalb bist du weiterhin abgemeldet. Deine gespeicherten Erfassungen sind auf diesem Gerät und werden gesendet, sobald du wieder online und angemeldet bist.',
   'offline.signIn': 'Anmelden',
+  'offline.banner.saved':
+    'Du bist offline. Einträge, die du hinzufügst, werden auf diesem Gerät gespeichert und gesendet, sobald du wieder verbunden bist.',
+  'offline.banner.ephemeral':
+    'Du bist offline. Einträge, die du hinzufügst, bleiben nur bis zum Schließen der App erhalten — aktiviere die App-Sperre, damit sie auf diesem Gerät bleiben.',
+  'offline.banner.enable': 'Offline einrichten',
+  'offline.banner.signedOut':
+    'Du bist offline. Die Anmeldung benötigt eine Verbindung, und dieses Gerät ist nicht für die Offline-Nutzung eingerichtet.',
+  'offline.banner.locked':
+    'Du bist offline. Entsperre die App, um zu sehen, was auf diesem Gerät gespeichert ist.',
   'sync.chipLabel': 'Wartet auf das Senden, {count} Einträge',
   'money.asOf': 'Stand {time}',
   'money.income': 'Einnahme',

@@ -677,8 +677,32 @@ platform behaviour. Legend: ✅ works offline · 📖 read-only offline · ⏳ p
 The shell these capabilities live in is cached by the service worker
 ([ADR-024](14-decisions-and-risks.md)): it holds the document, the bundles and the icons, **never** a
 response from the API, so a row marked 📖 below is read from the encrypted IndexedDB snapshot and not
-from anything the worker kept. Until 4.2.2 lands there is no snapshot at all, so a 📖 row is not even
-that yet: the shell opens and the screen shows its own failure.
+from anything the worker kept.
+
+**A cold start with no network opens the app, not an offline notice** ([ADR-033's amendment](14-decisions-and-risks.md)).
+The service worker serves the shell; the session cannot be restored because the refresh token is a cookie
+and nothing answers, so the app renders its **real** navigation and header with one persistent line saying
+the session is not restored, and **every route is reachable**. What a screen shows is then the row below
+for that capability: a local record (the dashboard snapshot, the ledger cache, the queue) or the screen's
+own "needs a connection" state. Nothing is sent without a session, so queued captures wait for one. The
+unlock is what authorises reading the local records at all — with the app lock off, nothing is persisted
+and there is nothing to serve.
+
+**The banner is the app's one statement of the network state, and it says a different true thing per
+install** (the shell's `offlineNotice`), because "your entries are saved on this device" is only true once
+the app lock is armed (ADR-025 decision 3):
+
+| State | What it says | Action |
+|---|---|---|
+| No session, lock through (`UNREACHABLE`) | the session is not restored; the queue is on the device and will be sent once back online and signed in | *Sign in* |
+| Signed in, lock armed | entries are saved on this device and sent on reconnect | — |
+| Signed in, lock off | entries are kept **only until the app closes**; the lock is what keeps them | *Set up offline* → `/settings` |
+| Signed in or out, lock off | signing in needs a connection and this device is not set up to work offline | — |
+
+It is not dismissible, and it is raised by the browser's own `online`/`offline` events seeded from
+`navigator.onLine` (`core/connectivity`). ⚠️ That signal is only ever allowed to choose **copy**: it is
+`true` behind a captive portal, so nothing that decides whether to send or persist may branch on it —
+`SyncService` attempts the flush and the outbox classifies the real answer (ADR-025 decision 7).
 
 | Capability | State | Notes |
 |---|---|---|

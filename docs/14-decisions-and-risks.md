@@ -1710,6 +1710,58 @@ Two things neither document says, and both are load-bearing:
   re-election rule to survive a closed tab — a distributed-systems problem for a mutex the platform
   already provides.
 
+---
+
+#### ADR-029 — amendment (2026-09-20, task 4.3.8): the idle window follows the secret, and the device lock is the offer
+
+**Status:** Accepted. Amends the *policy* half of the title ("its policy is five idle minutes") and the
+settings card's presentation. **Decision 1 does not change**: the WebAuthn secret is the PRF extension,
+and the PIN remains the fallback.
+
+**Context.** The owner hit the lock by hand while testing offline and asked the fair question: *why does an
+offline reload ask for a PIN instead of loading the cached data?* The literal answer is that the cache is
+ciphertext and the PIN unwraps the key — the lock screen **is** the decryption step, not a gate in front of
+it. But the question exposed two real problems in how the policy was presented:
+
+1. **The five-minute window was applied to both secrets alike**, and it is load-bearing for only one of
+   them. Its purpose is to stop an unattended session being read by whoever picks the device up. A
+   WebAuthn-armed lock is already gated by the platform authenticator — the next person cannot pass it, and
+   the device's own lock screen covers the phone in a pocket. A **six-digit PIN is the weaker secret**
+   (docs/08 §3.9's own note: ~20 bits, guessable by somebody with the phone and time), so the short window
+   belongs there. Applied to the device path, five minutes meant that reading a page, taking a call or
+   copying an amount for longer than that re-prompted on **every** return — and a prompt people learn to
+   resent is a prompt they disable the feature to avoid, which costs the queue the durability it exists for.
+2. **The settings card offered the two paths as equals.** docs/08 §3.9 already says *"Preferred: WebAuthn
+   platform authenticator. Fallback: 6-digit app PIN"* — the build had both controls side by side under
+   one primary style, so nothing said which was which. An owner choosing between them chose on the labels
+   alone.
+
+**Decision.**
+
+1. **`idleLockMs(method)` is the single definition**: **60 minutes** for `WEBAUTHN`, **5 minutes** for
+   `PIN`, and 5 minutes when no lock is configured (never consulted in that state). One exported pure
+   function, because the service, the shell's idle gate and docs/08 must not be able to disagree.
+2. **The device path is what the card offers.** With a platform authenticator present, *Use this device's
+   lock* is the primary control with a sentence saying what it buys (one tap, data still encrypted, asked
+   again after an hour), and the PIN form sits behind *Use a PIN instead*. Without one the PIN form shows
+   directly — a fallback nobody can reach is not a fallback.
+3. **Nothing about the cryptographic design changes.** Same wrapped data key, same PRF-derived secret,
+   same wipe on `purge()`, same "nothing on disk without a lock".
+
+**Consequences.**
+- ✅ Offline use after a cold start costs **one biometric gesture** on a device-armed install, which is what
+  makes the offline capture path usable rather than merely present.
+- ✅ `navigator.onLine`-independent and unchanged: the lock is still the only thing that decides whether
+  anything is persisted (ADR-025 decision 3), and the new offline banner says which of the two states the
+  install is in.
+- ⚠️ **An armed install can now sit readable for up to an hour** with nobody touching it. Accepted: the
+  device's own lock screen is the control for the physical-device case, and the alternative is a feature
+  people turn off. The PIN keeps the five minutes because it is the secret that does not have that backstop.
+- ⚠️ **A device-armed lock has no PIN fallback by design** (decision 3's `unlockOffers`): losing the
+  platform credential means losing the local queue, which is R-36's existing risk and not widened here.
+
+---
+
 ### ADR-030 — Queued edits: what the queue may carry, and a conflict diff that quotes no decision
 **Status:** Accepted
 
@@ -2101,6 +2153,60 @@ exactly what the user needs: the queued captures and the cached ledger.
   measured it.
 - **(d) Cache the access token so a reload is "authenticated".** A token on disk outlives a revoke and
   turns the app lock into decoration (docs/08 §2.1 forbids it).
+
+---
+
+#### ADR-033 — amendment: the offline app is the app, not two screens beside it
+
+**Status:** Accepted (2026-09-20), amending **decision 2** and the shell half of decision 3. Decisions 1
+and 4 are untouched: the failure is still classified by `isUnreachable`, and **nothing is sent without a
+session**.
+
+**Context.** Decision 2 gave an unlocked, unreachable install exactly two routes (`/pending` and the
+cached ledger), one redirect to the tray from every other one, and a shell that replaced the navigation
+with two links — on the reasoning that *"every other destination is a control that cannot work"*. That
+reasoning does not survive contact with the screens as built. The dashboard serves its ADR-027 snapshot
+with a `podaci od <time>` label, `/transactions` serves the ledger cache, the composer queues offline,
+`SyncService.flushNow` already refuses without a session and drains the moment one arrives, and the
+analytics screen already carries its own "needs a connection" sentence. docs/07 §6's matrix has marked
+safe-to-spend and the projection 📖 all along — which was **false after a reload**, because `/` redirected
+away from the snapshot it was serving. Measured with the network cut: an offline reload + PIN landed on
+`/pending`, and the dashboard was reachable by no control at all.
+
+The unit of offline behaviour on this app is a **screen**, not the shell: each screen already knows
+whether it holds a local record or must say it needs a connection. A shell that hides the whole map
+because *some* rooms are locked discards that, and it contradicts the platform expectation of an
+installed PWA — the app opens, and the things that need the network say so.
+
+**Decision.**
+
+1. **Every route is admitted** to an unlocked install whose restore failed as `UNREACHABLE`. The
+   `data: { offline: true }` allow-list is removed; a route no longer has to declare itself, because the
+   screen's own read is what decides what it can show.
+2. **The shell is the real shell.** It renders its navigation, its header controls that need no session
+   (theme, language, the queue's sync chip, the notification bell) and its outlet. What stays gated on a
+   session is what genuinely needs one: the account block, sign-out, and the global search — the last
+   because it navigates to a **filtered** ledger read, which is deliberately never cached, so it could
+   only search nothing (docs/02 §2's rule that a control which cannot work is not shown).
+3. **One persistent banner replaces the offline page**: the existing `offline.sessionNote` and a *Sign
+   in* link, rendered inside the content region above the outlet. It is not dismissible — it is the only
+   place the missing session is stated, and a person who dismissed it would be left guessing why nothing
+   sends.
+4. **The unlock lands on the dashboard, not the tray.** The guards ran while the install was still
+   LOCKED, so a cold start was sent to `/sign-in` before the PIN could be asked for; the unlock now moves
+   that page load to `/`, which serves the snapshot. A deep link is left where the person asked to be.
+
+**Consequences.**
+- ✅ docs/07 §6's 📖 rows are true **after a reload**: the dashboard, safe-to-spend and the projection are
+  reachable offline, labelled with the snapshot's own `as of` time.
+- ✅ The security boundary is unchanged: no session is fabricated, no token is minted, `isAuthenticated()`
+  stays false, and `flushNow` still refuses — so a revoked session is never kept alive on the device. The
+  unlock authorises *reading what the key opens*, exactly as decision 1 says.
+- ⚠️ **A screen that has no local record now shows its own error in the app's chrome** rather than being
+  unreachable. That is the intended trade, and it puts the honesty burden on each screen's offline state
+  (Definition of Done already requires one) instead of on a redirect.
+- ⚠️ The offline banner is per-page-load, like `restoreFailure`: it disappears the moment a session is
+  restored, which is what makes it a statement about *this* page load rather than a mode.
 
 ---
 

@@ -420,6 +420,9 @@ export const ar: Record<keyof typeof en, string> = {
   'settings.security.title': "قفل التطبيق",
   'settings.security.why': "مع تفعيل قفل التطبيق، تبقى القيود التي تسجّلها دون اتصال بعد إغلاق التطبيق. كما يحفظ ما هو مخزَّن مشفَّرًا بقفل جهازك أو برمز PIN.",
   'settings.security.withDevice': "استخدام قفل هذا الجهاز",
+  'settings.security.deviceHint':
+    "لمسة واحدة ببصمتك أو وجهك أو رمز الجهاز — وتبقى بياناتك المحفوظة مشفَّرة على هذا الجهاز. يسأل التطبيق مرة أخرى بعد ساعة من عدم النشاط، لا كل بضع دقائق.",
+  'settings.security.usePinInstead': "استخدام رمز PIN بدلًا من ذلك",
   'settings.security.withPin': "استخدام رمز PIN",
   'settings.security.pinLabel': "اختر رمز PIN من 6 أرقام",
   'settings.security.pinHint': "يمكن لمن يملك الهاتف والوقت تخمين رمز PIN من 6 أرقام. وقفل الجهاز هو الخيار الأقوى.",
@@ -1015,6 +1018,14 @@ export const ar: Record<keyof typeof en, string> = {
   'sync.chip': "في انتظار الإرسال ({count})",
   'offline.sessionNote': "تعذّر الوصول إلى الخادم، لذلك ما زلت مسجَّل الخروج. وقيودك المحفوظة على هذا الجهاز وستُرسل بمجرد عودة الاتصال وتسجيل الدخول.",
   'offline.signIn': "تسجيل الدخول",
+  'offline.banner.saved':
+    "أنت غير متصل. تُحفظ الإدخالات التي تضيفها على هذا الجهاز وتُرسل عند عودة الاتصال.",
+  'offline.banner.ephemeral':
+    "أنت غير متصل. لا تُحفظ الإدخالات التي تضيفها إلا حتى إغلاق التطبيق — فعّل قفل التطبيق لتبقى على هذا الجهاز.",
+  'offline.banner.enable': "إعداد العمل دون اتصال",
+  'offline.banner.signedOut':
+    "أنت غير متصل. تسجيل الدخول يحتاج إلى اتصال، وهذا الجهاز غير مهيأ للعمل دون اتصال.",
+  'offline.banner.locked': "أنت غير متصل. افتح القفل لترى ما هو محفوظ على هذا الجهاز.",
   'sync.chipLabel': "في انتظار الإرسال، {count} قيدًا",
   'money.asOf': "حتى {time}",
   'money.income': "دخل",
