@@ -622,6 +622,11 @@ export const en = {
   'verify.done': 'Thank you — your address is confirmed.',
   'verify.changeDoneTitle': 'New address confirmed',
   'verify.changeDone': 'Your new address is now the one you sign in with.',
+  // The blocking half of email verification (REQUIRE_EMAIL_VERIFICATION, docs/06 §2).
+  'verify.banner': 'Confirm your email address to keep using the app. We sent a link to {email}.',
+  'verify.resend': 'Send the link again',
+  'verify.resending': 'Sending…',
+  'verify.bannerSent': 'A new link is on its way.',
   'verify.failedTitle': 'This link cannot be used',
   'verify.failed': 'The link is invalid or has expired. You can sign in and keep using the app — confirming the address is not required yet.',
   'verify.missing': 'This link is incomplete. Open the link from the email again.',
@@ -1511,6 +1516,7 @@ export const en = {
   // keeps the API locale-agnostic and means adding a language never touches the backend.
   'error.UNAUTHENTICATED': 'Incorrect email or password.',
   'error.FORBIDDEN': 'You do not have permission to do that.',
+  'error.EMAIL_NOT_VERIFIED': 'Confirm your email address to continue.',
   'error.NOT_FOUND': 'That item does not exist.',
   'error.VALIDATION_FAILED': 'Please check the details you entered.',
   'error.CONFLICT': 'Something with those details already exists.',

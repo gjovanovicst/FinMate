@@ -263,15 +263,23 @@ type ConflictError {
 > - **`request-password-reset` answers `204` for any address** (deliberate — a different answer would be
 >   an account-enumeration oracle), so the screen may not tell the user whether their account exists, and
 >   its copy is conditional for that reason.
-> - **`verify-email` sets `users.email_verified_at`, and nothing reads that column.** `login` does not
->   require it, and no operation is gated on it. Verification is therefore **advisory in this build**: the
->   link must work, but confirming an address changes nothing yet. What it should gate is a product and
->   security decision (docs/09 5.8 names it), not something a screen may imply.
-> - **There is no re-send operation.** `issueEmailToken` is called by `signup` and by
->   `request-password-reset` only, so an expired `VERIFY_EMAIL` token has **no in-app recovery** — the
->   honest reason it costs nothing today is the bullet above. Adding one is a self-service,
->   session-scoped `POST /auth/resend-verification`; it is unscheduled and named here rather than
->   discovered later.
+> - **`verify-email` sets `users.email_verified_at`, and whether that gates anything is the deployment's
+>   choice** (task 0.6.5). `REQUIRE_EMAIL_VERIFICATION` (config, default **false**) makes the global
+>   `EmailVerifiedGuard` refuse every route except `/auth/*` with **`EMAIL_NOT_VERIFIED`** (`403`,
+>   `retryable: true`) — the identity surface stays open (`@AllowUnverified()`), because an unconfirmed
+>   account must still be able to see its own state, re-send the link, fix a typo and sign out. With the
+>   flag off, verification is **advisory**: the link works and `/profile` shows the state, but nothing is
+>   blocked. The flag is read once per request **only when it is on** — the session resolver skips the
+>   user read on the default path — and `GET /auth/me` reports `emailVerificationRequired`, so the client
+>   can tell an advisory state from a blocking one and the shell's banner renders only for the latter.
+> - **Re-sending is `POST /auth/resend-verification`** (authenticated, `204`, rate-limited to 3 per
+>   window). It targets the **session's own** address and takes no body, so it is neither an open relay
+>   nor an enumeration oracle, and it is a quiet no-op for an already-confirmed account. `issueEmailToken`
+>   invalidates any outstanding link for the purpose, so only the newest one works.
+> - **Production requires `SMTP_URL`.** The schema refuses to boot without it, because `MailService`
+>   otherwise *logs the message body* instead of sending it — a verification or reset link written to a
+>   log file. `MAIL_FROM` is optional and names a sender the provider has verified; the default is
+>   `noreply@finmate.local`, which no relay will accept.
 >
 > **Profile and sessions (shipped, task 0.6.4).** docs/02 §4.18's **Profil** section is
 > `/profile`, and it is served by six more REST routes on the same controller — an account's own
@@ -284,6 +292,7 @@ type ConflictError {
 > | `POST /auth/change-password` | session **+ current password** | `{ currentPassword, newPassword }` → `204`; revokes every other session |
 > | `POST /auth/change-email` | session **+ password** | `{ email, password }` → `204`; **stages** the address and mails a `CHANGE_EMAIL` link |
 > | `POST /auth/confirm-email-change` | **public** | `{ token }` → `204`; moves `email`, clears `pending_email`, marks it verified |
+> | `POST /auth/resend-verification` | session | no body → `204`; a fresh `VERIFY_EMAIL` link to this account's own address (see the verification bullets above) |
 > | `GET /auth/sessions` | session | `[{ id, current, createdAt, lastSeenAt, expiresAt }]` |
 > | `POST /auth/sessions/revoke-others` | session | `{ revoked }` |
 > | `DELETE /auth/sessions/:id` | session | `{ revoked, current }` — `current` means the caller ended the session it is using |

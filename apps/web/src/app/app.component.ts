@@ -32,6 +32,7 @@ import { InstallSheetComponent } from './shared/ui/install-sheet/install-sheet.c
 import { LanguageSwitcherComponent } from './shared/ui/language-switcher/language-switcher.component';
 import { SyncChipComponent } from './shared/ui/sync-chip/sync-chip.component';
 import { ThemeToggleComponent } from './shared/ui/theme-toggle/theme-toggle.component';
+import { VerifyBannerComponent } from './shared/ui/verify-banner/verify-banner.component';
 
 /**
  * The routes a signed-out visitor belongs on (docs/02 §2), as paths.
@@ -88,6 +89,7 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
     ThemeToggleComponent,
     AvatarComponent,
     BrandComponent,
+    VerifyBannerComponent,
   ],
   template: `
     <a class="skip-link" href="#main">{{ i18n.t('app.skipToContent') }}</a>
@@ -290,6 +292,9 @@ const AUTH_PATHS: readonly string[] = ['/sign-in', '/sign-up', '/reset-password'
                inside the main region rather than as a fourth grid area, because the layout is named areas
                and a banner that appears only sometimes must not push the nav out of its row. -->
           <fm-app-update />
+          <!-- docs/06 §2: the blocking half of email verification. Renders only when this deployment
+               requires a confirmed address and this one is not confirmed. -->
+          <fm-verify-banner />
           <!-- docs/07 §4.7's Add-to-Home-Screen sheet (task 4.3.2b). Chrome rather than a screen: it
                opens on its own after the second confirmed capture, wherever the person happens to be,
                and it is deliberately non-modal — §4.7 forbids blocking the app behind an install. -->

@@ -2,6 +2,7 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { ApiError } from '../../common/filters/all-exceptions.filter';
+import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import { runWithTenant } from '../../common/tenancy/tenant-context';
 import { ConfigModule } from '../../config/config.module';
 import { PrismaModule } from '../../prisma/prisma.module';
@@ -24,6 +25,7 @@ describe('profile and sessions (integration)', () => {
   let moduleRef: TestingModule;
   let auth: AuthService;
   let prisma: PrismaService;
+  let rateLimit: RateLimitService;
 
   /** Captured mail, so the test reads the token instead of Mailhog. */
   const sent: { kind: 'verify' | 'reset' | 'change'; to: string; token: string }[] = [];
@@ -53,6 +55,7 @@ describe('profile and sessions (integration)', () => {
 
     auth = moduleRef.get(AuthService);
     prisma = moduleRef.get(PrismaService);
+    rateLimit = moduleRef.get(RateLimitService);
   });
 
   afterAll(async () => {
@@ -69,9 +72,19 @@ describe('profile and sessions (integration)', () => {
     await moduleRef?.close();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sent.length = 0;
+    // The login limiter is Redis-backed, so its counters outlive a test *and* a suite run. Several
+    // cases here sign in a second time, and the per-IP scope is shared (`ipHash: null` hashes to a
+    // constant), so without this the spec passes once and then fails on its own history.
+    await rateLimit.reset('login:ip', 'unknown');
   });
+
+  /** The most recent mail of a kind, since a flow can send more than one. */
+  const lastMail = (kind: 'verify' | 'reset' | 'change') => {
+    const matches = sent.filter((entry) => entry.kind === kind);
+    return matches[matches.length - 1];
+  };
 
   const uniqueEmail = (): string =>
     `profile-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`;
@@ -226,5 +239,30 @@ describe('profile and sessions (integration)', () => {
     expect(revoked).toBeGreaterThanOrEqual(1);
     expect(await isSessionLive(sessionId)).toBe(true);
     expect(await isSessionLive(other)).toBe(false);
+  });
+
+  it('re-sends a verification link and invalidates the previous one', async () => {
+    const { userId } = await signup(uniqueEmail());
+    const first = lastMail('verify');
+    expect(first).toBeDefined();
+
+    await auth.resendVerification(userId);
+    const second = lastMail('verify');
+    expect(second?.token).not.toBe(first?.token);
+
+    // The older link is dead; only the newest works (issueEmailToken invalidates the rest).
+    await expect(auth.verifyEmail(first!.token)).rejects.toBeInstanceOf(ApiError);
+    await auth.verifyEmail(second!.token);
+    expect((await auth.profile(userId)).emailVerified).toBe(true);
+  });
+
+  it('sends nothing more once the address is confirmed', async () => {
+    const { userId } = await signup(uniqueEmail());
+    const token = lastMail('verify')!.token;
+    await auth.verifyEmail(token);
+
+    sent.length = 0;
+    await auth.resendVerification(userId);
+    expect(sent).toHaveLength(0);
   });
 });

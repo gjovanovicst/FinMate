@@ -85,6 +85,14 @@ import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../auth/password-polic
             </span>
           </div>
 
+          @if (!me.emailVerified) {
+            <!-- Self-service recovery for an expired link (task 0.6.5): the API accepts no address
+                 here, so this can only ever mail the account's own. -->
+            <button type="button" class="fm-btn" [disabled]="busy()" (click)="resendVerification()">
+              {{ i18n.t('verify.resend') }}
+            </button>
+          }
+
           @if (me.pendingEmail) {
             <p class="note" role="status">
               {{ i18n.t('profile.email.pending', { email: me.pendingEmail }) }}
@@ -410,8 +418,22 @@ export class ProfileComponent {
     this.newPassword.set((event.target as HTMLInputElement).value);
   }
 
-  async saveName(event: Event): Promise<void> {
-    event.preventDefault();
+  /** Re-send the confirmation link to this account's own address (task 0.6.5). */
+  async resendVerification(): Promise<void> {
+    if (this.busy()) return;
+    this.busy.set(true);
+    this.clear();
+    try {
+      await this.auth.resendVerification();
+      this.message.set(this.i18n.t('verify.bannerSent'));
+    } catch (error) {
+      this.error.set(this.errors.for(error));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  async saveName(event: Event): Promise<void> {    event.preventDefault();
     if (this.busy()) return;
     this.busy.set(true);
     this.clear();

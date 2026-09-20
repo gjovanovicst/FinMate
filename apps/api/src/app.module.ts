@@ -2,7 +2,7 @@ import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common
 import { APP_GUARD } from '@nestjs/core';
 
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
-import { AuthenticatedGuard, RolesGuard } from './common/auth/guards';
+import { AuthenticatedGuard, EmailVerifiedGuard, RolesGuard } from './common/auth/guards';
 import { RequestContextMiddleware } from './common/tenancy/request-context.middleware';
 import { ConfigModule } from './config/config.module';
 import { GraphqlModule } from './graphql/graphql.module';
@@ -86,6 +86,10 @@ import { PrismaModule } from './prisma/prisma.module';
     // the first such route appears — until then, deny-by-default is the correct stance.
     { provide: APP_GUARD, useClass: AuthenticatedGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    // Last, so it only ever adds a condition to a request that authenticated successfully. Inert
+    // unless `REQUIRE_EMAIL_VERIFICATION` is true (docs/06 §2); the identity routes opt out with
+    // `@AllowUnverified()` because an unconfirmed account must still be able to fix itself.
+    { provide: APP_GUARD, useClass: EmailVerifiedGuard },
   ],
 })
 export class AppModule implements NestModule {

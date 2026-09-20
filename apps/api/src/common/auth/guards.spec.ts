@@ -5,7 +5,7 @@ import type { ExecutionContext } from '@nestjs/common';
 
 import { ApiError } from '../filters/all-exceptions.filter';
 import { runWithTenant, type TenantContext } from '../tenancy/tenant-context';
-import { AuthenticatedGuard, Roles, RolesGuard } from './guards';
+import { AuthenticatedGuard, EmailVerifiedGuard, Roles, RolesGuard } from './guards';
 
 const CONTEXT: TenantContext = {
   householdId: '11111111-1111-7111-8111-111111111111',
@@ -98,5 +98,59 @@ describe('RolesGuard (docs/06 §11 role matrix)', () => {
       // CONTEXT is a MEMBER, and AI consent / provider routing are OWNER-only (Q-11).
       expect(() => guard.canActivate(executionContext(handler, C))).toThrow(/does not permit/);
     });
+  });
+});
+
+describe('EmailVerifiedGuard (opt-in, REQUIRE_EMAIL_VERIFICATION)', () => {
+  const reflector = new Reflector();
+  const guardFor = (required: boolean): EmailVerifiedGuard =>
+    new EmailVerifiedGuard(reflector, { REQUIRE_EMAIL_VERIFICATION: required } as never);
+
+  const unverified: TenantContext = { ...CONTEXT, emailVerified: false };
+  const verified: TenantContext = { ...CONTEXT, emailVerified: true };
+
+  it('is inert when the deployment does not require verification', () => {
+    runWithTenant(unverified, () => {
+      expect(guardFor(false).canActivate(executionContext())).toBe(true);
+    });
+  });
+
+  it('refuses an unconfirmed account when it does require it', () => {
+    runWithTenant(unverified, () => {
+      try {
+        guardFor(true).canActivate(executionContext());
+        throw new Error('expected a rejection');
+      } catch (error) {
+        // Its own code, not FORBIDDEN: the client's answer is to offer a re-send, not to give up.
+        expect((error as ApiError).code).toBe('EMAIL_NOT_VERIFIED');
+        expect((error as ApiError).retryable).toBe(true);
+      }
+    });
+  });
+
+  it('allows a confirmed account', () => {
+    runWithTenant(verified, () => {
+      expect(guardFor(true).canActivate(executionContext())).toBe(true);
+    });
+  });
+
+  it('lets @AllowUnverified() through, so an unconfirmed account can fix itself', () => {
+    const handler = function resend(): void {};
+    Reflect.defineMetadata('finmate:allow-unverified', true, handler);
+    runWithTenant(unverified, () => {
+      expect(guardFor(true).canActivate(executionContext(handler))).toBe(true);
+    });
+  });
+
+  it('lets @Public() through, so login stays reachable', () => {
+    const handler = function login(): void {};
+    Reflect.defineMetadata('finmate:public', true, handler);
+    runWithTenant(unverified, () => {
+      expect(guardFor(true).canActivate(executionContext(handler))).toBe(true);
+    });
+  });
+
+  it('does not authenticate: a request with no context is left to AuthenticatedGuard', () => {
+    expect(guardFor(true).canActivate(executionContext())).toBe(true);
   });
 });

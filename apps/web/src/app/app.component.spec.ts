@@ -55,6 +55,7 @@ const SESSION = {
   locale: 'en',
   emailVerified: true,
   pendingEmail: null,
+  emailVerificationRequired: false,
 };
 
 async function mount(

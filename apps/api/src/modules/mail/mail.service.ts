@@ -149,7 +149,7 @@ export class MailService {
     // The display name is `APP_NAME`, never a literal: AGENTS.md forbids hardcoding the brand, which
     // is a working title (ADR-014). This header used to spell the brand out.
     await this.transporter.sendMail({
-      from: `${this.config.APP_NAME} <noreply@finmate.local>`,
+      from: `${this.config.APP_NAME} <${this.config.MAIL_FROM ?? 'noreply@finmate.local'}>`,
       to,
       subject,
       text,

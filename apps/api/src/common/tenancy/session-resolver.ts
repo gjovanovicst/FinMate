@@ -17,6 +17,8 @@ export interface ResolvedSession {
   readonly userId: string;
   readonly role: TenantContext['role'];
   readonly sessionId: string;
+  /** See `TenantContext.emailVerified`: true unless this deployment requires verification and the address is unconfirmed. */
+  readonly emailVerified: boolean;
 }
 
 export interface SessionResolver {

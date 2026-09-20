@@ -23,6 +23,8 @@ export interface AuthenticatedSession {
   readonly userId: string;
   readonly sessionId: string;
   readonly membership: Membership;
+  /** Whether the address is confirmed. Always `true` unless this deployment requires verification. */
+  readonly emailVerified: boolean;
 }
 
 /** The account's own view of itself — docs/02 §4.18's **Profil** section. */
@@ -589,6 +591,33 @@ export class AuthService {
     });
   }
 
+  /**
+   * Send a fresh confirmation link to the signed-in account's own address.
+   *
+   * Self-service recovery for the case 5.8 left open: a `VERIFY_EMAIL` token expires after an hour,
+   * and until now nothing could issue another one — so an unconfirmed account had no way back in.
+   * It targets the **session's own** address, never one supplied by the caller, which is what keeps
+   * it from being an open relay or an enumeration oracle. Sending to an already-confirmed address is a
+   * quiet no-op: the caller is that account, so there is nothing to conceal and nothing to send.
+   */
+  async resendVerification(userId: string): Promise<void> {
+    const verdict = await this.rateLimit.consume(
+      'verify-resend',
+      userId,
+      3,
+      this.config.LOGIN_WINDOW_SECONDS,
+    );
+    if (!verdict.allowed) {
+      throw new ApiError('RATE_LIMITED', 'Too many requests. Try again later.', true);
+    }
+
+    const user = await this.prisma.client.users.findFirst({ where: { id: userId } });
+    if (!user) throw new ApiError('NOT_FOUND', 'User not found.');
+    if (user.email_verified_at !== null) return;
+
+    await this.issueEmailToken(userId, 'VERIFY_EMAIL');
+  }
+
   private async issueEmailToken(
     userId: string,
     purpose: 'VERIFY_EMAIL' | 'RESET_PASSWORD' | 'CHANGE_EMAIL',
@@ -707,11 +736,22 @@ export class AuthService {
     const membership = await this.memberships.activeMembership(claims.userId);
     if (!membership) return null;
 
+    // Only read the flag when the deployment actually gates on it: the default path must not pay a
+    // query per request for a value nothing consults.
+    let emailVerified = true;
+    if (this.config.REQUIRE_EMAIL_VERIFICATION) {
+      const user = await this.prisma.client.users.findFirst({
+        where: { id: claims.userId },
+        select: { email_verified_at: true },
+      });
+      emailVerified = user !== null && user.email_verified_at !== null;
+    }
+
     // Best-effort liveness tracking; a failure here must not break the request.
     void this.prisma.client.sessions
       .update({ where: { id: session.id }, data: { last_seen_at: new Date() } })
       .catch(() => undefined);
 
-    return { userId: claims.userId, sessionId: session.id, membership };
+    return { userId: claims.userId, sessionId: session.id, membership, emailVerified };
   }
 }

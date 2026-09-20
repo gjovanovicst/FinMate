@@ -28,6 +28,16 @@ export interface TenantContext {
    * contexts always set it, and `requireSessionId` fails closed when a caller needs one.
    */
   readonly sessionId?: string;
+  /**
+   * Whether the account's email address is confirmed.
+   *
+   * Carried on the context so the `EmailVerifiedGuard` can refuse a request without a second read:
+   * the session resolver already loads the user when — and only when — this deployment requires
+   * verification (`REQUIRE_EMAIL_VERIFICATION`), so the default path pays nothing for it. `undefined`
+   * on a synthetic context (signup, background jobs), which the guard treats as "not applicable"
+   * rather than "unverified".
+   */
+  readonly emailVerified?: boolean;
   /** Correlation id so a log line, an audit row and an AI call can be tied together. */
   readonly requestId: string;
 }

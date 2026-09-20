@@ -23,6 +23,12 @@ import { TenancyError } from '../tenancy/tenancy.extension';
 export type ApiErrorCode =
   | 'UNAUTHENTICATED'
   | 'FORBIDDEN'
+  /**
+   * Authenticated, but the account's email address is unconfirmed and this deployment requires it
+   * (`REQUIRE_EMAIL_VERIFICATION`). Its own code rather than `FORBIDDEN` because the client's answer
+   * is specific and safe: offer a re-send, do not give up on the session.
+   */
+  | 'EMAIL_NOT_VERIFIED'
   | 'NOT_FOUND'
   | 'VALIDATION_FAILED'
   | 'CONFLICT'
@@ -35,6 +41,7 @@ export type ApiErrorCode =
 const STATUS_BY_CODE: Record<ApiErrorCode, HttpStatus> = {
   UNAUTHENTICATED: HttpStatus.UNAUTHORIZED,
   FORBIDDEN: HttpStatus.FORBIDDEN,
+  EMAIL_NOT_VERIFIED: HttpStatus.FORBIDDEN,
   NOT_FOUND: HttpStatus.NOT_FOUND,
   VALIDATION_FAILED: HttpStatus.BAD_REQUEST,
   CONFLICT: HttpStatus.CONFLICT,

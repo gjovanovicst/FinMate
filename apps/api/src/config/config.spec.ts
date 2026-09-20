@@ -91,6 +91,42 @@ describe('a blank env var means "unset"', () => {
 });
 
 /**
+ * Email is required in production (docs/09 §5.8, task 0.6.5).
+ *
+ * With `SMTP_URL` unset `MailService` logs the message body instead of sending it — a development
+ * convenience that in production means a password-reset link written to a log file, and a person who
+ * never receives it. The schema refuses to boot without it there, which is the loud version of that
+ * mistake; development keeps the Mailhog-or-log behaviour.
+ */
+describe('SMTP_URL is required in production', () => {
+  const PROD = {
+    ...BASE,
+    NODE_ENV: 'production' as const,
+    JWT_SECRET: 'a-production-secret-that-is-long-enough',
+  };
+
+  it('refuses to boot without it', () => {
+    expect(() => loadConfig({ ...PROD })).toThrow(/SMTP_URL is required in production/);
+  });
+
+  it('accepts a relay URL', () => {
+    expect(loadConfig({ ...PROD, SMTP_URL: 'smtp://relay.example.com:587' }).SMTP_URL).toBe(
+      'smtp://relay.example.com:587',
+    );
+  });
+
+  it('keeps it optional in development', () => {
+    expect(() => loadConfig({ ...BASE })).not.toThrow();
+  });
+
+  it('reads MAIL_FROM, so a deployment can name a sender the provider has verified', () => {
+    expect(loadConfig({ ...BASE, MAIL_FROM: 'FinMate <no-reply@example.com>' }).MAIL_FROM).toBe(
+      'FinMate <no-reply@example.com>',
+    );
+  });
+});
+
+/**
  * `PUBLIC_API_PREFIX` — the browser's path to this API (R-26, task 4.3.5).
  *
  * It scopes the refresh cookie, so a wrong value is not a cosmetic mistake: a prefix the browser never

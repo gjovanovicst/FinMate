@@ -38,6 +38,7 @@ function mount(): {
         locale: 'en',
         emailVerified: true,
         pendingEmail: null,
+        emailVerificationRequired: false,
       }),
     ),
   };

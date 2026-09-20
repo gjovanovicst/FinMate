@@ -81,7 +81,12 @@ function profileStub(initial: Profile = PROFILE, sessions: readonly AccountSessi
 }
 
 async function mount(service = profileStub()) {
-  const auth = { refresh: vi.fn(async () => undefined), clear: vi.fn(), rememberLocale: vi.fn() };
+  const auth = {
+    refresh: vi.fn(async () => undefined),
+    clear: vi.fn(),
+    rememberLocale: vi.fn(),
+    resendVerification: vi.fn(async () => undefined),
+  };
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     providers: [
@@ -179,5 +184,20 @@ describe('ProfileComponent', () => {
     await component.revokeOthers();
     expect(service.revokeOtherSessions).toHaveBeenCalled();
     expect(component.message()).toContain('2');
+  });
+
+  it('offers a re-send when the address is not confirmed, and nothing when it is', async () => {
+    const unverified = await mount(profileStub({ ...PROFILE, emailVerified: false }));
+    await unverified.component.resendVerification();
+    expect(unverified.auth.resendVerification).toHaveBeenCalled();
+    expect(unverified.component.message()).toBeTruthy();
+  });
+
+  it('shows no re-send control for a confirmed address', async () => {
+    const { fixture } = await mount();
+    const labels = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('button'),
+    ).map((button) => button.textContent ?? '');
+    expect(labels.some((label) => label.includes('Send the link again'))).toBe(false);
   });
 });

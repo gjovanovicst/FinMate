@@ -17,7 +17,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { AuthenticatedGuard, Public } from '../../common/auth/guards';
+import { AllowUnverified, AuthenticatedGuard, Public } from '../../common/auth/guards';
 import { CurrentTenant } from '../../common/auth/current-tenant.decorator';
 import { readCookie, REFRESH_TOKEN_COOKIE, ACCESS_TOKEN_COOKIE } from '../../common/tenancy/session-resolver';
 import { requireSessionId, type TenantContext } from '../../common/tenancy/tenant-context';
@@ -59,7 +59,13 @@ import { AuthService, type AuthTokens, type ProfileView, type SessionView } from
  *
  * Rate limiting lives in `AuthService` rather than in a decorator, because the limiter needs the
  * email address and the IP hash — request-level metadata a guard cannot see cleanly.
+ *
+ * The whole controller is `@AllowUnverified()`: when this deployment requires a confirmed address
+ * (`REQUIRE_EMAIL_VERIFICATION`), an unconfirmed account must still be able to see its own state,
+ * resend the link, fix a typo, change its password and sign out. What it cannot reach is anybody's
+ * data — the guard refuses every other route, GraphQL included.
  */
+@AllowUnverified()
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -154,6 +160,20 @@ export class AuthController {
   }
 
   /**
+   * Send a fresh confirmation link to this account's own address.
+   *
+   * Authenticated, so the address is the session's and never the caller's input — no open relay, no
+   * enumeration oracle. 204 whatever happens (including an already-confirmed address), because the
+   * only thing a different answer could reveal is something about their own account that they can
+   * already see on `/profile`.
+   */
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async resendVerification(@CurrentTenant() tenant: TenantContext): Promise<void> {
+    await this.auth.resendVerification(tenant.userId);
+  }
+
+  /**
    * Current session identity. Protected: it is the smallest useful proof that the access token was
    * verified, the session loaded, the Membership resolved and the TenantContext established.
    */
@@ -171,6 +191,14 @@ export class AuthController {
     locale: string;
     emailVerified: boolean;
     pendingEmail: string | null;
+    /**
+     * Whether **this deployment** refuses an unconfirmed account (`REQUIRE_EMAIL_VERIFICATION`).
+     *
+     * Exposed so the client can tell an advisory state from a blocking one: with it false the
+     * interface says nothing about confirming an address, because nothing is waiting on it. It is a
+     * deployment capability, like `pushPublicKey`, not a property of the account.
+     */
+    emailVerificationRequired: boolean;
   }> {
     // The session's own identity plus the account fields the shell renders (its account block shows
     // the display name since 0.6.4) and the profile screen edits. One read, because every caller of
@@ -186,6 +214,7 @@ export class AuthController {
       locale: profile.locale,
       emailVerified: profile.emailVerified,
       pendingEmail: profile.pendingEmail,
+      emailVerificationRequired: this.config.REQUIRE_EMAIL_VERIFICATION,
     };
   }
 

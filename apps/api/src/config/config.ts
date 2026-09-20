@@ -93,6 +93,15 @@ export const envSchema = z
         .default(''),
     ),
     SMTP_URL: optionalText,
+    /**
+     * The envelope sender for outbound mail.
+     *
+     * Optional, because a deployment that sends through a relay often has one canonical address and
+     * `noreply@<domain>` is a fine default. It exists because most providers reject a sender they have
+     * not verified, and a hardcoded `.local` address cannot be verified anywhere — so a real
+     * deployment names its own sender here rather than editing the service.
+     */
+    MAIL_FROM: optionalText,
 
     /** Login throttling (docs/08 §3 — credential stuffing is threat T-02). */
     LOGIN_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
@@ -220,6 +229,20 @@ export const envSchema = z
         code: 'custom',
         path: ['JWT_SECRET'],
         message: 'Refusing to boot in production with the development JWT_SECRET placeholder.',
+      });
+    }
+
+    // Email is not optional in production. Verification links, password resets and alert emails all
+    // go through `MailService`, and with `SMTP_URL` unset that service **logs the message body
+    // instead of sending it** — which in production means a password-reset link written to the log
+    // file and a user who never receives it. Failing at boot is the loud version of that mistake.
+    if (env.NODE_ENV === 'production' && env.SMTP_URL === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SMTP_URL'],
+        message:
+          'SMTP_URL is required in production. Without it every verification mail, password reset ' +
+          'and alert is logged rather than sent (docs/09 §5.8).',
       });
     }
 

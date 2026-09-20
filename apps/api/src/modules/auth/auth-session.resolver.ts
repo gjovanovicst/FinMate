@@ -36,6 +36,7 @@ export class AuthSessionResolver implements SessionResolver {
       userId: session.userId,
       role: session.membership.role,
       sessionId: session.sessionId,
+      emailVerified: session.emailVerified,
     };
   }
 }

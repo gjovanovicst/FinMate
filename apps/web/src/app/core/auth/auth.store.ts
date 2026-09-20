@@ -20,6 +20,13 @@ export interface Session {
   readonly emailVerified: boolean;
   /** A staged address change awaiting its confirmation link, or `null`. */
   readonly pendingEmail: string | null;
+  /**
+   * Whether this deployment refuses an unconfirmed account (`REQUIRE_EMAIL_VERIFICATION`).
+   *
+   * A deployment capability, not an account property — it is what tells the client whether an
+   * unconfirmed address is advisory or blocking (docs/06 §2).
+   */
+  readonly emailVerificationRequired: boolean;
 }
 
 /**
@@ -131,6 +138,19 @@ export class AuthStore {
    */
   async verifyEmail(token: string): Promise<void> {
     await firstValueFrom(this.http.post('/api/auth/verify-email', { token }));
+    // The session's cached `emailVerified` is now stale, and when this deployment requires
+    // confirmation the guard would otherwise keep refusing the next request.
+    await this.refresh();
+  }
+
+  /**
+   * Send a fresh confirmation link to this account's own address (task 0.6.5).
+   *
+   * Self-service recovery for an expired `VERIFY_EMAIL` token — 5.8 left the flow with no way back
+   * in. The address is the session's, never one supplied here: the API takes no body.
+   */
+  async resendVerification(): Promise<void> {
+    await firstValueFrom(this.http.post('/api/auth/resend-verification', {}));
   }
 
   /**
