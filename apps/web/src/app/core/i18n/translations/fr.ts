@@ -1449,7 +1449,7 @@ export const fr: Record<keyof typeof en, string> = {
   'onboarding.accounts.title': 'Où se trouve ton argent ?',
   'onboarding.accounts.lede': 'Chaque saisie a besoin d’un compte. Un seul suffit pour commencer.',
   'onboarding.accounts.currency': 'Devise',
-  'onboarding.accounts.currencyHint': 'Une seule devise par foyer (RSD).',
+  'onboarding.accounts.currencyHint': 'Une seule devise par foyer ({currency}).',
   'onboarding.accounts.name': 'Nom',
   'onboarding.accounts.kind': 'Type',
   'onboarding.accounts.defaultName': 'Espèces',

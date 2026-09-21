@@ -1474,7 +1474,7 @@ export const de: Record<keyof typeof en, string> = {
   'onboarding.accounts.title': 'Wo liegt dein Geld?',
   'onboarding.accounts.lede': 'Jeder Eintrag braucht ein Konto. Eines reicht zum Anfang.',
   'onboarding.accounts.currency': 'Währung',
-  'onboarding.accounts.currencyHint': 'Eine Währung pro Haushalt (RSD).',
+  'onboarding.accounts.currencyHint': 'Eine Währung pro Haushalt ({currency}).',
   'onboarding.accounts.name': 'Name',
   'onboarding.accounts.kind': 'Art',
   'onboarding.accounts.defaultName': 'Bargeld',

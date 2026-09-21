@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 
-import { parseAmount } from '@finmate/domain';
+import { DEFAULT_LEDGER_CURRENCY, parseAmount } from '@finmate/domain';
 
 import { ErrorMessageService } from '../../core/api/error-message.service';
 import { OnboardingStore } from '../../core/onboarding/onboarding.store';
@@ -118,9 +118,11 @@ import {
           @case ('accounts') {
             <label class="field">
               <span class="field__label">{{ i18n.t('onboarding.accounts.currency') }}</span>
-              <input class="input" type="text" value="RSD" readonly />
+              <input class="input" type="text" [value]="currency()" readonly />
             </label>
-            <p class="hint">{{ i18n.t('onboarding.accounts.currencyHint') }}</p>
+            <p class="hint">
+              {{ i18n.t('onboarding.accounts.currencyHint', { currency: currency() }) }}
+            </p>
 
             <label class="field">
               <span class="field__label">{{ i18n.t('onboarding.accounts.name') }}</span>
@@ -128,7 +130,8 @@ import {
                 class="input"
                 type="text"
                 name="accountName"
-                [(ngModel)]="accountName"
+                [ngModel]="accountName()"
+                (ngModelChange)="accountName.set($event)"
                 [disabled]="busy()"
               />
             </label>
@@ -515,6 +518,13 @@ export class OnboardingComponent {
   /** Server truth, used for the per-step gate and the step headers. */
   readonly accounts = signal(0);
   readonly categoryCount = signal(0);
+  /**
+   * The Household's ledger currency, served by `onboardingState` (ADR-045 lets the reader choose it
+   * at signup). Step 2 shows it and step 5 prices its budget in it, so neither may assume the
+   * shipped default — the wizard used to hardcode `RSD` and would have written a JPY budget 100×
+   * too large. The initial value only covers the moment before `load()` answers.
+   */
+  readonly currency = signal<string>(DEFAULT_LEDGER_CURRENCY);
   /** Category id → breadcrumb, for the step-3 cards. */
   private readonly categoryNames = signal<ReadonlyMap<string, string>>(new Map());
 
@@ -527,11 +537,12 @@ export class OnboardingComponent {
    * The account-name field's starting value.
    *
    * Seeded from the catalogue rather than typed here: it used to be the literal `Keš`, so an English
-   * reader was handed a Serbian account name before typing a character. Assigned **once** in the
+   * reader was handed a Serbian account name before typing a character. Seeded **once** in the
    * constructor, because from then on it is the user's own text — re-seeding it on a locale change
-   * would overwrite what they typed.
+   * would overwrite what they typed. A signal because step 2's Continue gate reads it: it is what
+   * that button would write, and the button has to enable as the name changes.
    */
-  accountName: string;
+  readonly accountName = signal('');
   accountKind: 'CASH' | 'BANK' | 'CARD' | 'OTHER' = 'CASH';
 
   peopleInput = '';
@@ -565,7 +576,7 @@ export class OnboardingComponent {
   readonly canContinue = computed(() => canContinueStep(this.step(), this.draft()));
 
   constructor() {
-    this.accountName = this.i18n.t('onboarding.accounts.defaultName');
+    this.accountName.set(this.i18n.t('onboarding.accounts.defaultName'));
     void this.load();
   }
 
@@ -577,6 +588,9 @@ export class OnboardingComponent {
       // could never enable the button that seeds (docs/02 §4.1).
       starterCount: this.tree().categories,
       accountCount: this.accounts(),
+      // Step 2's Continue *is* `createAccount`, so the name is what it would write — the count alone
+      // is zero until that write runs.
+      accountNameProvided: this.accountName().trim() !== '',
       acceptedPeople: this.addedPeople().size,
       selectedMerchants: this.selectedMerchants().length,
     };
@@ -599,6 +613,7 @@ export class OnboardingComponent {
       this.step.set(clampStep(state.step));
       this.categoryCount.set(state.categories);
       this.accounts.set(state.accounts);
+      this.currency.set(state.currency);
       this.categories.set(categories.categories);
       this.categoryNames.set(new Map(categories.categories.map((row) => [row.id, row.path.join(' \u203a ')])));
     } catch (failure) {
@@ -688,8 +703,8 @@ export class OnboardingComponent {
       case 'accounts':
         // Step 2 is "your first account": on a resume the Household already has one, and creating a
         // second would be a duplicate the user did not ask for.
-        if (this.accounts() === 0 && this.accountName.trim() !== '') {
-          await this.createAccount({ name: this.accountName.trim(), kind: this.accountKind });
+        if (this.accounts() === 0 && this.accountName().trim() !== '') {
+          await this.createAccount({ name: this.accountName().trim(), kind: this.accountKind });
         }
         return;
 
@@ -708,11 +723,14 @@ export class OnboardingComponent {
         const amount = this.budgetAmount.trim();
         if (amount === '') return;
         // The API rejects a JSON number for Money (ADR-003), so the minor units go as a string.
-        // RSD is the Household's ledger currency (ADR-011); one currency per household.
-        const parsed = parseAmount(amount, 'RSD');
+        // The currency is the Household's own (ADR-011/ADR-045): parsing an amount in the wrong one
+        // mis-scales every currency whose minor-unit exponent is not 2, and the server takes the
+        // currency from the Household anyway, so the client must speak the same one.
+        const currency = this.currency();
+        const parsed = parseAmount(amount, currency);
         if (!parsed.money) throw new Error(this.i18n.t('onboarding.plan.invalid'));
         await this.graphql.query(UPSERT_BUDGET, {
-          amount: { amountMinor: parsed.money.amountMinor.toString(), currency: 'RSD' },
+          amount: { amountMinor: parsed.money.amountMinor.toString(), currency },
           categoryId: null,
           period: 'MONTHLY',
         });
@@ -880,6 +898,7 @@ interface OnboardingState {
   readonly step: number;
   readonly categories: number;
   readonly accounts: number;
+  readonly currency: string;
 }
 
 interface SelectionResult {
@@ -906,6 +925,7 @@ const ONBOARDING_STATE = /* GraphQL */ `
       step
       categories
       accounts
+      currency
     }
   }
 `;

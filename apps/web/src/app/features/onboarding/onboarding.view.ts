@@ -360,6 +360,17 @@ export interface OnboardingDraft {
    */
   readonly starterCount: number;
   readonly accountCount: number;
+  /**
+   * Whether the account-name field holds something step 2's Continue could write.
+   *
+   * Step 2's Continue **is** `createAccount` (docs/02 §4.1's *Seeds* column), so its gate has to read
+   * what pressing it would create — {@link accountCount} is zero precisely because that write has not
+   * run yet. It read the count alone, so on a fresh Household Continue was disabled and *Skip (use
+   * cash)* was the only way forward: the name and kind the person had just typed were thrown away and
+   * every Household got the default cash account. The same deadlock step 1 had, fixed after 2.3.3b
+   * and left standing here.
+   */
+  readonly accountNameProvided: boolean;
   /** Step-3 proposals the user has accepted. */
   readonly acceptedPeople: number;
   readonly selectedMerchants: number;
@@ -375,8 +386,9 @@ export interface OnboardingDraft {
  *    only when that write would have nothing to write. It is enabled for a Household that has no
  *    categories yet — which is the normal fresh state, and the whole point of the step. *Skip* stays
  *    the control for "I want an empty tree" (docs/02 §4.1).
- *  - step 2 with no accounts: a Transaction needs one (I-4), so Continue is allowed only once at least
- *    one exists — the step's own "use cash" default satisfies this.
+ *  - step 2 with no name and no account: Continue calls `createAccount`, so it is enabled when the
+ *    name field holds something to write (it is pre-filled with the catalogue's default) or the
+ *    Household already has an account. *Skip (use cash)* is what creates the plain cash account.
  *  - steps 3–5 accept anything, including nothing.
  *  - step 6 needs at least one account, because it commits a real Transaction.
  */
@@ -394,6 +406,9 @@ export function canContinue(step: number, draft: OnboardingDraft): boolean {
       // Household's own count cannot gate it — it is zero until this very write runs.
       return draft.categoryCount > 0 || draft.starterCount > 0;
     case 'accounts':
+      // Continue is `createAccount`. The Household's own count is zero until that very write runs, so
+      // it cannot be the only gate — the name the step is about to write is the other half.
+      return draft.accountCount > 0 || draft.accountNameProvided;
     case 'firstEntry':
       // Step 6 commits a real Transaction, which needs an Account (I-4).
       return draft.accountCount > 0;

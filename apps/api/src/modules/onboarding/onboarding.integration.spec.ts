@@ -412,6 +412,29 @@ describe('F-13 onboarding (integration)', () => {
     expect(state.accounts).toBe(0);
   });
 
+  it('serves the Household ledger currency, not the shipped default', async () => {
+    // ADR-045 lets the reader choose the currency at signup, so the wizard cannot assume RSD — it
+    // displays it on step 2 and prices the step-5 budget in it.
+    expect((await asTenant(() => onboarding.state(householdId))).currency).toBe('RSD');
+
+    await asTenant(() =>
+      prisma.client.households.update({
+        where: { id: householdId },
+        data: { ledger_currency: 'EUR' },
+      }),
+    );
+    try {
+      expect((await asTenant(() => onboarding.state(householdId))).currency).toBe('EUR');
+    } finally {
+      await asTenant(() =>
+        prisma.client.households.update({
+          where: { id: householdId },
+          data: { ledger_currency: 'RSD' },
+        }),
+      );
+    }
+  });
+
   it('keeps one Household’s onboarding invisible to another', async () => {
     const other = await runWithTenant(otherContext, () => onboarding.state(otherHouseholdId));
     expect(other.step).toBe(1);

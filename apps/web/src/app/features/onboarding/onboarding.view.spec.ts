@@ -287,6 +287,7 @@ describe('canContinue', () => {
     // but a document that Continue can write.
     starterCount: 39,
     accountCount: 0,
+    accountNameProvided: false,
     acceptedPeople: 0,
     selectedMerchants: 0,
     ...over,
@@ -305,10 +306,17 @@ describe('canContinue', () => {
     expect(canContinue(1, draft({ categoryCount: 0, starterCount: 0 }))).toBe(false);
   });
 
-  it('requires an account before step 2 and step 6 can proceed', () => {
+  it('enables Continue on step 2 for a fresh Household when the name holds something to write', () => {
+    // Step 2's Continue **is** `createAccount`, so the gate has to read what it would write. Reading
+    // `accountCount` alone disabled the only control that creates the account — a fresh Household had
+    // to press *Skip (use cash)*, which ignored the name and kind just typed. Same deadlock as step 1.
+    expect(canContinue(2, draft({ accountCount: 0, accountNameProvided: true }))).toBe(true);
+    expect(canContinue(2, draft({ accountCount: 0, accountNameProvided: false }))).toBe(false);
+    expect(canContinue(2, draft({ accountCount: 1, accountNameProvided: false }))).toBe(true);
+  });
+
+  it('requires an account before step 6 can proceed', () => {
     // A Transaction needs an Account (I-4), and step 6 commits one.
-    expect(canContinue(2, draft({ accountCount: 0 }))).toBe(false);
-    expect(canContinue(2, draft({ accountCount: 1 }))).toBe(true);
     expect(canContinue(6, draft({ accountCount: 0 }))).toBe(false);
     expect(canContinue(6, draft({ accountCount: 1 }))).toBe(true);
   });

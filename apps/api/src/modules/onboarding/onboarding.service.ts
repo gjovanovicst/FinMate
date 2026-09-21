@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import {
+  DEFAULT_LEDGER_CURRENCY,
   SEED_VERSION,
   SHIPPED_MERCHANTS,
   flattenStarterCategories,
@@ -50,6 +51,11 @@ export interface OnboardingStateView {
   readonly completedAt: Date | null;
   /** The seed version this Household accepted, `null` when it skipped the tree. */
   readonly seedVersion: number | null;
+  /**
+   * The Household's ledger currency (ADR-011, chosen at signup by ADR-045). The wizard shows it and
+   * parses its budget against it, so it must not assume the shipped default.
+   */
+  readonly currency: string;
   readonly categories: number;
   readonly keywords: number;
   readonly merchants: number;
@@ -114,7 +120,7 @@ export class OnboardingService {
     const [household, categories, keywords, merchants, accounts] = await Promise.all([
       this.prisma.client.households.findFirst({
         where: { id: householdId },
-        select: { settings: true },
+        select: { settings: true, ledger_currency: true },
       }),
       this.prisma.client.categories.count({ where: { household_id: householdId, deleted_at: null } }),
       this.prisma.client.category_keywords.count({ where: { household_id: householdId } }),
@@ -127,6 +133,7 @@ export class OnboardingService {
       step: document.step,
       completedAt: document.completedAt === null ? null : new Date(document.completedAt),
       seedVersion: document.seedVersion,
+      currency: household?.ledger_currency ?? DEFAULT_LEDGER_CURRENCY,
       categories,
       keywords,
       merchants,

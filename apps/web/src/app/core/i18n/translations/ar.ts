@@ -1293,7 +1293,7 @@ export const ar: Record<keyof typeof en, string> = {
   'onboarding.accounts.title': "أين يوجد أموالك؟",
   'onboarding.accounts.lede': "يحتاج كل قيد إلى حساب. وواحد يكفي للبدء.",
   'onboarding.accounts.currency': "العملة",
-  'onboarding.accounts.currencyHint': "عملة واحدة لكل منزل (RSD).",
+  'onboarding.accounts.currencyHint': "عملة واحدة لكل منزل ({currency}).",
   'onboarding.accounts.name': "الاسم",
   'onboarding.accounts.kind': "النوع",
   'onboarding.accounts.defaultName': "نقدًا",

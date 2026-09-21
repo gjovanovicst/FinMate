@@ -44,6 +44,8 @@ interface StubOptions {
     step: number;
     categories: number;
     accounts: number;
+    /** The Household's ledger currency (ADR-045). Defaults to the shipped one, as most specs assume. */
+    currency?: string;
   };
   readonly onMutation?: (document: string, variables: Record<string, unknown>) => unknown;
 }
@@ -64,7 +66,10 @@ function stubClient(options: StubOptions = {}) {
     }
     if (document.includes('OnboardingState')) {
       return Promise.resolve({
-        onboardingState: options.state ?? { step: 1, categories: 0, accounts: 0 },
+        onboardingState: {
+          currency: 'RSD',
+          ...(options.state ?? { step: 1, categories: 0, accounts: 0 }),
+        },
       });
     }
 
@@ -245,6 +250,37 @@ describe('OnboardingComponent (mounted)', () => {
     expect(created?.variables).toMatchObject({ kind: 'CASH' });
   });
 
+  it('enables Continue on step 2 so the typed account is the one created', async () => {
+    // Continue on step 2 is `createAccount`, so it must be live before an account exists: reading the
+    // count alone disabled the one control that writes it, and only *Skip (use cash)* — which ignores
+    // the typed name and kind — could move on.
+    const { fixture, component, stub } = await mount({
+      state: { step: 2, categories: 39, accounts: 0 },
+    });
+
+    // The field is pre-filled from the catalogue, so a fresh Household can continue immediately.
+    expect(buttonByText(fixture, 'Continue').disabled).toBe(false);
+
+    component.accountName.set('Banca Intesa');
+    component.accountKind = 'BANK';
+    fixture.detectChanges();
+    buttonByText(fixture, 'Continue').click();
+    await fixture.whenStable();
+
+    const created = stub.mutations.find((entry) => entry.document.includes('OnboardingAccount'));
+    expect(created?.variables).toMatchObject({ name: 'Banca Intesa', kind: 'BANK' });
+  });
+
+  it('keeps step 2 Continue disabled while the name is empty', async () => {
+    const { fixture, component } = await mount({ state: { step: 2, categories: 39, accounts: 0 } });
+    expect(buttonByText(fixture, 'Continue').disabled).toBe(false);
+
+    component.accountName.set('   ');
+    fixture.detectChanges();
+
+    expect(buttonByText(fixture, 'Continue').disabled).toBe(true);
+  });
+
   it('does not create a second account for a resumed Household', async () => {
     const { fixture, stub } = await mount({ state: { step: 2, categories: 39, accounts: 2 } });
     expect(text(fixture)).not.toContain('Skip (use cash)');
@@ -420,6 +456,32 @@ describe('OnboardingComponent (mounted)', () => {
 
     const budget = stub.mutations.find((entry) => entry.document.includes('OnboardingBudget'));
     expect(budget?.variables['amount']).toEqual({ amountMinor: '120000', currency: 'RSD' });
+  });
+
+  it('shows the currency chosen at signup on step 2, not the shipped default', async () => {
+    // ADR-045 lets the reader choose the ledger currency at signup, so the wizard must serve it.
+    // This field was the literal `RSD` and told a EUR Household the wrong thing.
+    const { fixture } = await mount({
+      state: { step: 2, categories: 39, accounts: 0, currency: 'EUR' },
+    });
+
+    const field = (fixture.nativeElement as HTMLElement).querySelector('input[readonly]');
+    expect((field as HTMLInputElement).value).toBe('EUR');
+    expect(text(fixture)).toContain('(EUR)');
+  });
+
+  it('prices the budget in the Household currency, not a hardcoded RSD', async () => {
+    // JPY has no minor unit, so parsing it as RSD (2 decimals) inflated the budget 100×.
+    const { fixture, component, stub } = await mount({
+      state: { step: 5, categories: 39, accounts: 1, currency: 'JPY' },
+    });
+
+    component.budgetAmount = '120000';
+    buttonByText(fixture, 'Continue').click();
+    await fixture.whenStable();
+
+    const budget = stub.mutations.find((entry) => entry.document.includes('OnboardingBudget'));
+    expect(budget?.variables['amount']).toEqual({ amountMinor: '120000', currency: 'JPY' });
   });
 
   it('advances without writing a budget when the amount is left empty', async () => {

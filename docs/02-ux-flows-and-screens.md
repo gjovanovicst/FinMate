@@ -319,7 +319,7 @@ a killed app resumes at the same step.
 | Step | Elements | Seeds | Skip |
 |---|---|---|---|
 | 1 | Starter tree preview (~40 Serbian nodes), inline rename/delete, *Dodaj kategoriju* | Categories (`is_system = true`) | Empty tree + a note that categorisation stays manual |
-| 2 | Currency (read-only `RSD`, ADR-011) + account multi-select with optional opening balance | Accounts (`CASH`/`BANK`/`CARD`/`OTHER`) | One `CASH` account, *Gotovina* |
+| 2 | Currency (read-only — the Household's ledger currency, the one chosen at signup, ADR-011/ADR-045) + account multi-select with optional opening balance | Accounts (`CASH`/`BANK`/`CARD`/`OTHER`) | One `CASH` account, *Gotovina* |
 | 3 | *Kome redovno plaćaš?* free text, e.g. `Dejan rođa, septička jama` | Counterparty + alias + a **proposed** Rule | Nothing |
 | 4 | *Gde kupuješ?* multi-select from the ~60 shipped global Merchants | Merchant links + aliases | Nothing; the tree's keywords still categorise |
 | 5 | Optional monthly income + savings target | Household Budget and/or SavingGoal skeleton | Dashboard shows its no-data states |
@@ -384,6 +384,17 @@ Step 6 is the only place the app teaches by interruption, and it fires once per 
 >    from keywords requires a score of 2.0 ([04 §5.4](04-categorization-and-ai-engine.md)) and the
 >    schema default weight is 1.0, so a tree seeded at the default categorises nothing. The shipped
 >    tree marks decisive words at 2.0; see [04 §8.1.3](04-categorization-and-ai-engine.md).
+> 8. **The wizard serves the Household's own currency, and step 2's Continue is not gated on a count
+>    only its own write produces** (found by the 2026-09-21 wizard pass). Two defects, both from the
+>    same assumption that `RSD` and "zero accounts" are the normal fresh state:
+>    - Step 2's field was the literal `RSD` and step 5 parsed its budget as `RSD`, so an EUR Household
+>      was shown a dinar label and a JPY Household's budget was inflated 100×. `onboardingState` now
+>      carries `currency` and both steps use it.
+>    - Step 2's *Nastavi* was gated on `accountCount > 0`, which is zero precisely because that button
+>      is what calls `createAccount`: a fresh Household could only press *Preskoči (koristi gotovinu)*,
+>      which ignored the typed name and kind. This is the step-1 deadlock fixed after 2.3.3b, left standing
+>      one step later; the gate now also reads the name the step would write.
+>    Both are recorded as gotchas in [15](15-implementation-gotchas.md).
 
 ### 4.2 Dashboard — F-19, F-21 (+ F-22 feed, F-08 callout)
 

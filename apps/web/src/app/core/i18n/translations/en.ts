@@ -1538,7 +1538,7 @@ export const en = {
   'onboarding.accounts.title': 'Where does your money sit?',
   'onboarding.accounts.lede': 'Every entry needs an account. One is enough to start.',
   'onboarding.accounts.currency': 'Currency',
-  'onboarding.accounts.currencyHint': 'One currency per household (RSD).',
+  'onboarding.accounts.currencyHint': 'One currency per household ({currency}).',
   'onboarding.accounts.name': 'Name',
   'onboarding.accounts.kind': 'Kind',
   'onboarding.accounts.defaultName': 'Cash',

@@ -1485,7 +1485,7 @@ export const srLatn: Record<keyof typeof en, string> = {
   'onboarding.accounts.title': 'Gde ti je novac?',
   'onboarding.accounts.lede': 'Svaki unos traži račun. Jedan je dovoljan za početak.',
   'onboarding.accounts.currency': 'Valuta',
-  'onboarding.accounts.currencyHint': 'Jedna valuta po domaćinstvu (RSD).',
+  'onboarding.accounts.currencyHint': 'Jedna valuta po domaćinstvu ({currency}).',
   'onboarding.accounts.name': 'Naziv',
   'onboarding.accounts.kind': 'Vrsta',
   'onboarding.accounts.defaultName': 'Gotovina',

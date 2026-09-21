@@ -6,6 +6,7 @@ import { initAngularTesting } from '@web-test/angular-testing';
 import { TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AuthStore } from '../auth/auth.store';
 import { GraphqlClient } from '../graphql/graphql.client';
 import { OnboardingStore } from './onboarding.store';
 
@@ -25,10 +26,18 @@ initAngularTesting();
  */
 describe('OnboardingStore', () => {
   let query: ReturnType<typeof vi.fn>;
+  /** The Household the fake session names; the spec moves it to stand in for a sign-out/sign-up. */
+  let householdId: string | null;
 
   function mount(): OnboardingStore {
     TestBed.configureTestingModule({
-      providers: [{ provide: GraphqlClient, useValue: { query } as unknown as GraphqlClient }],
+      providers: [
+        { provide: GraphqlClient, useValue: { query } as unknown as GraphqlClient },
+        {
+          provide: AuthStore,
+          useValue: { session: () => (householdId === null ? null : { householdId }) },
+        },
+      ],
     });
     return TestBed.inject(OnboardingStore);
   }
@@ -36,6 +45,7 @@ describe('OnboardingStore', () => {
   beforeEach(() => {
     TestBed.resetTestingModule();
     query = vi.fn();
+    householdId = 'household-a';
   });
 
   it('starts with no redirect, before anything is known', () => {
@@ -96,5 +106,41 @@ describe('OnboardingStore', () => {
 
     expect(store.needed()).toBe(false);
     expect(store.isLoaded()).toBe(true);
+  });
+
+  /**
+   * The bug this keys on. The store is root-provided and outlives a sign-out, so an answer about one
+   * Household must not be served for the next: signing out of a finished Household and creating
+   * another account in the same tab used to skip the wizard entirely (measured live).
+   */
+  it('re-asks after the session changes to a different Household', async () => {
+    query.mockResolvedValue({
+      onboardingState: { step: 7, completedAt: '2026-09-15T12:00:00.000Z' },
+    });
+    const store = mount();
+    await store.refresh();
+    expect(store.isLoaded()).toBe(true);
+    expect(store.needed()).toBe(false);
+
+    // Sign out of A and create B, with no page reload — the case the wizard went missing on.
+    householdId = 'household-b';
+    expect(store.isLoaded()).toBe(false);
+
+    query.mockResolvedValue({ onboardingState: { step: 1, completedAt: null } });
+    await store.refresh();
+
+    expect(store.isLoaded()).toBe(true);
+    expect(store.needed()).toBe(true);
+  });
+
+  it('does not re-ask while the same Household stays signed in', async () => {
+    query.mockResolvedValue({ onboardingState: { step: 3, completedAt: null } });
+    const store = mount();
+    await store.refresh();
+
+    // `isLoaded()` is what the guard branches on before every dashboard navigation.
+    expect(store.isLoaded()).toBe(true);
+    expect(store.isLoaded()).toBe(true);
+    expect(query).toHaveBeenCalledTimes(1);
   });
 });

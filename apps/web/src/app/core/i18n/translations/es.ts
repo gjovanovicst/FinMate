@@ -1296,7 +1296,7 @@ export const es: Record<keyof typeof en, string> = {
   'onboarding.accounts.title': '¿Dónde está tu dinero?',
   'onboarding.accounts.lede': 'Cada registro necesita una cuenta. Con una basta para empezar.',
   'onboarding.accounts.currency': 'Moneda',
-  'onboarding.accounts.currencyHint': 'Una moneda por hogar (RSD).',
+  'onboarding.accounts.currencyHint': 'Una moneda por hogar ({currency}).',
   'onboarding.accounts.name': 'Nombre',
   'onboarding.accounts.kind': 'Tipo',
   'onboarding.accounts.defaultName': 'Efectivo',

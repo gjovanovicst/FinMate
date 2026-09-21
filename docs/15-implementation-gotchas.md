@@ -2433,6 +2433,49 @@ Short, and load-bearing.
 
 ---
 
+- **A root-provided cache outlives a sign-out, so an answer about one Household gets served for the
+  next.** `OnboardingStore` caches the F-13 redirect decision, and for one session that is exactly right —
+  but `auth.signOut()` clears the session **in place**, with no reload (the offline store and the app lock
+  are purged deliberately, docs/02 §2.2), and the store was never told. Sign out of a Household that
+  finished onboarding, create another account in the same tab, and the guard's `isLoaded()` still said
+  yes while `needed()` carried the *previous* Household's "nothing to do": the new account landed on the
+  dashboard and the wizard never opened. Reproduced live in a headless browser — sign in as a completed
+  account, Sign out, *Create one*, then `/` where `/onboarding` was due. A cold page load was never
+  affected, because a fresh injector has no answer to serve, which is why it survived every fresh-signup
+  check. The fix keys the cache to the Household in the session, so `isLoaded()` means "answered for the
+  Household signed in **now**": a session change re-asks on the next navigation, and the guard keeps its
+  one request per Household. The general rule: a `providedIn: 'root'` store holding session-scoped facts
+  must name **whose** facts they are — a page-load lifetime is not a session lifetime (docs/02 FL-01 §3,
+  `onboarding.store.spec.ts`).
+
+---
+
+- **A wizard step is not finished when only *Skip* works.** Step 2's Continue was gated on
+  `accountCount > 0`, and `accountCount` is zero precisely because Continue is what calls `createAccount`
+  — so on a fresh Household the button was disabled and *Skip (use cash)* was the only way forward, which
+  ignored the name and kind the person had just typed and gave every Household the default cash account.
+  Clicking through the wizard live is what found it: the button list contained *Skip (use cash)* and a
+  greyed-out *Continue*. Step 1 had the **identical** deadlock, fixed after 2.3.3b by making the gate read
+  what the button would write (`starterCount`); the fix was not carried one step forward. The general
+  rule for this wizard: `canContinue` reads either a row that exists **or** what pressing it would
+  create, and every step's live check must actually press Continue rather than reaching for Skip
+  (docs/02 §4.1, `onboarding.view.spec.ts`, `onboarding.component.spec.ts`).
+
+---
+
+- **`RSD` written into a screen is wrong now that a Household chooses its currency (ADR-045).** The
+  wizard's step 2 showed the literal `RSD` and step 5 parsed its budget with `parseAmount(amount, 'RSD')`
+  and sent `currency: 'RSD'`. The server takes a Budget's currency from `households.ledger_currency`, so
+  nothing threw — which is what made it invisible: an EUR Household was *shown* the wrong label, and a
+  JPY Household's budget (no minor unit) was written **100× too large** because the client parsed a
+  0-decimal amount as a 2-decimal one and the server only kept the minor units. The Household's currency
+  now rides `onboardingState` (`currency`, served from `ledger_currency`) and every step uses it. The
+  general rule: any screen that formats or parses money must take the currency from the server, never
+  from a literal — `DEFAULT_LEDGER_CURRENCY` is a fallback for "not answered yet", not a value to render
+  (ADR-011, ADR-045, docs/02 §4.1).
+
+---
+
 ## Related
 
 - `docs/10-testing-and-quality.md` — what a change has to prove before it is done.

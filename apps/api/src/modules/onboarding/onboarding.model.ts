@@ -46,6 +46,13 @@ export class OnboardingStateModel {
   })
   seedVersion!: number | null;
 
+  @Field(() => String, {
+    description:
+      'The Household ledger currency (ISO-4217, ADR-011) chosen at signup (ADR-045). The wizard ' +
+      'displays it and prices its budget in it, so it is served rather than assumed.',
+  })
+  currency!: string;
+
   @Field(() => Int)
   categories!: number;
 
@@ -108,6 +115,7 @@ export function toOnboardingStateModel(view: OnboardingStateView): OnboardingSta
     step: view.step,
     completedAt: view.completedAt,
     seedVersion: view.seedVersion,
+    currency: view.currency,
     categories: view.categories,
     keywords: view.keywords,
     merchants: view.merchants,

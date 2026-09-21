@@ -2094,6 +2094,11 @@ type OnboardingStateModel {
   accounts: Int!
   categories: Int!
   completedAt: DateTime
+
+  """
+  The Household ledger currency (ISO-4217, ADR-011) chosen at signup (ADR-045). The wizard displays it and prices its budget in it, so it is served rather than assumed.
+  """
+  currency: String!
   keywords: Int!
 
   """Merchants this Household owns. Global seeds are not counted."""
