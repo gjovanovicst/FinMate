@@ -74,7 +74,7 @@
     "dotenv": "^17.4.2",
     "eslint": "10.10.0",
     "nx": "23.2.1",
-    "prettier": "3.9.6",
+    "prettier": "3.9.8",
     "prisma": "7.10.0",
     "tsx": "^4.23.13",
     "typescript": "6.0.3",
