@@ -72,13 +72,13 @@
     "@prisma/adapter-pg": "7.10.0",
     "@types/node": "^24.13.4",
     "dotenv": "^17.4.2",
-    "eslint": "10.10.0",
+    "eslint": "10.11.0",
     "nx": "23.2.1",
-    "prettier": "3.9.6",
+    "prettier": "3.9.9",
     "prisma": "7.10.0",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.70.0",
+    "typescript-eslint": "8.71.0",
     "vitest": "5.0.0"
   }
 }
